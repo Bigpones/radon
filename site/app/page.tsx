@@ -180,14 +180,19 @@ export default function LandingPage() {
                   <table className="w-full text-left border-collapse">
                     <tbody>
                       {[
-                        { ticker: "AAOI", structure: "Long Call $105", price: (123.36 + (Math.random() * 0.1)).toFixed(2), pnl: "+65,515" },
-                        { ticker: "AAPL", structure: "Bull Call Spread", price: (262.15 + (Math.random() * 0.1)).toFixed(2), pnl: "+6,396" },
+                        { ticker: "AAOI", structure: "Long Call $105", price: (123.36 + (Math.random() * 0.1)).toFixed(2), pnl: "+65,515", type: 'accum' },
+                        { ticker: "AAPL", structure: "Bull Call Spread", price: (262.15 + (Math.random() * 0.1)).toFixed(2), pnl: "+6,396", type: 'accum' },
+                        { ticker: "BRZE", structure: "Long Call $22.5", price: (19.01 + (Math.random() * 0.1)).toFixed(2), pnl: "-11,500", type: 'distrib' },
+                        { ticker: "PLTR", structure: "Long Call $45", price: (111.10 + (Math.random() * 0.1)).toFixed(2), pnl: "+32,565", type: 'accum' },
+                        { ticker: "TSLA", structure: "Iron Condor", price: (254.12 + (Math.random() * 0.1)).toFixed(2), pnl: "-4,210", type: 'distrib' },
+                        { ticker: "NVDA", structure: "Long Put $120", price: (135.45 + (Math.random() * 0.1)).toFixed(2), pnl: "+12,840", type: 'accum' },
+                        { ticker: "META", structure: "Bull Call Spread", price: (482.90 + (Math.random() * 0.1)).toFixed(2), pnl: "-8,450", type: 'distrib' },
                       ].map((row, i) => (
                         <tr key={i} className="border-b border-grid/50">
                           <td className="p-3 font-bold text-accent">{row.ticker}</td>
                           <td className="p-3 text-muted">{row.structure}</td>
                           <td className="p-3"><FlashingValue value={row.price} /></td>
-                          <td className="p-3 text-right text-signal-strong font-bold">{row.pnl}</td>
+                          <td className={`p-3 text-right font-bold ${row.type === 'accum' ? 'text-signal-strong' : 'text-negative'}`}>{row.pnl}</td>
                         </tr>
                       ))}
                     </tbody>
