@@ -1,11 +1,29 @@
 "use client";
 
-import React from "react";
-import { motion, Variants } from "framer-motion";
+import React, { useEffect, useState } from "react";
+import { motion, Variants, AnimatePresence, LayoutGroup } from "framer-motion";
 import { Terminal, Shield, Zap, Activity, ChevronRight, Github } from "lucide-react";
 
 export default function LandingPage() {
-  const [activeView, setActiveView] = React.useState<"REGIME" | "PORTFOLIO" | "FLOW">("REGIME");
+  const [activeView, setActiveView] = useState<"REGIME" | "PORTFOLIO" | "FLOW">("REGIME");
+  const [isAutoPlaying, setIsAutoPlaying] = useState(true);
+
+  useEffect(() => {
+    if (!isAutoPlaying) return;
+    const interval = setInterval(() => {
+      setActiveView((prev) => {
+        if (prev === "REGIME") return "PORTFOLIO";
+        if (prev === "PORTFOLIO") return "FLOW";
+        return "REGIME";
+      });
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [isAutoPlaying]);
+
+  const handleManualSwitch = (view: "REGIME" | "PORTFOLIO" | "FLOW") => {
+    setActiveView(view);
+    setIsAutoPlaying(false);
+  };
 
   const containerVariants: Variants = {
     hidden: { opacity: 0 },
@@ -328,44 +346,57 @@ export default function LandingPage() {
               </div>
               
               <div className="p-1 flex flex-col md:flex-row gap-1 h-[650px]">
-                {/* Sidebar Mock */}
-                <div className="w-full md:w-48 border-r border-grid p-4 hidden md:flex flex-col gap-6 bg-canvas/40 backdrop-blur-sm">
-                  <div className="space-y-6">
-                    <div className="space-y-1">
-                      <div className="text-[9px] font-mono text-muted uppercase tracking-widest mb-3 px-2">Workspace</div>
-                      <button 
-                        onClick={() => setActiveView("REGIME")}
-                        className={`h-8 w-full flex items-center px-2 text-[10px] font-mono transition-all border-l-2 ${activeView === "REGIME" ? 'bg-accent/10 border-accent text-primary' : 'border-transparent text-muted hover:bg-panel-raised hover:text-secondary'}`}
-                      >
-                        REGIME
-                      </button>
-                      <button 
-                        onClick={() => setActiveView("PORTFOLIO")}
-                        className={`h-8 w-full flex items-center px-2 text-[10px] font-mono transition-all border-l-2 ${activeView === "PORTFOLIO" ? 'bg-accent/10 border-accent text-primary' : 'border-transparent text-muted hover:bg-panel-raised hover:text-secondary'}`}
-                      >
-                        PORTFOLIO
-                      </button>
-                      <button 
-                        onClick={() => setActiveView("FLOW")}
-                        className={`h-8 w-full flex items-center px-2 text-[10px] font-mono transition-all border-l-2 ${activeView === "FLOW" ? 'bg-accent/10 border-accent text-primary' : 'border-transparent text-muted hover:bg-panel-raised hover:text-secondary'}`}
-                      >
-                        FLOW
-                      </button>
+                <LayoutGroup>
+                  {/* Sidebar Mock */}
+                  <div className="w-full md:w-48 border-r border-grid p-4 hidden md:flex flex-col gap-6 bg-canvas/40 backdrop-blur-sm">
+                    <div className="space-y-6">
+                      <div className="space-y-1">
+                        <div className="text-[9px] font-mono text-muted uppercase tracking-widest mb-3 px-2">Workspace</div>
+                        <button 
+                          onClick={() => handleManualSwitch("REGIME")}
+                          className={`h-8 w-full flex items-center px-2 text-[10px] font-mono transition-all border-l-2 relative group ${activeView === "REGIME" ? 'bg-accent/10 border-accent text-primary' : 'border-transparent text-muted hover:bg-panel-raised hover:text-secondary'}`}
+                        >
+                          REGIME
+                          {activeView === "REGIME" && (
+                            <motion.div layoutId="nav-active" className="absolute left-0 w-full h-full bg-accent/5 pointer-events-none" />
+                          )}
+                        </button>
+                        <button 
+                          onClick={() => handleManualSwitch("PORTFOLIO")}
+                          className={`h-8 w-full flex items-center px-2 text-[10px] font-mono transition-all border-l-2 relative group ${activeView === "PORTFOLIO" ? 'bg-accent/10 border-accent text-primary' : 'border-transparent text-muted hover:bg-panel-raised hover:text-secondary'}`}
+                        >
+                          PORTFOLIO
+                          {activeView === "PORTFOLIO" && (
+                            <motion.div layoutId="nav-active" className="absolute left-0 w-full h-full bg-accent/5 pointer-events-none" />
+                          )}
+                        </button>
+                        <button 
+                          onClick={() => handleManualSwitch("FLOW")}
+                          className={`h-8 w-full flex items-center px-2 text-[10px] font-mono transition-all border-l-2 relative group ${activeView === "FLOW" ? 'bg-accent/10 border-accent text-primary' : 'border-transparent text-muted hover:bg-panel-raised hover:text-secondary'}`}
+                        >
+                          FLOW
+                          {activeView === "FLOW" && (
+                            <motion.div layoutId="nav-active" className="absolute left-0 w-full h-full bg-accent/5 pointer-events-none" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="mt-auto border-t border-grid pt-4 space-y-4">
+                      <div className="flex justify-between items-center px-2">
+                        <div className="text-[8px] font-mono text-muted uppercase tracking-widest">IB Gateway</div>
+                        <div className="w-2 h-2 bg-signal-strong rounded-full" />
+                      </div>
+                      <div className="h-1 w-full bg-grid/30 px-2" />
                     </div>
                   </div>
-                  <div className="mt-auto border-t border-grid pt-4 space-y-4">
-                    <div className="flex justify-between items-center px-2">
-                      <div className="text-[8px] font-mono text-muted uppercase tracking-widest">IB Gateway</div>
-                      <div className="w-2 h-2 bg-signal-strong rounded-full" />
-                    </div>
-                    <div className="h-1 w-full bg-grid/30 px-2" />
+                  
+                  {/* Content Mock */}
+                  <div className="flex-1 p-6 overflow-hidden bg-canvas/30 relative">
+                    <AnimatePresence mode="wait">
+                      {renderMockView()}
+                    </AnimatePresence>
                   </div>
-                </div>
-                
-                {/* Content Mock */}
-                <div className="flex-1 p-6 overflow-hidden bg-canvas/30">
-                  {renderMockView()}
-                </div>
+                </LayoutGroup>
               </div>
             </div>
             
