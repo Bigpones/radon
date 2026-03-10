@@ -1,3 +1,5 @@
+# Radon
+
 <p align="center">
   <img src=".github/hero.png" alt="Radon - Reconstructing Market Structure" width="900" />
 </p>
@@ -7,8 +9,6 @@
   <img alt="Next.js 16" src="https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white" />
   <img alt="Test stack" src="https://img.shields.io/badge/Tests-pytest%20%7C%20Vitest%20%7C%20Playwright-0A7F6F" />
 </p>
-
-# Radon
 
 **Reconstructing market structure from institutional signals.**
 
