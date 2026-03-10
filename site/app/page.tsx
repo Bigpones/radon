@@ -348,7 +348,7 @@ export default function LandingPage() {
           <nav className="hidden md:flex items-center gap-8">
             <a href="#features" className="text-xs font-mono text-muted hover:text-primary transition-colors uppercase tracking-widest">Instruments</a>
             <a href="#open-source" className="text-xs font-mono text-muted hover:text-primary transition-colors uppercase tracking-widest">Sovereignty</a>
-            <a href="https://github.com/radon-terminal" className="text-xs font-mono text-muted hover:text-primary transition-colors uppercase tracking-widest">Source</a>
+            <a href="https://github.com/joemccann/radon" target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-muted hover:text-primary transition-colors uppercase tracking-widest">Source</a>
           </nav>
           <button className="px-4 py-2 bg-primary text-canvas text-xs font-mono font-bold uppercase tracking-widest hover:bg-accent transition-all">
             Access Terminal
@@ -459,7 +459,7 @@ export default function LandingPage() {
               <p className="text-xl text-secondary mb-12 font-sans leading-relaxed">
                 We don't hide behind black boxes. The math is public. The execution is transparent. If you can't verify your tools, you don't own your strategy.
               </p>
-              <a href="https://github.com" className="inline-flex items-center gap-2 font-mono text-sm font-bold uppercase tracking-widest text-primary hover:text-accent transition-colors">
+              <a href="https://github.com/joemccann/radon" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 font-mono text-sm font-bold uppercase tracking-widest text-primary hover:text-accent transition-colors">
                 <Github size={20} /> Inspect Source
               </a>
             </div>
@@ -485,17 +485,17 @@ export default function LandingPage() {
             <div>
               <h4 className="text-[10px] font-mono font-bold text-primary uppercase tracking-[0.2em] mb-6">Instruments</h4>
               <ul className="space-y-3 text-xs font-mono text-muted">
-                <li><a href="#" className="hover:text-accent transition-colors">FLOW</a></li>
-                <li><a href="#" className="hover:text-accent transition-colors">SURFACE</a></li>
-                <li><a href="#" className="hover:text-accent transition-colors">SIGNALS</a></li>
+                <li><a href="https://github.com/joemccann/radon" target="_blank" rel="noopener noreferrer" className="hover:text-accent transition-colors">FLOW</a></li>
+                <li><a href="https://github.com/joemccann/radon" target="_blank" rel="noopener noreferrer" className="hover:text-accent transition-colors">SURFACE</a></li>
+                <li><a href="https://github.com/joemccann/radon" target="_blank" rel="noopener noreferrer" className="hover:text-accent transition-colors">SIGNALS</a></li>
               </ul>
             </div>
             <div>
               <h4 className="text-[10px] font-mono font-bold text-primary uppercase tracking-[0.2em] mb-6">Protocol</h4>
               <ul className="space-y-3 text-xs font-mono text-muted">
-                <li><a href="#" className="hover:text-accent transition-colors">DOCUMENTATION</a></li>
-                <li><a href="#" className="hover:text-accent transition-colors">API SPEC</a></li>
-                <li><a href="#" className="hover:text-accent transition-colors">CONTRIBUTE</a></li>
+                <li><a href="https://github.com/joemccann/radon" target="_blank" rel="noopener noreferrer" className="hover:text-accent transition-colors">DOCUMENTATION</a></li>
+                <li><a href="https://github.com/joemccann/radon" target="_blank" rel="noopener noreferrer" className="hover:text-accent transition-colors">API SPEC</a></li>
+                <li><a href="https://github.com/joemccann/radon" target="_blank" rel="noopener noreferrer" className="hover:text-accent transition-colors">CONTRIBUTE</a></li>
               </ul>
             </div>
             <button className="h-fit py-3 border border-accent/50 text-accent text-[10px] font-mono font-bold uppercase tracking-[0.2em] hover:bg-accent hover:text-canvas transition-all">
