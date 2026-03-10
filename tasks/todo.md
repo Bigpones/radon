@@ -287,8 +287,8 @@ Composite key scheme: stock prices keyed by ticker (`"AAPL"`), option prices by 
 - [x] T1 Inventory current Phase 1 files and documentation touchpoints
 - [x] T2 Update canonical docs with the working SSH-over-Tailscale flow and dependencies
 - [x] T3 Validate docs and helper behavior against the live machine state
-- [ ] T4 Commit only the relevant files
-- [ ] T5 Push the commit to the current branch remote
+- [x] T4 Commit only the relevant files
+- [x] T5 Push the commit to the current branch remote
 
 ### Review
 - Reworked `README.md` to match the requested structure from the shared review: cleaner summary, badges, explicit Inputs/Processing/Outputs, three-gate framework, strategy matrix, architecture diagram, grouped commands, simplified data-source/testing sections, example workflow, and the Phase 1 remote IBC dependency block.
@@ -303,6 +303,8 @@ Composite key scheme: stock prices keyed by ticker (`"AAPL"`), option prices by 
   - `bash -n scripts/ibc_remote_control.sh` passed.
   - `./scripts/ibc_remote_control.sh remote-help` prints the direct secure-service SSH commands and optional helper commands.
   - User confirmed iPhone SSH login works in Termius with password auth.
+  - Commit: `bf86cc4` (`docs: refresh README and document secure IBC remote access`)
+  - Push: `origin/main` updated on `2026-03-10`
 
 ---
 
