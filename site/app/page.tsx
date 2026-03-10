@@ -113,54 +113,122 @@ export default function LandingPage() {
                 <div className="text-[10px] font-mono text-muted uppercase tracking-widest">
                   radon-terminal // live-feed: connected
                 </div>
-                <div className="w-12" />
+                <div className="flex items-center gap-4">
+                   <div className="text-[10px] font-mono text-signal-strong uppercase tracking-widest flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 bg-signal-strong rounded-full animate-pulse" /> SYNC: OK
+                   </div>
+                   <div className="w-12" />
+                </div>
               </div>
               
-              <div className="p-1 flex flex-col md:flex-row gap-1 h-[600px]">
+              <div className="p-1 flex flex-col md:flex-row gap-1 h-[650px]">
                 {/* Sidebar Mock */}
                 <div className="w-full md:w-48 border-r border-grid p-4 hidden md:flex flex-col gap-6">
-                  <div className="space-y-4">
-                    <div className="h-2 w-full bg-accent opacity-20" />
-                    <div className="h-2 w-3/4 bg-grid" />
-                    <div className="h-2 w-1/2 bg-grid" />
+                  <div className="space-y-6">
+                    <div className="space-y-2">
+                      <div className="text-[9px] font-mono text-muted uppercase tracking-widest">Workspace</div>
+                      <div className="h-7 w-full bg-accent/10 border-l-2 border-accent flex items-center px-2 text-[10px] font-mono text-primary">REGIME</div>
+                      <div className="h-7 w-full hover:bg-panel-raised flex items-center px-2 text-[10px] font-mono text-muted transition-colors">PORTFOLIO</div>
+                      <div className="h-7 w-full hover:bg-panel-raised flex items-center px-2 text-[10px] font-mono text-muted transition-colors">FLOW</div>
+                    </div>
                   </div>
-                  <div className="mt-auto space-y-2">
-                    <div className="h-1 w-full bg-grid" />
+                  <div className="mt-auto border-t border-grid pt-4 space-y-4">
+                    <div className="flex justify-between items-center">
+                      <div className="text-[8px] font-mono text-muted uppercase">IB Gateway</div>
+                      <div className="w-2 h-2 bg-signal-strong rounded-full" />
+                    </div>
                     <div className="h-1 w-full bg-grid" />
                   </div>
                 </div>
                 
                 {/* Content Mock */}
-                <div className="flex-1 p-6 overflow-hidden">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                    {[1, 2, 3, 4].map(i => (
-                      <div key={i} className="border border-grid p-4 bg-panel-raised/50">
-                        <div className="text-[9px] font-mono text-muted uppercase tracking-widest mb-2">Metric 0{i}</div>
-                        <div className="text-2xl font-mono text-primary">0.0000</div>
+                <div className="flex-1 p-6 overflow-hidden flex flex-col gap-6 bg-canvas/30">
+                  {/* Regime Score Area */}
+                  <div className="border border-grid p-6 bg-panel/50 relative">
+                    <div className="flex justify-between items-start mb-2">
+                       <div>
+                          <div className="text-[9px] font-mono text-muted uppercase tracking-[0.2em] mb-1">Structural Regime Score</div>
+                          <div className="flex items-baseline gap-2">
+                             <span className="text-6xl font-mono font-bold text-accent">14</span>
+                             <span className="text-2xl font-mono text-muted">/100</span>
+                          </div>
+                       </div>
+                       <div className="text-right">
+                          <div className="text-[9px] font-mono text-muted uppercase mb-1">Last Scan</div>
+                          <div className="text-[10px] font-mono text-primary">10:51:11 AM</div>
+                       </div>
+                    </div>
+                    <div className="flex gap-1 h-2 w-full bg-grid mt-4">
+                       <div className="w-[14%] bg-accent" />
+                    </div>
+                    <div className="flex justify-between mt-2 text-[8px] font-mono text-muted uppercase tracking-widest">
+                       <span>Low</span>
+                       <span>Elevated</span>
+                       <span>High</span>
+                       <span>Critical</span>
+                    </div>
+                  </div>
+
+                  {/* Metrics Grid */}
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    {[
+                      { label: "VIX", value: "22.77", change: "-3.4%", color: "text-primary" },
+                      { label: "VVIX", value: "116.75", change: "+1.2%", color: "text-warn" },
+                      { label: "SPY", value: "682.28", change: "+0.01%", color: "text-signal-strong" },
+                      { label: "REALIZED VOL", value: "11.80%", change: "20d", color: "text-signal-strong" },
+                      { label: "SECTOR CORR", value: "0.0231", change: "Intraday", color: "text-primary" }
+                    ].map((m, i) => (
+                      <div key={i} className="border border-grid p-3 bg-panel-raised/30">
+                        <div className="text-[8px] font-mono text-muted uppercase tracking-widest mb-1">{m.label}</div>
+                        <div className={`text-lg font-mono font-medium ${m.color}`}>{m.value}</div>
+                        <div className="text-[9px] font-mono text-muted mt-1">{m.change}</div>
                       </div>
                     ))}
                   </div>
-                  <div className="border border-grid h-full bg-panel-raised/30 p-4">
-                     <div className="flex items-center justify-between mb-4 pb-2 border-b border-grid">
-                        <div className="text-xs font-mono uppercase tracking-widest text-accent">Structural Analysis</div>
-                        <div className="flex gap-2">
-                          <div className="w-2 h-2 bg-signal-strong animate-pulse" />
-                        </div>
+
+                  {/* Data Table / Flashing Updates */}
+                  <div className="flex-1 border border-grid bg-panel-raised/10 flex flex-col min-h-0">
+                     <div className="flex items-center justify-between px-4 py-2 border-b border-grid bg-panel-raised/20">
+                        <div className="text-[9px] font-mono uppercase tracking-widest text-muted">Active Flow Events</div>
+                        <div className="w-2 h-2 bg-signal-strong rounded-full animate-pulse" />
                      </div>
-                     <div className="space-y-4">
-                        {[1, 2, 3, 4, 5].map(i => (
-                          <div key={i} className="flex gap-4 items-center">
-                            <div className="w-full h-px bg-grid relative overflow-hidden">
-                              <motion.div 
-                                initial={{ x: '-100%' }}
-                                animate={{ x: '100%' }}
-                                transition={{ duration: 2, repeat: Infinity, delay: i * 0.4 }}
-                                className="absolute inset-0 bg-accent/20 w-1/4"
-                              />
-                            </div>
-                            <div className="text-[10px] font-mono text-muted">CH{i}</div>
-                          </div>
-                        ))}
+                     <div className="flex-1 overflow-hidden font-mono text-[10px]">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-grid text-muted">
+                              <th className="p-3 font-medium uppercase tracking-widest">Ticker</th>
+                              <th className="p-3 font-medium uppercase tracking-widest">Structure</th>
+                              <th className="p-3 font-medium uppercase tracking-widest">Price</th>
+                              <th className="p-3 font-medium uppercase tracking-widest text-right">P&L</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {[
+                              { ticker: "AAOI", structure: "Long Call $105", price: "123.36", pnl: "+65,515", active: true, pos: true },
+                              { ticker: "AAPL", structure: "Bull Call Spread", price: "262.15", pnl: "+6,396", active: false, pos: true },
+                              { ticker: "BRZE", structure: "Long Call $22.5", price: "19.01", pnl: "-11,500", active: false, pos: false },
+                              { ticker: "PLTR", structure: "Long Call $45", price: "111.10", pnl: "+32,565", active: true, pos: true },
+                            ].map((row, i) => (
+                              <tr key={i} className={`border-b border-grid/50 transition-colors ${row.active ? 'bg-signal-strong/5' : ''}`}>
+                                <td className="p-3 font-bold">{row.ticker}</td>
+                                <td className="p-3 text-muted">{row.structure}</td>
+                                <td className="p-3 relative">
+                                  {row.price}
+                                  {row.active && (
+                                    <motion.div 
+                                      animate={{ opacity: [0, 1, 0] }}
+                                      transition={{ duration: 1.5, repeat: Infinity }}
+                                      className="absolute inset-0 bg-accent/10 pointer-events-none"
+                                    />
+                                  )}
+                                </td>
+                                <td className={`p-3 text-right ${row.pos ? 'text-signal-strong' : 'text-negative'}`}>
+                                  {row.pnl}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                      </div>
                   </div>
                 </div>
