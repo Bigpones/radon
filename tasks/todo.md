@@ -327,3 +327,127 @@ Composite key scheme: stock prices keyed by ticker (`"AAPL"`), option prices by 
 - Verification:
   - `rg -n "What Radon Does|Trade Validation Framework|System Architecture|Quick Start|Radon Terminal|CLI Commands|Phase 1 Remote IBC Access" README.md`
   - Manual README review against the shared outline confirmed the requested structural sections are present.
+
+---
+
+## Session: IBC Full Rollout Plan (2026-03-10)
+
+### Dependency Graph
+- T1 (Preserve the research baseline, report, and canonical secure local service surface) depends_on: []
+- T2 (Complete Phase 1 local SSH-over-Tailscale access and documentation) depends_on: [T1]
+- T3 (Harden local remote access with key-based SSH and tighter SSH policy) depends_on: [T2]
+- T4 (Build Phase 2 private web controller over Tailscale for start/stop/status/restart) depends_on: [T2]
+- T5 (Add local resilience: health checks, alerting, and away-from-desk power/sleep policy) depends_on: [T3, T4]
+- T6 (Stand up a private cloud IBC proof of concept on a Linux VM) depends_on: [T1]
+- T7 (Validate cloud persistence, secrets, restart behavior, and Sunday re-auth runbook) depends_on: [T6]
+- T8 (Decide primary operating model and cut over to the preferred steady-state path) depends_on: [T5, T7]
+
+### Checklist
+- [x] T1 Preserve the research baseline, report, and canonical secure local service surface
+  - Success criteria:
+    - `reports/ibc-remote-control-and-cloud-options-2026-03-10.html` remains the durable comparison artifact.
+    - The canonical service surface is documented everywhere as `~/ibc/bin/*secure-ibc-service.sh`.
+- [x] T2 Complete Phase 1 local SSH-over-Tailscale access and documentation
+  - Success criteria:
+    - iPhone can connect to the Mac over Tailscale and run the secure IBC commands.
+    - README and runbook document the dependencies and direct command flow.
+- [ ] T3 Harden local remote access with key-based SSH and tighter SSH policy
+  - depends_on: [T2]
+  - Success criteria:
+    - iPhone SSH client uses a dedicated key instead of password auth.
+    - `~/.ssh/authorized_keys` contains the intended client key only.
+    - SSH config is reviewed so remote access remains limited to the Tailscale path and expected auth methods.
+- [ ] T4 Build Phase 2 private web controller over Tailscale for start/stop/status/restart
+  - depends_on: [T2]
+  - Success criteria:
+    - A minimal private controller runs only on the Mac.
+    - It exposes `status`, `start`, `stop`, and `restart` for the secure local IBC service.
+    - Access is restricted to the tailnet and does not expose IB API or IBC command ports publicly.
+- [ ] T5 Add local resilience: health checks, alerting, and away-from-desk power/sleep policy
+  - depends_on: [T3, T4]
+  - Success criteria:
+    - There is an operator-visible health signal for IBC reachability and launchd state.
+    - Failure notifications or a simple alert path exist for the local service.
+    - The machine’s sleep/power behavior is documented so remote control is reliable while away.
+- [ ] T6 Stand up a private cloud IBC proof of concept on a Linux VM
+  - depends_on: [T1]
+  - Success criteria:
+    - A private Linux VM runs IB Gateway + IBC with no public IB or VNC exposure.
+    - Access is limited to Tailscale or equivalent private networking.
+    - Secrets and persistent Gateway state are stored outside ad hoc local files.
+- [ ] T7 Validate cloud persistence, secrets, restart behavior, and Sunday re-auth runbook
+  - depends_on: [T6]
+  - Success criteria:
+    - The VM survives restart/redeploy without losing required Gateway/IBC state.
+    - Weekly Sunday re-auth and recovery steps are documented and tested.
+    - Burn-in covers reconnects, restart cadence, and failure handling for at least one trading week.
+- [ ] T8 Decide primary operating model and cut over to the preferred steady-state path
+  - depends_on: [T5, T7]
+  - Success criteria:
+    - There is an explicit decision between Mac-hosted primary and cloud-hosted primary.
+    - The non-primary path is documented as fallback.
+    - Final operator runbooks point to one canonical daily-use workflow.
+
+### Review
+- This session converts the prior research into an explicit end-to-end rollout instead of stopping at Phase 1.
+- Current completed state:
+  - Phase 1 local SSH-over-Tailscale access is working from the iPhone.
+  - The secure machine-local `~/ibc/bin/*secure-ibc-service.sh` wrappers are the canonical service surface.
+  - The durable research and reference artifacts already exist in `reports/ibc-remote-control-and-cloud-options-2026-03-10.html` and `docs/ibc-remote-access.md`.
+- Remaining delivery is now split cleanly into two tracks:
+  - Local track: SSH hardening, private web control plane, operational resilience.
+  - Cloud track: private VM proof of concept, burn-in, and cutover decision.
+
+---
+
+## Session: Planned IBC Multi-Phase Rollout (2026-03-10)
+
+### Dependency Graph
+- T1 (Phase 2 local hardening: key-based SSH, access policy, and reachability decision) depends_on: []
+- T2 (Phase 3 private tailnet web controller for status/start/stop/restart and health) depends_on: [T1]
+- T3 (Phase 4 cloud pilot: private Linux VM running IB Gateway + IBC with persistent state and private access) depends_on: [T1]
+- T4 (Phase 5 cloud burn-in: restart/reconnect validation, Sunday re-auth runbook, and monitoring) depends_on: [T3]
+- T5 (Phase 6 deployment decision and cutover plan across local versus cloud primary) depends_on: [T2, T4]
+
+### Checklist
+- [ ] T1 Phase 2 local hardening: key-based SSH, access policy, and reachability decision
+  - depends_on: []
+  - Success criteria:
+    - A dedicated iPhone SSH public key is installed in `~/.ssh/authorized_keys`.
+    - The preferred auth mode and remote-access policy are documented for the Mac.
+    - A reachability policy is chosen and documented: keep-awake, wake relay, or accepted sleep limitation.
+
+- [ ] T2 Phase 3 private tailnet web controller for status/start/stop/restart and health
+  - depends_on: [T1]
+  - Success criteria:
+    - A private controller is reachable only from the tailnet.
+    - The iPhone flow supports `status`, `start`, `stop`, and `restart` without shell interaction.
+    - Basic health, recent logs, and failure feedback are visible remotely.
+
+- [ ] T3 Phase 4 cloud pilot: private Linux VM running IB Gateway + IBC with persistent state and private access
+  - depends_on: [T1]
+  - Success criteria:
+    - A private VM is provisioned with IB Gateway + IBC, Tailscale, persisted config/state, and secrets handling.
+    - No IB API, IBC, VNC, or controller ports are exposed publicly.
+    - Recovery access is defined for the VM when Gateway needs manual intervention.
+
+- [ ] T4 Phase 5 cloud burn-in: restart/reconnect validation, Sunday re-auth runbook, and monitoring
+  - depends_on: [T3]
+  - Success criteria:
+    - The cloud pilot survives a multi-day burn-in with successful reconnect behavior.
+    - The Sunday re-auth and failure-recovery runbook is documented and validated.
+    - Monitoring and log collection are sufficient to detect disconnects or stuck sessions.
+
+- [ ] T5 Phase 6 deployment decision and cutover plan across local versus cloud primary
+  - depends_on: [T2, T4]
+  - Success criteria:
+    - A primary deployment model is chosen: local Mac with private controller, cloud VM, or cloud pilot only.
+    - Rollback and failover steps are documented for whichever model is selected.
+    - The durable docs and future runbooks are updated to reflect the chosen operating model.
+
+### Review
+- Phase 1 is complete and operational: password-based macOS SSH over Tailscale to the secure `~/ibc/bin/*secure-ibc-service.sh` wrappers.
+- The next local step is hardening, not replacing, the current path: add key-based SSH and make the Mac reachability policy explicit.
+- The private web controller is the best Phase 3 UX improvement because it keeps the canonical service surface intact while removing the need for shell interaction on the phone.
+- The cloud track should be treated as a pilot until a burn-in validates restart behavior, Sunday re-auth handling, and recovery procedures.
+- If the cloud pilot remains operationally weaker than the local Mac because of IBKR auth friction, keep the local deployment as primary and treat cloud as a secondary or recovery path.
