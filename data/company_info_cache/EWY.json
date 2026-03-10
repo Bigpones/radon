@@ -1,24 +1,45 @@
 {
   "ticker": "EWY",
   "profile_expires": null,
-  "stats_expires": "2026-03-10T15:36:07.882Z",
-  "uw_info": {},
+  "stats_expires": "2026-03-11T17:41:09.955Z",
+  "uw_info": {
+    "symbol": "EWY",
+    "logo": "https://storage.googleapis.com/uwassets/logos/EWY.png",
+    "beta": "0.9364",
+    "full_name": "ISHARES MSCI SOUTH KOREA ETF",
+    "sector": null,
+    "has_options": true,
+    "marketcap_size": "large",
+    "outstanding": "127250000",
+    "announce_time": null,
+    "issue_type": "ETF",
+    "marketcap": "16327931686",
+    "next_earnings_date": null,
+    "avg30_volume": "27724829.05",
+    "uw_tags": [],
+    "short_name": "ISHARES MSCI SOUTH KOREA ETF",
+    "short_description": "",
+    "has_investment_arm": false,
+    "has_dividend": true,
+    "has_earnings_history": false
+  },
   "stock_state": {
-    "close": "127.05",
-    "high": "127.985",
-    "low": "122.1",
-    "open": "123.7",
-    "volume": 17771036,
+    "close": "136.22",
+    "high": "137.6883",
+    "low": "130.55",
+    "open": "132.28",
+    "volume": 19905937,
     "market_time": "regular",
-    "tape_time": "2026-03-09T15:36:06Z",
-    "total_volume": 19556357,
-    "prev_close": "123.51"
+    "tape_time": "2026-03-10T17:41:04Z",
+    "total_volume": 20756505,
+    "prev_close": "132.3"
   },
   "exa_profile": {},
   "exa_stats": {
-    "pe_ratio": "17.37",
-    "week_52_high": 52,
+    "pe_ratio": "23.35",
+    "avg_volume": "19.03M",
+    "week_52_high": 154.22,
     "week_52_low": 48.49
   },
-  "fetched_at": "2026-03-09T15:36:07.882Z"
+  "fetched_at": "2026-03-10T17:41:09.955Z"
 }

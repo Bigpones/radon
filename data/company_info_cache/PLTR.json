@@ -1,11 +1,11 @@
 {
   "ticker": "PLTR",
   "profile_expires": null,
-  "stats_expires": "2026-03-10T16:46:08.142Z",
+  "stats_expires": "2026-03-11T14:43:02.449Z",
   "uw_info": {
     "symbol": "PLTR",
     "logo": "https://storage.googleapis.com/uwassets/logos/PLTR.png",
-    "beta": "1.9217",
+    "beta": "1.9109",
     "full_name": "PALANTIR",
     "sector": "Technology",
     "has_options": true,
@@ -13,9 +13,9 @@
     "outstanding": "2291470751",
     "announce_time": "unknown",
     "issue_type": "Common Stock",
-    "marketcap": "360127543227",
+    "marketcap": "358454769579",
     "next_earnings_date": "2026-05-04",
-    "avg30_volume": "58755025.47619047619",
+    "avg30_volume": "56253875.9",
     "uw_tags": [],
     "short_name": "PALANTIR",
     "short_description": "palantir technologies builds software platforms that help human experts perform powerful, collaborative analysis of data at scale. palantir’s ...",
@@ -24,17 +24,28 @@
     "has_earnings_history": true
   },
   "stock_state": {
-    "close": "155.07",
-    "high": "158.44",
-    "low": "153.64",
-    "open": "155.69",
-    "volume": 24653977,
+    "close": "152.11",
+    "high": "156.6571",
+    "low": "150.97",
+    "open": "155.91",
+    "volume": 14147745,
+    "tape_time": "2026-03-10T14:43:01Z",
     "market_time": "regular",
-    "tape_time": "2026-03-09T16:46:07Z",
-    "total_volume": 26397790,
-    "prev_close": "155.69"
+    "total_volume": 15321715,
+    "prev_close": "156.03"
   },
-  "exa_profile": {},
-  "exa_stats": {},
-  "fetched_at": "2026-03-09T16:46:08.142Z"
+  "exa_profile": {
+    "ceo": "Alexander Caedmon Karp",
+    "employees": "4,429",
+    "headquarters": "Aventura, Florida",
+    "founded": "2003"
+  },
+  "exa_stats": {
+    "pe_ratio": "241.82",
+    "dividend_yield": "—",
+    "avg_volume": "55.34M",
+    "week_52_high": 207.52,
+    "week_52_low": 66.12
+  },
+  "fetched_at": "2026-03-10T14:43:02.449Z"
 }
