@@ -68,12 +68,6 @@ export default function LandingPage() {
             variants={containerVariants}
             className="flex flex-col items-center text-center"
           >
-            <motion.div variants={itemVariants} className="mb-6">
-              <span className="px-3 py-1 border border-accent/30 bg-accent/5 text-[10px] font-mono text-accent uppercase tracking-[0.2em]">
-                Version 4.0.0 // Institutional Release
-              </span>
-            </motion.div>
-            
             <motion.h1 
               variants={itemVariants}
               className="text-5xl md:text-7xl lg:text-8xl font-display font-bold mb-8 max-w-5xl leading-[1.05] tracking-tight"
@@ -117,7 +111,7 @@ export default function LandingPage() {
                   <div className="w-2.5 h-2.5 rounded-full bg-grid" />
                 </div>
                 <div className="text-[10px] font-mono text-muted uppercase tracking-widest">
-                  radon-terminal-v4.0.0 // live-feed: connected
+                  radon-terminal // live-feed: connected
                 </div>
                 <div className="w-12" />
               </div>
