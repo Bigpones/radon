@@ -326,6 +326,7 @@ function PositionRow({ pos, showExpiry = true, showStrike = false, showUnderlyin
         <td>
           {hasMultipleLegs ? (
             <span className="ticker-with-chevron">
+              <TickerLink ticker={pos.ticker} positionId={pos.id} />
               <button
                 className="leg-toggle-btn"
                 onClick={() => setLegsExpanded((v) => !v)}
@@ -334,7 +335,6 @@ function PositionRow({ pos, showExpiry = true, showStrike = false, showUnderlyin
               >
                 {legsExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
               </button>
-              <TickerLink ticker={pos.ticker} positionId={pos.id} />
             </span>
           ) : (
             <TickerLink ticker={pos.ticker} positionId={pos.id} />
