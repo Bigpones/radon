@@ -142,11 +142,14 @@ body {
 }
 
 .sidebar-header {
-  padding: 16px;
+  height: var(--header-height);
+  padding: 0 16px;
   border-bottom: 1px solid var(--border-dim);
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .logo-icon {

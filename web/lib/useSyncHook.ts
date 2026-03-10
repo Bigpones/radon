@@ -45,7 +45,12 @@ export function useSyncHook<T>(config: UseSyncConfig<T>, active: boolean): UseSy
       setLastSync(extractTimestamp ? extractTimestamp(json) : new Date().toISOString());
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sync failed");
+      // Only show error if we don't already have valid cached data —
+      // a failed background sync shouldn't clobber a working display
+      setData((prev) => {
+        if (!prev) setError(err instanceof Error ? err.message : "Sync failed");
+        return prev;
+      });
     } finally {
       setSyncing(false);
     }

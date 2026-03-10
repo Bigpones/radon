@@ -48,8 +48,15 @@ function runScanner(): Promise<string> {
     proc.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
     proc.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
     proc.on("close", (code) => {
-      if (code !== 0) reject(new Error(stderr || `scanner.py exited with code ${code}`));
-      else resolve(stdout);
+      if (code !== 0) {
+        // Extract last meaningful line from stderr — skip progress/warning noise
+        const lines = stderr.trim().split("\n").filter((l) => !l.includes("warnings.warn(") && !l.includes("NotOpenSSLWarning"));
+        const lastLine = lines[lines.length - 1] ?? "";
+        const msg = lastLine.length > 200 ? lastLine.slice(0, 200) + "..." : lastLine;
+        reject(new Error(msg || `scanner.py exited with code ${code}`));
+      } else {
+        resolve(stdout);
+      }
     });
     proc.on("error", reject);
   });
