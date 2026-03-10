@@ -109,6 +109,7 @@ data/seasonality_cache/
 
 # Temp files
 tmp/
+/nanobanana-output/
 
 # =============================================================================
 # Vendor (downloaded binaries, not checked in)
