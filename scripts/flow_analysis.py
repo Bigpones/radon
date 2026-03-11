@@ -73,8 +73,8 @@ def classify_position(pos: dict, flow_data: dict, analysis: dict) -> dict:
         note = "No actionable signal"
 
     # Categorize: supports, against, watch, neutral
-    is_long = pos_direction in ("LONG", "BUY")
-    is_short = pos_direction in ("SHORT", "SELL")
+    is_long = pos_direction in ("LONG", "BUY", "DEBIT")
+    is_short = pos_direction in ("SHORT", "SELL", "CREDIT")
 
     if signal in ("STRONG", "MODERATE"):
         flow_supports_long = flow_dir == "ACCUMULATION"
