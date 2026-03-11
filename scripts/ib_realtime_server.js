@@ -7,6 +7,8 @@
  */
 
 import process from "node:process";
+import fs from "node:fs";
+import path from "node:path";
 import { WebSocketServer } from "ws";
 import IB from "ib";
 import {
@@ -155,6 +157,74 @@ const symbolStates = new Map();
 const requestIdToSymbol = new Map();
 const snapshotRequests = new Map();
 const fundamentalsStore = new Map(); // symbol → FundamentalsData
+
+/* ─── Option close price cache ─────────────────────────────────────────────
+ * IB sends previous-close for option contracts only during market hours.
+ * After hours, delayed-frozen data omits close. We persist close prices to
+ * disk so they survive server restarts and are available after hours.
+ * File: data/option_close_cache.json  { "AAOI_20260320_105_C": 16.5, ... }
+ */
+const CLOSE_CACHE_PATH = path.resolve(process.cwd(), "data", "option_close_cache.json");
+const optionCloseCache = new Map(); // symbol → close price
+
+function loadCloseCache() {
+  try {
+    if (fs.existsSync(CLOSE_CACHE_PATH)) {
+      const raw = JSON.parse(fs.readFileSync(CLOSE_CACHE_PATH, "utf8"));
+      for (const [key, val] of Object.entries(raw)) {
+        if (typeof val === "number" && val > 0) optionCloseCache.set(key, val);
+      }
+      console.log(`Loaded ${optionCloseCache.size} cached option close prices`);
+    }
+  } catch (err) {
+    console.warn("Failed to load option close cache:", err.message);
+  }
+}
+
+let closeCacheDirty = false;
+let closeCacheTimer = null;
+
+function persistCloseCache() {
+  if (!closeCacheDirty) return;
+  closeCacheDirty = false;
+  try {
+    const dir = path.dirname(CLOSE_CACHE_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const obj = Object.fromEntries(optionCloseCache);
+    fs.writeFileSync(CLOSE_CACHE_PATH, JSON.stringify(obj), "utf8");
+    verbose(`Persisted ${optionCloseCache.size} option close prices`);
+  } catch (err) {
+    console.warn("Failed to persist option close cache:", err.message);
+  }
+}
+
+function scheduleCloseCachePersist() {
+  closeCacheDirty = true;
+  if (closeCacheTimer) return;
+  closeCacheTimer = setTimeout(() => {
+    closeCacheTimer = null;
+    persistCloseCache();
+  }, 5000); // batch writes every 5s
+}
+
+function updateOptionCloseCache(symbol, closePrice) {
+  if (!symbol.includes("_") || closePrice == null || closePrice <= 0) return;
+  const existing = optionCloseCache.get(symbol);
+  if (existing === closePrice) return;
+  optionCloseCache.set(symbol, closePrice);
+  scheduleCloseCachePersist();
+}
+
+function applyCachedClose(data) {
+  if (data.close != null && data.close > 0) return; // already has close
+  if (!data.symbol.includes("_")) return; // only for options
+  const cached = optionCloseCache.get(data.symbol);
+  if (cached != null) {
+    data.close = cached;
+  }
+}
+
+loadCloseCache();
 
 let ibConnected = false;
 let shuttingDown = false;
@@ -406,6 +476,8 @@ async function handleSnapshotRequest(client, symbols) {
 function hydrateAndBroadcast(symbol) {
   const state = symbolStates.get(symbol);
   if (!state) return;
+  // Backfill close from cache for options that IB hasn't sent close for
+  applyCachedClose(state.data);
   sendToSymbolSubscribers(symbol, {
     type: "price",
     symbol,
@@ -420,6 +492,8 @@ function onTickPrice(tickerId, tickType, price) {
 
   if (liveState) {
     updatePriceFromTickPrice(liveState.data, tickType, price);
+    // Cache option close prices to disk for after-hours availability
+    updateOptionCloseCache(symbol, liveState.data.close);
     verbose(`tick ${symbol} type=${tickType} price=${price}`);
     hydrateAndBroadcast(symbol);
   }
@@ -844,6 +918,8 @@ process.on("SIGINT", () => {
       }
     }
   }
+  // Flush option close cache before exit
+  persistCloseCache();
   try {
     wss.close();
     ib.disconnect();

@@ -130,35 +130,41 @@ function getDailyChange(realtimePrice?: PriceData | null): number | null {
 }
 
 function getOptionRtMv(pos: PortfolioPosition, prices?: Record<string, PriceData>): number | null {
-  if (pos.structure_type === "Stock" || !prices) return null;
+  if (pos.structure_type === "Stock") return null;
   let rtMv = 0;
   for (const leg of pos.legs) {
     const key = legPriceKey(pos.ticker, pos.expiry, leg);
-    const lp = key ? prices[key] : null;
-    if (!lp || lp.last == null || lp.last <= 0) return null;
+    const lp = key && prices ? prices[key] : null;
+    const last = (lp?.last != null && lp.last > 0) ? lp.last : (leg.market_price != null && leg.market_price > 0 ? leg.market_price : null);
+    if (last == null) return null;
     const sign = leg.direction === "LONG" ? 1 : -1;
-    rtMv += sign * lp.last * leg.contracts * 100;
+    rtMv += sign * last * leg.contracts * 100;
   }
   return rtMv;
 }
 
 function getTodayPnlDollars(pos: PortfolioPosition, prices?: Record<string, PriceData>): number | null {
-  if (!prices) return null;
   if (pos.structure_type === "Stock") {
-    const p = prices[pos.ticker];
+    const p = prices?.[pos.ticker];
     if (!p || p.last == null || p.last <= 0 || p.close == null || p.close <= 0) return null;
     return (p.last - p.close) * pos.contracts;
   }
-  // Options/spreads
+  // Options/spreads — use WS last, fall back to synced market_price
   let pnl = 0;
+  let hasClose = false;
   for (const leg of pos.legs) {
     const key = legPriceKey(pos.ticker, pos.expiry, leg);
-    const lp = key ? prices[key] : null;
-    if (!lp || lp.last == null || lp.last <= 0 || lp.close == null || lp.close <= 0) return null;
-    const sign = leg.direction === "LONG" ? 1 : -1;
-    pnl += sign * (lp.last - lp.close) * leg.contracts * 100;
+    const lp = key && prices ? prices[key] : null;
+    const last = (lp?.last != null && lp.last > 0) ? lp.last : (leg.market_price != null && leg.market_price > 0 ? leg.market_price : null);
+    if (last == null) return null;
+    const close = lp?.close;
+    if (close != null && close > 0) {
+      const sign = leg.direction === "LONG" ? 1 : -1;
+      pnl += sign * (last - close) * leg.contracts * 100;
+      hasClose = true;
+    }
   }
-  return pnl;
+  return hasClose ? pnl : null;
 }
 
 /* ─── Sort extract factory ─────────────────────────────── */
@@ -263,27 +269,27 @@ function PositionRow({ pos, showExpiry = true, showStrike = false, showUnderlyin
 
   // For options: compute real-time MV and daily change from leg-level WS prices
   const optionsRt = useMemo(() => {
-    if (isStock || !prices) return null;
-    let allLegsHavePrices = true;
+    if (isStock) return null;
     let rtMv = 0;
     let rtDailyPnl = 0;
     let rtCloseValue = 0;
+    let hasCloseData = false;
     for (const leg of pos.legs) {
       const key = legPriceKey(pos.ticker, pos.expiry, leg);
-      const lp = key ? prices[key] : null;
-      if (!lp || lp.last == null || lp.last <= 0) {
-        allLegsHavePrices = false;
-        break;
-      }
+      const lp = key && prices ? prices[key] : null;
+      // Use WS last, fall back to synced market_price
+      const last = (lp?.last != null && lp.last > 0) ? lp.last : (leg.market_price != null && leg.market_price > 0 ? leg.market_price : null);
+      if (last == null) return null;
       const sign = leg.direction === "LONG" ? 1 : -1;
-      rtMv += sign * lp.last * leg.contracts * 100;
-      if (lp.close != null && lp.close > 0) {
-        rtDailyPnl += sign * (lp.last - lp.close) * leg.contracts * 100;
-        rtCloseValue += sign * lp.close * leg.contracts * 100;
+      rtMv += sign * last * leg.contracts * 100;
+      const close = lp?.close;
+      if (close != null && close > 0) {
+        rtDailyPnl += sign * (last - close) * leg.contracts * 100;
+        rtCloseValue += sign * close * leg.contracts * 100;
+        hasCloseData = true;
       }
     }
-    if (!allLegsHavePrices) return null;
-    return { mv: rtMv, dailyPnl: rtDailyPnl, closeValue: rtCloseValue };
+    return { mv: rtMv, dailyPnl: hasCloseData ? rtDailyPnl : null, closeValue: rtCloseValue };
   }, [isStock, prices, pos.legs, pos.ticker, pos.expiry]);
 
   const mv = rtLast != null ? rtLast * pos.contracts : optionsRt?.mv ?? resolveMarketValue(pos);
@@ -298,7 +304,7 @@ function PositionRow({ pos, showExpiry = true, showStrike = false, showUnderlyin
   // Options: daily change from leg-level WS prices as % of yesterday's close value
   const dailyChg = isStock
     ? getDailyChange(realtimePrice)
-    : optionsRt != null && optionsRt.closeValue !== 0
+    : optionsRt != null && optionsRt.dailyPnl != null && optionsRt.closeValue !== 0
       ? (optionsRt.dailyPnl / Math.abs(optionsRt.closeValue)) * 100
       : null;
 
