@@ -46,6 +46,13 @@ An evaluation is complete when:
 
 ## Portfolio Management
 
+### ⚠️ IB Is the Source of Truth for Portfolio State (CRITICAL)
+- **Interactive Brokers is the ONLY source of truth** for what positions are currently held.
+- `docs/status.md` is a decision log, NOT a live portfolio view. It goes stale.
+- `data/portfolio.json` is a cache. It may be hours or days old.
+- **ALWAYS run `python3 scripts/ib_sync.py`** before claiming a position exists or doesn't exist.
+- When IB is unavailable, say so — do NOT fall back to status.md or portfolio.json for current state.
+
 ### Startup Reconciliation
 - Pi startup automatically runs IB reconciliation (async)
 - Detects new trades, new positions, closed positions

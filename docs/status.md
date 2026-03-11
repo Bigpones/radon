@@ -50,7 +50,8 @@
 - **Net Liquidation**: $1,194,810
 - **Open Positions**: 39 (per IB sync)
 - **Defined Risk**: Spreads (AAOI, AAPL, BKD, BRZE x2, GOOG, PLTR, TMUS), LEAPs (ALAB, AMD, SOFI, WULF), Long options (BAP, ETHA, IGV)
-- **Undefined Risk**: Risk reversals (APO, EWY Mar 13, IWM), Synthetic (IGV), Equities (EC, ILF, MSFT, NAK, RR, TSLL, URTY, USAX)
+- **Undefined Risk**: Risk reversals (APO, IWM), Synthetic (IGV), Equities (EC, ILF, MSFT, NAK, RR, TSLL, URTY, USAX)
+- ⚠️ *This section is a cache — verify against IB for current state*
 - **Today's Realized P&L**: +$6,513 (AAOI call sale)
 
 ## Today's Trades (2026-03-06)
@@ -87,7 +88,7 @@
 | ~~AAOI Risk Reversal~~ | ~~Undefined risk (short put)~~ | 2026-03-03 | ✅ RESOLVED (short put closed) |
 | ~~EWY Risk Reversal (Mar 6)~~ | ~~Undefined risk (short put)~~ | 2026-03-03 | ✅ RESOLVED (closed for +$9,888) |
 | ~~URTY Short Call~~ | ~~Undefined risk (short call)~~ | 2026-03-09 | ✅ NOT A VIOLATION — Covered Call (4,000 shares cover 40 contracts) |
-| EWY Risk Reversal (Mar 13) | Undefined risk (short put $130) | 2026-03-04 | ⚠️ ACTIVE |
+| ~~EWY Risk Reversal (Mar 13)~~ | ~~Undefined risk (short put $130)~~ | 2026-03-04 | ✅ RESOLVED (both legs closed, trades #26/#27, 2026-03-10) |
 | IGV Synthetic Long | Undefined risk (short put $90) | Active | ⚠️ ACTIVE |
 | AMD Long Call | Position size 7.4% (exceeds 2.5% cap) | 2026-03-03 | ⚠️ ACTIVE |
 | APO Risk Reversal | Undefined risk (short put $100) | 2026-03-06 | ⚠️ ACTIVE |

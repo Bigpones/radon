@@ -5,6 +5,24 @@
 - `docs/prompt.md` defines constraints and "done when"
 - Execute milestones IN ORDER, do not skip
 
+### ⚠️ Portfolio Source of Truth (CRITICAL)
+
+**Interactive Brokers is the ONLY source of truth for current portfolio state.**
+
+| Question | Source of Truth | NOT a Source of Truth |
+|----------|----------------|---------------------|
+| What positions do I hold? | `python3 scripts/ib_sync.py` (IB live) | `docs/status.md`, `data/portfolio.json` (cache) |
+| Is a position still open? | `python3 scripts/ib_sync.py` (IB live) | `docs/status.md` "Rule Violations" table |
+| Current P&L? | `python3 scripts/ib_sync.py` (IB live) | `docs/status.md` "Portfolio State" section |
+| What trades happened? | `data/trade_log.json` (append-only) | `docs/status.md` "Trade Log Summary" |
+
+**Rules:**
+1. **NEVER claim a position exists or doesn't exist based on `docs/status.md` or `data/portfolio.json`.** These are caches that go stale.
+2. **ALWAYS verify against IB** before making any statement about current holdings, open positions, or portfolio state.
+3. `docs/status.md` is a **decision log and audit trail** — it records what happened and why. It is NOT a live portfolio dashboard.
+4. `data/portfolio.json` is a **cache** updated by `ib_sync.py --sync`. It may be hours or days old.
+5. When IB is unavailable (Gateway down), say so explicitly: *"Cannot verify — IB unavailable."* Do NOT fall back to status.md.
+
 ## ⚠️ Evaluate Command → ALWAYS `evaluate.py`
 **Any evaluation request routes to `python3 scripts/evaluate.py [TICKER]`. No exceptions.**
 Even if the user provides manual steps (e.g., "run fetch_flow.py, then fetch_options.py"),

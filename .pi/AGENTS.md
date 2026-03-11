@@ -1075,6 +1075,16 @@ python3 scripts/trade_blotter/flex_query.py --setup
 
 ---
 
+## ⚠️ Portfolio Source of Truth (CRITICAL)
+
+**Interactive Brokers is the ONLY source of truth for current portfolio state.**
+
+- **NEVER claim a position exists or doesn't exist based on `docs/status.md` or `data/portfolio.json`.** These are caches that go stale.
+- **ALWAYS verify against IB** (`python3 scripts/ib_sync.py`) before making any statement about current holdings.
+- `docs/status.md` is a **decision log and audit trail** — NOT a live portfolio dashboard.
+- `data/portfolio.json` is a **cache** updated by `ib_sync.py --sync`. It may be hours or days old.
+- When IB is unavailable, say so explicitly: *"Cannot verify — IB unavailable."* Do NOT fall back to status.md.
+
 ## Output Format
 
 - Always show: signal → structure → Kelly math → decision
