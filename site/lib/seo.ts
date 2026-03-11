@@ -15,10 +15,10 @@ export const SITE_KEYWORDS = [
   "portfolio analytics",
   "trading terminal",
 ];
-export const SOCIAL_IMAGE_PATH = "/opengraph-image";
+export const SOCIAL_IMAGE_PATH = "/og-image.png";
 export const SOCIAL_IMAGE_ALT =
   "Radon Terminal marketing card showing strategy discovery, execution discipline, and market-structure reconstruction.";
-export const APPLE_ICON_PATH = "/apple-icon";
+export const APPLE_ICON_PATH = "/apple-touch-icon.png";
 export const GITHUB_URL = "https://github.com/joemccann/radon";
 
 function normalizeSiteUrl(value: string): string {
@@ -82,10 +82,10 @@ export const siteMetadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/favicon.ico" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
       { url: "/brand/radon-app-icon.svg", type: "image/svg+xml" },
     ],
-    shortcut: "/favicon.ico",
     apple: [{ url: APPLE_ICON_PATH, sizes: "180x180", type: "image/png" }],
   },
   manifest: "/manifest.webmanifest",
