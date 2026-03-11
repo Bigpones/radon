@@ -1,3 +1,6 @@
+"use client";
+
+import { useCallback, useState } from "react";
 import { CommandChip } from "@/components/atoms/CommandChip";
 import { MonoMetric } from "@/components/atoms/MonoMetric";
 import { SignalPill } from "@/components/atoms/SignalPill";
@@ -5,9 +8,26 @@ import { StatusDot } from "@/components/atoms/StatusDot";
 import { TelemetryLabel } from "@/components/atoms/TelemetryLabel";
 import { SourceRail } from "@/components/molecules/SourceRail";
 import { TerminalNavItem } from "@/components/molecules/TerminalNavItem";
-import { heroCommandItems, heroMetrics } from "@/lib/landing-content";
+import { moduleContents, type ModuleTab } from "@/lib/landing-content";
+
+const tabs: Array<{ id: ModuleTab; label: string }> = [
+  { id: "flow", label: "Flow" },
+  { id: "performance", label: "Performance" },
+  { id: "structure", label: "Structure" },
+  { id: "execution", label: "Execution" },
+];
 
 export function HeroTerminalPanel() {
+  const [activeTab, setActiveTab] = useState<ModuleTab>("flow");
+  const [animKey, setAnimKey] = useState(0);
+
+  const handleTabChange = useCallback((tab: ModuleTab) => {
+    setActiveTab(tab);
+    setAnimKey((k) => k + 1);
+  }, []);
+
+  const content = moduleContents[activeTab];
+
   return (
     <div className="scan-line relative border border-grid bg-panel">
       <div className="absolute inset-0 projection-lines opacity-35" />
@@ -26,47 +46,53 @@ export function HeroTerminalPanel() {
         </div>
       </div>
       <div className="relative z-20 grid gap-px border-b border-grid bg-grid lg:grid-cols-[160px_minmax(0,1fr)]">
-        <div className="bg-canvas px-4 py-5">
+        <nav className="bg-canvas px-4 py-5">
           <TelemetryLabel>Modules</TelemetryLabel>
-          <div className="mt-4 space-y-2">
-            <TerminalNavItem label="Flow" active />
-            <TerminalNavItem label="Performance" />
-            <TerminalNavItem label="Structure" />
-            <TerminalNavItem label="Execution" />
-          </div>
-        </div>
-        <div className="bg-panel px-4 py-5">
-          <div className="grid gap-4 sm:grid-cols-2">
-            {heroMetrics.map((metric, index) => (
-              <MonoMetric
-                key={metric.label}
-                label={metric.label}
-                value={metric.value}
-                detail={metric.detail}
-                tone={index % 2 === 0 ? "core" : "primary"}
+          <div className="mt-4 space-y-1">
+            {tabs.map((tab) => (
+              <TerminalNavItem
+                key={tab.id}
+                label={tab.label}
+                active={activeTab === tab.id}
+                onClick={() => handleTabChange(tab.id)}
               />
             ))}
           </div>
-          <div className="mt-4 border border-grid bg-canvas">
-            <div className="flex items-center justify-between border-b border-grid px-4 py-3">
-              <TelemetryLabel tone="muted">Command Surface</TelemetryLabel>
-              <SignalPill tone="strong">Operator Visible</SignalPill>
-            </div>
-            <div className="divide-y divide-grid">
-              {heroCommandItems.map((item) => (
-                <div
-                  key={item.label}
-                  className="flex flex-col gap-3 px-4 py-4 md:flex-row md:items-center md:justify-between"
-                >
-                  <div>
-                    <p className="font-sans text-sm font-medium text-primary">{item.label}</p>
-                    <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.14em] text-secondary">
-                      {item.state}
-                    </p>
-                  </div>
-                  <CommandChip command={item.command} />
-                </div>
+        </nav>
+        <div className="bg-panel px-4 py-5 overflow-hidden">
+          <div key={animKey} className="module-content-enter">
+            <div className="grid gap-4 sm:grid-cols-2">
+              {content.metrics.map((metric, index) => (
+                <MonoMetric
+                  key={metric.label}
+                  label={metric.label}
+                  value={metric.value}
+                  detail={metric.detail}
+                  tone={index % 2 === 0 ? "core" : "primary"}
+                />
               ))}
+            </div>
+            <div className="mt-4 border border-grid bg-canvas">
+              <div className="flex items-center justify-between border-b border-grid px-4 py-3">
+                <TelemetryLabel tone="muted">{content.commandLabel}</TelemetryLabel>
+                <SignalPill tone="strong">{content.commandPill}</SignalPill>
+              </div>
+              <div className="divide-y divide-grid">
+                {content.commands.map((item) => (
+                  <div
+                    key={item.label}
+                    className="flex flex-col gap-3 px-4 py-4 md:flex-row md:items-center md:justify-between"
+                  >
+                    <div>
+                      <p className="font-sans text-sm font-medium text-primary">{item.label}</p>
+                      <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.14em] text-secondary">
+                        {item.state}
+                      </p>
+                    </div>
+                    <CommandChip command={item.command} />
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

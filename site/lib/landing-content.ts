@@ -82,6 +82,78 @@ export const heroMetrics = [
   { label: "Signal Stack", value: "6", detail: "Deployable modules" },
 ];
 
+export type ModuleTab = "flow" | "performance" | "structure" | "execution";
+
+export type ModuleContent = {
+  metrics: Array<{ label: string; value: string; detail: string }>;
+  commands: Array<{ label: string; state: string; command: string }>;
+  commandLabel: string;
+  commandPill: string;
+};
+
+export const moduleContents: Record<ModuleTab, ModuleContent> = {
+  flow: {
+    metrics: [
+      { label: "COR1M", value: "28.97", detail: "Implied correlation" },
+      { label: "VIX", value: "22.77", detail: "Volatility state" },
+      { label: "Kelly Cap", value: "7.5%", detail: "Sizing discipline" },
+      { label: "Signal Stack", value: "6", detail: "Deployable modules" },
+    ],
+    commands: [
+      { label: "Dark Pool Flow", state: "Defined", command: "evaluate AAPL" },
+      { label: "LEAP IV Mispricing", state: "Defined", command: "leap-scan NVDA" },
+      { label: "Crash Risk Index", state: "Overlay", command: "cri-scan" },
+    ],
+    commandLabel: "Command Surface",
+    commandPill: "Operator Visible",
+  },
+  performance: {
+    metrics: [
+      { label: "Sharpe", value: "1.84", detail: "Risk-adjusted return" },
+      { label: "Sortino", value: "2.61", detail: "Downside deviation" },
+      { label: "Max DD", value: "-8.2%", detail: "Peak drawdown" },
+      { label: "Win Rate", value: "62%", detail: "Closed positions" },
+    ],
+    commands: [
+      { label: "YTD Equity Curve", state: "Tracked", command: "portfolio" },
+      { label: "Trade Journal", state: "Append-only", command: "journal" },
+      { label: "Fill Blotter", state: "Live", command: "blotter" },
+    ],
+    commandLabel: "Performance Surface",
+    commandPill: "Net Liq Anchored",
+  },
+  structure: {
+    metrics: [
+      { label: "CRI", value: "34.2", detail: "Crash risk index" },
+      { label: "VVIX", value: "96.4", detail: "Vol-of-vol state" },
+      { label: "RVOL", value: "18.7%", detail: "Realized volatility" },
+      { label: "Regime", value: "Calm", detail: "Current classification" },
+    ],
+    commands: [
+      { label: "Regime Monitor", state: "Continuous", command: "cri-scan" },
+      { label: "Vol-Credit Gap", state: "Overlay", command: "vcg" },
+      { label: "GARCH Spreads", state: "Cross-asset", command: "garch-convergence" },
+    ],
+    commandLabel: "Structure Surface",
+    commandPill: "Regime Aware",
+  },
+  execution: {
+    metrics: [
+      { label: "Gates", value: "4", detail: "Sequential filters" },
+      { label: "Fill Path", value: "IB", detail: "Direct routing" },
+      { label: "Audit", value: "Full", detail: "Post-trade log" },
+      { label: "Guard", value: "Active", detail: "Naked short block" },
+    ],
+    commands: [
+      { label: "Order Placement", state: "Operator-led", command: "execute" },
+      { label: "Position Sync", state: "IB Source", command: "sync" },
+      { label: "Exit Service", state: "Pending", command: "exit-orders" },
+    ],
+    commandLabel: "Execution Surface",
+    commandPill: "Gate Protected",
+  },
+};
+
 export const strategies: StrategyItem[] = [
   {
     name: "Dark Pool Flow",
