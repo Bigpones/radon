@@ -234,9 +234,11 @@ When fetching any market data, **ALWAYS** use sources in this priority order:
 | **2nd** | Unusual Whales | Dark pool flow, options activity, institutional signals, analyst ratings | API key required |
 | **3rd** | Exa (web search) | Company research, news, data not in IB/UW | API key required |
 | **4th** | agent-browser | Interactive pages, JS-rendered content | Slow, fallback only |
-| **5th ⚠️** | Yahoo Finance | **ABSOLUTE LAST RESORT** — only if ALL above fail | Rate limited, unreliable, delayed |
+| **5th** | Cboe official index feeds | COR1M historical fallback before Yahoo | COR1M-specific, delayed historical feed |
+| **6th ⚠️** | Yahoo Finance | **ABSOLUTE LAST RESORT** — only if ALL above fail | Rate limited, unreliable, delayed |
 
-**Yahoo Finance is the ABSOLUTE LAST RESORT. Never use it if IB, UW, Exa, or agent-browser can provide the data.**
+**For COR1M, use the official Cboe dashboard historical feed before Yahoo Finance.**
+**Yahoo Finance is the ABSOLUTE LAST RESORT. Never use it if IB, UW, Exa, agent-browser, or an official Cboe feed can provide the data.**
 
 ### Scripts
 
@@ -732,6 +734,7 @@ All three must fire simultaneously:
 ### COR1M Implied Correlation Signal
 
 The Cboe 1-Month Implied Correlation Index (COR1M) measures the market's expectation of how tightly the 50 largest stocks in the S&P 500 will move together over the next month.
+Implementation rule: `scripts/cri_scan.py` must fetch COR1M from IB first, then the official Cboe dashboard historical feed, and only then fall back to Yahoo Finance if both fail.
 
 **What it captures**:
 - **Market herding**: Higher COR1M means the market expects the largest SPX names to trade in lockstep.
@@ -813,6 +816,24 @@ python3 scripts/fetch_menthorq_cta.py --date 2026-03-06
 ```
 
 **Cache behavior:** the CRI JSON cache now stores enough trailing SPY closes to reconstruct the prior 20 realized-vol sessions used by `/regime`. Scheduled CRI snapshots and the post-close data refresh both refresh `data/cri.json`, and the API backfills missing `history[].realized_vol` values from cached closes when a newer snapshot is less complete than the legacy cache.
+
+### `/regime` RVOL/COR1M Relationship States
+
+The `/regime` relationship panel adds a second layer on top of the raw 20-session RVOL and COR1M history. It does **not** use fixed absolute cutoffs for the quadrant labels. Instead, it compares the latest RVOL and COR1M values against their own rolling 20-session means:
+
+- `realized_vol_mean = mean(history[].realized_vol)`
+- `cor1m_mean = mean(history[].cor1m)`
+
+The latest point is then classified as follows:
+
+| State | Classification Rule | Interpretation |
+|-------|---------------------|----------------|
+| **Systemic Panic** | `RVOL >= realized_vol_mean` and `COR1M >= cor1m_mean` | Broad realized stress plus elevated implied co-movement. Operators should read this as realized turbulence that the options market still expects to stay systemic. |
+| **Fragile Calm** | `RVOL < realized_vol_mean` and `COR1M >= cor1m_mean` | Tape calm, correlation fear elevated. The market may look orderly in realized terms while the options market still prices synchronized downside or crowding risk. |
+| **Stock Picker's Market** | `RVOL >= realized_vol_mean` and `COR1M < cor1m_mean` | Realized movement is elevated, but implied correlation remains contained. This is a higher-dispersion state where single-name differentiation still exists. |
+| **Goldilocks** | `RVOL < realized_vol_mean` and `COR1M < cor1m_mean` | Both realized volatility and implied correlation are below recent norms. This is the cleanest diversification backdrop in the relationship model. |
+
+**Implementation rule:** when `/regime` has intraday RVOL and/or a live IB COR1M quote, the latest relationship-state label uses those live values for the final point while keeping the rolling 20-session means anchored to the cached history window.
 
 ### Source Research
 

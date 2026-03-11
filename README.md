@@ -191,9 +191,23 @@ Visit `http://localhost:3000`.
 - Multi-leg position monitoring and per-leg P&L
 - YTD portfolio performance analytics with reconstructed institutional metrics
 - Regime history charts with cached 20-session RVOL and COR1M context
+- RVOL/COR1M relationship view with spread, quadrant state, and normalized divergence
 - Order management, including combo spread workflows
 - Flow analysis, regime views, and thesis checks
 - AI chat interface for command execution and analysis
+
+### RVOL/COR1M Relationship States
+
+On `/regime`, the relationship view classifies the latest RVOL and COR1M point against their own rolling 20-session means. The labels are relative-state labels, not fixed threshold buckets.
+
+| State | Rule | Meaning |
+|-------|------|---------|
+| **Systemic Panic** | RVOL >= 20-session mean and COR1M >= 20-session mean | Realized volatility is elevated and the options market expects broad index constituents to move together. This is the most defensive state: stress is already in the tape and correlation risk is still being bid. |
+| **Fragile Calm** | RVOL < 20-session mean and COR1M >= 20-session mean | Realized volatility looks calm, but implied correlation is elevated. The market is quiet on the surface while options still price herd behavior or crash-risk demand. |
+| **Stock Picker's Market** | RVOL >= 20-session mean and COR1M < 20-session mean | Realized volatility is elevated, but implied correlation is still contained. Moves are happening, but they are not yet being priced as full-system lockstep stress. |
+| **Goldilocks** | RVOL < 20-session mean and COR1M < 20-session mean | Both realized volatility and implied correlation are below their recent norms. This is the cleanest diversification backdrop in the relationship model. |
+
+Implementation note: when live data is available, the latest relationship-state calculation uses the current intraday RVOL and/or live COR1M value on top of the cached 20-session history.
 
 ## Marketing Site
 
@@ -309,7 +323,8 @@ Market-data priority is intentionally strict:
 1. **Interactive Brokers** for real-time quotes, options chains, and portfolio state
 2. **[Unusual Whales](https://unusualwhales.com/referral#39985a64-656c-4642-a051-db89f6324d64)** for dark pool flow, sweeps, options flow, and analyst data
 3. **Exa** for company and market research
-4. **Yahoo Finance** as a last-resort fallback
+4. **Cboe official index feeds** for COR1M historical fallback before any generic web source
+5. **Yahoo Finance** as a strict last-resort fallback
 
 Auxiliary sources:
 
@@ -345,7 +360,7 @@ The repo includes background-service support for the live trading environment:
 
 Historical setup helpers remain in `scripts/`, and the broader implementation notes live in [docs/implement.md](docs/implement.md).
 
-For the `/regime` RVOL/COR1M chart, the CRI cache now preserves enough trailing SPY closes to rebuild the full prior 20 sessions of realized volatility. The API prefers the richer CRI cache candidate when scheduled snapshots lag and backfills missing `history[].realized_vol` values from cached closes before rendering the chart.
+For the `/regime` RVOL/COR1M chart, the CRI cache now preserves enough trailing SPY closes to rebuild the full prior 20 sessions of realized volatility. COR1M history now falls back to the official Cboe dashboard feed before Yahoo, and the API prefers the richer CRI cache candidate when scheduled snapshots lag and backfills missing `history[].realized_vol` values from cached closes before rendering the chart.
 
 ### Phase 1 Remote IBC Access
 

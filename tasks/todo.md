@@ -1,5 +1,349 @@
 # TODO
 
+## Session: Chart System Residual Convergence (2026-03-11)
+
+### Dependency Graph
+- T1 (Inspect the remaining chart-system residuals in the live-trace modal chart, relationship view shell, and MenthorQ OG route so the follow-up work stays scoped to the declared gaps) depends_on: []
+- T2 (Record the residual-convergence plan and user correction in `tasks/todo.md` and `tasks/lessons.md`) depends_on: [T1]
+- T3 (Add failing regression coverage for live-trace shell metadata, relationship-view shared shell usage, and MenthorQ renderer-family selection) depends_on: [T1, T2]
+- T4 (Implement the runtime residual fixes for `PriceChart` and `RegimeRelationshipView` using the shared chart primitives with minimal visual regression) depends_on: [T3]
+- T5 (Implement MenthorQ OG family-specific renderer routing for analytical time-series, distribution-bar, and matrix-heatmap outputs) depends_on: [T3]
+- T6 (Run targeted verification, update review notes, and confirm the residual chart-system gaps are closed) depends_on: [T4, T5]
+
+### Checklist
+- [ ] T1 Inspect the remaining chart-system residuals in the live-trace modal chart, relationship view shell, and MenthorQ OG route so the follow-up work stays scoped to the declared gaps
+- [ ] T2 Record the residual-convergence plan and user correction in `tasks/todo.md` and `tasks/lessons.md`
+- [ ] T3 Add failing regression coverage for live-trace shell metadata, relationship-view shared shell usage, and MenthorQ renderer-family selection
+- [ ] T4 Implement the runtime residual fixes for `PriceChart` and `RegimeRelationshipView` using the shared chart primitives with minimal visual regression
+- [ ] T5 Implement MenthorQ OG family-specific renderer routing for analytical time-series, distribution-bar, and matrix-heatmap outputs
+- [ ] T6 Run targeted verification, update review notes, and confirm the residual chart-system gaps are closed
+
+### Review
+- Pending.
+
+## Session: Regime Relationship State Tooltips (2026-03-11)
+
+### Dependency Graph
+- T1 (Inspect the current RVOL/COR1M relationship quadrant UI, shared tooltip component, and existing tooltip test patterns) depends_on: []
+- T2 (Record the implementation plan in `tasks/todo.md`) depends_on: [T1]
+- T3 (Add failing regression coverage for a four-state tooltip key in the relationship view) depends_on: [T1, T2]
+- T4 (Implement info-bubble triggers for all four relationship states in the `/regime` UI without disturbing the existing quadrant plot) depends_on: [T3]
+- T5 (Run targeted verification and capture review notes) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inspect the current RVOL/COR1M relationship quadrant UI, shared tooltip component, and existing tooltip test patterns
+- [x] T2 Record the implementation plan in `tasks/todo.md`
+- [x] T3 Add failing regression coverage for a four-state tooltip key in the relationship view
+- [x] T4 Implement info-bubble triggers for all four relationship states in the `/regime` UI without disturbing the existing quadrant plot
+- [x] T5 Run targeted verification and capture review notes
+
+### Review
+- Added shared state-definition copy in [web/lib/regimeRelationships.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/regimeRelationships.ts) so the four relationship states now have one canonical tooltip definition source.
+- Updated [web/components/RegimeRelationshipView.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/RegimeRelationshipView.tsx) to render a `STATE KEY` under the quadrant chart with one `InfoTooltip` trigger per state, while preserving the existing quadrant visualization and current-state summary.
+- Extended [web/app/globals.css](/Users/joemccann/dev/apps/finance/radon/web/app/globals.css) with responsive styling for the new state-key rows so the tooltip affordances stay aligned with the existing instrument-panel system on desktop and mobile.
+- Added regression coverage in [web/tests/regime-relationship-tooltips.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/regime-relationship-tooltips.test.ts) and browser coverage in [web/e2e/regime-relationship-view.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-relationship-view.spec.ts).
+- Verified `npx vitest run web/tests/regime-relationship-tooltips.test.ts web/tests/regime-relationship.test.ts` and `cd web && npx playwright test e2e/regime-relationship-view.spec.ts`.
+
+## Session: Regime Relationship State Docs (2026-03-11)
+
+### Dependency Graph
+- T1 (Inspect README and strategy/docs surfaces that describe `/regime`, CRI, and the new RVOL/COR1M relationship states) depends_on: []
+- T2 (Record the documentation plan and the user correction in `tasks/todo.md` and `tasks/lessons.md`) depends_on: [T1]
+- T3 (Update README and the relevant markdown docs with exact definitions for the four relationship states and the rolling-mean classification rule) depends_on: [T2]
+- T4 (Verify the updated documentation against the current implementation and capture review notes) depends_on: [T3]
+
+### Checklist
+- [x] T1 Inspect README and strategy/docs surfaces that describe `/regime`, CRI, and the new RVOL/COR1M relationship states
+- [x] T2 Record the documentation plan and the user correction in `tasks/todo.md` and `tasks/lessons.md`
+- [x] T3 Update README and the relevant markdown docs with exact definitions for the four relationship states and the rolling-mean classification rule
+- [x] T4 Verify the updated documentation against the current implementation and capture review notes
+
+### Review
+- Added operator-facing definitions for all four relationship states in [README.md](/Users/joemccann/dev/apps/finance/radon/README.md), alongside the `/regime` terminal capabilities section, so the meaning of `FRAGILE CALM`, `SYSTEMIC PANIC`, `STOCK PICKER'S MARKET`, and `GOLDILOCKS` is visible without reading the code.
+- Added the exact implementation rule to the CRI strategy spec in [docs/strategies.md](/Users/joemccann/dev/apps/finance/radon/docs/strategies.md): the relationship view classifies the latest RVOL/COR1M point against the rolling 20-session means, not against fixed absolute cutoffs.
+- Verified the docs against the current implementation in [web/lib/regimeRelationships.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/regimeRelationships.ts), including the live-latest-point override behavior used by `/regime`.
+
+## Session: Chart System Roadmap Steps 1-4 (2026-03-11)
+
+### Dependency Graph
+- T1 (Inspect the current chart surfaces, audit roadmap, and available cross-language primitive hooks so a shared chart-system contract can drive runtime and downstream outputs) depends_on: []
+- T2 (Record the step-1-through-4 execution plan in `tasks/todo.md`, including the shared chart-spec artifacts and validation targets) depends_on: [T1]
+- T3 (Implement the shared chart spec, runtime chart shell/primitives, and tokenized chart helpers in `web/`) depends_on: [T1, T2]
+- T4 (Converge OG/report surfaces and sanctioned renderer documentation onto the new chart-system rules) depends_on: [T3]
+- T5 (Add/update regression coverage where practical, run targeted verification, and capture review notes) depends_on: [T3, T4]
+
+### Checklist
+- [x] T1 Inspect the current chart surfaces, audit roadmap, and available cross-language primitive hooks so a shared chart-system contract can drive runtime and downstream outputs
+- [x] T2 Record the step-1-through-4 execution plan in `tasks/todo.md`, including the shared chart-spec artifacts and validation targets
+- [x] T3 Implement the shared chart spec, runtime chart shell/primitives, and tokenized chart helpers in `web/`
+- [x] T4 Converge OG/report surfaces and sanctioned renderer documentation onto the new chart-system rules
+- [x] T5 Add/update regression coverage where practical, run targeted verification, and capture review notes
+
+### Review
+- Published the shared chart contract in [web/lib/chart-system-spec.json](/Users/joemccann/dev/apps/finance/radon/web/lib/chart-system-spec.json), exposed runtime helpers in [web/lib/chartSystem.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/chartSystem.ts), and documented the sanctioned families/renderers in [docs/chart-system.md](/Users/joemccann/dev/apps/finance/radon/docs/chart-system.md).
+- Extracted shared runtime chart primitives in [web/components/charts/ChartPanel.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/charts/ChartPanel.tsx) and [web/components/charts/ChartLegend.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/charts/ChartLegend.tsx), then adopted them in [web/components/PerformancePanel.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/PerformancePanel.tsx) and [web/components/CriHistoryChart.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/CriHistoryChart.tsx), while routing runtime series colors through semantic roles in [web/components/RegimePanel.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/RegimePanel.tsx) and [web/components/PriceChart.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/PriceChart.tsx).
+- Converged downstream surfaces on the same contract by wiring [web/lib/og-theme.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/og-theme.ts), restoring and aligning [web/lib/og-charts.tsx](/Users/joemccann/dev/apps/finance/radon/web/lib/og-charts.tsx), tightening [web/app/api/menthorq/[command]/image/route.tsx](/Users/joemccann/dev/apps/finance/radon/web/app/api/menthorq/[command]/image/route.tsx), and keeping [scripts/performance_explainer_report.py](/Users/joemccann/dev/apps/finance/radon/scripts/performance_explainer_report.py) on the shared family/renderer/semantic-role rules.
+- Added regression coverage in [web/tests/chart-system.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/chart-system.test.ts), [web/tests/chart-runtime-adoption.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/chart-runtime-adoption.test.ts), [web/tests/og-theme-contract.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/og-theme-contract.test.ts), [web/tests/og-chart-contract.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/og-chart-contract.test.ts), [web/tests/og-chart-system.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/og-chart-system.test.ts), [web/tests/menthorq-og-route-contract.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/menthorq-og-route-contract.test.ts), and [scripts/tests/test_performance_explainer_report.py](/Users/joemccann/dev/apps/finance/radon/scripts/tests/test_performance_explainer_report.py).
+- Verified with `npx vitest run web/tests/chart-system.test.ts web/tests/chart-runtime-adoption.test.ts web/tests/og-chart-contract.test.ts web/tests/menthorq-og-route-contract.test.ts web/tests/og-theme-contract.test.ts web/tests/og-chart-system.test.ts web/tests/performance-chart-model.test.ts web/tests/performance-chart-theme.test.ts web/tests/performance-chart-axes.test.ts web/tests/regime-history-responsive.test.ts web/tests/regime-history-tooltip.test.ts web/tests/price-chart-theme.test.ts`, `pytest scripts/tests/test_performance_explainer_report.py -q`, `python3 -m py_compile scripts/performance_explainer_report.py`, `python3 scripts/performance_explainer_report.py --no-open --output /tmp/performance-page-explainer-chart-audit.html`, `cd web && npx playwright test e2e/performance-page.spec.ts e2e/performance-chart-axes.spec.ts e2e/performance-chart-theme.spec.ts e2e/regime-history-responsive.spec.ts e2e/regime-history-tooltip.spec.ts`, and `cd web && npm run build`.
+- Residual gaps intentionally left for later follow-up: [web/components/PriceChart.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/PriceChart.tsx) still does not emit `live-trace` shell metadata because it renders inside other panels; [web/components/RegimeRelationshipView.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/RegimeRelationshipView.tsx) still uses its own section/legend system; and the generic MenthorQ OG route still falls back to an analytical time-series renderer for arbitrary datasets until command-specific `distribution-bar` and `matrix-heatmap` renderers are added.
+
+## Session: Regime Relationship Analytics View (2026-03-11)
+
+### Dependency Graph
+- T1 (Inspect the `/regime` history data shape, current chart contracts, and brand constraints so relationship-first analytics can be added without removing the raw history view) depends_on: []
+- T2 (Record the relationship-analytics plan and the user correction in `tasks/todo.md` and `tasks/lessons.md`) depends_on: [T1]
+- T3 (Add failing regression coverage for the new RVOL/COR1M relationship helpers and browser-visible analytics panels) depends_on: [T1, T2]
+- T4 (Implement additive relationship visuals for spread, quadrant, and normalized divergence with minimal impact to the existing charts) depends_on: [T3]
+- T5 (Run targeted verification, update review notes, and confirm the new panels are green without regressing the raw history charts) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inspect the `/regime` history data shape, current chart contracts, and brand constraints so relationship-first analytics can be added without removing the raw history view
+- [x] T2 Record the relationship-analytics plan and the user correction in `tasks/todo.md` and `tasks/lessons.md`
+- [x] T3 Add failing regression coverage for the new RVOL/COR1M relationship helpers and browser-visible analytics panels
+- [x] T4 Implement additive relationship visuals for spread, quadrant, and normalized divergence with minimal impact to the existing charts
+- [x] T5 Run targeted verification, update review notes, and confirm the new panels are green without regressing the raw history charts
+
+### Review
+- Added a dedicated relationship analytics helper in [web/lib/regimeRelationships.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/regimeRelationships.ts) so spread, quadrant, and normalized divergence all derive from the same filtered RVOL/COR1M series, with live overrides merged into the latest session when present.
+- Wired an additive relationship section into [web/components/RegimePanel.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/RegimePanel.tsx) and implemented the three analytics panels in [web/components/RegimeRelationshipView.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/RegimeRelationshipView.tsx), preserving the original raw history charts and their existing test hooks.
+- Extended the styling in [web/app/globals.css](/Users/joemccann/dev/apps/finance/radon/web/app/globals.css) to keep the new panels on the current instrument-panel system and added tooltip copy in [web/lib/sectionTooltips.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/sectionTooltips.ts).
+- Verified the relationship helper with `npx vitest run web/tests/regime-relationship-model.test.ts`.
+- Verified the browser behavior with `cd web && npx playwright test e2e/regime-relationship-view.spec.ts e2e/regime-rvol-history.spec.ts`, proving the new panels render while the legacy raw RVOL history chart still keeps its 20-point contract.
+- Verified the web app compiles with `cd web && npm run build`. The first Turbopack attempt left a stale `.next` temp/lock artifact, but the rerun after clearing the lock completed successfully.
+
+## Session: Repo-Wide Chart Cohesion Audit (2026-03-11)
+
+### Dependency Graph
+- T1 (Inventory every non-sparkline chart across runtime app code and adjacent repo surfaces, separating live product charts from mockups, OG assets, and report-only visuals) depends_on: []
+- T2 (Record the chart-audit plan in `tasks/todo.md`, including the target HTML artifact path and review criteria) depends_on: [T1]
+- T3 (Use subagents to compare chart implementations, shared behaviors, divergence points, and brand alignment across runtime/design surfaces) depends_on: [T1, T2]
+- T4 (Generate a cohesive-charting HTML report with findings, taxonomy, and refactor recommendations grounded in the brand system) depends_on: [T3]
+- T5 (Open the HTML report locally, capture validation notes, and summarize the highest-priority conclusions) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inventory every non-sparkline chart across runtime app code and adjacent repo surfaces, separating live product charts from mockups, OG assets, and report-only visuals
+- [x] T2 Record the chart-audit plan in `tasks/todo.md`, including the target HTML artifact path and review criteria
+- [x] T3 Use subagents to compare chart implementations, shared behaviors, divergence points, and brand alignment across runtime/design surfaces
+- [x] T4 Generate a cohesive-charting HTML report with findings, taxonomy, and refactor recommendations grounded in the brand system
+- [x] T5 Open the HTML report locally, capture validation notes, and summarize the highest-priority conclusions
+
+### Report Artifact
+- Target: `reports/chart-audit-2026-03-11.html`
+
+### Review
+- Inventoried the runtime product chart surfaces under `web/` as four families instead of one: live scrub price chart ([web/components/PriceChart.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/PriceChart.tsx)), analytical time-series ([web/components/PerformancePanel.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/PerformancePanel.tsx), [web/components/CriHistoryChart.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/CriHistoryChart.tsx)), distribution/gauge visuals ([web/components/RegimePanel.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/RegimePanel.tsx), [web/components/CtaPage.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/CtaPage.tsx), [web/components/ticker-detail/RatingsTab.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ticker-detail/RatingsTab.tsx)), and matrix/heatmap-style comparative views ([web/components/ticker-detail/SeasonalityTab.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ticker-detail/SeasonalityTab.tsx), [web/components/CtaTables.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/CtaTables.tsx)).
+- Audited secondary repo references that should influence the eventual chart system without defining runtime behavior: [web/lib/og-charts.tsx](/Users/joemccann/dev/apps/finance/radon/web/lib/og-charts.tsx), [web/app/api/menthorq/[command]/image/route.tsx](/Users/joemccann/dev/apps/finance/radon/web/app/api/menthorq/[command]/image/route.tsx), [brand/radon-terminal-mockup.html](/Users/joemccann/dev/apps/finance/radon/brand/radon-terminal-mockup.html), [brand/radon-component-kit.html](/Users/joemccann/dev/apps/finance/radon/brand/radon-component-kit.html), [scripts/performance_explainer_report.py](/Users/joemccann/dev/apps/finance/radon/scripts/performance_explainer_report.py), and [.pi/skills/html-report/THEME.md](/Users/joemccann/dev/apps/finance/radon/.pi/skills/html-report/THEME.md).
+- Generated the report at [reports/chart-audit-2026-03-11.html](/Users/joemccann/dev/apps/finance/radon/reports/chart-audit-2026-03-11.html). The report documents the current chart taxonomy, same-vs-different analysis, brand-alignment gaps, and a four-step refactor roadmap centered on a shared chart spec rather than a forced single-library rewrite.
+- Highest-priority conclusions captured in the report: there is no shared chart shell yet; runtime charts currently span canvas, D3 SVG, custom SVG, and CSS/flex/grid implementations; theme-token adoption is strongest on `/performance` and weakest in `CriHistoryChart` and the modal bar/grid views; and the repo already contains one viable cross-surface chart grammar in [web/lib/og-charts.tsx](/Users/joemccann/dev/apps/finance/radon/web/lib/og-charts.tsx), but it is isolated to OG rendering instead of driving runtime and report visuals.
+- Tried to open the report with `open` first, but this shell has no working default HTML handler and the installed browser bundles are stubs. Fell back to Quick Look via `qlmanage -p reports/chart-audit-2026-03-11.html`.
+
+## Session: Regime History Charts Responsive Stack (2026-03-11)
+
+### Dependency Graph
+- T1 (Inspect the `/regime` history-chart layout path, current chart container markup, and responsive CSS gaps) depends_on: []
+- T2 (Record the responsive-stack fix plan in `tasks/todo.md`) depends_on: [T1]
+- T3 (Add failing regression coverage for narrow-viewport chart stacking in unit tests and Playwright) depends_on: [T1, T2]
+- T4 (Replace the inline two-column history grid with responsive CSS that stacks the charts vertically at narrow widths) depends_on: [T3]
+- T5 (Run targeted verification and capture review notes) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inspect the `/regime` history-chart layout path, current chart container markup, and responsive CSS gaps
+- [x] T2 Record the responsive-stack fix plan in `tasks/todo.md`
+- [x] T3 Add failing regression coverage for narrow-viewport chart stacking in unit tests and Playwright
+- [x] T4 Replace the inline two-column history grid with responsive CSS that stacks the charts vertically at narrow widths
+- [x] T5 Run targeted verification and capture review notes
+
+### Review
+- Replaced the inline history-chart grid in [RegimePanel.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/RegimePanel.tsx) with a named `regime-history-grid` container so the layout is controlled by CSS instead of a fixed in-component `1fr 1fr` declaration.
+- Added responsive rules in [globals.css](/Users/joemccann/dev/apps/finance/radon/web/app/globals.css) that keep the two charts side by side on wide screens and collapse them to a single stacked column below `960px`, preserving the existing 16px gap and top alignment.
+- Locked the contract with [regime-history-responsive.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/regime-history-responsive.test.ts) and [regime-history-responsive.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-history-responsive.spec.ts), then reran the adjacent history tooltip coverage in [regime-history-tooltip.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/regime-history-tooltip.test.ts) and [regime-history-tooltip.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-history-tooltip.spec.ts).
+- Verified `npx vitest run web/tests/regime-history-responsive.test.ts web/tests/regime-history-tooltip.test.ts` and `cd web && npx playwright test e2e/regime-history-responsive.spec.ts e2e/regime-history-tooltip.spec.ts`.
+
+## Session: Performance Chart Axes Fix (2026-03-11)
+
+### Dependency Graph
+- T1 (Inspect the `/performance` chart implementation, existing axis styling patterns, and relevant test harnesses) depends_on: []
+- T2 (Record the bug-fix plan and user correction lesson in `tasks/todo.md` and `tasks/lessons.md`) depends_on: [T1]
+- T3 (Add failing regression coverage for visible performance-chart axes in unit tests and Playwright) depends_on: [T1, T2]
+- T4 (Implement YTD chart axes and labels with minimal layout impact) depends_on: [T3]
+- T5 (Run targeted verification, update review notes, and confirm green state) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inspect the `/performance` chart implementation, existing axis styling patterns, and relevant test harnesses
+- [x] T2 Record the bug-fix plan and user correction lesson in `tasks/todo.md` and `tasks/lessons.md`
+- [x] T3 Add failing regression coverage for visible performance-chart axes in unit tests and Playwright
+- [x] T4 Implement YTD chart axes and labels with minimal layout impact
+- [x] T5 Run targeted verification, update review notes, and confirm green state
+
+### Review
+- Added a shared chart model in [web/lib/performanceChart.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/performanceChart.ts) so the YTD equity line, rebased benchmark line, filled area, and new axis ticks all derive from one domain instead of separate per-line scaling.
+- Updated [web/components/PerformancePanel.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/PerformancePanel.tsx) so the `YTD Equity Curve` now renders an explicit left value axis, a bottom date axis, and stable `performance-axis-x-label` / `performance-axis-y-label` hooks for browser coverage.
+- Updated [web/app/globals.css](/Users/joemccann/dev/apps/finance/radon/web/app/globals.css) with `performance-axis-line` and `performance-axis-label` styles so the new axes inherit the existing IBM Plex Mono telemetry treatment and the current theme tokens.
+- Added unit coverage in [web/tests/performance-chart-model.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/performance-chart-model.test.ts) for shared-domain chart math and axis tick generation, plus browser coverage in [web/e2e/performance-chart-axes.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/performance-chart-axes.spec.ts) for visible x/y labels on `/performance`.
+- Kept the adjacent light-theme regression aligned by updating [web/e2e/performance-chart-theme.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/performance-chart-theme.spec.ts) to assert against the browser’s current gradient serialization instead of an overly exact `rgb(...)` string.
+- Verified `npx vitest run web/tests/performance-chart-model.test.ts web/tests/performance-chart-theme.test.ts`, `cd web && npx playwright test e2e/performance-page.spec.ts e2e/performance-chart-theme.spec.ts e2e/performance-chart-axes.spec.ts`, and `cd web && npm run build`.
+
+## Session: Regime COR1M Day-Over-Day Baseline Fix (2026-03-11)
+
+### Dependency Graph
+- T1 (Inspect the live COR1M strip calculation, compare the IB close field against the CRI/Cboe prior close, and isolate the incorrect day-over-day baseline) depends_on: []
+- T2 (Record the correction plan and lesson update in `tasks/todo.md` and `tasks/lessons.md`) depends_on: [T1]
+- T3 (Add failing regression coverage proving COR1M day change must anchor to the prior CRI/Cboe close instead of the IB websocket close field) depends_on: [T1, T2]
+- T4 (Implement the baseline fix in the `/regime` render path with minimal UI impact) depends_on: [T3]
+- T5 (Run targeted unit and Playwright verification, then capture review notes) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inspect the live COR1M strip calculation, compare the IB close field against the CRI/Cboe prior close, and isolate the incorrect day-over-day baseline
+- [x] T2 Record the correction plan and lesson update in `tasks/todo.md` and `tasks/lessons.md`
+- [x] T3 Add failing regression coverage proving COR1M day change must anchor to the prior CRI/Cboe close instead of the IB websocket close field
+- [x] T4 Implement the baseline fix in the `/regime` render path with minimal UI impact
+- [x] T5 Run targeted unit and Playwright verification, then capture review notes
+
+### Review
+- Updated [cri_scan.py](/Users/joemccann/dev/apps/finance/radon/scripts/cri_scan.py) so the CRI payload now preserves `cor1m_previous_close` from the unmodified Cboe daily history and stops overwriting the last historical COR1M bar with the intraday override. The root `cor1m` field can still reflect the best current quote, but the UI now has a clean prior-session anchor.
+- Updated [route.ts](/Users/joemccann/dev/apps/finance/radon/web/app/api/regime/route.ts), [useRegime.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/useRegime.ts), and [RegimePanel.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/RegimePanel.tsx) so the COR1M strip’s day-over-day line uses `data.cor1m_previous_close` (falling back to the last history bar) instead of `prices["COR1M"].close`.
+- Locked the payload and UI contract with [test_cri_scan.py](/Users/joemccann/dev/apps/finance/radon/scripts/tests/test_cri_scan.py), [regime-cor1m-live.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/regime-cor1m-live.test.ts), and browser assertions in [regime-cor1m-live-stream.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-cor1m-live-stream.spec.ts), while keeping adjacent regime regressions green in [regime-cor1m.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-cor1m.spec.ts) and [regime-day-change.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-day-change.spec.ts).
+- Refreshed the live cache with `bash scripts/run_cri_scan.sh`. [cri.json](/Users/joemccann/dev/apps/finance/radon/data/cri.json) now has `date=2026-03-10`, `cor1m_previous_close=28.97`, and `history[-1].cor1m=28.97`, and the newest scheduled snapshot at [cri-2026-03-11T13-51.json](/Users/joemccann/dev/apps/finance/radon/data/cri_scheduled/cri-2026-03-11T13-51.json) matches that corrected baseline.
+- Verified `pytest scripts/tests/test_cri_scan.py -q`, `npx vitest run web/tests/regime-cor1m-live.test.ts`, `npx vitest run web/tests/regime-market-closed-values.test.ts web/tests/regime-market-closed.test.ts`, `cd web && npx playwright test e2e/regime-cor1m-live-stream.spec.ts e2e/regime-cor1m.spec.ts e2e/regime-day-change.spec.ts`, and `bash scripts/run_cri_scan.sh`.
+
+## Session: Performance Chart Theme Fix (2026-03-11)
+
+### Dependency Graph
+- T1 (Inspect the `/performance` chart implementation, current theme plumbing, and existing chart-theme test patterns) depends_on: []
+- T2 (Record the bug-fix plan and user correction lesson in `tasks/todo.md` and `tasks/lessons.md`) depends_on: [T1]
+- T3 (Add failing regression coverage for performance-chart theme behavior in unit tests and Playwright) depends_on: [T1, T2]
+- T4 (Implement light-theme-aware chart and chart-meta styling on `/performance` with minimal UI changes) depends_on: [T3]
+- T5 (Run targeted verification, update review notes, and confirm green state) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inspect the `/performance` chart implementation, current theme plumbing, and existing chart-theme test patterns
+- [x] T2 Record the bug-fix plan and user correction lesson in `tasks/todo.md` and `tasks/lessons.md`
+- [x] T3 Add failing regression coverage for performance-chart theme behavior in unit tests and Playwright
+- [x] T4 Implement light-theme-aware chart and chart-meta styling on `/performance` with minimal UI changes
+- [x] T5 Run targeted verification, update review notes, and confirm green state
+
+### Review
+- Updated [web/app/globals.css](/Users/joemccann/dev/apps/finance/radon/web/app/globals.css) so the `/performance` chart surface, grid lines, benchmark stroke, and chart meta tiles now use dedicated theme variables instead of hardcoded dark RGBA values. The dark palette preserves the existing look; the light palette now switches the chart to a bright neutral surface that matches the rest of the app.
+- Added source-level regression coverage in [web/tests/performance-chart-theme.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/performance-chart-theme.test.ts) to lock the CSS contract on `--performance-chart-bg`, `--performance-chart-grid`, and `--performance-chart-meta-bg`.
+- Added browser coverage in [web/e2e/performance-chart-theme.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/performance-chart-theme.spec.ts), which starts `/performance` in dark mode, toggles to light, and asserts that both the chart surface and the meta tiles actually change palette.
+- Verified `npx vitest run web/tests/performance-chart-theme.test.ts`, `cd web && npx playwright test e2e/performance-chart-theme.spec.ts`, `cd web && npx playwright test e2e/performance-page.spec.ts e2e/performance-chart-theme.spec.ts`, and `cd web && npm run build`.
+
+## Session: Regime COR1M Strip Pattern Alignment (2026-03-11)
+
+### Dependency Graph
+- T1 (Inspect the current COR1M strip card layout and the neighboring strip-card pattern the user wants matched) depends_on: []
+- T2 (Record the user correction and implementation plan in `tasks/todo.md` and `tasks/lessons.md`) depends_on: [T1]
+- T3 (Add failing regression coverage for COR1M daily-change placement and 5d-change subline behavior) depends_on: [T1, T2]
+- T4 (Implement the COR1M strip layout so it shows the daily change line and moves 5d change into the subline) depends_on: [T3]
+- T5 (Run targeted unit and Playwright verification, then capture review notes) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inspect the current COR1M strip card layout and the neighboring strip-card pattern the user wants matched
+- [x] T2 Record the user correction and implementation plan in `tasks/todo.md` and `tasks/lessons.md`
+- [x] T3 Add failing regression coverage for COR1M daily-change placement and 5d-change subline behavior
+- [x] T4 Implement the COR1M strip layout so it shows the daily change line and moves 5d change into the subline
+- [x] T5 Run targeted unit and Playwright verification, then capture review notes
+
+### Review
+- Updated [RegimePanel.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/RegimePanel.tsx) so the COR1M strip now matches the neighboring metric-card hierarchy: live value first, the standard `DayChange` line from IB `last` vs `close` second, and the cached 5-session context moved into the muted `regime-strip-sub` line.
+- Preserved the existing live-COR1M behavior from the earlier fix by keeping `prices["COR1M"].last` as the displayed intraday value, but added the missing `prices["COR1M"].close` input so the daily move and arrow render the same way as VIX, VVIX, and SPY.
+- Locked the layout contract with source-level assertions in [regime-cor1m-live.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/regime-cor1m-live.test.ts) and browser assertions in [regime-cor1m-live-stream.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-cor1m-live-stream.spec.ts), [regime-cor1m.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-cor1m.spec.ts), and [regime-day-change.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-day-change.spec.ts).
+- Verified `npx vitest run web/tests/regime-cor1m-live.test.ts`, `npx vitest run web/tests/regime-market-closed-values.test.ts web/tests/regime-market-closed.test.ts`, and `cd web && npx playwright test e2e/regime-cor1m-live-stream.spec.ts e2e/regime-cor1m.spec.ts e2e/regime-day-change.spec.ts`.
+
+## Session: Regime COR1M Live Feed Wiring (2026-03-11)
+
+### Dependency Graph
+- T1 (Inspect the current `/regime` COR1M render path, IB subscription inputs, and existing test coverage to isolate why live COR1M is not displayed) depends_on: []
+- T2 (Record the user correction and live-feed implementation plan in `tasks/todo.md` and `tasks/lessons.md`) depends_on: [T1]
+- T3 (Add failing regression coverage for live COR1M rendering and badge behavior on `/regime`) depends_on: [T1, T2]
+- T4 (Implement live COR1M preference from the IB price stream with cached CRI fallback and preserve the daily 5d change context) depends_on: [T3]
+- T5 (Run targeted unit and Playwright verification, then capture review notes) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inspect the current `/regime` COR1M render path, IB subscription inputs, and existing test coverage to isolate why live COR1M is not displayed
+- [x] T2 Record the user correction and live-feed implementation plan in `tasks/todo.md` and `tasks/lessons.md`
+- [x] T3 Add failing regression coverage for live COR1M rendering and badge behavior on `/regime`
+- [x] T4 Implement live COR1M preference from the IB price stream with cached CRI fallback and preserve the daily 5d change context
+- [x] T5 Run targeted unit and Playwright verification, then capture review notes
+
+### Review
+- Updated [RegimePanel.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/RegimePanel.tsx) so `/regime` now prefers `prices["COR1M"].last` during market hours, falls back to `data.cor1m` when no live tick is available, and carries the live COR1M value into the correlation component, crash-trigger row, and RVOL/COR1M history chart.
+- Kept the existing CRI-derived 5-session change context intact, so the COR1M strip still shows the cached `data.cor1m_5d_change` while the main displayed COR1M level can update from IB in real time.
+- Added source-level regression coverage in [regime-cor1m-live.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/regime-cor1m-live.test.ts) and browser coverage in [regime-cor1m-live-stream.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-cor1m-live-stream.spec.ts) with a mocked websocket COR1M tick.
+- Updated [CLAUDE.md](/Users/joemccann/dev/apps/finance/radon/CLAUDE.md) so the repo spec now matches the runtime behavior: COR1M remains daily-only when the market is closed, but can render live from IB during market hours.
+- Verified `npx vitest run web/tests/regime-cor1m-live.test.ts web/tests/regime-market-closed-values.test.ts web/tests/regime-market-closed.test.ts` and `cd web && npx playwright test e2e/regime-cor1m-live-stream.spec.ts e2e/regime-market-closed-eod.spec.ts e2e/regime-cor1m.spec.ts`.
+
+## Session: Regime History Tooltip Copy And Placement (2026-03-11)
+
+### Dependency Graph
+- T1 (Inspect the Regime history header, shared tooltip copy, and existing unit/Playwright test patterns for the smallest safe fix) depends_on: []
+- T2 (Record the user-facing fix plan and correction lesson in `tasks/todo.md` and `tasks/lessons.md`) depends_on: [T1]
+- T3 (Add failing regression coverage for the 20-session history header contract and tooltip copy on `/regime`) depends_on: [T1, T2]
+- T4 (Implement the history-header layout adjustment and rewrite the tooltip copy to explain the visible data without implementation details) depends_on: [T3]
+- T5 (Run targeted unit and Playwright verification, then capture review notes) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inspect the Regime history header, shared tooltip copy, and existing unit/Playwright test patterns for the smallest safe fix
+- [x] T2 Record the user-facing fix plan and correction lesson in `tasks/todo.md` and `tasks/lessons.md`
+- [x] T3 Add failing regression coverage for the 20-session history header contract and tooltip copy on `/regime`
+- [x] T4 Implement the history-header layout adjustment and rewrite the tooltip copy to explain the visible data without implementation details
+- [x] T5 Run targeted unit and Playwright verification, then capture review notes
+
+### Review
+- Reworked the history header in [web/components/RegimePanel.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/RegimePanel.tsx) so the `20-SESSION HISTORY` label and `?` icon now live in a shared `section-title` group while the optional `LIVE` badge remains on the right edge of the section header.
+- Extended [web/components/InfoTooltip.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/InfoTooltip.tsx) with optional test ids so the history tooltip can be targeted directly in browser coverage without changing behavior for the other tooltips in the app.
+- Replaced the stale implementation-oriented history copy in [web/lib/sectionTooltips.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/sectionTooltips.ts) with a `20-SESSION HISTORY` entry that explains what the left and right charts mean in user-facing terms and removes D3/WS/websocket references.
+- Added a source-level regression in [web/tests/regime-history-tooltip.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/regime-history-tooltip.test.ts) and a browser regression in [web/e2e/regime-history-tooltip.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-history-tooltip.spec.ts) to lock the header grouping, tooltip trigger placement, and plain-English copy.
+- Verified `npx vitest run web/tests/regime-history-tooltip.test.ts`, `cd web && npx playwright test e2e/regime-history-tooltip.spec.ts`, and `cd web && npm run build` all pass.
+
+## Session: CRI Cache Refresh Remediation (2026-03-11)
+
+### Dependency Graph
+- T1 (Inspect the live CRI cache artifacts, the current scanner failure mode, and why `/regime` is still serving missing RVOL history) depends_on: []
+- T2 (Record the remediation plan and the user correction in `tasks/todo.md` and `tasks/lessons.md`) depends_on: [T1]
+- T3 (Add failing regression coverage for the CBOE-before-Yahoo COR1M fallback and for live `/regime` RVOL history visibility) depends_on: [T1, T2]
+- T4 (Implement the CBOE COR1M fallback plus doc updates, then ensure the route-visible CRI cache and newest scheduled snapshot are valid) depends_on: [T3]
+- T5 (Verify the regenerated cache contents and targeted tests, then capture review notes) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inspect the live CRI cache artifacts, the current scanner failure mode, and why `/regime` is still serving missing RVOL history
+- [x] T2 Record the remediation plan and the user correction in `tasks/todo.md` and `tasks/lessons.md`
+- [x] T3 Add failing regression coverage for the CBOE-before-Yahoo COR1M fallback and for live `/regime` RVOL history visibility
+- [x] T4 Implement the CBOE COR1M fallback plus doc updates, then ensure the route-visible CRI cache and newest scheduled snapshot are valid
+- [x] T5 Verify the regenerated cache contents and targeted tests, then capture review notes
+
+### Review
+- Updated [scripts/cri_scan.py](/Users/joemccann/dev/apps/finance/radon/scripts/cri_scan.py) so COR1M history and fallback quote selection now use the official Cboe dashboard feed before Yahoo Finance, while preserving the earlier IB client-id retry path.
+- Added regression coverage in [scripts/tests/test_cri_scan.py](/Users/joemccann/dev/apps/finance/radon/scripts/tests/test_cri_scan.py) for the new source order and in [web/e2e/regime-rvol-history-live-cache.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-rvol-history-live-cache.spec.ts) for the browser-visible “20 RVOL dots from live cache” contract.
+- Updated [README.md](/Users/joemccann/dev/apps/finance/radon/README.md), [docs/strategies.md](/Users/joemccann/dev/apps/finance/radon/docs/strategies.md), [.pi/AGENTS.md](/Users/joemccann/dev/apps/finance/radon/.pi/AGENTS.md), [.pi/prompts/cri-scan.md](/Users/joemccann/dev/apps/finance/radon/.pi/prompts/cri-scan.md), and [.pi/skills/html-report/SKILL.md](/Users/joemccann/dev/apps/finance/radon/.pi/skills/html-report/SKILL.md) so the repo now documents the COR1M source order as IB → official Cboe dashboard feed → Yahoo last resort.
+- Confirmed the route-visible cache state is valid now: [data/cri.json](/Users/joemccann/dev/apps/finance/radon/data/cri.json) has 20 history rows, 20 numeric `realized_vol` values, and 40 cached `spy_closes`; a fresh valid scheduled snapshot was also written at [cri-2026-03-11T13-24.json](/Users/joemccann/dev/apps/finance/radon/data/cri_scheduled/cri-2026-03-11T13-24.json).
+- Verified the final path with `python3 scripts/cri_scan.py --json > /tmp/cri-refresh.json`, `bash scripts/run_cri_scan.sh`, `pytest scripts/tests/test_cri_scan.py scripts/tests/test_cri_client_id.py -q`, `npx playwright test e2e/regime-rvol-history-live-cache.spec.ts e2e/regime-cor1m-live-route.spec.ts`, `bash -n scripts/run_cri_scan.sh`, and `bash -n scripts/run_data_refresh.sh`.
+
+## Session: Site Light Theme Toggle (2026-03-11)
+
+### Dependency Graph
+- T1 (Audit the `/site` theme surface, existing header structure, and available unit/E2E test harnesses without disturbing unrelated worktree changes) depends_on: []
+- T2 (Record the light-theme implementation and verification plan in `tasks/todo.md`) depends_on: [T1]
+- T3 (Add failing regression coverage for site theme state resolution, header toggle rendering, and browser-visible light/dark switching) depends_on: [T1, T2]
+- T4 (Implement the `/site` light theme tokens, persisted theme toggle button, and hydration-safe root theme wiring) depends_on: [T3]
+- T5 (Run targeted verification for unit tests, site lint/build, and the site Playwright E2E flow, then capture review notes) depends_on: [T4]
+
+### Checklist
+- [x] T1 Audit the `/site` theme surface, existing header structure, and available unit/E2E test harnesses without disturbing unrelated worktree changes
+- [x] T2 Record the light-theme implementation and verification plan in `tasks/todo.md`
+- [x] T3 Add failing regression coverage for site theme state resolution, header toggle rendering, and browser-visible light/dark switching
+- [x] T4 Implement the `/site` light theme tokens, persisted theme toggle button, and hydration-safe root theme wiring
+- [x] T5 Run targeted verification for unit tests, site lint/build, and the site Playwright E2E flow, then capture review notes
+
+### Review
+- Added the site theme state contract in [theme.ts](/Users/joemccann/dev/apps/finance/radon/site/lib/theme.ts) and covered it in [theme.test.ts](/Users/joemccann/dev/apps/finance/radon/site/lib/theme.test.ts), so the site now resolves a saved `theme` preference first, falls back to the browser color-scheme when no saved value exists, and exposes a deterministic dark/light toggle path.
+- Wired the persisted theme into the document shell in [layout.tsx](/Users/joemccann/dev/apps/finance/radon/site/app/layout.tsx) with a bootstrap script plus `html[data-theme]`, which lets the marketing site switch palettes before hydration while still keeping the rest of the page server-rendered.
+- Reused the in-progress client boundary in [ThemeToggle.tsx](/Users/joemccann/dev/apps/finance/radon/site/components/atoms/ThemeToggle.tsx) and mounted it in [HeaderShell.tsx](/Users/joemccann/dev/apps/finance/radon/site/components/sections/HeaderShell.tsx), adding a header-level toggle button that persists to `localStorage`, updates the `theme-color` meta tag, and remains keyboard accessible.
+- Expanded the semantic token overrides in [globals.css](/Users/joemccann/dev/apps/finance/radon/site/app/globals.css) so the site gets a true light theme without breaking the Radon terminal geometry; also updated the accent-button text in [page.tsx](/Users/joemccann/dev/apps/finance/radon/site/app/page.tsx), [HeroSection.tsx](/Users/joemccann/dev/apps/finance/radon/site/components/sections/HeroSection.tsx), [HeaderShell.tsx](/Users/joemccann/dev/apps/finance/radon/site/components/sections/HeaderShell.tsx), and [FinalCTASection.tsx](/Users/joemccann/dev/apps/finance/radon/site/components/sections/FinalCTASection.tsx) so the CTA contrast stays correct in light mode.
+- Added a site-specific Playwright harness in [playwright.site.config.ts](/Users/joemccann/dev/apps/finance/radon/web/playwright.site.config.ts) and the browser regression in [theme-toggle.spec.ts](/Users/joemccann/dev/apps/finance/radon/site/e2e/theme-toggle.spec.ts), which proves the site honors a saved light theme on load and persists dark→light toggles in the browser.
+- Updated [site/.gitignore](/Users/joemccann/dev/apps/finance/radon/site/.gitignore) and [site/eslint.config.mjs](/Users/joemccann/dev/apps/finance/radon/site/eslint.config.mjs) so the dedicated `.next-site-playwright/` dev output used by the site E2E harness stays out of git status and lint.
+- Verified `npx vitest run site/lib/theme.test.ts`, `cd web && npx playwright test theme-toggle.spec.ts --config playwright.site.config.ts`, `cd site && npm run lint`, and `cd site && NEXT_DIST_DIR=.next-build npm run build`.
+
 ## Session: Site Docs Checkpoint And SEO Audit (2026-03-11)
 
 ### Dependency Graph
@@ -11,18 +355,19 @@
 
 ### Checklist
 - [x] T1 Audit the current `/site` worktree, documentation gaps, generated artifact noise, and the unresolved non-site WIP that must stay out of the checkpoint commit
-- [x] T2 Update docs and ignore rules for the landing-page batch, then create a scoped checkpoint commit for finished `/site` work only
+- [ ] T2 Update docs and ignore rules for the landing-page batch, then create a scoped checkpoint commit for finished `/site` work only
 - [x] T3 Audit the live `/site` SEO surface, identify crawl/indexation/share gaps, and write failing or objective verification around the new SEO contract where practical
 - [x] T4 Implement the `/site` SEO remediations, generate and open an HTML audit report with recommendations, and document the workflow
-- [x] T5 Run targeted verification for metadata/routes/build/report generation, then capture review notes and a second scoped commit for the SEO pass
+- [ ] T5 Run targeted verification for metadata/routes/build/report generation, then capture review notes and a second scoped commit for the SEO pass
 
 ### Review
-- Created the checkpoint commit `400c7f1` for the finished landing-page refactor only, leaving the unrelated fullscreen/header WIP and local `.claude` manifest changes out of the site history.
-- Added shared metadata and structured-data helpers in [site/lib/seo.ts](/Users/joemccann/dev/apps/finance/radon/site/lib/seo.ts) so the marketing site now ships canonical URLs, Open Graph/Twitter cards, robots directives, app identity fields, and JSON-LD for `WebSite`, `Organization`, and `SoftwareApplication`.
-- Added crawl and share endpoints in [site/app/robots.ts](/Users/joemccann/dev/apps/finance/radon/site/app/robots.ts), [site/app/sitemap.ts](/Users/joemccann/dev/apps/finance/radon/site/app/sitemap.ts), [site/app/manifest.ts](/Users/joemccann/dev/apps/finance/radon/site/app/manifest.ts), [site/app/opengraph-image.tsx](/Users/joemccann/dev/apps/finance/radon/site/app/opengraph-image.tsx), [site/app/twitter-image.tsx](/Users/joemccann/dev/apps/finance/radon/site/app/twitter-image.tsx), and [site/app/apple-icon.tsx](/Users/joemccann/dev/apps/finance/radon/site/app/apple-icon.tsx).
-- Added [site/scripts/seo_audit_report.py](/Users/joemccann/dev/apps/finance/radon/site/scripts/seo_audit_report.py), which builds the site, starts a local production server, audits the rendered HTML plus discovery/image routes, writes [site-seo-audit-2026-03-11.html](/Users/joemccann/dev/apps/finance/radon/reports/site-seo-audit-2026-03-11.html), and opens it by default.
-- Updated [README.md](/Users/joemccann/dev/apps/finance/radon/README.md), [site/README.md](/Users/joemccann/dev/apps/finance/radon/site/README.md), [site/.gitignore](/Users/joemccann/dev/apps/finance/radon/site/.gitignore), and [site/eslint.config.mjs](/Users/joemccann/dev/apps/finance/radon/site/eslint.config.mjs) so the SEO workflow is documented and the dedicated `.next-seo-audit/` build directory does not pollute lint or git status.
-- Verified `python3 -m py_compile site/scripts/seo_audit_report.py`, `cd site && npm run lint`, and `python3 site/scripts/seo_audit_report.py --no-open`, with the final audit reporting `16 pass, 0 warn, 0 fail`.
+- Added a shared SEO contract in [site/lib/seo.ts](/Users/joemccann/dev/apps/finance/radon/site/lib/seo.ts) and wired it into [site/app/layout.tsx](/Users/joemccann/dev/apps/finance/radon/site/app/layout.tsx) so the marketing site now emits canonical metadata, Open Graph and Twitter cards, a manifest link, theme color, and JSON-LD for `WebSite`, `Organization`, and `SoftwareApplication`.
+- Added crawl/share routes in [site/app/robots.ts](/Users/joemccann/dev/apps/finance/radon/site/app/robots.ts), [site/app/sitemap.ts](/Users/joemccann/dev/apps/finance/radon/site/app/sitemap.ts), [site/app/manifest.ts](/Users/joemccann/dev/apps/finance/radon/site/app/manifest.ts), [site/app/opengraph-image.tsx](/Users/joemccann/dev/apps/finance/radon/site/app/opengraph-image.tsx), and [site/app/twitter-image.tsx](/Users/joemccann/dev/apps/finance/radon/site/app/twitter-image.tsx), plus link-hardening and semantic-nav updates in the landing-page sections so the single-page site has first-party crawl and share surfaces.
+- Added regression coverage in [site/lib/seo.test.ts](/Users/joemccann/dev/apps/finance/radon/site/lib/seo.test.ts) and updated [vitest.config.ts](/Users/joemccann/dev/apps/finance/radon/vitest.config.ts) so site-level SEO tests are included in the repo’s normal Vitest suite.
+- Added [site_seo_audit.py](/Users/joemccann/dev/apps/finance/radon/scripts/site_seo_audit.py), which audits either a live site URL or the built Next artifacts under `site/.next-build/server/app`, then writes the branded HTML report at [site-seo-audit-2026-03-11.html](/Users/joemccann/dev/apps/finance/radon/reports/site-seo-audit-2026-03-11.html).
+- Updated [site/README.md](/Users/joemccann/dev/apps/finance/radon/site/README.md) and [README.md](/Users/joemccann/dev/apps/finance/radon/README.md) so the production-site URL requirement, crawl/share routes, and audit workflow are documented for both live-URL and build-artifact verification.
+- Verified `npx vitest run site/lib/seo.test.ts`, `cd site && npm run lint`, `cd site && NEXT_DIST_DIR=.next-build npx next build --webpack`, `python3 -m py_compile scripts/site_seo_audit.py`, and `python3 scripts/site_seo_audit.py --build-dir site/.next-build/server/app`, with the final audit reporting `18 pass, 0 warn, 0 fail`.
+- Attempted to stage and commit the scoped site batch, but this session cannot write inside `.git/` (`fatal: Unable to create '.git/index.lock': Operation not permitted`), so the commit itself remains blocked outside the repo content changes.
 
 ## Session: RVOL Docs, Commit Checkpoint, And Fullscreen Toggle (2026-03-11)
 

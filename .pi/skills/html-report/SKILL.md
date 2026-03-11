@@ -796,7 +796,7 @@ See: `reports/iwm-risk-reversal-2026-03-06.html`
 ### How It Works
 
 The script (`cri_scan.py`) is **self-contained**:
-1. Fetches 1Y daily bars for VIX, VVIX, SPY, and Cboe COR1M implied correlation (IB primary, Yahoo `^COR1M` last resort)
+1. Fetches 1Y daily bars for VIX, VVIX, SPY, and Cboe COR1M implied correlation (IB primary, official Cboe COR1M dashboard history fallback before Yahoo last resort)
 2. Reads the latest COR1M level and 5-session change as the CRI correlation input
 3. Computes 20-day realized volatility, 100-day SPX moving average
 4. Scores four CRI components (VIX, VVIX, Correlation, Momentum) — each 0-25, total 0-100

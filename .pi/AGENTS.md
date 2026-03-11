@@ -48,9 +48,11 @@ When fetching ANY market data (quotes, options, fundamentals, analyst ratings, e
 | **2nd** | Unusual Whales | Flow data, dark pools, options activity, analyst ratings |
 | **3rd** | Exa (web search) | Web search, company research, code/docs lookup |
 | **4th** | agent-browser | Only for interactive pages, screenshots, JS-rendered content |
-| **5th** | Yahoo Finance | **ABSOLUTE LAST RESORT** — only if ALL above sources fail/unavailable |
+| **5th** | Cboe official index feeds | COR1M historical fallback before Yahoo |
+| **6th** | Yahoo Finance | **ABSOLUTE LAST RESORT** — only if ALL above sources fail/unavailable |
 
-**Yahoo Finance is the source of LAST RESORT. Never use it if IB, UW, or Exa can provide the data.**
+**For COR1M, use the official Cboe dashboard historical feed before Yahoo Finance.**
+**Yahoo Finance is the source of LAST RESORT. Never use it if IB, UW, Exa, or an official Cboe feed can provide the data.**
 **For web search/fetch: always use Exa first, agent-browser only as fallback.**
 
 ---
@@ -300,6 +302,7 @@ Scans all watchlist tickers for dark pool flow signals. Returns scored candidate
 python3 scripts/cri_scan.py --json
 ```
 Computes the Crash Risk Index — VIX/VVIX momentum, Cboe 1-Month Implied Correlation Index (COR1M), CTA exposure model. Returns regime level (LOW/ELEVATED/HIGH/CRITICAL) and crash trigger status.
+For COR1M history inside the CRI scan, source order is: IB first, then the official Cboe dashboard historical feed, then Yahoo Finance last resort.
 
 **Step 3 — Combine and Report:**
 Use the CRI regime data to contextualize the flow signals:
@@ -337,6 +340,7 @@ Output: `reports/daily-scan-{date}.html` — auto-open in browser.
 - SPX distance from 100-day MA
 
 **VIX data rule:** Use the CRI scan's VIX value (which comes from IB/UW/Yahoo in priority order). If CRI VIX differs from scanner VIX by > 1 point, note the discrepancy and use the more recent value.
+**COR1M data rule:** Use IB first, then the official Cboe COR1M dashboard historical feed, then Yahoo only as the final fallback.
 
 ### Evaluate Command Details
 
