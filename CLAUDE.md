@@ -24,12 +24,13 @@ Brand spec: `docs/brand-identity.md`
 
 ---
 
-## ⛔ Three Gates — Mandatory, Sequential, No Exceptions
+## ⛔ Four Gates — Mandatory, Sequential, No Exceptions
 
 ```
-GATE 1 — CONVEXITY  : Potential gain ≥ 2× potential loss. Defined-risk only (long options, verticals).
-GATE 2 — EDGE       : Specific, data-backed dark pool/OTC signal that hasn't moved price yet.
-GATE 3 — RISK MGMT  : Fractional Kelly sizing. Hard cap: 2.5% of bankroll per position.
+GATE 1 — CONVEXITY      : Potential gain ≥ 2× potential loss. Defined-risk only (long options, verticals).
+GATE 2 — EDGE           : Specific, data-backed dark pool/OTC signal that hasn't moved price yet.
+GATE 3 — RISK MGMT      : Fractional Kelly sizing. Hard cap: 2.5% of bankroll per position.
+GATE 4 — NO NAKED SHORTS: Never naked short stock, calls, futures, or bonds. Every short call must be fully covered by long shares (1 contract = 100 shares). Violation = immediate cancel.
 ```
 
 **Any gate fails → stop. No rationalization. No "close enough."**
@@ -109,7 +110,7 @@ During market hours (`market_open === true`), the regime strip shows day change 
 | VVIX | `DayChange` | WS `last` vs WS `close` | `-5.00 (-4.35%) ↓` |
 | SPY | `DayChange` | WS `last` vs WS `close` | `$+0.47 (+0.07%) ↑` |
 | RVOL | `PointChange` | `intradayRvol - data.realized_vol` | `-0.01% intraday ↓` |
-| COR1M | `PointChange` | `data.cor1m_5d_change` (always visible) | `+6.88 pts 5d chg ↑` |
+| COR1M | strip value from WS `last` when available, otherwise `data.cor1m`; `PointChange` remains `data.cor1m_5d_change` | `37.25` + `-0.50 pts 5d chg ↓` |
 
 **Arrow placement**: Arrow icon is always to the **right** of the change text (not left, not above). Uses `display: flex` with `gap: 4px` in `.regime-strip-day-chg`.
 
@@ -142,6 +143,31 @@ Price trend arrows (↑↓) in `PositionTable.tsx` and `WorkspaceSections.tsx` m
 
 **Implementation**: `web/lib/exposureBreakdown.ts` — applies `sign` to both IB delta and approx delta paths.
 **Tests**: `web/tests/exposure-breakdown.test.ts` (3 tests)
+
+---
+
+## Naked Short Protection (Gate 4)
+
+**Hard rule — no exceptions.** The system must never allow naked short exposure.
+
+| Scenario | Rule | Action |
+|----------|------|--------|
+| SELL stock, no long shares | Naked short stock | BLOCK + cancel |
+| SELL call, no long shares | Naked short call | BLOCK + cancel |
+| SELL N call contracts, shares < N × 100 | Short a tail | BLOCK + cancel |
+| SELL put (cash-secured) | Allowed | ALLOW |
+| Spread (BUY+SELL legs) | Covered by long leg | ALLOW |
+| BUY anything | No short exposure | ALLOW |
+
+**Enforcement layers:**
+1. **UI pre-submission** — `checkNakedShortRisk()` in `OrderTab.tsx` blocks form submission
+2. **API gate** — `orders/place/route.ts` returns 403 if guard fails
+3. **Post-sync audit** — `naked_short_audit.py` runs after every `ib_sync`, cancels violating open orders
+
+**"Short a tail"**: Selling more call contracts than shares can cover. Example: 500 shares of MSFT + selling 10 call contracts (1000 shares worth) = 5 contracts uncovered = short a tail.
+
+**Implementation**: `web/lib/nakedShortGuard.ts` (shared guard), `scripts/naked_short_audit.py` (audit + cancel)
+**Tests**: `web/tests/naked-short-guard.test.ts`, `scripts/tests/test_naked_short_audit.py`
 
 ---
 

@@ -15,6 +15,7 @@ Usage:
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -705,7 +706,8 @@ def main():
     parser.add_argument("--client-id", type=int, default=DEFAULT_CLIENT_ID, help="Client ID")
     parser.add_argument("--sync", action="store_true", help="Sync to portfolio.json")
     parser.add_argument("--no-prices", action="store_true", help="Skip market price fetch")
-    
+    parser.add_argument("--skip-audit", action="store_true", help="Skip naked short audit after sync")
+
     args = parser.parse_args()
     
     # Connect
@@ -747,6 +749,51 @@ def main():
         if args.sync:
             portfolio = convert_to_portfolio_format(account, collapsed, pnl_data)
             save_portfolio(portfolio)
+
+            # ── Naked Short Audit (post-sync) ──
+            if not args.skip_audit:
+                try:
+                    from naked_short_audit import find_naked_short_violations
+
+                    import logging
+                    log = logging.getLogger("ib_sync.audit")
+
+                    data_dir = str(PORTFOLIO_PATH.parent)
+                    orders_path = os.path.join(data_dir, "orders.json")
+                    if os.path.exists(orders_path):
+                        with open(orders_path) as f:
+                            orders_data = json.load(f)
+                        orders = orders_data if isinstance(orders_data, list) else orders_data.get("orders", orders_data.get("open_orders", []))
+
+                        violations = find_naked_short_violations(orders, portfolio["positions"])
+                        if violations:
+                            log.warning("NAKED SHORT AUDIT: %d violation(s) detected", len(violations))
+                            for v in violations:
+                                log.warning("  → %s: %s (order %s)", v["symbol"], v["reason"], v["order_id"])
+
+                            # Auto-cancel only if client is still connected
+                            if client.is_connected():
+                                from naked_short_audit import cancel_violations
+                                cancelled = cancel_violations(client, violations)
+                                log.warning("  Cancelled %d violating order(s)", cancelled)
+                            else:
+                                log.warning("  Client disconnected — skipping auto-cancel")
+                        else:
+                            print("✓ Naked short audit: no violations")
+                    else:
+                        print("  Naked short audit: orders.json not found, skipping")
+                except ImportError:
+                    import logging
+                    logging.getLogger("ib_sync.audit").warning(
+                        "naked_short_audit module not available — skipping audit"
+                    )
+                except Exception:
+                    import logging
+                    logging.getLogger("ib_sync.audit").warning(
+                        "Naked short audit failed — sync completed successfully",
+                        exc_info=True,
+                    )
+
             print("\n⚠️  Note: kelly_optimal, target, and stop fields need manual evaluation")
         else:
             print("\nRun with --sync to save to portfolio.json")

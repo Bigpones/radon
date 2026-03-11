@@ -180,8 +180,8 @@ export const executionItems: ExecutionItem[] = [
   {
     step: "Execute",
     summary:
-      "Execution remains visible and operator-led, with source transparency instead of black-box routing mystique.",
-    metadata: "IB quotes, live pricing, fill path, trade log",
+      "Execution remains visible and operator-led. Naked short protection blocks uncovered calls and stock shorts before the order reaches the exchange.",
+    metadata: "IB quotes, live pricing, fill path, naked short guard, trade log",
   },
   {
     step: "Track",

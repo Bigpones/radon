@@ -32,6 +32,7 @@ export function ExecutionWorkflow() {
             <li>Every step exposes methodology, not just an output state.</li>
             <li>Motion only explains progression and scan status.</li>
             <li>Defined-risk structures remain first-class citizens.</li>
+            <li>Every short option must be fully covered. Naked calls, naked stock shorts, and partial coverage are blocked before the order reaches the exchange.</li>
           </ul>
         </div>
       </aside>
