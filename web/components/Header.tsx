@@ -1,16 +1,25 @@
 "use client";
 
 import { useRef, useEffect, type ReactNode } from "react";
-import { Moon, Sun } from "lucide-react";
+import { Maximize2, Minimize2, Moon, Sun } from "lucide-react";
 
 type HeaderProps = {
   activeLabel: string;
+  isFullscreen: boolean;
+  onToggleFullscreen: () => void;
   onToggleTheme: () => void;
   theme?: "dark" | "light";
   children?: ReactNode;
 };
 
-export default function Header({ activeLabel, onToggleTheme, theme, children }: HeaderProps) {
+export default function Header({
+  activeLabel,
+  isFullscreen,
+  onToggleFullscreen,
+  onToggleTheme,
+  theme,
+  children,
+}: HeaderProps) {
   const searchRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -40,6 +49,15 @@ export default function Header({ activeLabel, onToggleTheme, theme, children }: 
           placeholder="CMD+K to search..."
           aria-label="Search"
         />
+        <button
+          suppressHydrationWarning
+          className="fullscreen-toggle"
+          onClick={onToggleFullscreen}
+          title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+          aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+        >
+          {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+        </button>
         <button
           suppressHydrationWarning
           className="theme-toggle"

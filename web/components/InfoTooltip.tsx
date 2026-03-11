@@ -8,7 +8,14 @@ import { useRef, useState } from "react";
  * escapes parent overflow:hidden/auto containers. Flips below the
  * trigger when there isn't enough viewport space above.
  */
-export default function InfoTooltip({ text }: { text: string }) {
+type InfoTooltipProps = {
+  text: string;
+  ariaLabel?: string;
+  triggerTestId?: string;
+  contentTestId?: string;
+};
+
+export default function InfoTooltip({ text, ariaLabel, triggerTestId, contentTestId }: InfoTooltipProps) {
   const [rect, setRect] = useState<DOMRect | null>(null);
   const ref = useRef<HTMLSpanElement>(null);
 
@@ -28,9 +35,14 @@ export default function InfoTooltip({ text }: { text: string }) {
   return (
     <span
       ref={ref}
+      data-testid={triggerTestId}
       style={{ display: "inline-flex", alignItems: "center" }}
       onMouseEnter={show}
       onMouseLeave={hide}
+      onFocus={show}
+      onBlur={hide}
+      aria-label={ariaLabel}
+      tabIndex={0}
     >
       <span
         style={{
@@ -52,15 +64,15 @@ export default function InfoTooltip({ text }: { text: string }) {
       </span>
       {rect && (
         <span
+          data-testid={contentTestId}
           style={{
             position: "fixed",
             ...(flipBelow
               ? { top: rect.bottom + 6 }
               : { top: rect.top - 6, transform: "translateY(-100%)" }),
             left: Math.max(8, Math.min(rect.left + rect.width / 2 - 130, typeof window !== "undefined" ? window.innerWidth - 268 : 1200)),
-            background: "var(--bg-panel)",
-            border: "1px solid var(--border-focus)",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+            background: "var(--chart-tooltip-bg, var(--bg-panel))",
+            border: "1px solid var(--chart-tooltip-border, var(--border-dim))",
             padding: "8px 10px",
             width: 260,
             fontSize: 11,

@@ -48,3 +48,8 @@ test("[theme] PriceChart defaults theme to 'dark' when not provided", () => {
   const hasFallbackExpr = /theme\s*\?\?\s*["']dark["']/.test(src); // ?? "dark"
   expect(hasPropDefault || hasFallbackExpr).toBe(true);
 });
+
+test("[colors] PriceChart resolves chart colors through shared chart-system helpers", () => {
+  expect(src).toContain("resolveChartSeriesColor");
+  expect(src).not.toMatch(/#05AD98|#E85D6C/);
+});

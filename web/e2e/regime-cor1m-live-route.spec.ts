@@ -1,6 +1,7 @@
 import path from "path";
-import { readFile, readdir } from "fs/promises";
+import { readFile, readdir, stat } from "fs/promises";
 import { test, expect } from "@playwright/test";
+import { selectPreferredCriCandidate, type CriCacheCandidate } from "../lib/criCache";
 
 const DATA_DIR = path.join(process.cwd(), "..", "data");
 const CACHE_PATH = path.join(DATA_DIR, "cri.json");
@@ -22,19 +23,38 @@ const ORDERS_EMPTY = {
   executed_count: 0,
 };
 
+async function readCriCandidate(filePath: string): Promise<CriCacheCandidate | null> {
+  try {
+    const raw = await readFile(filePath, "utf-8");
+    const jsonStart = raw.indexOf("{");
+    if (jsonStart === -1) return null;
+    const fileStat = await stat(filePath);
+    return {
+      path: filePath,
+      mtimeMs: fileStat.mtimeMs,
+      data: JSON.parse(raw.slice(jsonStart)) as Record<string, unknown>,
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function readLatestCri(): Promise<Record<string, unknown>> {
+  let scheduled: CriCacheCandidate | null = null;
   try {
     const files = await readdir(SCHEDULED_DIR);
     const jsonFiles = files.filter((file) => file.startsWith("cri-") && file.endsWith(".json")).sort();
-    if (jsonFiles.length > 0) {
-      const latest = path.join(SCHEDULED_DIR, jsonFiles[jsonFiles.length - 1]);
-      return JSON.parse(await readFile(latest, "utf-8"));
+    for (let index = jsonFiles.length - 1; index >= 0; index -= 1) {
+      scheduled = await readCriCandidate(path.join(SCHEDULED_DIR, jsonFiles[index]));
+      if (scheduled) break;
     }
   } catch {
-    // fall through to legacy cache
+    scheduled = null;
   }
 
-  return JSON.parse(await readFile(CACHE_PATH, "utf-8"));
+  const selected = selectPreferredCriCandidate(scheduled, await readCriCandidate(CACHE_PATH));
+  if (!selected) throw new Error("No readable CRI cache candidate found.");
+  return selected.data as Record<string, unknown>;
 }
 
 async function setupNonRegimeMocks(page: import("@playwright/test").Page) {

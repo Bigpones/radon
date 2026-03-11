@@ -115,9 +115,9 @@ test.describe("Regime /regime — day change indicators", () => {
     await expect(vvixChg).toHaveCount(0);
     const spyChg = page.locator('[data-testid="strip-spy"] [data-testid="regime-day-chg"]');
     await expect(spyChg).toHaveCount(0);
-    // COR1M 5d change is static data — always visible regardless of market status
-    const cor1mChg = page.locator('[data-testid="strip-cor1m"] [data-testid="regime-day-chg"]');
-    await expect(cor1mChg).toHaveCount(1);
+    // COR1M 5d change remains visible in the muted subline regardless of market status
+    const cor1mSub = page.locator('[data-testid="strip-cor1m"] .regime-strip-sub');
+    await expect(cor1mSub).toHaveText("5d chg: -0.50 pts");
   });
 
   test("MARKET CLOSED banner not visible when market open", async ({ page }) => {

@@ -1,9 +1,16 @@
 "use client";
 
-import { AlertTriangle, BarChart3, Gauge, ShieldAlert, Sigma, TrendingDown } from "lucide-react";
+import { AlertTriangle, Gauge, ShieldAlert, Sigma, TrendingDown } from "lucide-react";
 import { useMemo, useState } from "react";
+import {
+  DEFAULT_PERFORMANCE_CHART_HEIGHT,
+  DEFAULT_PERFORMANCE_CHART_MARGINS,
+  DEFAULT_PERFORMANCE_CHART_WIDTH,
+  buildPerformanceChartModel,
+} from "@/lib/performanceChart";
 import type { PerformanceData, PerformanceSeriesPoint } from "@/lib/types";
 import { usePerformance } from "@/lib/usePerformance";
+import ChartPanel from "./charts/ChartPanel";
 import MetricDefinitionModal from "./MetricDefinitionModal";
 
 function fmtUsd(value: number): string {
@@ -83,81 +90,105 @@ function StatCard({
   );
 }
 
-function buildLinePath(values: number[], width: number, height: number, padding: number): string {
-  if (values.length === 0) return "";
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
-  return values
-    .map((value, index) => {
-      const x = padding + (index / Math.max(values.length - 1, 1)) * (width - padding * 2);
-      const y = height - padding - ((value - min) / span) * (height - padding * 2);
-      return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
-    })
-    .join(" ");
-}
-
-function buildAreaPath(values: number[], width: number, height: number, padding: number): string {
-  if (values.length === 0) return "";
-  const line = buildLinePath(values, width, height, padding);
-  const endX = width - padding;
-  const startX = padding;
-  return `${line} L ${endX} ${height - padding} L ${startX} ${height - padding} Z`;
-}
-
 function PerformanceChart({ data }: { data: PerformanceData }) {
-  const width = 820;
-  const height = 280;
-  const padding = 24;
-
-  const { equityPath, benchmarkPath, areaPath, latestEquity, latestBenchmark } = useMemo(() => {
-    const startEquity = data.summary.starting_equity;
-    const startBenchmark = data.series[0]?.benchmark_close ?? 1;
-    const equityValues = data.series.map((point) => point.equity);
-    const benchmarkValues = data.series.map((point) => (point.benchmark_close / startBenchmark) * startEquity);
-    return {
-      equityPath: buildLinePath(equityValues, width, height, padding),
-      benchmarkPath: buildLinePath(benchmarkValues, width, height, padding),
-      areaPath: buildAreaPath(equityValues, width, height, padding),
-      latestEquity: equityValues[equityValues.length - 1] ?? startEquity,
-      latestBenchmark: benchmarkValues[benchmarkValues.length - 1] ?? startEquity,
-    };
-  }, [data]);
+  const {
+    equityPath,
+    benchmarkPath,
+    areaPath,
+    latestEquity,
+    latestBenchmark,
+    yAxisTicks,
+    xAxisTicks,
+    plotBottom,
+    plotLeft,
+    plotRight,
+  } = useMemo(
+    () => buildPerformanceChartModel(data, DEFAULT_PERFORMANCE_CHART_WIDTH, DEFAULT_PERFORMANCE_CHART_HEIGHT),
+    [data],
+  );
 
   return (
-    <div className="section">
-      <div className="section-header">
-        <div className="section-title">
-          <BarChart3 size={14} />
-          YTD Equity Curve
-        </div>
-        <span className="pill neutral">{data.series.length} SESSIONS</span>
-      </div>
-      <div className="section-body performance-chart-shell">
-        <div className="performance-chart-legend">
-          <span><span className="performance-swatch performance-swatch-equity" /> Portfolio</span>
-          <span><span className="performance-swatch performance-swatch-benchmark" /> {data.benchmark} rebased</span>
-        </div>
+    <ChartPanel
+      family="analytical-time-series"
+      title="YTD Equity Curve"
+      badge={<span className="pill neutral">{data.series.length} SESSIONS</span>}
+      legend={[
+        { label: "Portfolio", role: "primary" },
+        { label: `${data.benchmark} rebased`, role: "comparison" },
+      ]}
+      bodyClassName="performance-chart-shell"
+      dataTestId="performance-chart-panel"
+    >
         <svg
           data-testid="performance-equity-chart"
-          viewBox={`0 0 ${width} ${height}`}
+          viewBox={`0 0 ${DEFAULT_PERFORMANCE_CHART_WIDTH} ${DEFAULT_PERFORMANCE_CHART_HEIGHT}`}
           className="performance-chart"
           role="img"
           aria-label="YTD portfolio equity curve versus benchmark"
         >
           <defs>
             <linearGradient id="performanceAreaGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="rgba(5,173,152,0.22)" />
-              <stop offset="100%" stopColor="rgba(5,173,152,0.02)" />
+              <stop offset="0%" stopColor="var(--chart-fill-primary-start)" />
+              <stop offset="100%" stopColor="var(--chart-fill-primary-end)" />
             </linearGradient>
           </defs>
-          {[0, 1, 2, 3].map((step) => {
-            const y = padding + ((height - padding * 2) / 3) * step;
-            return <line key={step} x1={padding} x2={width - padding} y1={y} y2={y} className="performance-grid-line" />;
+          {yAxisTicks.map((tick) => {
+            const isBaseline = Math.abs(tick.y - plotBottom) < 0.5;
+            return (
+              <line
+                key={tick.value}
+                x1={plotLeft}
+                x2={plotRight}
+                y1={tick.y}
+                y2={tick.y}
+                className={isBaseline ? "performance-axis-line" : "performance-grid-line"}
+              />
+            );
           })}
+          <g data-testid="performance-y-axis">
+            <line
+              x1={plotLeft}
+              x2={plotLeft}
+              y1={DEFAULT_PERFORMANCE_CHART_MARGINS.top}
+              y2={plotBottom}
+              className="performance-axis-line"
+            />
+            {yAxisTicks.map((tick) => (
+              <g key={`y-${tick.value}`} className="performance-axis-tick">
+                <line x1={plotLeft - 6} x2={plotLeft} y1={tick.y} y2={tick.y} className="performance-axis-line" />
+                <text
+                  x={plotLeft - 12}
+                  y={tick.y}
+                  textAnchor="end"
+                  dominantBaseline="middle"
+                  className="performance-axis-label"
+                  data-testid="performance-axis-y-label"
+                >
+                  {tick.label}
+                </text>
+              </g>
+            ))}
+          </g>
           <path d={areaPath} fill="url(#performanceAreaGradient)" />
           <path d={benchmarkPath} className="performance-line performance-line-benchmark" />
           <path d={equityPath} className="performance-line performance-line-equity" />
+          <g data-testid="performance-x-axis">
+            <line x1={plotLeft} x2={plotRight} y1={plotBottom} y2={plotBottom} className="performance-axis-line" />
+            {xAxisTicks.map((tick, index) => (
+              <g key={`x-${tick.index}`} className="performance-axis-tick">
+                <line x1={tick.x} x2={tick.x} y1={plotBottom} y2={plotBottom + 6} className="performance-axis-line" />
+                <text
+                  x={tick.x}
+                  y={plotBottom + 18}
+                  textAnchor={index === 0 ? "start" : index === xAxisTicks.length - 1 ? "end" : "middle"}
+                  className="performance-axis-label"
+                  data-testid="performance-axis-x-label"
+                >
+                  {tick.label}
+                </text>
+              </g>
+            ))}
+          </g>
         </svg>
         <div className="performance-chart-meta">
           <div className="performance-meta-item">
@@ -173,8 +204,7 @@ function PerformanceChart({ data }: { data: PerformanceData }) {
             <span className={`performance-meta-value ${toneClass(data.benchmark_total_return)}`}>{fmtPct(data.benchmark_total_return)}</span>
           </div>
         </div>
-      </div>
-    </div>
+    </ChartPanel>
   );
 }
 

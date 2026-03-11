@@ -1,7 +1,15 @@
 /** SVG chart primitives for Satori inline SVG rendering.
  *  Returns React elements (JSX) that Satori renders natively. */
 
-import { OG } from "./og-theme";
+import { OG, ogHeatmapColor, ogSeriesFill } from "./og-theme";
+
+function axisFontSize(): number {
+  return OG.chart.axisFontSize;
+}
+
+function axisFontFamily(): string {
+  return OG.chart.axisFontFamily;
+}
 
 /* ─── Scale Utilities ────────────────────────────────── */
 
@@ -85,7 +93,6 @@ export function lineChartSvg({
     .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`)
     .join(" ");
 
-  // Y-axis ticks (5 ticks)
   const yTicks: number[] = [];
   for (let i = 0; i < 5; i++) {
     yTicks.push(yMin - yPad + ((yMax + yPad - (yMin - yPad)) / 4) * i);
@@ -93,7 +100,6 @@ export function lineChartSvg({
 
   return (
     <svg width={width} height={height}>
-      {/* Grid lines */}
       {showGrid &&
         yTicks.map((tick, i) => {
           const y = marginTop + yScale(tick);
@@ -104,16 +110,16 @@ export function lineChartSvg({
                 y1={y}
                 x2={width - marginRight}
                 y2={y}
-                stroke={OG.border}
+                stroke={OG.chart.grid}
                 strokeWidth={1}
               />
               <text
                 x={marginLeft - 6}
                 y={y + 3}
-                fill={OG.muted}
-                fontSize={9}
+                fill={OG.chart.axisLabel}
+                fontSize={axisFontSize()}
                 textAnchor="end"
-                fontFamily="IBM Plex Mono"
+                fontFamily={axisFontFamily()}
               >
                 {tick.toFixed(2)}
               </text>
@@ -121,7 +127,6 @@ export function lineChartSvg({
           );
         })}
 
-      {/* X-axis labels (show every Nth) */}
       {data.map((d, i) => {
         const skip = Math.max(1, Math.floor(data.length / 8));
         if (i % skip !== 0 && i !== data.length - 1) return null;
@@ -130,20 +135,18 @@ export function lineChartSvg({
             key={`x-${i}`}
             x={points[i].x}
             y={height - 6}
-            fill={OG.muted}
-            fontSize={8}
+            fill={OG.chart.axisLabel}
+            fontSize={axisFontSize()}
             textAnchor="middle"
-            fontFamily="IBM Plex Mono"
+            fontFamily={axisFontFamily()}
           >
             {d.label}
           </text>
         );
       })}
 
-      {/* Line */}
       <path d={pathD} fill="none" stroke={color} strokeWidth={2} />
 
-      {/* Dots */}
       {showDots &&
         points.map((p, i) => (
           <circle key={`dot-${i}`} cx={p.x} cy={p.y} r={3} fill={color} />
@@ -177,7 +180,6 @@ export function barChartSvg({
 }: BarChartProps) {
   if (data.length === 0) return null;
 
-  const innerW = width - marginLeft - marginRight;
   const innerH = height - marginTop - marginBottom;
   const values = data.map((d) => d.value);
   const yMin = Math.min(0, ...values);
@@ -195,18 +197,16 @@ export function barChartSvg({
 
   return (
     <svg width={width} height={height}>
-      {/* Zero line */}
       <line
         x1={marginLeft}
         y1={zeroY}
         x2={width - marginRight}
         y2={zeroY}
-        stroke={OG.muted}
+        stroke={OG.chart.axis}
         strokeWidth={1}
         strokeDasharray="4,2"
       />
 
-      {/* Bars */}
       {data.map((d) => {
         const x = xScale(d.label);
         const barY = d.value >= 0 ? marginTop + yScale(d.value) : zeroY;
@@ -225,7 +225,6 @@ export function barChartSvg({
         );
       })}
 
-      {/* X-axis labels */}
       {data.map((d) => {
         const skip = Math.max(1, Math.floor(data.length / 12));
         const idx = data.indexOf(d);
@@ -235,10 +234,10 @@ export function barChartSvg({
             key={`xl-${d.label}`}
             x={xScale(d.label) + bandwidth / 2}
             y={height - 6}
-            fill={OG.muted}
-            fontSize={8}
+            fill={OG.chart.axisLabel}
+            fontSize={axisFontSize()}
             textAnchor="middle"
-            fontFamily="IBM Plex Mono"
+            fontFamily={axisFontFamily()}
             transform={`rotate(-45, ${xScale(d.label) + bandwidth / 2}, ${height - 6})`}
           >
             {d.label}
@@ -246,7 +245,6 @@ export function barChartSvg({
         );
       })}
 
-      {/* Y-axis labels */}
       {[yMin, (yMin + yMax) / 2, yMax].map((tick, i) => {
         const y = marginTop + yScale(tick);
         return (
@@ -254,10 +252,10 @@ export function barChartSvg({
             key={`yl-${i}`}
             x={marginLeft - 6}
             y={y + 3}
-            fill={OG.muted}
-            fontSize={9}
+            fill={OG.chart.axisLabel}
+            fontSize={axisFontSize()}
             textAnchor="end"
-            fontFamily="IBM Plex Mono"
+            fontFamily={axisFontFamily()}
           >
             {tick >= 1e9
               ? `${(tick / 1e9).toFixed(1)}B`
@@ -331,16 +329,16 @@ export function areaChartSvg({
                 y1={y}
                 x2={width - marginRight}
                 y2={y}
-                stroke={OG.border}
+                stroke={OG.chart.grid}
                 strokeWidth={1}
               />
               <text
                 x={marginLeft - 6}
                 y={y + 3}
-                fill={OG.muted}
-                fontSize={9}
+                fill={OG.chart.axisLabel}
+                fontSize={axisFontSize()}
                 textAnchor="end"
-                fontFamily="IBM Plex Mono"
+                fontFamily={axisFontFamily()}
               >
                 {tick.toFixed(2)}
               </text>
@@ -356,17 +354,17 @@ export function areaChartSvg({
             key={`x-${i}`}
             x={points[i].x}
             y={height - 6}
-            fill={OG.muted}
-            fontSize={8}
+            fill={OG.chart.axisLabel}
+            fontSize={axisFontSize()}
             textAnchor="middle"
-            fontFamily="IBM Plex Mono"
+            fontFamily={axisFontFamily()}
           >
             {d.label}
           </text>
         );
       })}
 
-      <path d={areaD} fill={color} opacity={fillOpacity} />
+      <path d={areaD} fill={ogSeriesFill("primary", fillOpacity)} />
       <path d={lineD} fill="none" stroke={color} strokeWidth={2} />
     </svg>
   );
@@ -408,48 +406,35 @@ export function heatmapSvg({
   const vMin = Math.min(...values);
   const vMax = Math.max(...values);
 
-  const defaultColor = (v: number): string => {
-    const norm = (v - vMin) / (vMax - vMin || 1);
-    if (norm > 0.5) {
-      const t = (norm - 0.5) * 2;
-      const g = Math.round(100 + 155 * t);
-      return `rgb(34, ${g}, 94)`;
-    }
-    const t = (0.5 - norm) * 2;
-    const r = Math.round(100 + 139 * t);
-    return `rgb(${r}, 68, 68)`;
-  };
-
+  const defaultColor = (v: number): string => ogHeatmapColor(v, vMin, vMax);
   const color = colorScale ?? defaultColor;
   const lookup = new Map(data.map((d) => [`${d.row}|${d.col}`, d.value]));
 
   return (
     <svg width={width} height={height}>
-      {/* Column headers */}
       {cols.map((col, ci) => (
         <text
           key={`ch-${ci}`}
           x={marginLeft + ci * cellW + cellW / 2}
           y={marginTop - 8}
-          fill={OG.muted}
-          fontSize={8}
+          fill={OG.chart.axisLabel}
+          fontSize={axisFontSize()}
           textAnchor="middle"
-          fontFamily="IBM Plex Mono"
+          fontFamily={axisFontFamily()}
         >
           {col}
         </text>
       ))}
 
-      {/* Row labels + cells */}
       {rows.map((row, ri) => (
         <g key={`row-${ri}`}>
           <text
             x={marginLeft - 6}
             y={marginTop + ri * cellH + cellH / 2 + 3}
-            fill={OG.muted}
-            fontSize={8}
+            fill={OG.chart.axisLabel}
+            fontSize={axisFontSize()}
             textAnchor="end"
-            fontFamily="IBM Plex Mono"
+            fontFamily={axisFontFamily()}
           >
             {row}
           </text>
@@ -462,7 +447,7 @@ export function heatmapSvg({
                 y={marginTop + ri * cellH + 1}
                 width={cellW - 2}
                 height={cellH - 2}
-                fill={val != null ? color(val) : OG.panel}
+                fill={val != null ? color(val as number) : OG.panel}
               />
             );
           })}

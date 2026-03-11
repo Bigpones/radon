@@ -40,6 +40,7 @@ const EMPTY_CRI = {
   spx_100d_ma: null,
   spx_distance_pct: 0,
   cor1m: null,
+  cor1m_previous_close: null,
   cor1m_5d_change: null,
   realized_vol: null,
   cri: { score: 0, level: "LOW", components: { vix: 0, vvix: 0, correlation: 0, momentum: 0 } },
@@ -70,6 +71,11 @@ function normalizeCriPayload(raw: Record<string, unknown>): Record<string, unkno
     ...EMPTY_CRI,
     ...raw,
     cor1m: asNumber(raw.cor1m),
+    cor1m_previous_close:
+      asNumber(raw.cor1m_previous_close)
+      ?? (Array.isArray(raw.history) && raw.history.length > 0
+        ? asNumber((raw.history[raw.history.length - 1] as RegimeHistoryEntry).cor1m ?? null)
+        : null),
     cor1m_5d_change: asNumber(raw.cor1m_5d_change),
     realized_vol: normalizedRealizedVol,
     history,

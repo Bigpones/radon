@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowDown, ArrowUp, Check, Shield, X, Zap } from "lucide-react";
 import CriHistoryChart from "./CriHistoryChart";
+import RegimeRelationshipView from "./RegimeRelationshipView";
 import type { ChartSeries, CriHistoryEntry } from "./CriHistoryChart";
 import InfoTooltip from "./InfoTooltip";
 import type { PriceData } from "@/lib/pricesProtocol";
+import { chartSeriesColor } from "@/lib/chartSystem";
 import { useRegime } from "@/lib/useRegime";
 import { SECTION_TOOLTIPS } from "@/lib/sectionTooltips";
 import { computeCri, type CriLevel, type CriResult } from "@/lib/criCalc";
@@ -148,7 +150,9 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
   const liveVix = prices["VIX"]?.last ?? null;
   const liveVvix = prices["VVIX"]?.last ?? null;
   const liveSpy = prices["SPY"]?.last ?? null;
-  const hasLive = marketOpen && (liveVix != null || liveVvix != null || liveSpy != null);
+  const liveCor1m = marketOpen ? (prices["COR1M"]?.last ?? null) : null;
+  const hasLiveCor1m = liveCor1m != null;
+  const hasLive = marketOpen && (liveVix != null || liveVvix != null || liveSpy != null || hasLiveCor1m);
 
   // Previous close from WS — for day change computation
   const vixClose = marketOpen ? (prices["VIX"]?.close ?? null) : null;
@@ -193,8 +197,15 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
   const hasIntradayRvol = intradayRvol != null;
   const activeRvol = intradayRvol ?? data?.realized_vol ?? null;
 
-  const activeCorr = data?.cor1m ?? 0;
-  const activeCorrChange = data?.cor1m_5d_change ?? 0;
+  const activeCorr = liveCor1m ?? data?.cor1m ?? 0;
+  const lastHistoryCor1m = data?.history && data.history.length > 0
+    ? data.history[data.history.length - 1]?.cor1m ?? null
+    : null;
+  const cor1mPreviousClose = marketOpen
+    ? data?.cor1m_previous_close ?? lastHistoryCor1m ?? null
+    : null;
+  const corr5dChange = data?.cor1m_5d_change ?? null;
+  const activeCorrChange = corr5dChange ?? 0;
   const correlationTriggerMet =
     data?.crash_trigger?.conditions.cor1m_gt_60 ?? activeCorr > 60;
 
@@ -327,9 +338,10 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
           <div className="regime-strip-sub">20d annualized</div>
         </div>
         <div className="regime-strip-cell" data-testid="strip-cor1m">
-          <div className="regime-strip-label">COR1M <LiveBadge live={false} /></div>
+          <div className="regime-strip-label">COR1M <LiveBadge live={hasLiveCor1m} /></div>
           <div className="regime-strip-value">{fmt(activeCorr, 2)}</div>
-          <PointChange change={activeCorrChange} suffix=" pts" label="5d chg" />
+          <DayChange last={liveCor1m} close={cor1mPreviousClose} />
+          <div className="regime-strip-sub">{`5d chg: ${corr5dChange != null ? `${fmtSigned(corr5dChange)} pts` : "---"}`}</div>
         </div>
       </div>
 
@@ -343,7 +355,7 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
           </div>
           <ComponentBar label="VIX" score={cri.components.vix} live={marketOpen && liveVix != null} />
           <ComponentBar label="VVIX" score={cri.components.vvix} live={marketOpen && liveVvix != null} />
-          <ComponentBar label="CORRELATION" score={cri.components.correlation} live={false} />
+          <ComponentBar label="CORRELATION" score={cri.components.correlation} live={hasLiveCor1m} />
           <ComponentBar label="MOMENTUM" score={cri.components.momentum} live={marketOpen && liveSpy != null} />
         </div>
         <div className="regime-triggers">
@@ -371,7 +383,7 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
               label="COR1M > 60"
               met={correlationTriggerMet}
               value={fmt(activeCorr, 2)}
-              live={false}
+              live={hasLiveCor1m}
             />
         </div>
       </div>
@@ -380,12 +392,12 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
 
       {data?.history && data.history.length > 0 && (() => {
         const vixVvixSeries: [ChartSeries, ChartSeries] = [
-          { key: "vix", label: "VIX", color: "#05AD98", axis: "left", format: (v: number) => v.toFixed(1) },
-          { key: "vvix", label: "VVIX", color: "#8B5CF6", axis: "right", format: (v: number) => v.toFixed(0) },
+          { key: "vix", label: "VIX", color: chartSeriesColor("primary"), axis: "left", format: (v: number) => v.toFixed(1) },
+          { key: "vvix", label: "VVIX", color: chartSeriesColor("extreme"), axis: "right", format: (v: number) => v.toFixed(0) },
         ];
         const rvolCorrSeries: [ChartSeries, ChartSeries] = [
-          { key: "realized_vol", label: "RVOL", color: "#F5A623", axis: "left", format: (v: number) => `${v.toFixed(1)}%` },
-          { key: "cor1m", label: "COR1M", color: "#D946A8", axis: "right", format: (v: number) => v.toFixed(1) },
+          { key: "realized_vol", label: "RVOL", color: chartSeriesColor("caution"), axis: "left", format: (v: number) => `${v.toFixed(1)}%` },
+          { key: "cor1m", label: "COR1M", color: chartSeriesColor("dislocation"), axis: "right", format: (v: number) => v.toFixed(1) },
         ];
         // Live values for today's data point (VIX/VVIX chart)
         const vixVvixLive: Partial<Record<keyof CriHistoryEntry, number>> = {};
@@ -394,17 +406,25 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
         // Live values for today's data point (RVOL/COR1M chart)
         const rvolCorrLive: Partial<Record<keyof CriHistoryEntry, number>> = {};
         if (intradayRvol != null) rvolCorrLive.realized_vol = intradayRvol;
+        if (liveCor1m != null) rvolCorrLive.cor1m = liveCor1m;
 
         return (
           <>
-            <div className="section-header" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              20-SESSION HISTORY
-              <InfoTooltip text={SECTION_TOOLTIPS["10-DAY HISTORY"]} />
+            <div className="section-header" data-testid="regime-history-header">
+              <div className="section-title" data-testid="regime-history-title">
+                <span data-testid="regime-history-title-text">20-SESSION HISTORY</span>
+                <InfoTooltip
+                  text={SECTION_TOOLTIPS["20-SESSION HISTORY"]}
+                  ariaLabel="Explain the 20-session history charts"
+                  triggerTestId="regime-history-tooltip-trigger"
+                  contentTestId="regime-history-tooltip-bubble"
+                />
+              </div>
               {marketOpen && hasLive && (
-                <span className="regime-badge" style={{ background: "rgba(5,173,152,0.15)", color: "var(--positive)" }}>LIVE</span>
+                <span className="regime-badge" style={{ background: "var(--chart-live-badge-bg)", color: "var(--chart-live-badge-text)" }}>LIVE</span>
               )}
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+            <div className="regime-history-grid" data-testid="regime-history-grid">
               <CriHistoryChart
                 history={data.history}
                 series={vixVvixSeries}
@@ -418,6 +438,13 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
                 liveValues={Object.keys(rvolCorrLive).length > 0 ? rvolCorrLive : undefined}
               />
             </div>
+            <RegimeRelationshipView
+              history={data.history}
+              liveValues={{
+                realized_vol: activeRvol ?? undefined,
+                cor1m: activeCorr ?? undefined,
+              }}
+            />
           </>
         );
       })()}

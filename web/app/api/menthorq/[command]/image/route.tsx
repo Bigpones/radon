@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og";
 import { readdir, readFile } from "fs/promises";
 import { join } from "path";
 import { loadFonts } from "@/lib/og-fonts";
-import { OG } from "@/lib/og-theme";
+import { OG, ogFamilyContract, ogSeriesColor } from "@/lib/og-theme";
 import { lineChartSvg } from "@/lib/og-charts";
 
 export const runtime = "nodejs";
@@ -41,6 +41,7 @@ async function loadLatestCache(
 const WIDTH = 1200;
 const CHART_W = 1160;
 const CHART_H = 400;
+const ANALYTICAL_TIME_SERIES = ogFamilyContract("analytical-time-series");
 
 function GenericChart({ data }: { data: DashboardCache }) {
   const items = data.data ?? [];
@@ -69,7 +70,7 @@ function GenericChart({ data }: { data: DashboardCache }) {
         data: chartData,
         width: CHART_W,
         height: CHART_H,
-        color: OG.info,
+        color: ogSeriesColor("primary"),
         marginLeft: 60,
       })}
     </div>
@@ -132,9 +133,9 @@ export async function GET(
           width: "100%",
           height: "100%",
           background: OG.bg,
-          fontFamily: "IBM Plex Mono",
+          fontFamily: OG.chart.axisFontFamily,
           color: OG.text,
-          padding: "20px",
+          padding: `${OG.chart.padding}px`,
         }}
       >
         {/* Title bar */}
@@ -142,28 +143,23 @@ export async function GET(
           style={{
             display: "flex",
             alignItems: "center",
+            justifyContent: "space-between",
             marginBottom: "16px",
+            paddingBottom: "10px",
+            minHeight: `${OG.chart.headerHeight}px`,
+            borderBottom: `1px solid ${OG.border}`,
           }}
         >
-          <span
-            style={{
-              fontSize: "14px",
-              fontWeight: 700,
-              letterSpacing: "0.1em",
-            }}
-          >
-            {command.toUpperCase()}
-          </span>
-          <span
-            style={{
-              fontSize: "11px",
-              color: OG.muted,
-              marginLeft: "12px",
-            }}
-          >
-            {data.date ?? "---"}
-          </span>
-          {data.title && (
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <span
+              style={{
+                fontSize: "14px",
+                fontWeight: 700,
+                letterSpacing: "0.1em",
+              }}
+            >
+              {command.toUpperCase()}
+            </span>
             <span
               style={{
                 fontSize: "11px",
@@ -171,9 +167,48 @@ export async function GET(
                 marginLeft: "12px",
               }}
             >
-              {data.title}
+              {data.date ?? "---"}
             </span>
-          )}
+            {data.title && (
+              <span
+                style={{
+                  fontSize: "11px",
+                  color: OG.muted,
+                  marginLeft: "12px",
+                }}
+              >
+                {data.title}
+              </span>
+            )}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              gap: "8px",
+              alignItems: "center",
+            }}
+          >
+            <span
+              style={{
+                fontSize: "11px",
+                color: OG.text,
+                border: `1px solid ${OG.border}`,
+                padding: "4px 8px",
+              }}
+            >
+              {ANALYTICAL_TIME_SERIES.label.toUpperCase()}
+            </span>
+            <span
+              style={{
+                fontSize: "11px",
+                color: OG.muted,
+                border: `1px solid ${OG.border}`,
+                padding: "4px 8px",
+              }}
+            >
+              {ANALYTICAL_TIME_SERIES.renderer.toUpperCase()}
+            </span>
+          </div>
         </div>
 
         {/* Chart */}

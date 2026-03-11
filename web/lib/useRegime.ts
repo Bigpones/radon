@@ -26,6 +26,7 @@ export type CriData = {
   spx_100d_ma: number | null;
   spx_distance_pct: number;
   cor1m: number | null;
+  cor1m_previous_close?: number | null;
   cor1m_5d_change: number | null;
   realized_vol: number | null;
   cri: {

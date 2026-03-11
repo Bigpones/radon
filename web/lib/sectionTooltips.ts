@@ -97,10 +97,15 @@ export const SECTION_TOOLTIPS: Record<string, string> = {
     "SPX below 100-day MA (trend break), realized vol > 25% (historical stress), " +
     "and COR1M > 60 (panic herding). All three must fire to trigger.",
 
-  "10-DAY HISTORY":
-    "Two D3 charts showing 20 trading sessions. Left: VIX + VVIX (dual axis). " +
-    "Right: 20d Realized Vol + COR1M implied correlation (dual axis). " +
-    "Today's data point updates in real-time from live WS prices. Hover for daily values.",
+  "20-SESSION HISTORY":
+    "Left chart tracks VIX and VVIX across the last 20 trading sessions so you can see whether volatility and vol-of-vol are expanding together or cooling off. " +
+    "Right chart compares realized volatility with COR1M over the same window to show whether actual market turbulence is being joined by tighter stock-to-stock correlation. " +
+    "The latest point is the most recent session in view, and each point shows that session's reading.",
+
+  "RELATIONSHIP VIEW":
+    "Relationship-first analytics for COR1M and realized volatility. " +
+    "The spread panel shows the correlation risk premium (COR1M minus RVOL), the quadrant view classifies the latest session by realized volatility versus implied correlation, " +
+    "and the normalized overlay compares their z-scores so divergence is visible on one scale.",
 
   /* ── CTA Page ────────────────────────────────────────── */
 

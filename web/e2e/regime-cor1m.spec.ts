@@ -90,7 +90,7 @@ async function setupMocks(page: import("@playwright/test").Page) {
 }
 
 test.describe("/regime page — COR1M implied correlation", () => {
-  test("shows a COR1M strip cell with the current value and 5d change", async ({ page }) => {
+  test("shows a COR1M strip cell with the current value and 5d change subline", async ({ page }) => {
     await setupMocks(page);
     await page.goto("/regime");
 
@@ -99,7 +99,7 @@ test.describe("/regime page — COR1M implied correlation", () => {
 
     await expect(cor1mCell).toContainText("COR1M");
     await expect(cor1mCell.locator(".regime-strip-value")).toHaveText("28.97");
-    await expect(cor1mCell.locator('[data-testid="regime-day-chg"]')).toContainText("+3.97 pts 5d chg");
+    await expect(cor1mCell.locator(".regime-strip-sub")).toHaveText("5d chg: +3.97 pts");
   });
 
   test("references the COR1M threshold in the crash trigger section", async ({ page }) => {

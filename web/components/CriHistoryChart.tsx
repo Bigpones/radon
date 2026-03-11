@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState } from "react";
 import * as d3 from "d3";
+import ChartPanel from "./charts/ChartPanel";
 
 export interface CriHistoryEntry {
   date: string;
@@ -39,6 +40,10 @@ interface CriHistoryChartProps {
 
 const MARGIN = { top: 20, right: 56, bottom: 32, left: 48 };
 const HEIGHT = 440;
+const CHART_GRID = "var(--chart-grid, var(--border-dim))";
+const CHART_AXIS = "var(--chart-axis, var(--border-dim))";
+const CHART_AXIS_MUTED = "var(--chart-axis-muted, var(--text-secondary))";
+const CHART_SURFACE = "var(--chart-surface, var(--bg-panel))";
 
 function defaultFormat(v: number): string {
   return v.toFixed(2);
@@ -139,7 +144,7 @@ export default function CriHistoryChart({
       .attr("x2", innerW)
       .attr("y1", (d) => yLeft(d))
       .attr("y2", (d) => yLeft(d))
-      .attr("stroke", "#1e293b")
+      .attr("stroke", CHART_GRID)
       .attr("stroke-width", 1);
 
     // Draw a line series
@@ -175,7 +180,7 @@ export default function CriHistoryChart({
         .attr("cy", (d) => yScale(d[s.key] as number))
         .attr("r", 2)
         .attr("fill", s.color)
-        .attr("stroke", "#0a0f14")
+        .attr("stroke", CHART_SURFACE)
         .attr("stroke-width", 1);
 
       // Highlight the last dot (live) with a larger radius and a pulse ring
@@ -206,7 +211,7 @@ export default function CriHistoryChart({
       )
       .call((axis) => {
         axis.select(".domain").remove();
-        axis.selectAll(".tick line").attr("stroke", "#1e293b");
+        axis.selectAll(".tick line").attr("stroke", CHART_GRID);
         axis
           .selectAll(".tick text")
           .attr("fill", leftSeries.color)
@@ -226,7 +231,7 @@ export default function CriHistoryChart({
       )
       .call((axis) => {
         axis.select(".domain").remove();
-        axis.selectAll(".tick line").attr("stroke", "#1e293b");
+        axis.selectAll(".tick line").attr("stroke", CHART_GRID);
         axis
           .selectAll(".tick text")
           .attr("fill", rightSeries.color)
@@ -245,35 +250,14 @@ export default function CriHistoryChart({
       .attr("transform", `translate(0,${innerH})`)
       .call(xAxis)
       .call((axis) => {
-        axis.select(".domain").attr("stroke", "#1e293b");
-        axis.selectAll(".tick line").attr("stroke", "#1e293b");
+        axis.select(".domain").attr("stroke", CHART_AXIS);
+        axis.selectAll(".tick line").attr("stroke", CHART_GRID);
         axis
           .selectAll(".tick text")
-          .attr("fill", "#94a3b8")
+          .attr("fill", CHART_AXIS_MUTED)
           .attr("font-size", "10px")
           .attr("font-family", "IBM Plex Mono, monospace");
       });
-
-    // Legend
-    const legendY = -6;
-    [leftSeries, rightSeries].forEach((s, i) => {
-      const lx = i * 80;
-      g.append("line")
-        .attr("x1", lx)
-        .attr("x2", lx + 14)
-        .attr("y1", legendY)
-        .attr("y2", legendY)
-        .attr("stroke", s.color)
-        .attr("stroke-width", 2);
-      g.append("text")
-        .attr("x", lx + 18)
-        .attr("y", legendY + 4)
-        .attr("fill", s.color)
-        .attr("font-size", "10px")
-        .attr("font-family", "IBM Plex Mono, monospace")
-        .attr("font-weight", 500)
-        .text(s.label);
-    });
 
     // Invisible overlay for tooltip
     g.append("rect")
@@ -305,85 +289,58 @@ export default function CriHistoryChart({
   }, [chartData, width, series, liveValues, leftSeries, rightSeries]);
 
   const showEmpty = !chartData || chartData.length < 2;
+  const tooltipSideStyle =
+    tooltip.x > width / 2
+      ? { right: width - tooltip.x + 12 }
+      : { left: tooltip.x + 12 };
 
   return (
-    <div
-      ref={containerRef}
-      data-testid="cri-history-chart"
-      style={{ position: "relative", width: "100%", height: HEIGHT }}
+    <ChartPanel
+      family="analytical-time-series"
+      title={title}
+      legend={series.map((item) => ({ label: item.label, color: item.color }))}
+      className="chart-panel-inline"
+      bodyClassName="cri-history-chart-panel"
+      contentClassName="cri-history-chart-content"
+      dataTestId="cri-history-chart"
     >
-      {showEmpty ? (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            height: HEIGHT,
-            color: "#94a3b8",
-            fontFamily: "IBM Plex Mono, monospace",
-            fontSize: 11,
-            letterSpacing: "0.05em",
-          }}
-        >
-          NO HISTORY AVAILABLE
+      <div ref={containerRef} className="cri-history-chart-shell">
+        <div className="chart-surface cri-history-chart-surface">
+          {showEmpty ? (
+            <div className="chart-empty-state cri-history-chart-empty">
+              NO HISTORY AVAILABLE
+            </div>
+          ) : (
+            <svg ref={svgRef} className="cri-history-chart-svg" />
+          )}
         </div>
-      ) : (
-        <svg ref={svgRef} style={{ display: "block", width: "100%", height: HEIGHT }} />
-      )}
 
-      {tooltip.visible && tooltip.d && (
-        <div
-          style={{
-            position: "absolute",
-            ...(tooltip.x > width / 2
-              ? { right: width - tooltip.x + 12 }
-              : { left: tooltip.x + 12 }),
-            top: tooltip.y - 10,
-            background: "var(--bg-panel, #0f1519)",
-            border: "1px solid var(--border-dim, #1e293b)",
-            padding: "8px 10px",
-            pointerEvents: "none",
-            zIndex: 10,
-            minWidth: 140,
-          }}
-        >
+        {tooltip.visible && tooltip.d && (
           <div
+            className="chart-tooltip"
             style={{
-              fontFamily: "IBM Plex Mono, monospace",
-              fontSize: 10,
-              color: "#94a3b8",
-              marginBottom: 4,
-              letterSpacing: "0.05em",
+              ...tooltipSideStyle,
+              top: tooltip.y - 10,
             }}
           >
-            {tooltip.d.date}
+            <div className="chart-tooltip-date">{tooltip.d.date}</div>
+            {series.map((s) => {
+              const val = tooltip.d![s.key];
+              const fmt = s.format ?? defaultFormat;
+              return (
+                <div key={String(s.key)} className="chart-tooltip-row">
+                  <span className="chart-tooltip-label">{s.label}</span>
+                  <span className="chart-tooltip-value" style={{ color: s.color }}>
+                    {val != null && Number.isFinite(val as number)
+                      ? fmt(val as number)
+                      : "---"}
+                  </span>
+                </div>
+              );
+            })}
           </div>
-          {series.map((s) => {
-            const val = tooltip.d![s.key];
-            const fmt = s.format ?? defaultFormat;
-            return (
-              <div
-                key={String(s.key)}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  fontFamily: "IBM Plex Mono, monospace",
-                  fontSize: 10,
-                  lineHeight: "1.6",
-                }}
-              >
-                <span style={{ color: "#64748b" }}>{s.label}</span>
-                <span style={{ color: s.color }}>
-                  {val != null && Number.isFinite(val as number)
-                    ? fmt(val as number)
-                    : "---"}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </ChartPanel>
   );
 }

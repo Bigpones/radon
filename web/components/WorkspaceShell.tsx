@@ -30,6 +30,7 @@ type WorkspaceShellProps = {
 
 export default function WorkspaceShell({ section }: WorkspaceShellProps) {
   const [theme, setTheme] = useState<"dark" | "light" | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const pathname = usePathname();
   const activeSection: WorkspaceSection = section ?? resolveSectionFromPath(pathname, "dashboard");
   const activeLabel = navItems.find((item) => item.route === activeSection)?.label ?? "Dashboard";
@@ -206,6 +207,27 @@ export default function WorkspaceShell({ section }: WorkspaceShellProps) {
     }
   }, []);
 
+  useEffect(() => {
+    const syncFullscreenState = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && document.fullscreenElement) {
+        event.preventDefault();
+        void document.exitFullscreen().catch(() => {});
+      }
+    };
+
+    syncFullscreenState();
+    document.addEventListener("fullscreenchange", syncFullscreenState);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("fullscreenchange", syncFullscreenState);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
   const resolvedTheme = theme ?? "dark";
 
   const actionTone = useMemo(() => {
@@ -219,6 +241,18 @@ export default function WorkspaceShell({ section }: WorkspaceShellProps) {
     localStorage.setItem("theme", next);
   };
 
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch {
+      // Ignore denied fullscreen requests; the button stays in sync via fullscreenchange.
+    }
+  }, []);
+
   const syncLabel = lastSync
     ? `Last sync: ${new Date(lastSync).toLocaleTimeString()}`
     : error
@@ -230,7 +264,13 @@ export default function WorkspaceShell({ section }: WorkspaceShellProps) {
       <Sidebar activeSection={activeSection} actionTone={actionTone} ibConnected={ibConnected} lastSync={lastSync} />
 
       <main className="main">
-        <Header activeLabel={activeLabel} onToggleTheme={toggleTheme} theme={resolvedTheme}>
+        <Header
+          activeLabel={activeLabel}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={toggleFullscreen}
+          onToggleTheme={toggleTheme}
+          theme={resolvedTheme}
+        >
           <div className="sync-controls">
             <span className={`sync-status ${error ? "sync-error" : syncing ? "sync-active" : ""}`}>
               {syncLabel}

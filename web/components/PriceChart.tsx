@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { Liveline } from "liveline";
+import { resolveChartSeriesColor } from "@/lib/chartSystem";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { usePriceHistory } from "@/lib/usePriceHistory";
 
@@ -20,11 +21,13 @@ export default function PriceChart({ ticker, prices, priceKey, theme = "dark" }:
 
   const priceData = prices[chartKey];
   const closePrice = priceData?.close ?? null;
+  const positiveColor = useMemo(() => resolveChartSeriesColor("primary"), [theme]);
+  const negativeColor = useMemo(() => resolveChartSeriesColor("fault"), [theme]);
 
   const color = useMemo(() => {
-    if (!closePrice || !value) return "#05AD98";
-    return value >= closePrice ? "#05AD98" : "#E85D6C";
-  }, [value, closePrice]);
+    if (!closePrice || !value) return positiveColor;
+    return value >= closePrice ? positiveColor : negativeColor;
+  }, [value, closePrice, positiveColor, negativeColor]);
 
   const referenceLine = useMemo(() => {
     if (closePrice == null || closePrice <= 0) return undefined;
