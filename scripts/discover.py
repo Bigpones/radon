@@ -21,13 +21,16 @@ Key endpoints used:
 
 import argparse
 import json
+import logging
 import sys
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
-from clients.uw_client import UWClient, UWAPIError
+from clients.uw_client import UWClient, UWAPIError, UWRateLimitError
+
+logger = logging.getLogger(__name__)
 from utils.market_calendar import (
     get_last_n_trading_days,
     load_holidays,
@@ -400,15 +403,23 @@ def _aggregate_alerts(alerts: list) -> dict:
 
 
 def discover_targeted(tickers: list, dp_days: int = 3,
-                      min_premium: int = 50000, top: int = 20) -> dict:
+                      min_premium: int = 50000, top: int = 20,
+                      max_workers: int = 10) -> dict:
     """
     Discover edge signals for an explicit list of tickers.
 
     Unlike the market-wide scan, this fetches per-ticker flow alerts and dark
     pool data for every ticker in the list — no watchlist filtering, no
     market-wide flow scan.
+
+    Args:
+        tickers: List of ticker symbols to scan.
+        dp_days: Number of days of dark pool data to check.
+        min_premium: Minimum premium filter for flow alerts.
+        top: Number of top candidates to return.
+        max_workers: Maximum concurrent workers for ticker-level parallelism.
     """
-    print(f"Scanning {len(tickers)} tickers (targeted mode)...", file=sys.stderr)
+    print(f"Scanning {len(tickers)} tickers (targeted mode, {max_workers} workers)...", file=sys.stderr)
 
     candidates = []
     total = len(tickers)
@@ -429,13 +440,22 @@ def discover_targeted(tickers: list, dp_days: int = 3,
             dp = fetch_darkpool_multi(ticker, days=dp_days, _client=client)
             return _build_candidate(ticker, flow_data, dp)
 
-        with ThreadPoolExecutor(max_workers=10) as pool:
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
             futures = {pool.submit(_process_targeted, t): t for t in tickers}
             done = 0
             for future in as_completed(futures):
                 done += 1
                 ticker = futures[future]
-                candidate = future.result()
+                try:
+                    candidate = future.result()
+                except UWRateLimitError:
+                    logger.warning("Rate limited on %s — skipping", ticker)
+                    print(f"  [{done}/{total}] {ticker} - SKIP (rate limited)", file=sys.stderr)
+                    continue
+                except Exception as exc:
+                    logger.warning("Error processing %s: %s", ticker, exc)
+                    print(f"  [{done}/{total}] {ticker} - ERROR ({exc})", file=sys.stderr)
+                    continue
                 print(f"  [{done}/{total}] {ticker}... Score: {candidate['score']}", file=sys.stderr)
                 candidates.append(candidate)
 

@@ -19,11 +19,15 @@ PORTFOLIO = PROJECT_DIR / "data" / "portfolio.json"
 
 
 def load_portfolio() -> list:
-    """Load open positions from portfolio.json."""
+    """Load open positions from portfolio.json (with checksum verification)."""
     if not PORTFOLIO.exists():
         return []
-    with open(PORTFOLIO) as f:
-        data = json.load(f)
+    try:
+        from utils.atomic_io import verified_load
+        data = verified_load(str(PORTFOLIO))
+    except (ValueError, ImportError):
+        with open(PORTFOLIO) as f:
+            data = json.load(f)
     return data.get("positions", [])
 
 

@@ -126,7 +126,11 @@ def select_option_mark(row: Mapping[str, Any]) -> Optional[float]:
 
 
 def load_portfolio_snapshot(path: Path = PORTFOLIO_PATH) -> dict:
-    return json.loads(path.read_text())
+    try:
+        from utils.atomic_io import verified_load
+        return verified_load(str(path))
+    except (ValueError, ImportError):
+        return json.loads(path.read_text())
 
 
 def parse_flex_trade_rows(df: pd.DataFrame) -> List[TradeFill]:

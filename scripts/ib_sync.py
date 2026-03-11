@@ -684,17 +684,17 @@ def convert_to_portfolio_format(account: dict, collapsed_positions: list, pnl_da
 
 
 def save_portfolio(portfolio: dict):
-    """Save portfolio to JSON file"""
+    """Save portfolio to JSON file (atomic write with SHA-256 checksum)."""
+    from utils.atomic_io import atomic_save
+
     # Backup existing
     if PORTFOLIO_PATH.exists():
         backup_path = PORTFOLIO_PATH.with_suffix('.json.bak')
         backup_path.write_text(PORTFOLIO_PATH.read_text())
         print(f"✓ Backed up existing portfolio to {backup_path.name}")
-    
-    with open(PORTFOLIO_PATH, 'w') as f:
-        json.dump(portfolio, f, indent=2)
-    
-    print(f"✓ Saved portfolio to {PORTFOLIO_PATH}")
+
+    checksum = atomic_save(str(PORTFOLIO_PATH), portfolio)
+    print(f"✓ Saved portfolio to {PORTFOLIO_PATH} (checksum: {checksum[:12]}…)")
 
 
 def main():

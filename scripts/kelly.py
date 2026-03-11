@@ -2,6 +2,8 @@
 """Kelly criterion calculator."""
 import argparse, json
 
+import numpy as np
+
 def kelly(prob_win: float, odds: float, fraction: float = 0.25) -> dict:
     """Calculate fractional Kelly bet size."""
     # Guard against invalid inputs that would cause division by zero or nonsensical results
@@ -29,6 +31,45 @@ def kelly(prob_win: float, odds: float, fraction: float = 0.25) -> dict:
             else "WEAK"
         )
     }
+
+def kelly_size_batch(
+    prob_wins: np.ndarray,
+    odds: np.ndarray,
+    bankroll: float,
+    fraction: float = 0.25,
+    max_pct: float = 0.025,
+) -> np.ndarray:
+    """Vectorized Kelly sizing for N candidates simultaneously.
+
+    Returns an array of dollar position sizes, one per candidate.
+    Guards: odds <= 0 → 0, full_kelly <= 0 → 0, hard cap at bankroll * max_pct.
+    """
+    if len(prob_wins) == 0:
+        return np.array([])
+
+    prob_wins = np.asarray(prob_wins, dtype=np.float64)
+    odds = np.asarray(odds, dtype=np.float64)
+
+    q = 1.0 - prob_wins
+
+    # full_kelly = prob_win - q / odds, but guard odds <= 0
+    with np.errstate(divide="ignore", invalid="ignore"):
+        full_kelly = np.where(odds > 0, prob_wins - q / odds, 0.0)
+
+    # No edge → 0
+    full_kelly = np.where(full_kelly > 0, full_kelly, 0.0)
+
+    frac_kelly = full_kelly * fraction
+    # Round to 2 decimal places (as percentage) to match scalar kelly() behavior
+    frac_kelly_pct = np.round(frac_kelly * 100.0, 2)
+    dollar_size = bankroll * frac_kelly_pct / 100.0
+
+    # Hard cap
+    cap = bankroll * max_pct
+    dollar_size = np.minimum(dollar_size, cap)
+
+    return dollar_size
+
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()

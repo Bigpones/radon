@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Set
 
 from ib_insync import IB, FlexReport, Option
 
@@ -97,6 +97,25 @@ _CONNECTIVITY_CODES = frozenset({
     1102,  # Connectivity restored — data maintained
 })
 
+# IB error codes for pacing violations — retry with exponential backoff
+_PACING_CODES = frozenset({
+    162,   # Historical market data pacing violation
+    366,   # No historical data query found for ticker id
+})
+
+# Max retries per reqId for pacing violations
+_MAX_PACING_RETRIES = 3
+
+# IB error codes for invalid contracts — don't retry
+_INVALID_CONTRACT_CODES = frozenset({
+    200,   # No security definition has been found
+    354,   # Requested market data is not subscribed
+})
+
+# Reconnection constants
+MAX_RECONNECT_ATTEMPTS = 5
+MAX_RECONNECT_BACKOFF = 30  # seconds
+
 logger = logging.getLogger("ib_client")
 
 
@@ -127,6 +146,18 @@ class IBClient:
         self._last_timeout: int = 10
         self._last_error: Optional[tuple] = None
 
+        # Subscription tracking for recovery after disconnect
+        self._subscriptions: List[Dict[str, Any]] = []
+
+        # Reconnection state
+        self._reconnecting: bool = False
+
+        # Pacing violation retry tracking (reqId -> count)
+        self._pacing_retries: Dict[int, int] = {}
+
+        # Invalid contracts — callers can check before requesting
+        self._failed_contracts: Set[Any] = set()
+
         # Wire up error callback
         self._ib.errorEvent += self._on_error
 
@@ -136,6 +167,11 @@ class IBClient:
     def ib(self) -> IB:
         """Return the underlying ``ib_insync.IB`` instance."""
         return self._ib
+
+    @property
+    def failed_contracts(self) -> Set[Any]:
+        """Return the set of contracts that returned invalid from IB."""
+        return self._failed_contracts
 
     # -- connection lifecycle -----------------------------------------------
 
@@ -263,9 +299,111 @@ class IBClient:
             self.logger.warning("IB connectivity %d: %s", code, errorString)
             return
 
+        # Pacing violations — track per reqId, cap at max retries
+        if code in _PACING_CODES:
+            rid = int(reqId) if reqId else 0
+            current = self._pacing_retries.get(rid, 0)
+            if current < _MAX_PACING_RETRIES:
+                self._pacing_retries[rid] = current + 1
+                self.logger.warning(
+                    "IB pacing violation %d (reqId=%s, retry %d/%d): %s",
+                    code, rid, current + 1, _MAX_PACING_RETRIES, errorString,
+                )
+            else:
+                self.logger.error(
+                    "IB pacing violation %d (reqId=%s) — max retries exhausted: %s",
+                    code, rid, errorString,
+                )
+            return
+
+        # Invalid contracts — add to failed set, no retry
+        if code in _INVALID_CONTRACT_CODES:
+            if contract is not None:
+                self._failed_contracts.add(contract)
+            self.logger.warning(
+                "IB invalid contract %d (reqId=%s): %s (contract=%s)",
+                code, reqId, errorString, contract,
+            )
+            return
+
         # Store last error for operations to check
         self._last_error = (code, errorString)
         self.logger.error("IB error %d: %s", code, errorString)
+
+    # -- disconnect recovery ------------------------------------------------
+
+    def _on_disconnect(self) -> None:
+        """Handle disconnect: auto-reconnect with exponential backoff and restore subscriptions."""
+        if self._reconnecting:
+            self.logger.debug("Already reconnecting, skipping concurrent attempt")
+            return
+
+        self._reconnecting = True
+        self.logger.warning("Disconnected from IB — attempting reconnection")
+
+        try:
+            connected = False
+            for attempt in range(MAX_RECONNECT_ATTEMPTS):
+                delay = min(2 ** attempt, MAX_RECONNECT_BACKOFF)
+                try:
+                    self._ib.connect(
+                        self._last_host,
+                        self._last_port,
+                        clientId=self._last_client_id,
+                        timeout=self._last_timeout,
+                    )
+                    self.logger.info(
+                        "Reconnected to IB on attempt %d/%d",
+                        attempt + 1, MAX_RECONNECT_ATTEMPTS,
+                    )
+                    connected = True
+                    break
+                except Exception as exc:
+                    self.logger.warning(
+                        "Reconnect attempt %d/%d failed: %s — waiting %ds",
+                        attempt + 1, MAX_RECONNECT_ATTEMPTS, exc, delay,
+                    )
+                    time.sleep(delay)
+
+            if not connected:
+                self.logger.error(
+                    "Failed to reconnect after %d attempts", MAX_RECONNECT_ATTEMPTS,
+                )
+                return
+
+            # Restore tracked subscriptions
+            restored = 0
+            failed = 0
+            for sub in self._subscriptions:
+                try:
+                    self._ib.reqMktData(
+                        sub["contract"],
+                        sub["generic_ticks"],
+                        False,
+                        False,
+                    )
+                    restored += 1
+                except Exception as exc:
+                    failed += 1
+                    self.logger.warning(
+                        "Failed to restore subscription for %s: %s",
+                        sub["contract"], exc,
+                    )
+
+            self.logger.info(
+                "Subscription restoration complete: %d restored, %d failed",
+                restored, failed,
+            )
+
+        finally:
+            self._reconnecting = False
+
+    # -- subscription management --------------------------------------------
+
+    def clear_subscriptions(self) -> None:
+        """Clear all tracked subscriptions."""
+        self._subscriptions.clear()
+        self.logger.debug("Cleared all tracked subscriptions")
 
     # -- portfolio operations -----------------------------------------------
 
@@ -458,6 +596,12 @@ class IBClient:
         ticker = self._ib.reqMktData(contract, generic_ticks, snapshot, False)
         if snapshot:
             self._ib.sleep(2)
+        else:
+            # Track streaming subscription for recovery after disconnect
+            self._subscriptions.append({
+                "contract": contract,
+                "generic_ticks": generic_ticks,
+            })
         return ticker
 
     def cancel_market_data(self, contract: Any) -> None:

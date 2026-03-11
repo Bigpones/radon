@@ -318,13 +318,15 @@ def parse_portfolio_position(pos: dict) -> Optional[PositionAnalysis]:
 
 
 def load_portfolio() -> list:
-    """Load portfolio from JSON file."""
+    """Load portfolio from JSON file (with checksum verification)."""
     if not PORTFOLIO_FILE.exists():
         return []
-    
-    with open(PORTFOLIO_FILE) as f:
-        data = json.load(f)
-    
+    try:
+        from utils.atomic_io import verified_load
+        data = verified_load(str(PORTFOLIO_FILE))
+    except (ValueError, ImportError):
+        with open(PORTFOLIO_FILE) as f:
+            data = json.load(f)
     return data.get("positions", [])
 
 

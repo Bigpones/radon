@@ -232,6 +232,53 @@ let reconnectTimer = null;
 let nextRequestId = 1;
 let statusBroadcastTick = null;
 
+/* ─── Batched Price Relay ──────────────────────────────────────────────────
+ * Buffers price ticks per symbol (last-write-wins) and flushes to each
+ * subscribed client as a single {"type": "batch", "updates": {...}} message
+ * every BATCH_INTERVAL_MS. Reduces React re-renders from N per-tick updates
+ * to 1 batched update per interval.
+ */
+const BATCH_INTERVAL_MS = 100;
+
+// Per-client batch buffer: Map<client, Map<symbol, PriceData>>
+const clientBatchBuffers = new Map();
+
+let batchFlushTimer = null;
+
+function bufferPriceForClient(client, symbol, data) {
+  let buf = clientBatchBuffers.get(client);
+  if (!buf) {
+    buf = new Map();
+    clientBatchBuffers.set(client, buf);
+  }
+  buf.set(symbol, data);
+}
+
+function flushBatches() {
+  for (const [client, buf] of clientBatchBuffers) {
+    if (buf.size === 0) continue;
+    const updates = Object.fromEntries(buf);
+    buf.clear();
+    sendMessage(client, { type: "batch", updates });
+  }
+}
+
+function startBatchFlush() {
+  if (batchFlushTimer) return;
+  batchFlushTimer = setInterval(flushBatches, BATCH_INTERVAL_MS);
+}
+
+function stopBatchFlush() {
+  if (batchFlushTimer) {
+    clearInterval(batchFlushTimer);
+    batchFlushTimer = null;
+  }
+}
+
+function removeBatchBuffer(client) {
+  clientBatchBuffers.delete(client);
+}
+
 function sendMessage(client, payload) {
   try {
     if (client.readyState === client.OPEN) {
@@ -390,6 +437,7 @@ function unsubscribeClientFromSymbol(client, symbol) {
 }
 
 function disconnectClient(client) {
+  removeBatchBuffer(client);
   const clientSet = clientSymbols.get(client);
   if (!clientSet) {
     return;
@@ -478,11 +526,17 @@ function hydrateAndBroadcast(symbol) {
   if (!state) return;
   // Backfill close from cache for options that IB hasn't sent close for
   applyCachedClose(state.data);
-  sendToSymbolSubscribers(symbol, {
-    type: "price",
-    symbol,
-    data: state.data,
-  });
+
+  // Buffer the tick for batched delivery instead of sending immediately.
+  // Each subscribed client gets the latest PriceData snapshot for this symbol
+  // in their per-client buffer. The batch flush timer sends all buffered
+  // updates as a single {"type": "batch", "updates": {...}} message.
+  const subscribers = symbolSubscribers.get(symbol);
+  if (!subscribers || subscribers.size === 0) return;
+  const dataSnapshot = { ...state.data };
+  for (const client of subscribers) {
+    bufferPriceForClient(client, symbol, dataSnapshot);
+  }
 }
 
 function onTickPrice(tickerId, tickType, price) {
@@ -882,6 +936,7 @@ wss.on("connection", (client) => {
 });
 
 ib.connect();
+startBatchFlush();
 
 statusBroadcastTick = setInterval(() => {
   if (ibConnected) return;
@@ -899,6 +954,7 @@ process.on("SIGINT", () => {
   if (statusBroadcastTick) {
     clearInterval(statusBroadcastTick);
   }
+  stopBatchFlush();
   for (const client of clients) {
     try {
       client.close();

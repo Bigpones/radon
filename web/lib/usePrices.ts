@@ -148,6 +148,15 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
             });
             break;
           }
+          case "batch": {
+            const { updates } = message;
+            setPrices((prev) => ({ ...prev, ...updates }));
+            const now = new Date();
+            for (const [sym, data] of Object.entries(updates)) {
+              onPriceUpdate?.({ symbol: sym, data, receivedAt: now });
+            }
+            break;
+          }
           case "fundamentals": {
             const { symbol: fundSymbol, data: fundData } = message;
             setFundamentals((prev) => ({

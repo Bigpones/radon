@@ -81,12 +81,18 @@ export type WSStatusMessage = {
   subscriptions: string[];
 };
 
+export type WSBatchMessage = {
+  type: "batch";
+  updates: Record<string, PriceData>;
+};
+
 export type WSMessage =
   | WSPriceMessage
   | WSFundamentalsMessage
   | WSSubscribedMessage
   | WSUnsubscribedMessage
   | WSSnapshotMessage
+  | WSBatchMessage
   | WSErrorMessage
   | WSPongMessage
   | WSStatusMessage;

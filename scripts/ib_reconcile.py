@@ -276,7 +276,15 @@ def main():
     try:
         # Load local data
         trade_log = load_json(str(trade_log_path))
-        portfolio = load_json(str(portfolio_path))
+        # Use verified_load for portfolio (checksum integrity check)
+        try:
+            from utils.atomic_io import verified_load
+            portfolio = verified_load(str(portfolio_path))
+        except (FileNotFoundError, json.JSONDecodeError):
+            portfolio = {}
+        except ValueError as e:
+            log(f"Portfolio checksum verification failed: {e}", "warn")
+            portfolio = load_json(str(portfolio_path))
 
         # Fetch IB data
         log("Fetching executions from IB...")
