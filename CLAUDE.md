@@ -99,6 +99,50 @@ When `market_open === false`, the component **must**:
 
 **Tests**: `web/tests/regime-market-closed-values.test.ts`, `web/e2e/regime-market-closed-eod.spec.ts`, `web/e2e/regime-cor1m.spec.ts`
 
+### RegimePanel Day Change Indicators
+
+During market hours (`market_open === true`), the regime strip shows day change for live metrics:
+
+| Metric | Component | Source | Display |
+|--------|-----------|--------|---------|
+| VIX | `DayChange` | WS `last` vs WS `close` | `+1.50 (+6.25%) ↑` |
+| VVIX | `DayChange` | WS `last` vs WS `close` | `-5.00 (-4.35%) ↓` |
+| SPY | `DayChange` | WS `last` vs WS `close` | `$+0.47 (+0.07%) ↑` |
+| RVOL | `PointChange` | `intradayRvol - data.realized_vol` | `-0.01% intraday ↓` |
+| COR1M | `PointChange` | `data.cor1m_5d_change` (always visible) | `+6.88 pts 5d chg ↑` |
+
+**Arrow placement**: Arrow icon is always to the **right** of the change text (not left, not above). Uses `display: flex` with `gap: 4px` in `.regime-strip-day-chg`.
+
+**Tests**: `web/tests/regime-day-change.test.ts` (12 unit), `web/e2e/regime-day-change.spec.ts` (3 E2E)
+
+### Regime History Charts
+
+Two side-by-side D3 charts showing 20 trading sessions:
+- **Left**: VIX (`#05AD98`) + VVIX (`#8B5CF6`) — dual Y-axes
+- **Right**: RVOL (`#F5A623`) + COR1M (`#D946A8`) — dual Y-axes
+
+Charts inject live WS values into today's data point for real-time updates. Height: 440px. Component: `CriHistoryChart.tsx` (configurable via `series` prop).
+
+### Portfolio Table Arrow Alignment
+
+Price trend arrows (↑↓) in `PositionTable.tsx` and `WorkspaceSections.tsx` must stay inline with values — never wrap to a new line. CSS: `td.last-price-cell { white-space: nowrap }`. Arrow icon class: `.price-trend-icon` with `margin-left: 4px`.
+
+---
+
+## Exposure Delta Sign Rule
+
+**Short option legs must display negative rawDelta.** The `rawDelta` field in `ExposureBreakdownLeg` reflects direction: `sign * lp.delta` where `sign = -1` for SHORT legs.
+
+| Leg Direction | rawDelta Sign | Example |
+|--------------|---------------|---------|
+| LONG Call | Positive | +0.36 |
+| SHORT Call | **Negative** | -0.08 |
+| LONG Put | Negative | -0.45 |
+| SHORT Put | **Positive** | +0.20 |
+
+**Implementation**: `web/lib/exposureBreakdown.ts` — applies `sign` to both IB delta and approx delta paths.
+**Tests**: `web/tests/exposure-breakdown.test.ts` (3 tests)
+
 ---
 
 ## Evaluation — 7 Milestones (Stop on Any Failure)

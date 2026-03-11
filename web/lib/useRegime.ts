@@ -9,6 +9,7 @@ export type CriHistoryEntry = {
   vvix: number;
   spy: number;
   cor1m?: number;
+  realized_vol?: number | null;
   spx_vs_ma_pct: number;
   vix_5d_roc: number;
 };

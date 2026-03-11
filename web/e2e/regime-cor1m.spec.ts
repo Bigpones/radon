@@ -99,7 +99,7 @@ test.describe("/regime page — COR1M implied correlation", () => {
 
     await expect(cor1mCell).toContainText("COR1M");
     await expect(cor1mCell.locator(".regime-strip-value")).toHaveText("28.97");
-    await expect(cor1mCell.locator(".regime-strip-sub")).toContainText("5d chg: +3.97");
+    await expect(cor1mCell.locator('[data-testid="regime-day-chg"]')).toContainText("+3.97 pts 5d chg");
   });
 
   test("references the COR1M threshold in the crash trigger section", async ({ page }) => {

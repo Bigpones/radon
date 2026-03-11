@@ -1,9 +1,10 @@
 # Status & Decision Log
 
 ## Last Updated
-2026-03-11T10:30:00-04:00
+2026-03-11T11:00:00-04:00
 
 ## Recent Commits
+- 2026-03-11 11:00:00 -0400 — **feat: Regime strip day change arrows, 20-session dual charts, portfolio arrow alignment, short leg delta sign fix**
 - 2026-03-11 10:30:00 -0400 — **fix: Regime page showing "MARKET CLOSED" during market hours — corrupt CRI cache files + stale market_open override**
 - 2026-03-11 10:15:00 -0400 — **fix: Classify spread directions (DEBIT/CREDIT) in flow analysis**
 - 2026-03-10 17:30:00 -0700 — **fix: Brand audit — align all 7 HTML report templates with Radon design tokens (fonts, CSS vars, radius, semantic colors)**

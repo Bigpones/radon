@@ -250,7 +250,7 @@ function LegRow({
       <td className="right cell-muted">{fmtPrice(legEc)}</td>
       <td className="right cell-muted">{rtLast != null ? fmtUsd(rtLast * leg.contracts * mult) : leg.market_value != null ? fmtUsd(Math.abs(leg.market_value)) : "—"}</td>
       <td className={`right cell-muted ${legPnl != null ? (legPnl >= 0 ? "positive" : "negative") : ""}`}>
-        {legPnl != null ? `${legPnl >= 0 ? "+" : ""}${fmtUsd(Math.abs(legPnl))}` : "—"}
+        {legPnl != null ? `${legPnl >= 0 ? "+" : "-"}${fmtUsd(Math.abs(legPnl))}` : "—"}
       </td>
       {showExpiry && <td></td>}
     </tr>
@@ -361,7 +361,7 @@ function PositionRow({ pos, showExpiry = true, showStrike = false, showUnderlyin
           </td>
         )}
         <td className="right">{fmtPrice(avgEntry)}</td>
-        <td className="right last-price-cell">
+        <td className={`right last-price-cell ${flashDirection ? `last-price-${flashDirection}` : ""}`}>
           {lastPrice != null ? fmtPriceOrCalculated(lastPrice, lastPriceIsCalculated) : "—"}
           {priceDirection === "up" && <ArrowUp size={11} className="price-trend-icon price-trend-up" aria-label="price up" />}
           {priceDirection === "down" && <ArrowDown size={11} className="price-trend-icon price-trend-down" aria-label="price down" />}
@@ -370,12 +370,12 @@ function PositionRow({ pos, showExpiry = true, showStrike = false, showUnderlyin
           {dailyChg != null ? `${dailyChg >= 0 ? "+" : ""}${dailyChg.toFixed(2)}%` : "—"}
         </td>
         <td className={`right ${todayPnl != null ? (todayPnl >= 0 ? "positive" : "negative") : ""}`}>
-          {todayPnl != null ? `${todayPnl >= 0 ? "+" : ""}${fmtUsd(Math.abs(todayPnl))}` : "—"}
+          {todayPnl != null ? `${todayPnl >= 0 ? "+" : "-"}${fmtUsd(Math.abs(todayPnl))}` : "—"}
         </td>
         <td className="right">{fmtUsd(entryCost)}</td>
         <td className="right">{mv != null ? fmtUsd(mv) : "—"}</td>
         <td className={`right ${pnl != null ? (pnl >= 0 ? "positive" : "negative") : ""}`}>
-          {pnl != null ? `${pnl >= 0 ? "+" : ""}${fmtUsd(Math.abs(pnl))} (${pnlPct!.toFixed(1)}%)` : "—"}
+          {pnl != null ? `${pnl >= 0 ? "+" : "-"}${fmtUsd(Math.abs(pnl))} (${pnlPct!.toFixed(1)}%)` : "—"}
         </td>
         {showExpiry && <td>{pos.expiry !== "N/A" ? pos.expiry : "—"}</td>}
       </tr>

@@ -722,10 +722,10 @@ def run_analysis(
         cor1m=cor1m_now,
     )
 
-    # Rolling 10-day history
+    # Rolling 20-day history
     history = []
     n = len(vix)
-    for i in range(max(0, n - 10), n):
+    for i in range(max(0, n - 20), n):
         v = float(vix[i])
         vv = float(vvix[i])
         s = float(spy[i])
@@ -741,6 +741,11 @@ def run_analysis(
             day_vix_roc = (vix[i] / vix[i - 5] - 1) * 100
         else:
             day_vix_roc = 0.0
+        # Per-day realized vol (20d annualized)
+        if i >= VOL_WINDOW:
+            day_rvol = compute_realized_vol(spy[:i + 1], VOL_WINDOW)
+        else:
+            day_rvol = float("nan")
 
         history.append({
             "date": common_dates[i],
@@ -748,6 +753,7 @@ def run_analysis(
             "vvix": round(vv, 2),
             "spy": round(s, 2),
             "cor1m": round(cor1m_now if i == n - 1 and not math.isnan(cor1m_now) else float(cor1m_values[i]), 2),
+            "realized_vol": round(day_rvol, 2) if not math.isnan(day_rvol) else None,
             "spx_vs_ma_pct": round(float(day_dist), 2),
             "vix_5d_roc": round(float(day_vix_roc), 1),
         })

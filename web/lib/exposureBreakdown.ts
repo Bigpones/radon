@@ -97,7 +97,7 @@ function positionDeltaDetailed(
         direction: leg.direction,
         strike: leg.strike,
         contracts: leg.contracts,
-        rawDelta: lp.delta,
+        rawDelta: sign * lp.delta,
         legDelta,
       });
       continue;
@@ -118,8 +118,8 @@ function positionDeltaDetailed(
     }
 
     const dte = daysToExpiry(pos.expiry);
-    const rawDelta = approxDelta(spot, leg.strike, dte, leg.type as "Call" | "Put");
-    const legDelta = sign * rawDelta * leg.contracts * 100;
+    const absRawDelta = approxDelta(spot, leg.strike, dte, leg.type as "Call" | "Put");
+    const legDelta = sign * absRawDelta * leg.contracts * 100;
     totalDelta += legDelta;
     usedApprox = true;
     legs.push({
@@ -127,7 +127,7 @@ function positionDeltaDetailed(
       direction: leg.direction,
       strike: leg.strike,
       contracts: leg.contracts,
-      rawDelta,
+      rawDelta: sign * absRawDelta,
       legDelta,
     });
   }

@@ -8,8 +8,18 @@ export interface CriHistoryEntry {
   vix: number;
   vvix: number;
   spy: number;
+  cor1m?: number;
+  realized_vol?: number | null;
   spx_vs_ma_pct: number;
   vix_5d_roc: number;
+}
+
+export interface ChartSeries {
+  key: keyof CriHistoryEntry;
+  label: string;
+  color: string;
+  axis: "left" | "right";
+  format?: (v: number) => string;
 }
 
 interface TooltipState {
@@ -21,23 +31,34 @@ interface TooltipState {
 
 interface CriHistoryChartProps {
   history: CriHistoryEntry[];
-  criScore?: number;
+  series: [ChartSeries, ChartSeries];
+  title: string;
+  /** Override for today's live values — keys match CriHistoryEntry fields */
+  liveValues?: Partial<Record<keyof CriHistoryEntry, number>>;
 }
 
-const MARGIN = { top: 16, right: 60, bottom: 32, left: 48 };
-const HEIGHT = 220;
+const MARGIN = { top: 20, right: 56, bottom: 32, left: 48 };
+const HEIGHT = 440;
 
-function vixColor(vix: number): string {
-  if (vix < 20) return "#05AD98";
-  if (vix <= 30) return "#F5A623";
-  return "#E85D6C";
+function defaultFormat(v: number): string {
+  return v.toFixed(2);
 }
 
-export default function CriHistoryChart({ history, criScore }: CriHistoryChartProps) {
+export default function CriHistoryChart({
+  history,
+  series,
+  title,
+  liveValues,
+}: CriHistoryChartProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [tooltip, setTooltip] = useState<TooltipState>({ visible: false, x: 0, y: 0, d: null });
-  const [width, setWidth] = useState(600);
+  const [tooltip, setTooltip] = useState<TooltipState>({
+    visible: false,
+    x: 0,
+    y: 0,
+    d: null,
+  });
+  const [width, setWidth] = useState(400);
 
   // ResizeObserver for responsive width
   useEffect(() => {
@@ -52,11 +73,28 @@ export default function CriHistoryChart({ history, criScore }: CriHistoryChartPr
     return () => ro.disconnect();
   }, []);
 
+  // Merge live values into the last data point
+  const chartData: CriHistoryEntry[] = (() => {
+    if (!history || history.length === 0) return [];
+    if (!liveValues || Object.keys(liveValues).length === 0) return history;
+    const result = [...history];
+    const last = { ...result[result.length - 1] };
+    for (const [k, v] of Object.entries(liveValues)) {
+      if (v != null) {
+        (last as Record<string, unknown>)[k] = v;
+      }
+    }
+    result[result.length - 1] = last;
+    return result;
+  })();
+
+  const [leftSeries, rightSeries] = series;
+
   useEffect(() => {
     const svg = d3.select(svgRef.current);
     svg.selectAll("*").remove();
 
-    if (!history || history.length < 2) return;
+    if (!chartData || chartData.length < 2) return;
 
     const innerW = width - MARGIN.left - MARGIN.right;
     const innerH = HEIGHT - MARGIN.top - MARGIN.bottom;
@@ -68,7 +106,7 @@ export default function CriHistoryChart({ history, criScore }: CriHistoryChartPr
       .attr("transform", `translate(${MARGIN.left},${MARGIN.top})`);
 
     // Parse dates
-    const dates = history.map((d) => new Date(d.date));
+    const dates = chartData.map((d) => new Date(d.date));
 
     // Scales
     const xScale = d3
@@ -76,149 +114,132 @@ export default function CriHistoryChart({ history, criScore }: CriHistoryChartPr
       .domain(d3.extent(dates) as [Date, Date])
       .range([0, innerW]);
 
-    const vixExtent = d3.extent(history, (d) => d.vix) as [number, number];
-    const vixPad = (vixExtent[1] - vixExtent[0]) * 0.15 || 2;
-    const yVix = d3
-      .scaleLinear()
-      .domain([vixExtent[0] - vixPad, vixExtent[1] + vixPad])
-      .range([innerH, 0]);
+    // Helper: build Y scale for a series
+    function buildYScale(s: ChartSeries) {
+      const vals = chartData
+        .map((d) => d[s.key] as number | null | undefined)
+        .filter((v): v is number => v != null && Number.isFinite(v));
+      if (vals.length === 0) return d3.scaleLinear().domain([0, 100]).range([innerH, 0]);
+      const ext = d3.extent(vals) as [number, number];
+      const pad = (ext[1] - ext[0]) * 0.15 || 2;
+      return d3.scaleLinear().domain([ext[0] - pad, ext[1] + pad]).range([innerH, 0]);
+    }
 
-    const spyExtent = d3.extent(history, (d) => d.spy) as [number, number];
-    const spyPad = (spyExtent[1] - spyExtent[0]) * 0.1 || 5;
-    const ySpy = d3
-      .scaleLinear()
-      .domain([spyExtent[0] - spyPad, spyExtent[1] + spyPad])
-      .range([innerH, 0]);
+    const yLeft = buildYScale(leftSeries);
+    const yRight = buildYScale(rightSeries);
 
-    // CRI score bar scale (0-100)
-    const yCri = d3.scaleLinear().domain([0, 100]).range([innerH, 0]);
-
-    // Grid lines
-    const gridLines = yVix.ticks(4);
+    // Grid lines (based on left axis)
+    const gridLines = yLeft.ticks(5);
     g.append("g")
-      .attr("class", "grid")
       .selectAll("line")
       .data(gridLines)
       .enter()
       .append("line")
       .attr("x1", 0)
       .attr("x2", innerW)
-      .attr("y1", (d) => yVix(d))
-      .attr("y2", (d) => yVix(d))
+      .attr("y1", (d) => yLeft(d))
+      .attr("y2", (d) => yLeft(d))
       .attr("stroke", "#1e293b")
       .attr("stroke-width", 1);
 
-    // CRI score bars (if criScore provided, render as a horizontal band)
-    // Render CRI history as subtle gray bars if available via spx_vs_ma_pct as proxy
-    // Actually draw CRI score as a constant horizontal reference line if provided
-    if (criScore !== undefined) {
-      const criY = yCri(Math.min(100, Math.max(0, criScore)));
-      g.append("line")
-        .attr("x1", 0)
-        .attr("x2", innerW)
-        .attr("y1", criY)
-        .attr("y2", criY)
-        .attr("stroke", "#475569")
-        .attr("stroke-width", 1)
-        .attr("stroke-dasharray", "3,3");
+    // Draw a line series
+    function drawLine(
+      s: ChartSeries,
+      yScale: d3.ScaleLinear<number, number>,
+    ) {
+      const validData = chartData.filter(
+        (d) => d[s.key] != null && Number.isFinite(d[s.key] as number),
+      );
+      if (validData.length < 2) return;
 
-      g.append("text")
-        .attr("x", innerW + 4)
-        .attr("y", criY + 3)
-        .attr("fill", "#94a3b8")
-        .attr("font-size", "9px")
-        .attr("font-family", "IBM Plex Mono, monospace")
-        .text(`CRI ${criScore.toFixed(0)}`);
+      const line = d3
+        .line<CriHistoryEntry>()
+        .x((d) => xScale(new Date(d.date)))
+        .y((d) => yScale(d[s.key] as number))
+        .curve(d3.curveMonotoneX);
+
+      g.append("path")
+        .datum(validData)
+        .attr("fill", "none")
+        .attr("stroke", s.color)
+        .attr("stroke-width", 2)
+        .attr("d", line);
+
+      // Dots
+      g.selectAll(`.dot-${s.key}`)
+        .data(validData)
+        .enter()
+        .append("circle")
+        .attr("class", `dot-${s.key}`)
+        .attr("cx", (d) => xScale(new Date(d.date)))
+        .attr("cy", (d) => yScale(d[s.key] as number))
+        .attr("r", 2)
+        .attr("fill", s.color)
+        .attr("stroke", "#0a0f14")
+        .attr("stroke-width", 1);
+
+      // Highlight the last dot (live) with a larger radius and a pulse ring
+      const lastValid = validData[validData.length - 1];
+      if (liveValues && Object.keys(liveValues).length > 0 && lastValid) {
+        g.append("circle")
+          .attr("cx", xScale(new Date(lastValid.date)))
+          .attr("cy", yScale(lastValid[s.key] as number))
+          .attr("r", 4)
+          .attr("fill", s.color)
+          .attr("stroke", s.color)
+          .attr("stroke-width", 1)
+          .attr("opacity", 0.5);
+      }
     }
 
-    // SPY line (right y-axis, white/muted)
-    const spyLine = d3
-      .line<CriHistoryEntry>()
-      .x((d) => xScale(new Date(d.date)))
-      .y((d) => ySpy(d.spy))
-      .curve(d3.curveMonotoneX);
+    drawLine(leftSeries, yLeft);
+    drawLine(rightSeries, yRight);
 
-    g.append("path")
-      .datum(history)
-      .attr("fill", "none")
-      .attr("stroke", "#64748b")
-      .attr("stroke-width", 1.5)
-      .attr("d", spyLine);
-
-    // VIX line with color segments
-    // Draw VIX as individual colored segments between points
-    for (let i = 0; i < history.length - 1; i++) {
-      const a = history[i];
-      const b = history[i + 1];
-      const color = vixColor((a.vix + b.vix) / 2);
-      g.append("line")
-        .attr("x1", xScale(new Date(a.date)))
-        .attr("y1", yVix(a.vix))
-        .attr("x2", xScale(new Date(b.date)))
-        .attr("y2", yVix(b.vix))
-        .attr("stroke", color)
-        .attr("stroke-width", 2);
-    }
-
-    // VIX dots
-    g.selectAll(".vix-dot")
-      .data(history)
-      .enter()
-      .append("circle")
-      .attr("class", "vix-dot")
-      .attr("cx", (d) => xScale(new Date(d.date)))
-      .attr("cy", (d) => yVix(d.vix))
-      .attr("r", 2.5)
-      .attr("fill", (d) => vixColor(d.vix))
-      .attr("stroke", "#0a0f14")
-      .attr("stroke-width", 1);
-
-    // Left y-axis (VIX)
-    const yAxisLeft = d3
-      .axisLeft(yVix)
-      .ticks(4)
-      .tickFormat((d) => String(d));
-
+    // Left Y-axis
+    const leftFormat = leftSeries.format ?? defaultFormat;
     g.append("g")
-      .call(yAxisLeft)
+      .call(
+        d3
+          .axisLeft(yLeft)
+          .ticks(5)
+          .tickFormat((d) => leftFormat(d as number)),
+      )
       .call((axis) => {
         axis.select(".domain").remove();
         axis.selectAll(".tick line").attr("stroke", "#1e293b");
         axis
           .selectAll(".tick text")
-          .attr("fill", "#94a3b8")
+          .attr("fill", leftSeries.color)
           .attr("font-size", "10px")
           .attr("font-family", "IBM Plex Mono, monospace");
       });
 
-    // Right y-axis (SPY)
-    const yAxisRight = d3
-      .axisRight(ySpy)
-      .ticks(4)
-      .tickFormat((d) => `$${d}`);
-
+    // Right Y-axis
+    const rightFormat = rightSeries.format ?? defaultFormat;
     g.append("g")
       .attr("transform", `translate(${innerW},0)`)
-      .call(yAxisRight)
+      .call(
+        d3
+          .axisRight(yRight)
+          .ticks(5)
+          .tickFormat((d) => rightFormat(d as number)),
+      )
       .call((axis) => {
         axis.select(".domain").remove();
         axis.selectAll(".tick line").attr("stroke", "#1e293b");
         axis
           .selectAll(".tick text")
-          .attr("fill", "#64748b")
+          .attr("fill", rightSeries.color)
           .attr("font-size", "10px")
           .attr("font-family", "IBM Plex Mono, monospace");
       });
 
     // X-axis
-    const tickCount = Math.max(2, Math.min(history.length, Math.floor(innerW / 60)));
+    const tickCount = Math.max(2, Math.min(chartData.length, Math.floor(innerW / 50)));
     const xAxis = d3
       .axisBottom(xScale)
       .ticks(tickCount)
-      .tickFormat((d) => {
-        const dt = d as Date;
-        return d3.timeFormat("%b %-d")(dt);
-      });
+      .tickFormat((d) => d3.timeFormat("%b %-d")(d as Date));
 
     g.append("g")
       .attr("transform", `translate(0,${innerH})`)
@@ -234,27 +255,24 @@ export default function CriHistoryChart({ history, criScore }: CriHistoryChartPr
       });
 
     // Legend
-    const legendY = -4;
-    const legendItems: { label: string; color: string }[] = [
-      { label: "VIX", color: "#05AD98" },
-      { label: "SPY", color: "#64748b" },
-    ];
-    legendItems.forEach((item, i) => {
-      const lx = i * 56;
+    const legendY = -6;
+    [leftSeries, rightSeries].forEach((s, i) => {
+      const lx = i * 80;
       g.append("line")
         .attr("x1", lx)
-        .attr("x2", lx + 12)
+        .attr("x2", lx + 14)
         .attr("y1", legendY)
         .attr("y2", legendY)
-        .attr("stroke", item.color)
+        .attr("stroke", s.color)
         .attr("stroke-width", 2);
       g.append("text")
-        .attr("x", lx + 15)
+        .attr("x", lx + 18)
         .attr("y", legendY + 4)
-        .attr("fill", "#94a3b8")
-        .attr("font-size", "9px")
+        .attr("fill", s.color)
+        .attr("font-size", "10px")
         .attr("font-family", "IBM Plex Mono, monospace")
-        .text(item.label);
+        .attr("font-weight", 500)
+        .text(s.label);
     });
 
     // Invisible overlay for tooltip
@@ -266,17 +284,16 @@ export default function CriHistoryChart({ history, criScore }: CriHistoryChartPr
         const [mx] = d3.pointer(event, this);
         const hoveredDate = xScale.invert(mx);
         const bisect = d3.bisector((d: CriHistoryEntry) => new Date(d.date)).left;
-        let idx = bisect(history, hoveredDate);
-        idx = Math.max(0, Math.min(history.length - 1, idx));
-        // Snap to nearest
+        let idx = bisect(chartData, hoveredDate);
+        idx = Math.max(0, Math.min(chartData.length - 1, idx));
         if (idx > 0) {
-          const before = history[idx - 1];
-          const after = history[idx];
+          const before = chartData[idx - 1];
+          const after = chartData[idx];
           const tBefore = Math.abs(new Date(before.date).getTime() - hoveredDate.getTime());
           const tAfter = Math.abs(new Date(after.date).getTime() - hoveredDate.getTime());
           if (tBefore < tAfter) idx = idx - 1;
         }
-        const entry = history[idx];
+        const entry = chartData[idx];
         const svgRect = svgRef.current?.getBoundingClientRect();
         const ex = event.clientX - (svgRect?.left ?? 0);
         const ey = event.clientY - (svgRect?.top ?? 0);
@@ -285,9 +302,9 @@ export default function CriHistoryChart({ history, criScore }: CriHistoryChartPr
       .on("mouseleave", function () {
         setTooltip({ visible: false, x: 0, y: 0, d: null });
       });
-  }, [history, width, criScore]);
+  }, [chartData, width, series, liveValues, leftSeries, rightSeries]);
 
-  const showEmpty = !history || history.length < 2;
+  const showEmpty = !chartData || chartData.length < 2;
 
   return (
     <div
@@ -318,7 +335,6 @@ export default function CriHistoryChart({ history, criScore }: CriHistoryChartPr
         <div
           style={{
             position: "absolute",
-            // Flip to left of cursor when past the midpoint to avoid right-edge clipping
             ...(tooltip.x > width / 2
               ? { right: width - tooltip.x + 12 }
               : { left: tooltip.x + 12 }),
@@ -328,7 +344,7 @@ export default function CriHistoryChart({ history, criScore }: CriHistoryChartPr
             padding: "8px 10px",
             pointerEvents: "none",
             zIndex: 10,
-            minWidth: 160,
+            minWidth: 140,
           }}
         >
           <div
@@ -342,39 +358,30 @@ export default function CriHistoryChart({ history, criScore }: CriHistoryChartPr
           >
             {tooltip.d.date}
           </div>
-          {(
-            [
-              { label: "VIX", value: tooltip.d.vix.toFixed(2), color: vixColor(tooltip.d.vix) },
-              { label: "VVIX", value: tooltip.d.vvix.toFixed(2), color: "#94a3b8" },
-              { label: "SPY", value: `$${tooltip.d.spy.toFixed(2)}`, color: "#94a3b8" },
-              {
-                label: "SPX/MA%",
-                value: `${tooltip.d.spx_vs_ma_pct >= 0 ? "+" : ""}${tooltip.d.spx_vs_ma_pct.toFixed(2)}%`,
-                color: tooltip.d.spx_vs_ma_pct >= 0 ? "#05AD98" : "#E85D6C",
-              },
-              {
-                label: "VIX 5D ROC",
-                value: `${tooltip.d.vix_5d_roc >= 0 ? "+" : ""}${tooltip.d.vix_5d_roc.toFixed(2)}%`,
-                color: tooltip.d.vix_5d_roc >= 0 ? "#E85D6C" : "#05AD98",
-              },
-            ] as { label: string; value: string; color: string }[]
-          ).map((row) => (
-            <div
-              key={row.label}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 12,
-                fontFamily: "IBM Plex Mono, monospace",
-                fontSize: 10,
-                color: "#94a3b8",
-                lineHeight: "1.6",
-              }}
-            >
-              <span style={{ color: "#64748b" }}>{row.label}</span>
-              <span style={{ color: row.color }}>{row.value}</span>
-            </div>
-          ))}
+          {series.map((s) => {
+            const val = tooltip.d![s.key];
+            const fmt = s.format ?? defaultFormat;
+            return (
+              <div
+                key={String(s.key)}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  fontFamily: "IBM Plex Mono, monospace",
+                  fontSize: 10,
+                  lineHeight: "1.6",
+                }}
+              >
+                <span style={{ color: "#64748b" }}>{s.label}</span>
+                <span style={{ color: s.color }}>
+                  {val != null && Number.isFinite(val as number)
+                    ? fmt(val as number)
+                    : "---"}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

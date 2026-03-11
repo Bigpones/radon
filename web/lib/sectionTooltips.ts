@@ -98,9 +98,9 @@ export const SECTION_TOOLTIPS: Record<string, string> = {
     "and COR1M > 60 (panic herding). All three must fire to trigger.",
 
   "10-DAY HISTORY":
-    "D3 chart showing VIX (color-coded: green < 20, amber 20-30, red > 30) " +
-    "and SPY price over the past 10 trading days. The dashed line marks the current " +
-    "CRI score. Hover for daily values including VVIX and SPX vs 100d MA.",
+    "Two D3 charts showing 20 trading sessions. Left: VIX + VVIX (dual axis). " +
+    "Right: 20d Realized Vol + COR1M implied correlation (dual axis). " +
+    "Today's data point updates in real-time from live WS prices. Hover for daily values.",
 
   /* ── CTA Page ────────────────────────────────────────── */
 

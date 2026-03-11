@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Check, Shield, X, Zap } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, Check, Shield, X, Zap } from "lucide-react";
 import CriHistoryChart from "./CriHistoryChart";
+import type { ChartSeries, CriHistoryEntry } from "./CriHistoryChart";
 import InfoTooltip from "./InfoTooltip";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { useRegime } from "@/lib/useRegime";
@@ -56,6 +57,37 @@ function LiveBadge({ live, variant }: { live: boolean; variant?: BadgeVariant })
     <span className="regime-badge" style={{ background: bg, color }}>
       {label}
     </span>
+  );
+}
+
+/* ─── Day Change Indicator ───────────────────────────── */
+
+function DayChange({ last, close, prefix }: { last: number | null; close: number | null; prefix?: string }) {
+  if (last == null || close == null || close <= 0) return null;
+  const change = last - close;
+  const pct = (change / close) * 100;
+  const isUp = change >= 0;
+  const color = isUp ? "var(--positive)" : "var(--negative)";
+  const Arrow = isUp ? ArrowUp : ArrowDown;
+  return (
+    <div className="regime-strip-day-chg" style={{ color }} data-testid="regime-day-chg">
+      <span>{prefix}{isUp ? "+" : ""}{change.toFixed(2)} ({isUp ? "+" : ""}{pct.toFixed(2)}%)</span>
+      <Arrow size={10} />
+    </div>
+  );
+}
+
+/** Displays a signed point-change value with arrow (e.g. RVOL delta, COR1M 5d chg) */
+function PointChange({ change, suffix, label }: { change: number | null; suffix?: string; label?: string }) {
+  if (change == null || Math.abs(change) < 0.005) return null;
+  const isUp = change >= 0;
+  const color = isUp ? "var(--positive)" : "var(--negative)";
+  const Arrow = isUp ? ArrowUp : ArrowDown;
+  return (
+    <div className="regime-strip-day-chg" style={{ color }} data-testid="regime-day-chg">
+      <span>{isUp ? "+" : ""}{change.toFixed(2)}{suffix}{label ? ` ${label}` : ""}</span>
+      <Arrow size={10} />
+    </div>
   );
 }
 
@@ -117,6 +149,11 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
   const liveVvix = prices["VVIX"]?.last ?? null;
   const liveSpy = prices["SPY"]?.last ?? null;
   const hasLive = marketOpen && (liveVix != null || liveVvix != null || liveSpy != null);
+
+  // Previous close from WS — for day change computation
+  const vixClose = marketOpen ? (prices["VIX"]?.close ?? null) : null;
+  const vvixClose = marketOpen ? (prices["VVIX"]?.close ?? null) : null;
+  const spyClose = marketOpen ? (prices["SPY"]?.close ?? null) : null;
 
   // Timestamps for last live VIX / VVIX value received
   const [vixLastTs, setVixLastTs] = useState<string | null>(null);
@@ -266,29 +303,33 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
         <div className="regime-strip-cell" data-testid="strip-vix">
           <div className="regime-strip-label">VIX <LiveBadge live={marketOpen && liveVix != null} /></div>
           <div className="regime-strip-value">{fmt(vixVal)}</div>
+          <DayChange last={liveVix} close={vixClose} />
           <div className="regime-strip-sub">5d RoC: {fmtPct(data?.vix_5d_roc, 1)}</div>
           <div className="regime-strip-ts">{vixLastTs ?? "---"}</div>
         </div>
         <div className="regime-strip-cell" data-testid="strip-vvix">
           <div className="regime-strip-label">VVIX <LiveBadge live={marketOpen && liveVvix != null} /></div>
           <div className="regime-strip-value">{fmt(vvixVal)}</div>
+          <DayChange last={liveVvix} close={vvixClose} />
           <div className="regime-strip-sub">VVIX/VIX: {fmt(vvixVixRatio)}</div>
           <div className="regime-strip-ts">{vvixLastTs ?? "---"}</div>
         </div>
-        <div className="regime-strip-cell">
+        <div className="regime-strip-cell" data-testid="strip-spy">
           <div className="regime-strip-label">SPY <LiveBadge live={marketOpen && liveSpy != null} /></div>
           <div className="regime-strip-value">${fmt(spyVal)}</div>
+          <DayChange last={liveSpy} close={spyClose} prefix="$" />
           <div className="regime-strip-sub">vs 100d MA: {fmtPct(spxDistPct)}</div>
         </div>
-        <div className="regime-strip-cell">
+        <div className="regime-strip-cell" data-testid="strip-rvol">
           <div className="regime-strip-label">REALIZED VOL <LiveBadge live={hasIntradayRvol} /></div>
           <div className="regime-strip-value">{activeRvol != null ? `${fmt(activeRvol)}%` : "---"}</div>
+          <PointChange change={intradayRvol != null && data?.realized_vol != null ? intradayRvol - data.realized_vol : null} suffix="%" label="intraday" />
           <div className="regime-strip-sub">20d annualized</div>
         </div>
         <div className="regime-strip-cell" data-testid="strip-cor1m">
           <div className="regime-strip-label">COR1M <LiveBadge live={false} /></div>
           <div className="regime-strip-value">{fmt(activeCorr, 2)}</div>
-          <div className="regime-strip-sub">5d chg: {fmtSigned(activeCorrChange, 2)} pts</div>
+          <PointChange change={activeCorrChange} suffix=" pts" label="5d chg" />
         </div>
       </div>
 
@@ -335,14 +376,51 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
         </div>
       </div>
 
-      {/* ── Row 5: 10-Day History Chart ───────────── */}
+      {/* ── Row 5: 20-Session History Charts (side by side) ── */}
 
-      {data?.history && data.history.length > 0 && (
-        <>
-          <div className="section-header" style={{ display: "flex", alignItems: "center", gap: "6px" }}>10-DAY HISTORY <InfoTooltip text={SECTION_TOOLTIPS["10-DAY HISTORY"]} /></div>
-          <CriHistoryChart history={data.history} criScore={cri.score} />
-        </>
-      )}
+      {data?.history && data.history.length > 0 && (() => {
+        const vixVvixSeries: [ChartSeries, ChartSeries] = [
+          { key: "vix", label: "VIX", color: "#05AD98", axis: "left", format: (v: number) => v.toFixed(1) },
+          { key: "vvix", label: "VVIX", color: "#8B5CF6", axis: "right", format: (v: number) => v.toFixed(0) },
+        ];
+        const rvolCorrSeries: [ChartSeries, ChartSeries] = [
+          { key: "realized_vol", label: "RVOL", color: "#F5A623", axis: "left", format: (v: number) => `${v.toFixed(1)}%` },
+          { key: "cor1m", label: "COR1M", color: "#D946A8", axis: "right", format: (v: number) => v.toFixed(1) },
+        ];
+        // Live values for today's data point (VIX/VVIX chart)
+        const vixVvixLive: Partial<Record<keyof CriHistoryEntry, number>> = {};
+        if (marketOpen && liveVix != null) vixVvixLive.vix = liveVix;
+        if (marketOpen && liveVvix != null) vixVvixLive.vvix = liveVvix;
+        // Live values for today's data point (RVOL/COR1M chart)
+        const rvolCorrLive: Partial<Record<keyof CriHistoryEntry, number>> = {};
+        if (intradayRvol != null) rvolCorrLive.realized_vol = intradayRvol;
+
+        return (
+          <>
+            <div className="section-header" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              20-SESSION HISTORY
+              <InfoTooltip text={SECTION_TOOLTIPS["10-DAY HISTORY"]} />
+              {marketOpen && hasLive && (
+                <span className="regime-badge" style={{ background: "rgba(5,173,152,0.15)", color: "var(--positive)" }}>LIVE</span>
+              )}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+              <CriHistoryChart
+                history={data.history}
+                series={vixVvixSeries}
+                title="VIX / VVIX"
+                liveValues={Object.keys(vixVvixLive).length > 0 ? vixVvixLive : undefined}
+              />
+              <CriHistoryChart
+                history={data.history}
+                series={rvolCorrSeries}
+                title="REALIZED VOL / COR1M"
+                liveValues={Object.keys(rvolCorrLive).length > 0 ? rvolCorrLive : undefined}
+              />
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }
