@@ -39,7 +39,7 @@ export function buildTweetText(
   if (showDollar) parts.push(fmtDollar(pnl));
   if (showPct && pnlPct != null && Number.isFinite(pnlPct)) parts.push(fmtPct(pnlPct));
   const pnlStr = parts.join(" ");
-  return `${description} ${pnlStr}\n\nExecuted with Radon\nhttps://github.com/joemccann/radon`;
+  return `${description} ${pnlStr}\n\nExecuted with Radon\nhttps://radon.run`;
 }
 
 export default function SharePnlButton({ data, size = 13 }: SharePnlButtonProps) {
