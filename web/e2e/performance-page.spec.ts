@@ -146,6 +146,31 @@ test.describe("/performance page", () => {
     await expect(page.locator("text=Warnings")).toBeVisible();
   });
 
+  test("performance metric cards are clickable and open explainability modals", async ({ page }) => {
+    await setupMocks(page);
+    await page.goto("/performance");
+
+    const cards = page.locator('[data-testid^="performance-card-"]');
+    await expect(cards).toHaveCount(8, { timeout: 10_000 });
+    await expect(cards.nth(0)).toHaveClass(/metric-card-clickable/);
+    await expect(cards.nth(7)).toHaveClass(/metric-card-clickable/);
+
+    await page.getByTestId("performance-card-ytd-return").click();
+    const modal = page.locator(".modal-content");
+    await expect(modal).toBeVisible();
+    await expect(modal).toContainText("YTD Return");
+    await expect(modal).toContainText("Cumulative return");
+    await expect(modal).toContainText("YTD Return = (Ending Equity / Starting Equity) - 1");
+    await modal.getByRole("button", { name: "Close" }).click();
+    await expect(modal).toBeHidden();
+
+    await page.getByTestId("performance-card-beta").click();
+    await expect(modal).toBeVisible();
+    await expect(modal).toContainText("Beta");
+    await expect(modal).toContainText("Sensitivity");
+    await expect(modal).toContainText("Covariance(Portfolio Returns, SPY Returns)");
+  });
+
   test("refreshes stale cached ending equity to the current portfolio net liquidation snapshot", async ({ page }) => {
     await page.unrouteAll({ behavior: "ignoreErrors" });
 

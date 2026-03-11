@@ -1,9 +1,10 @@
 "use client";
 
 import { AlertTriangle, BarChart3, Gauge, ShieldAlert, Sigma, TrendingDown } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { PerformanceData, PerformanceSeriesPoint } from "@/lib/types";
 import { usePerformance } from "@/lib/usePerformance";
+import MetricDefinitionModal from "./MetricDefinitionModal";
 
 function fmtUsd(value: number): string {
   const abs = Math.abs(value);
@@ -35,23 +36,50 @@ function toneClass(value: number): "positive" | "negative" | "neutral" {
   return value > 0 ? "positive" : value < 0 ? "negative" : "neutral";
 }
 
+type PerformanceCardConfig = {
+  id: string;
+  label: string;
+  title: string;
+  value: string;
+  change: string;
+  definition: string;
+  formula: string;
+  tone?: "positive" | "negative" | "neutral";
+};
+
 function StatCard({
+  id,
   label,
   value,
   change,
+  definition,
+  formula,
+  onClick,
   tone = "neutral",
 }: {
+  id: string;
   label: string;
   value: string;
   change: string;
+  definition: string;
+  formula: string;
+  onClick: () => void;
   tone?: "positive" | "negative" | "neutral";
 }) {
   return (
-    <div className="metric-card">
+    <button
+      type="button"
+      className="metric-card metric-card-clickable performance-card-trigger"
+      data-testid={`performance-card-${id}`}
+      aria-label={`${label} metric details`}
+      data-definition={definition}
+      data-formula={formula}
+      onClick={onClick}
+    >
       <div className="metric-label">{label}</div>
       <div className={`metric-value ${tone !== "neutral" ? tone : ""}`}>{value}</div>
       <div className={`metric-change ${tone}`}>{change}</div>
-    </div>
+    </button>
   );
 }
 
@@ -158,6 +186,120 @@ function drawdownLeader(series: PerformanceSeriesPoint[]): string {
 
 export default function PerformancePanel() {
   const { data, loading, error } = usePerformance(true);
+  const [activeCardId, setActiveCardId] = useState<string | null>(null);
+  const cardConfigs = useMemo<PerformanceCardConfig[]>(() => {
+    if (!data) return [];
+    const { summary } = data;
+
+    return [
+      {
+        id: "ytd-return",
+        label: "YTD Return",
+        title: "YTD Return",
+        value: fmtPct(summary.total_return),
+        change: `${fmtUsd(summary.pnl)} P&L`,
+        tone: toneClass(summary.total_return),
+        definition: "Cumulative return from the first trading session of the year through the current portfolio snapshot.",
+        formula:
+          "YTD Return = (Ending Equity / Starting Equity) - 1\n" +
+          "P&L = Ending Equity - Starting Equity\n" +
+          "Ending Equity and Starting Equity come from the reconstructed YTD net-liq curve.",
+      },
+      {
+        id: "sharpe-ratio",
+        label: "Sharpe Ratio",
+        title: "Sharpe Ratio",
+        value: fmtRatio(summary.sharpe_ratio),
+        change: `VOL ${fmtPct(summary.annualized_volatility)}`,
+        tone: toneClass(summary.sharpe_ratio),
+        definition: "Risk-adjusted return per unit of total volatility. Higher values mean more return for each unit of realized risk.",
+        formula:
+          "Sharpe Ratio = Mean(Daily Returns - Risk Free Rate / 252) / StdDev(Daily Returns) * sqrt(252)\n" +
+          "Annualized Volatility = StdDev(Daily Returns) * sqrt(252)\n" +
+          "Current methodology uses Risk Free Rate = 0.00%.",
+      },
+      {
+        id: "sortino-ratio",
+        label: "Sortino Ratio",
+        title: "Sortino Ratio",
+        value: fmtRatio(summary.sortino_ratio),
+        change: `DN DEV ${fmtPct(summary.downside_deviation)}`,
+        tone: toneClass(summary.sortino_ratio),
+        definition: "Risk-adjusted return that only penalizes downside volatility. It ignores upside variation and focuses on harmful drawdowns.",
+        formula:
+          "Sortino Ratio = Mean(Daily Returns - Risk Free Rate / 252) / Downside Deviation * sqrt(252)\n" +
+          "Downside Deviation = sqrt(mean(min(Daily Return, 0)^2)) * sqrt(252)\n" +
+          "Current methodology uses Risk Free Rate = 0.00%.",
+      },
+      {
+        id: "max-drawdown",
+        label: "Max Drawdown",
+        title: "Max Drawdown",
+        value: fmtPct(summary.max_drawdown),
+        change: `${summary.max_drawdown_duration_days} DAYS`,
+        tone: toneClass(summary.max_drawdown),
+        definition: "Largest peak-to-trough decline in the reconstructed YTD equity curve. It measures the worst historical capital drawdown so far this year.",
+        formula:
+          "Drawdown_t = (Equity_t / Running Peak_t) - 1\n" +
+          "Max Drawdown = minimum Drawdown_t over the YTD curve\n" +
+          "Duration = consecutive sessions spent below the prior peak.",
+      },
+      {
+        id: "beta",
+        label: "Beta",
+        title: "Beta",
+        value: fmtRatio(summary.beta),
+        change: data.benchmark,
+        tone: toneClass(summary.beta - 1),
+        definition: `Sensitivity of the portfolio's daily returns to ${data.benchmark}'s daily returns. A beta above 1 implies amplified market sensitivity; below 1 implies lower sensitivity.`,
+        formula:
+          `Beta = Covariance(Portfolio Returns, ${data.benchmark} Returns) / Variance(${data.benchmark} Returns)\n` +
+          `Returns are daily close-to-close returns from the reconstructed portfolio curve and ${data.benchmark} benchmark series.`,
+      },
+      {
+        id: "alpha",
+        label: "Alpha",
+        title: "Alpha",
+        value: fmtPct(summary.alpha),
+        change: "ANNUALIZED",
+        tone: toneClass(summary.alpha),
+        definition: `Annualized excess return after adjusting for ${data.benchmark} beta. Positive alpha means the portfolio outperformed what its market exposure alone would imply.`,
+        formula:
+          `Alpha = (Mean(Portfolio Returns) - Beta * Mean(${data.benchmark} Returns)) * 252\n` +
+          "The output is annualized from daily return differentials.",
+      },
+      {
+        id: "information-ratio",
+        label: "Information Ratio",
+        title: "Information Ratio",
+        value: fmtRatio(summary.information_ratio),
+        change: `TE ${fmtPct(summary.tracking_error)}`,
+        tone: toneClass(summary.information_ratio),
+        definition: `Active return per unit of benchmark-relative volatility. It measures how efficiently the portfolio is outperforming or underperforming ${data.benchmark}.`,
+        formula:
+          `Active Return_t = Portfolio Return_t - ${data.benchmark} Return_t\n` +
+          "Tracking Error = StdDev(Active Return) * sqrt(252)\n" +
+          "Information Ratio = Mean(Active Return) / StdDev(Active Return) * sqrt(252)",
+      },
+      {
+        id: "calmar-ratio",
+        label: "Calmar Ratio",
+        title: "Calmar Ratio",
+        value: fmtRatio(summary.calmar_ratio),
+        change: `CUR DD ${fmtPct(summary.current_drawdown)}`,
+        tone: toneClass(summary.calmar_ratio),
+        definition: "Annualized return scaled by the worst drawdown. It answers how much return the portfolio generated relative to the maximum capital drawdown endured.",
+        formula:
+          "Calmar Ratio = Annualized Return / abs(Max Drawdown)\n" +
+          "Current Drawdown = (Latest Equity / Running Peak) - 1\n" +
+          "A higher Calmar Ratio means better return relative to drawdown pain.",
+      },
+    ];
+  }, [data]);
+  const activeCard = useMemo(
+    () => cardConfigs.find((card) => card.id === activeCardId) ?? null,
+    [activeCardId, cardConfigs],
+  );
 
   if (loading && !data) {
     return (
@@ -226,17 +368,15 @@ export default function PerformancePanel() {
         </div>
         <div className="section-body">
           <div className="metrics-grid">
-            <StatCard label="YTD Return" value={fmtPct(summary.total_return)} change={`${fmtUsd(summary.pnl)} P&L`} tone={toneClass(summary.total_return)} />
-            <StatCard label="Sharpe Ratio" value={fmtRatio(summary.sharpe_ratio)} change={`VOL ${fmtPct(summary.annualized_volatility)}`} tone={toneClass(summary.sharpe_ratio)} />
-            <StatCard label="Sortino Ratio" value={fmtRatio(summary.sortino_ratio)} change={`DN DEV ${fmtPct(summary.downside_deviation)}`} tone={toneClass(summary.sortino_ratio)} />
-            <StatCard label="Max Drawdown" value={fmtPct(summary.max_drawdown)} change={`${summary.max_drawdown_duration_days} DAYS`} tone={toneClass(summary.max_drawdown)} />
+            {cardConfigs.slice(0, 4).map((card) => (
+              <StatCard key={card.id} {...card} onClick={() => setActiveCardId(card.id)} />
+            ))}
           </div>
 
           <div className="metrics-grid">
-            <StatCard label="Beta" value={fmtRatio(summary.beta)} change={data.benchmark} tone={toneClass(summary.beta - 1)} />
-            <StatCard label="Alpha" value={fmtPct(summary.alpha)} change="ANNUALIZED" tone={toneClass(summary.alpha)} />
-            <StatCard label="Information Ratio" value={fmtRatio(summary.information_ratio)} change={`TE ${fmtPct(summary.tracking_error)}`} tone={toneClass(summary.information_ratio)} />
-            <StatCard label="Calmar Ratio" value={fmtRatio(summary.calmar_ratio)} change={`CUR DD ${fmtPct(summary.current_drawdown)}`} tone={toneClass(summary.calmar_ratio)} />
+            {cardConfigs.slice(4).map((card) => (
+              <StatCard key={card.id} {...card} onClick={() => setActiveCardId(card.id)} />
+            ))}
           </div>
         </div>
       </div>
@@ -334,6 +474,17 @@ export default function PerformancePanel() {
           </div>
         </div>
       </div>
+
+      {activeCard && (
+        <MetricDefinitionModal
+          open
+          title={activeCard.title}
+          value={activeCard.value}
+          definition={activeCard.definition}
+          formula={activeCard.formula}
+          onClose={() => setActiveCardId(null)}
+        />
+      )}
     </div>
   );
 }

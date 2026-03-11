@@ -1,5 +1,30 @@
 # TODO
 
+## Session: Performance Card Explainability Modals (2026-03-11)
+
+### Dependency Graph
+- T1 (Inspect the current `/performance` panel and the existing clickable metric-card pattern used on `/portfolio`) depends_on: []
+- T2 (Record the implementation plan for clickable performance cards in `tasks/todo.md`) depends_on: [T1]
+- T3 (Add failing browser or route coverage for clickable performance cards and their explanatory modal content) depends_on: [T1, T2]
+- T4 (Implement clickable cards and explanatory modal content across the `/performance` page) depends_on: [T3]
+- T5 (Run targeted verification with Playwright browser automation and supporting tests) depends_on: [T4]
+- T6 (Capture review notes and summarize the final behavior) depends_on: [T5]
+
+### Checklist
+- [x] T1 Inspect the current `/performance` panel and the existing clickable metric-card pattern used on `/portfolio`
+- [x] T2 Record the implementation plan for clickable performance cards in `tasks/todo.md`
+- [x] T3 Add failing browser or route coverage for clickable performance cards and their explanatory modal content
+- [x] T4 Implement clickable cards and explanatory modal content across the `/performance` page
+- [x] T5 Run targeted verification with Playwright browser automation and supporting tests
+- [x] T6 Capture review notes and summarize the final behavior
+
+### Review
+- Scoped the clickable behavior to the eight actual `StatCard` metric cards in the Core Performance section of [PerformancePanel.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/PerformancePanel.tsx), which matches the existing `/portfolio` interaction pattern without turning non-card list rows into fake cards.
+- Added [MetricDefinitionModal.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/MetricDefinitionModal.tsx) so each performance card can explain both what the metric means and how it is calculated, instead of only showing a formula string.
+- Converted all eight core performance cards into accessible button-style metric cards with `metric-card-clickable`, stable `data-testid` values, and per-metric definition/formula content wired from the reconstructed performance payload.
+- Added browser coverage in [performance-page.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/performance-page.spec.ts) to prove the cards are clickable and that representative cards open the expected explainability modal content.
+- Verified `cd web && npx playwright test e2e/performance-page.spec.ts --grep "performance metric cards are clickable"`, `cd web && npx playwright test e2e/performance-page.spec.ts`, and `cd web && npm run build`.
+
 ## Session: Performance Net Liq Reconciliation Fix (2026-03-11)
 
 ### Dependency Graph

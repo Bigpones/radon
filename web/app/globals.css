@@ -509,10 +509,17 @@ tr:last-child td {
   animation: last-price-flash-down 2.5s ease-out;
 }
 
+/* Price cells with trend arrows: flex keeps value + arrow on one line, right-aligned.
+   Any td using .last-price-cell MUST place the arrow icon after the value text. */
+td.last-price-cell {
+  white-space: nowrap;
+}
+
 .price-trend-icon {
   display: inline-block;
   vertical-align: -0.1em;
-  margin-left: 5px;
+  margin-left: 4px;
+  flex-shrink: 0;
 }
 
 .price-trend-up {
@@ -2462,10 +2469,42 @@ tr {
 /* ── Clickable Metric Cards ── */
 
 .metric-card-clickable { cursor: pointer; }
+.metric-card-clickable:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: -1px;
+  position: relative;
+  z-index: 2;
+}
+
+.performance-card-trigger {
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  appearance: none;
+}
 
 /* ── Account Metric Modal ── */
 
 .account-metric-modal .modal-content { width: 480px; max-width: 95vw; }
+.metric-definition-modal .modal-content { width: 540px; max-width: 95vw; }
+
+.metric-definition-copy { margin-bottom: 12px; }
+.metric-definition-copy p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.metric-definition-label {
+  display: block;
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
 
 /* ── Exposure Breakdown Modal ── */
 
@@ -2692,6 +2731,18 @@ tr {
   font-weight: 500;
   color: var(--text-primary);
   line-height: 1.2;
+}
+
+.regime-strip-day-chg {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  margin-top: 2px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .regime-strip-sub {
