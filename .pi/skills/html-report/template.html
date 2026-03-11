@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{TITLE}}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     /* 
      * TERMINAL DASHBOARD THEME
@@ -25,12 +25,20 @@
       --border-dim: #1e293b;
       --border-focus: #05AD98;
       --text-primary: #e2e8f0;
-      --text-muted: #94a3b8;
+      --text-muted: #475569;
       --accent-bg: #05AD98;
       --accent-text: #0a0f14;
       --positive: #05AD98;
       --negative: #E85D6C;
       --warning: #F5A623;
+      --fault: #E85D6C;
+      --neutral: #94a3b8;
+      --extreme: #8B5CF6;
+      --dislocation: #D946A8;
+      --signal-deep: #048A7A;
+      --signal-strong: #0FCFB5;
+      --signal-core: #05AD98;
+      --text-secondary: #94a3b8;
     }
     
     /* System preference: light mode */
@@ -48,6 +56,14 @@
         --positive: #048A7A;
         --negative: #D4183D;
         --warning: #D4910A;
+        --fault: #D4183D;
+        --neutral: #878787;
+        --extreme: #7C3AED;
+        --dislocation: #C026A0;
+        --signal-deep: #037066;
+        --signal-strong: #048A7A;
+        --signal-core: #05AD98;
+        --text-secondary: #636363;
       }
     }
 
@@ -65,6 +81,14 @@
       --positive: #048A7A;
       --negative: #D4183D;
       --warning: #D4910A;
+      --fault: #D4183D;
+      --neutral: #878787;
+      --extreme: #7C3AED;
+      --dislocation: #C026A0;
+      --signal-deep: #037066;
+      --signal-strong: #048A7A;
+      --signal-core: #05AD98;
+      --text-secondary: #636363;
     }
     
     /* Manual override: dark mode */
@@ -75,19 +99,27 @@
       --border-dim: #1e293b;
       --border-focus: #05AD98;
       --text-primary: #e2e8f0;
-      --text-muted: #94a3b8;
+      --text-muted: #475569;
       --accent-bg: #05AD98;
       --accent-text: #0a0f14;
       --positive: #05AD98;
       --negative: #E85D6C;
       --warning: #F5A623;
+      --fault: #E85D6C;
+      --neutral: #94a3b8;
+      --extreme: #8B5CF6;
+      --dislocation: #D946A8;
+      --signal-deep: #048A7A;
+      --signal-strong: #0FCFB5;
+      --signal-core: #05AD98;
+      --text-secondary: #94a3b8;
     }
 
     /* ========== BASE STYLES ========== */
     * { margin: 0; padding: 0; box-sizing: border-box; }
     
     body {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
       font-size: 13px;
       line-height: 1.5;
       background: var(--bg-base);
@@ -149,6 +181,7 @@
       background: var(--bg-panel);
       border: 1px solid var(--border-dim);
       margin-bottom: 16px;
+      border-radius: 4px;
     }
 
     .panel-header {
@@ -180,6 +213,7 @@
       background: var(--border-dim);
       border: 1px solid var(--border-dim);
       margin-bottom: 24px;
+      border-radius: 4px;
     }
 
     .metric {
@@ -252,7 +286,8 @@
     .text-positive { color: var(--positive); }
     .text-negative { color: var(--negative); }
     .text-warning { color: var(--warning); }
-    .text-mono { font-family: 'JetBrains Mono', monospace; }
+    .text-mono { font-family: 'IBM Plex Mono', monospace; }
+    .text-sans { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
     .text-small { font-size: 11px; }
     .text-uppercase { text-transform: uppercase; letter-spacing: 0.1em; }
 
@@ -264,7 +299,8 @@
       font-size: 10px;
       text-transform: uppercase;
       letter-spacing: 0.1em;
-    }
+      border-radius: 999px;
+      }
 
     .pill-accent {
       background: var(--accent-bg);
@@ -380,6 +416,7 @@
       border-left: 3px solid var(--accent-bg);
       padding: 16px;
       margin: 16px 0;
+      border-radius: 4px;
     }
 
     .callout-title {
@@ -438,7 +475,9 @@
     @media print {
       body { background: white; color: black; }
       .theme-toggle, .btn { display: none; }
-      .panel { border-color: #ccc; }
+      .panel { border-color: #ccc;
+      border-radius: 4px;
+    }
       .header { border-bottom-color: #ccc; }
     }
   </style>

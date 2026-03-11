@@ -30,7 +30,7 @@ The template (`template.html`) includes:
 - ✅ Full CSS with dark/light mode support
 - ✅ System preference detection (`prefers-color-scheme`)
 - ✅ Theme toggle button (just add the button HTML in your body)
-- ✅ JetBrains Mono font loaded
+- ✅ Inter (UI/titles) + IBM Plex Mono (numeric/telemetry) fonts loaded
 - ✅ All component styles pre-defined
 - ✅ Print-friendly styles
 - ✅ Responsive grid utilities
@@ -141,12 +141,14 @@ The template (`template.html`) includes:
 |-------|-------|
 | `.text-right` | Right align |
 | `.text-center` | Center align |
-| `.text-muted` | Secondary color |
+| `.text-muted` | Meta / supporting text (`#475569` dark) |
 | `.text-positive` | Green |
 | `.text-negative` | Red |
 | `.text-warning` | Orange |
 | `.text-small` | 11px |
 | `.text-uppercase` | Uppercase + letter-spacing |
+| `.text-mono` | IBM Plex Mono (numeric/telemetry) |
+| `.text-sans` | Inter (UI/titles) |
 
 ### Pills / Badges
 | Class | Usage |
@@ -205,20 +207,28 @@ The template (`template.html`) includes:
 
 Use CSS variables for theme compatibility:
 
-| Token | Usage |
-|-------|-------|
-| `--bg-base` | Page background |
-| `--bg-panel` | Panel background |
-| `--bg-hover` | Hover state |
-| `--border-dim` | Default borders |
-| `--border-focus` | Active borders |
-| `--text-primary` | Main text |
-| `--text-muted` | Secondary text |
-| `--accent-bg` | Inverted bg |
-| `--accent-text` | Inverted text |
-| `--positive` | Green |
-| `--negative` | Red |
-| `--warning` | Orange |
+| Token | Dark | Light | Usage |
+|-------|------|-------|-------|
+| `--bg-base` | `#0a0f14` | `#FFFFFF` | Page background |
+| `--bg-panel` | `#0f1519` | `#FFFFFF` | Panel background |
+| `--bg-hover` | `#151c22` | `#f1f5f9` | Hover state |
+| `--border-dim` | `#1e293b` | `#BBBFBF` | Default borders |
+| `--border-focus` | `#05AD98` | `#05AD98` | Active borders |
+| `--text-primary` | `#e2e8f0` | `#000000` | Main text |
+| `--text-secondary` | `#94a3b8` | `#636363` | Secondary text |
+| `--text-muted` | `#475569` | `#878787` | Meta / supporting text |
+| `--accent-bg` | `#05AD98` | `#05AD98` | Inverted bg |
+| `--accent-text` | `#0a0f14` | `#FFFFFF` | Inverted text |
+| `--positive` | `#05AD98` | `#048A7A` | Positive / green |
+| `--negative` | `#E85D6C` | `#D4183D` | Negative / red |
+| `--warning` | `#F5A623` | `#D4910A` | Caution / orange |
+| `--signal-core` | `#05AD98` | `#05AD98` | Core Radon accent |
+| `--signal-strong` | `#0FCFB5` | `#048A7A` | High-confidence signal |
+| `--signal-deep` | `#048A7A` | `#037066` | Deep data / selected |
+| `--dislocation` | `#D946A8` | `#C026A0` | Structural dislocation |
+| `--extreme` | `#8B5CF6` | `#7C3AED` | Extreme / rare state |
+| `--fault` | `#E85D6C` | `#D4183D` | Feed fault / integrity |
+| `--neutral` | `#94a3b8` | `#878787` | Neutral state |
 
 ## Example: Minimal Report
 
