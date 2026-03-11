@@ -82,7 +82,16 @@ async function stubRoutes(page: import("@playwright/test").Page) {
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ as_of: new Date().toISOString(), summary: { realized_pnl: 0 }, closed_trades: [], open_trades: [] }) }),
   );
   await page.route("**/api/ticker/**", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({}) }),
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        uw_info: { name: "Apple Inc.", sector: "Technology" },
+        stock_state: {},
+        profile: {},
+        stats: {},
+      }),
+    }),
   );
 }
 
@@ -150,7 +159,7 @@ test("chart tooltip: ticker detail modal survives theme toggle without crash", a
   // Toggle theme while modal is open
   const themeToggle = page.locator('[aria-label="Toggle theme"], button:has-text("Light"), button:has-text("Dark"), .theme-toggle').first();
   await themeToggle.waitFor({ timeout: 5_000 });
-  await themeToggle.click();
+  await themeToggle.evaluate((element: HTMLButtonElement) => element.click());
 
   // Modal must still be visible — no crash from re-render
   await expect(modal).toBeVisible();
@@ -174,6 +183,10 @@ test("chart tooltip: canvas element is present inside ticker detail modal", asyn
 
   const modal = page.locator(".ticker-detail-modal");
   await modal.waitFor({ timeout: 5_000 });
+
+  const chartShell = modal.locator('[data-testid="price-chart-panel"]');
+  await expect(chartShell).toHaveAttribute("data-chart-family", "Live Trace");
+  await expect(chartShell).toHaveAttribute("data-chart-renderer", "canvas-adapter");
 
   // Liveline renders a <canvas> element — its presence confirms the chart mounted
   const canvas = modal.locator("canvas").first();

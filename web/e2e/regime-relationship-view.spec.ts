@@ -137,6 +137,8 @@ test.describe("/regime page — RVOL/COR1M relationship view", () => {
 
     const relationshipView = page.locator('[data-testid="regime-relationship-view"]');
     await expect(relationshipView).toBeVisible();
+    await expect(relationshipView).toHaveAttribute("data-chart-family", "Analytical Time Series");
+    await expect(relationshipView).toHaveAttribute("data-chart-renderer", "svg");
 
     const spreadCard = page.locator('[data-testid="regime-spread-card"]');
     await expect(spreadCard).toContainText("CORRELATION RISK PREMIUM");
@@ -150,6 +152,8 @@ test.describe("/regime page — RVOL/COR1M relationship view", () => {
     const zScoreCard = page.locator('[data-testid="regime-zscore-card"]');
     await expect(zScoreCard).toContainText("NORMALIZED DIVERGENCE");
     await expect(zScoreCard.locator('[data-testid="regime-current-zgap"]')).toContainText("σ");
+    await expect(zScoreCard.locator(".chart-legend")).toContainText("RVOL z-score");
+    await expect(zScoreCard.locator(".chart-legend")).toContainText("COR1M z-score");
   });
 
   test("shows tooltip definitions for all four relationship states", async ({ page }) => {

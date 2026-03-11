@@ -553,7 +553,7 @@ export default function RegimeRelationshipView({
           </svg>
 
           <ChartLegend
-            className="regime-relationship-legend"
+            className="regime-relationship-shared-legend"
             items={[
               { label: "RVOL z-score", role: "caution" },
               { label: "COR1M z-score", role: "dislocation" },

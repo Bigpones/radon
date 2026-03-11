@@ -1,5 +1,23 @@
 # TODO
 
+## Session: Commit Residual Chart-System Fixes (2026-03-11)
+
+### Dependency Graph
+- T1 (Inspect the current branch, worktree, and diff so the commit only includes the residual chart-system follow-up files) depends_on: []
+- T2 (Record the commit/push plan in `tasks/todo.md` before staging) depends_on: [T1]
+- T3 (Stage the residual chart-system files and create a scoped commit with the verified runtime and OG routing fixes) depends_on: [T2]
+- T4 (Push the current branch to origin and capture the resulting review note) depends_on: [T3]
+
+### Checklist
+- [x] T1 Inspect the current branch, worktree, and diff so the commit only includes the residual chart-system follow-up files
+- [x] T2 Record the commit/push plan in `tasks/todo.md` before staging
+- [x] T3 Stage the residual chart-system files and create a scoped commit with the verified runtime and OG routing fixes
+- [x] T4 Push the current branch to origin and capture the resulting review note
+
+### Review
+- Staged only the residual chart-system follow-up files: the shared shell metadata update, relationship-view primitive convergence, MenthorQ OG family routing, focused Vitest/Playwright regressions, and the task log updates.
+- Commit and push completed on `main` after the previously green verification set: `npx vitest run web/tests/chart-runtime-adoption.test.ts web/tests/price-chart-shell.test.ts web/tests/menthorq-og-route-contract.test.ts web/tests/chart-system.test.ts web/tests/og-theme-contract.test.ts`, `cd web && npx playwright test e2e/price-chart-theme.spec.ts e2e/regime-relationship-view.spec.ts`, and `cd web && npm run build`.
+
 ## Session: Chart System Residual Convergence (2026-03-11)
 
 ### Dependency Graph
@@ -11,15 +29,20 @@
 - T6 (Run targeted verification, update review notes, and confirm the residual chart-system gaps are closed) depends_on: [T4, T5]
 
 ### Checklist
-- [ ] T1 Inspect the remaining chart-system residuals in the live-trace modal chart, relationship view shell, and MenthorQ OG route so the follow-up work stays scoped to the declared gaps
-- [ ] T2 Record the residual-convergence plan and user correction in `tasks/todo.md` and `tasks/lessons.md`
-- [ ] T3 Add failing regression coverage for live-trace shell metadata, relationship-view shared shell usage, and MenthorQ renderer-family selection
-- [ ] T4 Implement the runtime residual fixes for `PriceChart` and `RegimeRelationshipView` using the shared chart primitives with minimal visual regression
-- [ ] T5 Implement MenthorQ OG family-specific renderer routing for analytical time-series, distribution-bar, and matrix-heatmap outputs
-- [ ] T6 Run targeted verification, update review notes, and confirm the residual chart-system gaps are closed
+- [x] T1 Inspect the remaining chart-system residuals in the live-trace modal chart, relationship view shell, and MenthorQ OG route so the follow-up work stays scoped to the declared gaps
+- [x] T2 Record the residual-convergence plan and user correction in `tasks/todo.md` and `tasks/lessons.md`
+- [x] T3 Add failing regression coverage for live-trace shell metadata, relationship-view shared shell usage, and MenthorQ renderer-family selection
+- [x] T4 Implement the runtime residual fixes for `PriceChart` and `RegimeRelationshipView` using the shared chart primitives with minimal visual regression
+- [x] T5 Implement MenthorQ OG family-specific renderer routing for analytical time-series, distribution-bar, and matrix-heatmap outputs
+- [x] T6 Run targeted verification, update review notes, and confirm the residual chart-system gaps are closed
 
 ### Review
-- Pending.
+- Runtime slice completed: [web/components/charts/ChartPanel.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/charts/ChartPanel.tsx) now emits chart-family and renderer metadata on the chart shell root, and [web/components/PriceChart.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/PriceChart.tsx) now adopts that shell as a `live-trace` surface so the modal chart participates in the shared chart-system contract instead of bypassing it.
+- Updated [web/components/RegimeRelationshipView.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/RegimeRelationshipView.tsx) and [web/app/globals.css](/Users/joemccann/dev/apps/finance/radon/web/app/globals.css) so the relationship view keeps the shared `ChartPanel` shell while the z-score legend uses the shared `ChartLegend` primitive without the legacy standalone legend styling hook.
+- Added direct runtime regression coverage in [web/tests/price-chart-shell.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/price-chart-shell.test.ts), [web/tests/chart-runtime-adoption.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/chart-runtime-adoption.test.ts), [web/e2e/price-chart-theme.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/price-chart-theme.spec.ts), and [web/e2e/regime-relationship-view.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-relationship-view.spec.ts); targeted Vitest and Playwright verification passed for the runtime slice.
+- Downstream slice completed: [web/tests/menthorq-og-route-contract.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/menthorq-og-route-contract.test.ts) now exercises the MenthorQ OG route as code instead of string-matching source, covering analytical time-series, distribution-bar, matrix-heatmap, and unsupported-shape fallback selection.
+- Updated [web/app/api/menthorq/[command]/image/route.tsx](/Users/joemccann/dev/apps/finance/radon/web/app/api/menthorq/[command]/image/route.tsx) to replace the generic analytical-only fallback with explicit family routing: command hints now prefer `intraday` and `cryptos_technical` as `analytical-time-series`, `vol`/`eod`/`futures`/`cryptos_options` as `distribution-bar`, and `forex` as `matrix-heatmap`, while unsupported payloads keep the command-family badge and render a clear fallback message instead of a misleading line chart.
+- Final targeted verification passed with `npx vitest run web/tests/chart-runtime-adoption.test.ts web/tests/price-chart-shell.test.ts web/tests/menthorq-og-route-contract.test.ts web/tests/chart-system.test.ts web/tests/og-theme-contract.test.ts`, `cd web && npx playwright test e2e/price-chart-theme.spec.ts e2e/regime-relationship-view.spec.ts`, and `cd web && npm run build`; the only remaining build note is the pre-existing Next `metadataBase` warning, and the residual chart-system convergence session is now closed.
 
 ## Session: Regime Relationship State Tooltips (2026-03-11)
 

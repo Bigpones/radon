@@ -87,7 +87,7 @@ describe("PriceChart shared shell", () => {
       }),
     );
 
-    expect(html).toContain('data-testid="price-chart-shell"');
+    expect(html).toContain('data-testid="price-chart-panel"');
     expect(html).toContain('data-chart-family="Live Trace"');
     expect(html).toContain('data-chart-renderer="canvas-adapter"');
     expect(html).toContain('data-theme="light"');

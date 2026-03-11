@@ -33,16 +33,24 @@ export default function ChartPanel({
   dataTestId,
   footer,
 }: ChartPanelProps) {
+  const chartFamily = chartFamilyLabel(family);
+  const chartRenderer = chartRendererLabel(family);
+
   return (
-    <div className={`section chart-panel ${className ?? ""}`.trim()} data-testid={dataTestId}>
+    <div
+      className={`section chart-panel ${className ?? ""}`.trim()}
+      data-testid={dataTestId}
+      data-chart-family={chartFamily}
+      data-chart-renderer={chartRenderer}
+    >
       <div className="section-header chart-panel-header">
         <div className="chart-panel-heading">
           <div
             className="chart-panel-kicker"
-            data-chart-family={chartFamilyLabel(family)}
-            data-chart-renderer={chartRendererLabel(family)}
+            data-chart-family={chartFamily}
+            data-chart-renderer={chartRenderer}
           >
-            <span>{chartFamilyLabel(family)}</span>
+            <span>{chartFamily}</span>
           </div>
           <div className="section-title chart-panel-title">
             {icon ? <span className="chart-panel-icon" aria-hidden="true">{icon}</span> : null}

@@ -3370,35 +3370,12 @@ tr {
   stroke-width: 1;
 }
 
-.regime-relationship-legend {
-  display: flex;
-  flex-wrap: wrap;
+.regime-relationship-shared-legend {
   gap: 12px;
   margin-top: 12px;
-}
-
-.regime-relationship-legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-muted);
   letter-spacing: 0.04em;
-}
-
-.regime-relationship-legend-swatch {
-  width: 18px;
-  height: 2px;
-  display: inline-block;
-}
-
-.regime-relationship-legend-swatch-rvol {
-  background: var(--warning);
-}
-
-.regime-relationship-legend-swatch-cor1m {
-  background: var(--dislocation);
 }
 
 .regime-relationship-view {

@@ -99,5 +99,5 @@ test("[runtime] RegimeRelationshipView uses the shared analytical shell metadata
   expect(html).toContain("RVOL z-score");
   expect(html).toContain("COR1M z-score");
   expect(html).toContain("chart-legend");
-  expect(html).not.toContain("regime-relationship-legend");
+  expect(html).toContain("regime-relationship-shared-legend");
 });
