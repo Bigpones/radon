@@ -330,7 +330,7 @@ def _extract_ib_quote_value(ticker: Any) -> Optional[float]:
 def _fetch_ib_current_quote(ticker: str) -> Optional[float]:
     """Fetch a current quote from IB, trying live then delayed data."""
     try:
-        from ib_insync import IB, Index
+        from ib_insync import IB, Index, Stock
     except ImportError:
         return None
 
@@ -338,7 +338,7 @@ def _fetch_ib_current_quote(ticker: str) -> Optional[float]:
     if not _connect_ib_with_retry(ib, CRI_IB_QUOTE_CLIENT_IDS):
         return None
 
-    contract = Index(ticker, "CBOE")
+    contract = Stock(ticker, "SMART", "USD") if ticker == "SPY" else Index(ticker, "CBOE")
     try:
         qualified = ib.qualifyContracts(contract)
         if not qualified:
@@ -359,6 +359,22 @@ def _fetch_ib_current_quote(ticker: str) -> Optional[float]:
         return None
     finally:
         ib.disconnect()
+
+
+def fetch_preferred_current_quote(ticker: str) -> Optional[float]:
+    """Fetch a current quote using IB first, then Yahoo as fallback."""
+    ib_quote = _fetch_ib_current_quote(ticker)
+    if ib_quote is not None:
+        print(f"  IB: {ticker} current quote {ib_quote:.2f}", file=sys.stderr)
+        return ib_quote
+
+    yahoo_quote = _fetch_yahoo_current_quote(ticker)
+    if yahoo_quote is not None:
+        print(f"  Yahoo: {ticker} current quote {yahoo_quote:.2f}", file=sys.stderr)
+        return yahoo_quote
+
+    print(f"  ERROR: No current {ticker} quote available", file=sys.stderr)
+    return None
 
 
 def select_cor1m_current_quote(
@@ -414,6 +430,47 @@ def fetch_cor1m_current_quote() -> Optional[float]:
         print("  ERROR: No current COR1M quote available", file=sys.stderr)
 
     return selected
+
+
+def current_session_date_et() -> str:
+    """Return today's session date in Eastern Time as YYYY-MM-DD."""
+    try:
+        import zoneinfo
+
+        return datetime.now(zoneinfo.ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+    except Exception:
+        now_et = datetime.now(timezone.utc) + timedelta(hours=-5)
+        return now_et.strftime("%Y-%m-%d")
+
+
+def append_post_close_snapshot(
+    aligned: Dict[str, np.ndarray],
+    common_dates: List[str],
+    closing_snapshot: Dict[str, Optional[float]],
+    session_date: str,
+) -> Tuple[Dict[str, np.ndarray], List[str], bool]:
+    """Append today's closing snapshot when daily bars still end on a prior session."""
+    if not common_dates or common_dates[-1] >= session_date:
+        return aligned, common_dates, False
+
+    required = tuple(aligned.keys())
+    validated_snapshot = {
+        ticker: _valid_quote_value(closing_snapshot.get(ticker))
+        for ticker in required
+    }
+    missing = [ticker for ticker, value in validated_snapshot.items() if value is None]
+    if missing:
+        print(
+            f"  Post-close snapshot incomplete ({', '.join(sorted(missing))}) — keeping last available history",
+            file=sys.stderr,
+        )
+        return aligned, common_dates, False
+
+    extended = {
+        ticker: np.append(values, float(validated_snapshot[ticker]))
+        for ticker, values in aligned.items()
+    }
+    return extended, [*common_dates, session_date], True
 
 
 def fetch_all(tickers: List[str]) -> Tuple[Dict[str, np.ndarray], List[str]]:
@@ -1375,14 +1432,45 @@ Examples:
 
     # Fetch data for all required instruments
     aligned, common_dates = fetch_all(ALL_TICKERS)
+    prior_cor1m_close = float(aligned["COR1M"][-1]) if len(aligned["COR1M"]) > 0 else float("nan")
+    post_close_snapshot_appended = False
 
     print(f"  Data range: {common_dates[0]} to {common_dates[-1]} ({len(common_dates)} bars)", file=sys.stderr)
 
-    cor1m_current = fetch_cor1m_current_quote()
-    current_quotes = {"COR1M": cor1m_current} if cor1m_current is not None else {}
+    current_quotes: Dict[str, float] = {}
+    if market_open:
+        cor1m_current = fetch_cor1m_current_quote()
+        current_quotes = {"COR1M": cor1m_current} if cor1m_current is not None else {}
+    else:
+        session_date = current_session_date_et()
+        if common_dates[-1] < session_date:
+            print(
+                f"  Post-close daily bars still end on {common_dates[-1]} — attempting today's closing snapshot",
+                file=sys.stderr,
+            )
+            closing_snapshot = {
+                "VIX": fetch_preferred_current_quote("VIX"),
+                "VVIX": fetch_preferred_current_quote("VVIX"),
+                "SPY": fetch_preferred_current_quote("SPY"),
+                "COR1M": fetch_cor1m_current_quote(),
+            }
+            aligned, common_dates, appended = append_post_close_snapshot(
+                aligned,
+                common_dates,
+                closing_snapshot,
+                session_date=session_date,
+            )
+            post_close_snapshot_appended = appended
+            if appended:
+                print(
+                    f"  Appended today's closing snapshot for {session_date} to replace the lagged prior-session view",
+                    file=sys.stderr,
+                )
 
     # Run analysis
     result = run_analysis(aligned, common_dates, current_quotes=current_quotes)
+    if post_close_snapshot_appended and not math.isnan(prior_cor1m_close):
+        result["cor1m_previous_close"] = round(prior_cor1m_close, 2)
 
     elapsed = time.time() - t_start
 

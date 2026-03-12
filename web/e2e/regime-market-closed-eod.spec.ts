@@ -14,26 +14,26 @@
 import { test, expect } from "@playwright/test";
 
 const CRI_MOCK_CLOSED = {
-  scan_time: "2026-03-09T16:30:00",
+  scan_time: "2026-03-12T16:03:13",
   market_open: false,
-  date: "2026-03-09",
-  vix: 29.49,
-  vvix: 121.27,
-  spy: 677.69,
-  vix_5d_roc: 18.9,
-  vvix_vix_ratio: 4.11,
-  realized_vol: 11.72,
-  cor1m: 38.12,
-  cor1m_5d_change: 1.0,
-  spx_100d_ma: 682.05,
-  spx_distance_pct: -0.64,
-  spy_closes: Array.from({ length: 22 }, (_, i) => 660 + i),
-  cri: { score: 24, level: "LOW", components: { vix: 6, vvix: 5, correlation: 7, momentum: 6 } },
+  date: "2026-03-12",
+  vix: 26.72,
+  vvix: 130.18,
+  spy: 666.06,
+  vix_5d_roc: 14.6,
+  vvix_vix_ratio: 4.87,
+  realized_vol: 12.55,
+  cor1m: 29.18,
+  cor1m_5d_change: 7.03,
+  spx_100d_ma: 671.88,
+  spx_distance_pct: -0.87,
+  spy_closes: Array.from({ length: 22 }, (_, i) => 645 + i),
+  cri: { score: 27, level: "ELEVATED", components: { vix: 8.2, vvix: 12.4, correlation: 5.5, momentum: 0.9 } },
   crash_trigger: {
     triggered: false,
     conditions: { spx_below_100d_ma: false, realized_vol_gt_25: false, cor1m_gt_60: false },
   },
-  cta: { exposure_pct: 95, forced_reduction_pct: 0, est_selling_bn: 0 },
+  cta: { exposure_pct: 79.7, forced_reduction_pct: 20.3, est_selling_bn: 81.2 },
   menthorq_cta: null,
   history: [],
 };
@@ -115,6 +115,16 @@ test.describe("Regime /regime — market closed EOD values", () => {
     await expect(banner).toContainText("MARKET CLOSED");
   });
 
+  test("renders the current session close payload instead of a stale prior-session carry", async ({ page }) => {
+    await setupMocks(page);
+    await page.goto("/regime");
+
+    await expect(page.locator('[data-testid="strip-vix"] .regime-strip-value')).toHaveText("26.72");
+    await expect(page.locator('[data-testid="strip-vvix"] .regime-strip-value')).toHaveText("130.18");
+    await expect(page.locator('[data-testid="strip-spy"] .regime-strip-value')).toHaveText("$666.06");
+    await expect(page.locator('[data-testid="strip-cor1m"] .regime-strip-value')).toHaveText("29.18");
+  });
+
   test("COR1M shows DAILY badge (not INTRADAY) when market closed", async ({ page }) => {
     await setupMocks(page);
     await page.goto("/regime");
@@ -130,35 +140,35 @@ test.describe("Regime /regime — market closed EOD values", () => {
     await expect(badge).toHaveText("DAILY");
   });
 
-  test("COR1M value shows CRI EOD data (38.12)", async ({ page }) => {
+  test("COR1M value shows CRI EOD data (29.18)", async ({ page }) => {
     await setupMocks(page);
     await page.goto("/regime");
 
     const corrCell = page.locator(".regime-strip-cell").filter({ hasText: "COR1M" });
     await corrCell.waitFor({ timeout: 10_000 });
 
-    await expect(corrCell.locator(".regime-strip-value")).toHaveText("38.12");
+    await expect(corrCell.locator(".regime-strip-value")).toHaveText("29.18");
   });
 
-  test("VIX value shows CRI EOD data (29.49), not live WS", async ({ page }) => {
+  test("VIX value shows CRI EOD data (26.72), not live WS", async ({ page }) => {
     await setupMocks(page);
     await page.goto("/regime");
 
     const vixCell = page.locator('[data-testid="strip-vix"]');
     await vixCell.waitFor({ timeout: 10_000 });
 
-    // Should show the CRI EOD value 29.49
-    await expect(vixCell.locator(".regime-strip-value")).toHaveText("29.49");
+    // Should show the CRI EOD value 26.72
+    await expect(vixCell.locator(".regime-strip-value")).toHaveText("26.72");
   });
 
-  test("VVIX value shows CRI EOD data (121.27), not live WS", async ({ page }) => {
+  test("VVIX value shows CRI EOD data (130.18), not live WS", async ({ page }) => {
     await setupMocks(page);
     await page.goto("/regime");
 
     const vvixCell = page.locator('[data-testid="strip-vvix"]');
     await vvixCell.waitFor({ timeout: 10_000 });
 
-    await expect(vvixCell.locator(".regime-strip-value")).toHaveText("121.27");
+    await expect(vvixCell.locator(".regime-strip-value")).toHaveText("130.18");
   });
 
   test("VIX timestamp shows '---' when market closed (no live updates)", async ({ page }) => {

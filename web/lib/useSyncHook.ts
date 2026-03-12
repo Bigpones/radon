@@ -3,12 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+type RetryMethod = "GET" | "POST";
 
 type UseSyncConfig<T> = {
   endpoint: string;
   interval?: number;
   hasPost?: boolean; // default true; false = GET-only polling
   extractTimestamp?: (data: T) => string | null;
+  shouldRetry?: (data: T) => boolean;
+  retryIntervalMs?: number;
+  retryMethod?: RetryMethod;
 };
 
 export type UseSyncReturn<T> = {
@@ -21,7 +25,15 @@ export type UseSyncReturn<T> = {
 };
 
 export function useSyncHook<T>(config: UseSyncConfig<T>, active: boolean): UseSyncReturn<T> {
-  const { endpoint, interval = DEFAULT_INTERVAL_MS, hasPost = true, extractTimestamp } = config;
+  const {
+    endpoint,
+    interval = DEFAULT_INTERVAL_MS,
+    hasPost = true,
+    extractTimestamp,
+    shouldRetry,
+    retryIntervalMs = 0,
+    retryMethod = "POST",
+  } = config;
 
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
@@ -29,12 +41,22 @@ export function useSyncHook<T>(config: UseSyncConfig<T>, active: boolean): UseSy
   const [error, setError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didInitialSync = useRef(false);
+  const requestRef = useRef<(method: RetryMethod, background?: boolean) => Promise<void>>(async () => {});
 
-  const triggerSync = useCallback(async () => {
-    setSyncing(true);
+  const clearRetry = useCallback(() => {
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+  }, []);
+
+  const executeRequest = useCallback(async (method: RetryMethod, background = false) => {
+    if (!background && method === "POST") {
+      setSyncing(true);
+    }
     try {
-      const method = hasPost ? "POST" : "GET";
       const res = await fetch(endpoint, { method });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -44,6 +66,13 @@ export function useSyncHook<T>(config: UseSyncConfig<T>, active: boolean): UseSy
       setData(json);
       setLastSync(extractTimestamp ? extractTimestamp(json) : new Date().toISOString());
       setError(null);
+
+      clearRetry();
+      if (active && shouldRetry?.(json) && retryIntervalMs > 0) {
+        retryTimeoutRef.current = setTimeout(() => {
+          void requestRef.current(retryMethod, true);
+        }, retryIntervalMs);
+      }
     } catch (err) {
       // Only show error if we don't already have valid cached data —
       // a failed background sync shouldn't clobber a working display
@@ -52,9 +81,18 @@ export function useSyncHook<T>(config: UseSyncConfig<T>, active: boolean): UseSy
         return prev;
       });
     } finally {
-      setSyncing(false);
+      if (!background && method === "POST") {
+        setSyncing(false);
+      }
     }
-  }, [endpoint, hasPost, extractTimestamp]);
+  }, [active, clearRetry, endpoint, extractTimestamp, retryIntervalMs, retryMethod, shouldRetry]);
+
+  requestRef.current = executeRequest;
+
+  const triggerSync = useCallback(async () => {
+    const method = hasPost ? "POST" : "GET";
+    await executeRequest(method, false);
+  }, [executeRequest, hasPost]);
 
   // Initial fetch — read cached file, auto-sync if stale
   useEffect(() => {
@@ -62,13 +100,20 @@ export function useSyncHook<T>(config: UseSyncConfig<T>, active: boolean): UseSy
 
     const init = async () => {
       try {
-        const res = await fetch(endpoint);
+        const res = await fetch(endpoint, { method: "GET" });
         if (!res.ok) throw new Error("Failed to fetch cached data");
         const json = (await res.json()) as T;
         setData(json);
         setLastSync(extractTimestamp ? extractTimestamp(json) : null);
         setError(null);
         setLoading(false);
+
+        clearRetry();
+        if (active && shouldRetry?.(json) && retryIntervalMs > 0) {
+          retryTimeoutRef.current = setTimeout(() => {
+            void requestRef.current(retryMethod, true);
+          }, retryIntervalMs);
+        }
 
         // Auto-sync on first load
         if (!didInitialSync.current) {
@@ -86,7 +131,7 @@ export function useSyncHook<T>(config: UseSyncConfig<T>, active: boolean): UseSy
     };
 
     void init();
-  }, [active, endpoint, triggerSync, extractTimestamp]);
+  }, [active, clearRetry, endpoint, triggerSync, extractTimestamp, retryIntervalMs, retryMethod, shouldRetry]);
 
   // Auto-sync interval (only when active)
   useEffect(() => {
@@ -95,6 +140,7 @@ export function useSyncHook<T>(config: UseSyncConfig<T>, active: boolean): UseSy
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
+      clearRetry();
       return;
     }
 
@@ -104,8 +150,9 @@ export function useSyncHook<T>(config: UseSyncConfig<T>, active: boolean): UseSy
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
+      clearRetry();
     };
-  }, [active, interval, triggerSync]);
+  }, [active, clearRetry, interval, triggerSync]);
 
   const syncNow = useCallback(() => {
     void triggerSync();

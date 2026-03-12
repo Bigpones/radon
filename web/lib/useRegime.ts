@@ -65,12 +65,30 @@ export type CriData = {
   spy_closes?: number[];
 };
 
-const config = {
+function todayET(now = new Date()): string {
+  return now.toLocaleDateString("sv", { timeZone: "America/New_York" });
+}
+
+export function needsCurrentEtSessionRetry(
+  data: Pick<CriData, "date"> | null | undefined,
+  now = new Date(),
+): boolean {
+  return Boolean(data?.date && data.date !== todayET(now));
+}
+
+export const REGIME_STALE_RETRY_MS = 5000;
+
+export const REGIME_SYNC_CONFIG = {
   endpoint: "/api/regime",
+  interval: 60_000,
+  hasPost: false,
   extractTimestamp: (d: CriData) => d.scan_time || null,
+  shouldRetry: (d: CriData) => needsCurrentEtSessionRetry(d),
+  retryIntervalMs: REGIME_STALE_RETRY_MS,
+  retryMethod: "GET" as const,
 };
 
 export function useRegime(active: boolean): UseSyncReturn<CriData> {
-  const stableConfig = useMemo(() => config, []);
+  const stableConfig = useMemo(() => REGIME_SYNC_CONFIG, []);
   return useSyncHook<CriData>(stableConfig, active);
 }

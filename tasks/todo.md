@@ -1,5 +1,92 @@
 # TODO
 
+## Session: Keep /regime Aligned With Today's Settled Close After Market Hours (2026-03-12)
+
+### Goal
+Stop the `/regime` page from getting stuck on an earlier after-close CRI snapshot. Once the market closes, the open page should keep following `/api/regime` at the route's freshness cadence and roll to today's settled closing values automatically instead of freezing on a stale browser-triggered rescan.
+
+### Dependency Graph
+- T1 (Trace the `/regime` refresh path from `useRegime` through `/api/regime`, confirm why an open page can keep an earlier after-close payload, and record the exact cache-following contract before editing code) depends_on: []
+- T2 (Add failing regression coverage for the `/regime` hook config and browser refresh behavior proving the page must adopt newer same-day closed values without browser-side POST rescans) depends_on: [T1]
+- T3 (Update the `/regime` sync configuration so it follows the route freshness contract and keeps the open page aligned with later close-cache updates) depends_on: [T2]
+- T4 (Run targeted Vitest and Playwright verification, inspect the post-close `/regime` behavior, and capture review notes in the task log) depends_on: [T3]
+
+### Checklist
+- [x] T1 Trace the `/regime` refresh path from `useRegime` through `/api/regime`, confirm why an open page can keep an earlier after-close payload, and record the exact cache-following contract before editing code
+- [x] T2 Add failing regression coverage for the `/regime` hook config and browser refresh behavior proving the page must adopt newer same-day closed values without browser-side POST rescans
+- [x] T3 Update the `/regime` sync configuration so it follows the route freshness contract and keeps the open page aligned with later close-cache updates
+- [x] T4 Run targeted verification, inspect the post-close `/regime` behavior, and capture review notes in the task log
+
+### Review
+- Root cause: the first post-close CRI scans can still write the prior session for a short window after the bell. On disk, `data/cri_scheduled/cri-2026-03-12T16-01.json` and `...16-02.json` both carried `date: "2026-03-11"`, while a later scan produced `date: "2026-03-12"`. That left two gaps: the scanner could lag the settled close, and an already-open `/regime` page did not revalidate aggressively enough to pick up the corrected payload.
+- Fixed the scanner path in [cri_scan.py](/Users/joemccann/dev/apps/finance/radon/scripts/cri_scan.py) by synthesizing today's post-close snapshot from current VIX, VVIX, SPY, and COR1M quotes when the daily bar set still ends on the prior session. The targeted regression is [test_cri_scan.py](/Users/joemccann/dev/apps/finance/radon/scripts/tests/test_cri_scan.py).
+- Fixed the UI follow-through in [useRegime.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/useRegime.ts) by making the regime view cache-following only (`interval: 60_000`, `hasPost: false`) and by adding an ET-session mismatch retry policy. [useSyncHook.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/useSyncHook.ts) now supports optional `shouldRetry`, `retryIntervalMs`, and `retryMethod` so `/regime` can keep doing lightweight `GET` revalidation every 5 seconds until the current-session close arrives.
+- Added red/green coverage in [regime-sync-config.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/regime-sync-config.test.ts), [regime-close-transition-retry.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/regime-close-transition-retry.test.ts), [regime-close-transition-refresh.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-close-transition-refresh.spec.ts), and [regime-market-closed-eod.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-market-closed-eod.spec.ts). The browser harnesses prove both behaviors: the page auto-refreshes from a stale prior-session payload to today's close, and the market-closed strip renders the current session close payload once it exists.
+- Verification was green with `python3 -m pytest scripts/tests/test_cri_scan.py -k AppendPostCloseSnapshot`, `npx vitest run web/tests/regime-close-transition-retry.test.ts web/tests/regime-sync-config.test.ts web/tests/regime-market-closed-values.test.ts web/tests/regime-cri-staleness.test.ts`, `cd web && npx playwright test e2e/regime-close-transition-refresh.spec.ts e2e/regime-market-closed-eod.spec.ts --config playwright.config.ts`, and `cd web && npm run build`.
+
+## Session: Align Regime Quadrant Marker Color With The Classified State (2026-03-12)
+
+### Goal
+Fix the `/regime` relationship view so the latest RVOL/COR1M scatter marker uses the same quadrant classification as the summary label and state key. A `Systemic Panic` classification must not render as the yellow `Stock Picker's Market` marker.
+
+### Dependency Graph
+- T1 (Inspect the shared regime classification path and record the renderer mismatch before editing tests or UI code) depends_on: []
+- T2 (Add failing regression coverage proving the latest quadrant marker must use the classified quadrant color instead of a hardcoded yellow highlight) depends_on: [T1]
+- T3 (Update the relationship-view renderer to derive the latest marker color from the shared quadrant classification) depends_on: [T2]
+- T4 (Run targeted Vitest and Playwright verification, then capture review notes in the task log) depends_on: [T3]
+
+### Checklist
+- [x] T1 Inspect the shared regime classification path and record the renderer mismatch before editing tests or UI code
+- [x] T2 Add failing regression coverage proving the latest quadrant marker must use the classified quadrant color instead of a hardcoded yellow highlight
+- [x] T3 Update the relationship-view renderer to derive the latest marker color from the shared quadrant classification
+- [x] T4 Run targeted Vitest and Playwright verification, then capture review notes in the task log
+
+### Review
+- The root cause was in [web/components/RegimeRelationshipView.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/RegimeRelationshipView.tsx): the summary label and state key already used the shared classifier from [web/lib/regimeRelationships.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/regimeRelationships.ts), but the latest scatter marker was still hardcoded to `var(--warning)`, which visually implied `Stock Picker's Market` even when the classifier said otherwise.
+- Added a red-phase source contract in [web/tests/regime-relationship-tooltips.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/regime-relationship-tooltips.test.ts) and a browser regression in [web/e2e/regime-relationship-view.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-relationship-view.spec.ts) to require the latest marker tone to match the classified quadrant.
+- Fixed the renderer by deriving `latestQuadrantColor` from `quadrantTone(latest.quadrant)` and using that for the latest scatter point fill and stroke in [web/components/RegimeRelationshipView.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/RegimeRelationshipView.tsx).
+- Verification was green with `npx vitest run web/tests/regime-relationship-tooltips.test.ts` and `cd web && npx playwright test e2e/regime-relationship-view.spec.ts --config playwright.config.ts --grep "classified quadrant tone"`. The Playwright check initially hit a stale long-lived `next-server` on port `3000`; after replacing that server with a fresh Playwright-managed Next instance, the browser test passed against the patched code.
+
+## Session: Append Local Timezone To Rendered Web Timestamps (2026-03-12)
+
+### Goal
+Audit `/web` for every rendered timestamp or clock string and make those UI surfaces include the machine-local timezone abbreviation. The implementation must use the actual local timezone dynamically instead of hardcoding `PST`, because the abbreviation changes with daylight saving time.
+
+### Dependency Graph
+- T1 (Audit `/web` for all rendered timestamps and record the exact surface list before editing code) depends_on: []
+- T2 (Design or identify a shared formatter that appends the local timezone abbreviation dynamically) depends_on: [T1]
+- T3 (Update the affected `/web` surfaces to use the shared formatter and add regression coverage where it fits) depends_on: [T2]
+- T4 (Run targeted verification, review the rendered timestamp strings, and capture review notes in the task log) depends_on: [T3]
+
+### Checklist
+- [ ] T1 Audit `/web` for all rendered timestamps and record the exact surface list before editing code
+- [ ] T2 Design or identify a shared formatter that appends the local timezone abbreviation dynamically
+- [ ] T3 Update the affected `/web` surfaces to use the shared formatter and add regression coverage where it fits
+- [ ] T4 Run targeted verification, review the rendered timestamp strings, and capture review notes in the task log
+
+## Session: Split Remaining Runtime Artifacts And Prior Feature Work Into Scoped Commits (2026-03-12)
+
+### Goal
+Take the remaining listed worktree items and turn them into clean individual commits without pulling in unrelated files. The expected batches are runtime/cache artifacts, the stale frozen option `LAST` feature from the prior session, and the one-line brand guidance update if it stands alone.
+
+### Dependency Graph
+- T1 (Inspect the listed dirty and untracked files, confirm the logical groupings, and record the exact commit plan before staging anything) depends_on: []
+- T2 (Validate the stale frozen option `LAST` feature bundle and decide whether the untracked Playwright config belongs with it) depends_on: [T1]
+- T3 (Create separate scoped commits for runtime artifacts, stale frozen option `LAST` logic/tests, and the docs guidance change) depends_on: [T2]
+- T4 (Verify the resulting commit stack and capture review notes in the task log) depends_on: [T3]
+
+### Checklist
+- [x] T1 Inspect the listed dirty and untracked files, confirm the logical groupings, and record the exact commit plan before staging anything
+- [x] T2 Validate the stale frozen option `LAST` feature bundle and decide whether the untracked Playwright config belongs with it
+- [x] T3 Create separate scoped commits for runtime artifacts, stale frozen option `LAST` logic/tests, and the docs guidance change
+- [x] T4 Verify the resulting commit stack and capture review notes in the task log
+
+### Review
+- Created `f63843a` (`chore: refresh runtime cache artifacts`) for the safe runtime outputs only: [AAOI.json](/Users/joemccann/dev/apps/finance/radon/data/company_info_cache/AAOI.json), [PLTR.json](/Users/joemccann/dev/apps/finance/radon/data/company_info_cache/PLTR.json), [cta-sync.json](/Users/joemccann/dev/apps/finance/radon/data/service_health/cta-sync.json), [option_close_cache.json](/Users/joemccann/dev/apps/finance/radon/web/data/option_close_cache.json), and [.claude/hooks/dead-code.manifest](/Users/joemccann/dev/apps/finance/radon/.claude/hooks/dead-code.manifest).
+- Created `2a485d6` (`fix: guard option last price against stale frozen ticks`) for the prior-session option price feature: [ib_tick_handler.js](/Users/joemccann/dev/apps/finance/radon/scripts/ib_tick_handler.js), [stale-frozen-last.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/stale-frozen-last.test.ts), and [stale-option-last-price.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/stale-option-last-price.spec.ts). Verification was green with `npx vitest run web/tests/stale-frozen-last.test.ts` and `cd web && npx playwright test e2e/stale-option-last-price.spec.ts --config playwright.config.ts`. The only code adjustment during validation was fixing the Playwright selector to target the option last-price cell instead of the underlying placeholder cell.
+- Created `a7ad62e` (`docs: add dense telemetry strip guidance`) for the one-line guidance note in [brand-identity.md](/Users/joemccann/dev/apps/finance/radon/docs/brand-identity.md).
+- Left [playwright.strip.config.ts](/Users/joemccann/dev/apps/finance/radon/web/playwright.strip.config.ts) out of the commit stack because it targets only `regime-strip-responsive.spec.ts` and is unrelated to the stale frozen option `LAST` feature or the runtime artifact/doc batches.
+
 ## Session: Chain UX, IB Error Handling, Ticker Detail Layout (2026-03-12)
 
 ### Completed

@@ -12,6 +12,7 @@ import pytest
 from cri_scan import (
     _extract_ib_quote_value,
     _connect_ib_with_retry,
+    append_post_close_snapshot,
     cor1m_level_and_change,
     fetch_all,
     score_vix_component,
@@ -628,3 +629,35 @@ class TestRunAnalysis:
         assert len(result["history"]) == 20
         assert all(entry["realized_vol"] is not None for entry in result["history"])
         assert len(result["spy_closes"]) == 40
+
+
+class TestAppendPostCloseSnapshot:
+    """Post-close close-snapshot synthesis when daily bars still lag."""
+
+    def test_appends_todays_close_snapshot_when_market_is_closed_and_history_lags(self):
+        aligned = {
+            "VIX": np.array([22.0, 24.23]),
+            "VVIX": np.array([118.0, 122.49]),
+            "SPY": np.array([680.0, 676.33]),
+            "COR1M": np.array([28.7, 29.18]),
+        }
+        common_dates = ["2026-03-10", "2026-03-11"]
+
+        extended, extended_dates, appended = append_post_close_snapshot(
+            aligned,
+            common_dates,
+            {
+                "VIX": 26.72,
+                "VVIX": 130.18,
+                "SPY": 666.06,
+                "COR1M": 29.18,
+            },
+            session_date="2026-03-12",
+        )
+
+        assert appended is True
+        assert extended_dates == ["2026-03-10", "2026-03-11", "2026-03-12"]
+        assert extended["VIX"][-1] == pytest.approx(26.72)
+        assert extended["VVIX"][-1] == pytest.approx(130.18)
+        assert extended["SPY"][-1] == pytest.approx(666.06)
+        assert extended["COR1M"][-1] == pytest.approx(29.18)

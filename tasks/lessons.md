@@ -10,6 +10,8 @@
 
 ## 2026-03-12
 
+- When a post-close dashboard depends on a cache-backed market scan, do not treat the first `market_open=false` payload as final unless its session date matches today; if the close-transition scan still returns the prior session, fix the scan to synthesize today's closing snapshot from quote sources instead of relying on the UI to keep retrying.
+- When a dashboard route already encodes a one-minute freshness contract in its GET path, do not poll that surface every five minutes with POST rescans from the browser; use GET polling at the route cadence so scheduled close updates can land in the open page automatically.
 - When a chart point encodes the current classified regime, do not hardcode its highlight color independently of the shared classifier; the marker, summary label, and state key must all derive from the same quadrant state or the UI will contradict itself.
 - When adding a new shell-level alert surface for an actionable broker issue, do not broaden it into a generic connection-status banner; keep the new banner scoped to the actionable state and leave generic reconnect/disconnect notices on the existing toast channel.
 - When a repo-owned dev service binds a fixed local port, do not let `EADDRINUSE` crash the whole startup workflow; detect the port conflict and either reuse the existing listener intentionally or fail with an explicit, non-catastrophic message.
