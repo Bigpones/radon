@@ -209,7 +209,7 @@ function stubApis(page: import("@playwright/test").Page) {
 }
 
 test.describe("Portfolio order ticket quote telemetry", () => {
-  test("shows BID, MID, ASK ordering and spread dollar/bps text in the instrument ticket", async ({ page }) => {
+  test("shows BID, MID, ASK ordering and raw spread percent in the instrument ticket", async ({ page }) => {
     await page.unrouteAll({ behavior: "ignoreErrors" });
     stubApis(page);
 
@@ -258,13 +258,11 @@ test.describe("Portfolio order ticket quote telemetry", () => {
       .filter({ hasText: "SPREAD" })
       .locator(".price-bar-value");
 
-    const quantityValue = await modal.locator(".order-input").inputValue();
     const bid = parsePrice(bidText);
     const ask = parsePrice(askText);
     const spread = ask - bid;
     const mid = (bid + ask) / 2;
-    const quantity = Number.parseInt(quantityValue, 10);
-    const expectedSpread = `${formatUsd(spread * quantity * 100)} / ${Math.round((spread / mid) * 10_000).toLocaleString("en-US")} bps`;
+    const expectedSpread = `${formatUsd(spread)} / ${((spread / mid) * 100).toFixed(2)}%`;
 
     await expect(spreadValue).toHaveText(expectedSpread);
   });

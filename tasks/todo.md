@@ -1,5 +1,117 @@
 # TODO
 
+## Session: Document And Ship Quote Telemetry Contract (2026-03-12)
+
+### Dependency Graph
+- T1 (Identify the operator-facing docs and the exact quote-telemetry files that belong in the ship batch) depends_on: []
+- T2 (Update the docs to reflect the shared BID/MID/ASK/SPREAD contract and raw spread-dollar plus percent display) depends_on: [T1]
+- T3 (Stage only the quote-telemetry code, tests, docs, and task-log files) depends_on: [T2]
+- T4 (Create a scoped commit for the quote-telemetry refactor and push the current branch) depends_on: [T3]
+
+### Checklist
+- [x] T1 Identify the operator-facing docs and the exact quote-telemetry files that belong in the ship batch
+- [x] T2 Update the docs to reflect the shared BID/MID/ASK/SPREAD contract and raw spread-dollar plus percent display
+- [x] T3 Stage only the quote-telemetry code, tests, docs, and task-log files
+- [x] T4 Create a scoped commit for the quote-telemetry refactor and push the current branch
+
+### Review
+- Updated the operator-facing terminal docs in [README.md](/Users/joemccann/dev/apps/finance/radon/README.md) and [docs/status.md](/Users/joemccann/dev/apps/finance/radon/docs/status.md) so the shared quote ladder contract is documented as `BID`, `MID`, `ASK`, `SPREAD`, with spread rendered as raw quote width plus midpoint percent.
+- The ship batch is scoped to the shared quote calculator and renderer in [web/lib/quoteTelemetry.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/quoteTelemetry.ts) and [web/components/QuoteTelemetry.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/QuoteTelemetry.tsx), plus the three consuming surfaces in [web/components/TickerDetailModal.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/TickerDetailModal.tsx), [web/components/InstrumentDetailModal.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/InstrumentDetailModal.tsx), and [web/components/ModifyOrderModal.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ModifyOrderModal.tsx).
+- Locked the contract with focused unit coverage in [web/tests/quote-telemetry-wrappers.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/quote-telemetry-wrappers.test.ts), [web/tests/price-bar-quote-telemetry.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/price-bar-quote-telemetry.test.ts), [web/tests/ticker-detail-spread-notional.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/ticker-detail-spread-notional.test.ts), [web/tests/order-ticket-spread-notional.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/order-ticket-spread-notional.test.ts), and [web/tests/instrument-detail-spread-quantity.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/instrument-detail-spread-quantity.test.ts), plus browser coverage in [web/e2e/price-bar-quote-telemetry.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/price-bar-quote-telemetry.spec.ts), [web/e2e/order-ticket-quote-telemetry.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/order-ticket-quote-telemetry.spec.ts), and [web/e2e/modify-order-spread-telemetry.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/modify-order-spread-telemetry.spec.ts).
+- Verified green before shipping with `npx vitest run web/tests/quote-telemetry-wrappers.test.ts web/tests/price-bar-quote-telemetry.test.ts web/tests/ticker-detail-spread-notional.test.ts web/tests/order-ticket-spread-notional.test.ts web/tests/instrument-detail-spread-quantity.test.ts` and `cd web && npx playwright test e2e/price-bar-quote-telemetry.spec.ts e2e/order-ticket-quote-telemetry.spec.ts e2e/modify-order-spread-telemetry.spec.ts --config playwright.config.ts`.
+
+## Session: Prove Regime Live Index Streaming With TDD (2026-03-12)
+
+### Goal
+Add red/green unit and browser coverage that proves `/regime` renders live websocket prices for `VIX`, `VVIX`, and `COR1M`.
+
+### Dependency Graph
+- T1 (Inspect existing live-stream coverage and record the implementation plan in `tasks/todo.md`) depends_on: []
+- T2 (Add failing unit and Playwright tests that prove `/regime` replaces cached values with live websocket prices for `VIX`, `VVIX`, and `COR1M`) depends_on: [T1]
+- T3 (Implement the minimal runtime fix or hardening needed to satisfy the live-stream contract) depends_on: [T2]
+- T4 (Run targeted Vitest and Playwright verification against the running dev server and capture review notes) depends_on: [T3]
+
+### Checklist
+- [x] T1 Inspect existing live-stream coverage and record the implementation plan in `tasks/todo.md`
+- [x] T2 Add failing unit and Playwright tests that prove `/regime` replaces cached values with live websocket prices for `VIX`, `VVIX`, and `COR1M`
+- [x] T3 Implement the minimal runtime fix or hardening needed to satisfy the live-stream contract
+- [x] T4 Run targeted Vitest and Playwright verification against the running dev server and capture review notes
+
+### Review
+- Added a red/green server-side regression in [web/tests/ib-index-stream-contracts.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/ib-index-stream-contracts.test.ts) that failed against the old cold-start behavior because [scripts/ib_realtime_server.js](/Users/joemccann/dev/apps/finance/radon/scripts/ib_realtime_server.js) did not preserve typed stock/option/index contracts before the `ibConnected` gate and rebuilt restored subscriptions as stocks.
+- Fixed that by adding `ensureSymbolState()` in [scripts/ib_realtime_server.js](/Users/joemccann/dev/apps/finance/radon/scripts/ib_realtime_server.js) and seeding stock, option, and index subscriptions with their IB contract as soon as the websocket subscribe message arrives. `restoreSubscriptions()` now reuses the stored contract instead of falling back to `stock()` for everything.
+- Added browser regression coverage in [web/e2e/regime-live-index-streaming.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-live-index-streaming.spec.ts) and [web/e2e/regime-live-index-stream.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-live-index-stream.spec.ts). The first proves `/regime` subscribes to `VIX`, `VVIX`, and `COR1M` before emitting live websocket prices; the second proves a batched websocket payload replaces cached CRI values with live strip values and day-change rows for all three indices.
+- Added targeted unit coverage in [web/tests/use-previous-close-indexes.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/use-previous-close-indexes.test.ts) and hardened [web/lib/usePreviousClose.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/usePreviousClose.ts) with `shouldBackfillPreviousClose(...)` so the websocket-backed regime indices (`VIX`, `VVIX`, `COR1M`) no longer trigger the stock `/api/previous-close` fallback path.
+- Verified green with `npx vitest run web/tests/ib-index-stream-contracts.test.ts web/tests/use-previous-close-indexes.test.ts web/tests/regime-cor1m-live.test.ts web/tests/batched-prices.test.ts`, `cd web && npx playwright test e2e/regime-live-index-streaming.spec.ts`, and `cd web && npx playwright test e2e/regime-live-index-stream.spec.ts e2e/regime-cor1m-live-stream.spec.ts e2e/regime-vix-live-badge.spec.ts` against the running dev server.
+- `cd web && npm run build` still fails on the pre-existing unrelated TypeScript error in [web/components/CtaPage.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/CtaPage.tsx): the `syncStatus` union does not narrow `last_attempt_started_at`.
+
+## Session: Change Spread Display To Raw Dollars And Percent (2026-03-12)
+
+### Dependency Graph
+- T1 (Inspect the shared quote telemetry contract and identify every component/test that still assumes notional spread dollars or bps) depends_on: []
+- T2 (Record the corrected contract in `tasks/todo.md` and capture the new lesson in `tasks/lessons.md`) depends_on: [T1]
+- T3 (Update unit and Playwright tests to the raw-spread-plus-percent contract and observe the red state) depends_on: [T1, T2]
+- T4 (Implement the shared calculator change and keep all quote surfaces aligned through the wrappers) depends_on: [T3]
+- T5 (Run targeted Vitest and Playwright verification, then capture review notes) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inspect the shared quote telemetry contract and identify every component/test that still assumes notional spread dollars or bps
+- [x] T2 Record the corrected contract in `tasks/todo.md` and capture the new lesson in `tasks/lessons.md`
+- [x] T3 Update unit and Playwright tests to the raw-spread-plus-percent contract and observe the red state
+- [x] T4 Implement the shared calculator change and keep all quote surfaces aligned through the wrappers
+- [x] T5 Run targeted Vitest and Playwright verification, then capture review notes
+
+### Review
+- Root cause: the shared quote telemetry refactor still preserved an incorrect spread contract. [web/lib/quoteTelemetry.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/quoteTelemetry.ts) was formatting spread as notional dollars and bps, and the wrappers still carried quantity/multiplier or execution-specific spread policies that made a `3.30 x 3.40` option quote render as `$1,000.00 / 299 bps` instead of the actual `$0.10 / 2.99%`.
+- Simplified the calculator contract in [web/lib/quoteTelemetry.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/quoteTelemetry.ts) so `SPREAD` is now always raw quote width plus percentage, and simplified [web/components/QuoteTelemetry.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/QuoteTelemetry.tsx) so the wrappers are layout wrappers only, not spread-policy wrappers.
+- Rewired [web/components/TickerDetailModal.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/TickerDetailModal.tsx), [web/components/InstrumentDetailModal.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/InstrumentDetailModal.tsx), and [web/components/ModifyOrderModal.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ModifyOrderModal.tsx) to the simplified shared wrappers so every live quote ladder now shows the same spread contract.
+- The red phase failed across the full shared surface set: unit tests expected raw spread dollars and percent but still received notional dollars/bps (for example `$110.00 / 240 bps`, `$3,000.00 / 3,077 bps`, and `$0.60 / 1,538 bps`), and Playwright failed on all three browser flows before the calculator change.
+- Verified green with `npx vitest run web/tests/quote-telemetry-wrappers.test.ts web/tests/price-bar-quote-telemetry.test.ts web/tests/ticker-detail-spread-notional.test.ts web/tests/order-ticket-spread-notional.test.ts web/tests/instrument-detail-spread-quantity.test.ts` and `cd web && npx playwright test e2e/price-bar-quote-telemetry.spec.ts e2e/order-ticket-quote-telemetry.spec.ts e2e/modify-order-spread-telemetry.spec.ts --config playwright.config.ts`.
+
+## Session: Investigate IB Index Subscription Warnings (2026-03-12)
+
+### Goal
+Determine why the live IB feed now reports missing market-data subscriptions for `VIX`, `VVIX`, and `COR1M`, even though those symbols were previously streaming in the application.
+
+### Dependency Graph
+- T1 (Record the investigation scope and constraints in `tasks/todo.md` before touching code or environment) depends_on: []
+- T2 (Inspect the warning source and the current IB contract/data-type requests for `VIX`, `VVIX`, and `COR1M`) depends_on: [T1]
+- T3 (Review live logs and adjacent market-data flows to compare the current behavior against other index subscriptions and isolate the cause) depends_on: [T2]
+- T4 (Summarize the root cause and remediation path without disturbing the loaded product services) depends_on: [T3]
+
+### Checklist
+- [x] T1 Record the investigation scope and constraints in `tasks/todo.md` before touching code or environment
+- [x] T2 Inspect the warning source and the current IB contract/data-type requests for `VIX`, `VVIX`, and `COR1M`
+- [x] T3 Review live logs and adjacent market-data flows to compare the current behavior against other index subscriptions and isolate the cause
+- [x] T4 Summarize the root cause and remediation path without disturbing the loaded product services
+
+### Review
+- The warning string is emitted in [scripts/ib_realtime_server.js](/Users/joemccann/dev/apps/finance/radon/scripts/ib_realtime_server.js) when the shared IB error handler sees code `354` or text matching `market data is not subscribed`. `/regime` subscribes `VIX@CBOE`, `VVIX@CBOE`, and `COR1M@CBOE` from [web/components/WorkspaceShell.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/WorkspaceShell.tsx), and the websocket hook in [web/lib/usePrices.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/usePrices.ts) forwards those index contracts unchanged.
+- The current live websocket request shape is correct. A direct local IB repro on Thursday, March 12, 2026 using `ib.contract.index(symbol, "USD", "CBOE")`, `reqMarketDataType(4)`, and `reqMktData(..., "233,165", ...)` returned delayed ticks for `VIX`, `VVIX`, and `COR1M` without any `354` subscription error. Repeating the same repro with tick list `"233"` also succeeded.
+- That means the warning is not explained by a permanent loss of current index entitlement or a broken contract-builder call. It is more likely noisy or transient in the websocket path. The UI can also look “live” because [web/components/RegimePanel.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/RegimePanel.tsx) falls back to cached CRI values when websocket values are absent.
+- There is separate older evidence from Wednesday, March 11, 2026 in [logs/cri-scan.err.log](/Users/joemccann/dev/apps/finance/radon/logs/cri-scan.err.log): the CRI scanner recorded `COR1M` failures including `Requested market data is not subscribed. Delayed market data is not enabled.` before falling back to Cboe/Yahoo. That is a different path from the websocket realtime server and should not be conflated with today’s direct websocket subscription repro.
+- There is also a real cold-restore bug in [scripts/ib_realtime_server.js](/Users/joemccann/dev/apps/finance/radon/scripts/ib_realtime_server.js): `restoreSubscriptions()` rebuilds missing contracts as stocks when no prior state exists. A direct repro showed that bug yields IB code `200` (`No security definition has been found for the request`) for `VIX`, `VVIX`, and `COR1M`, so it is worth fixing, but it does not match the specific `no market data subscription` warning you reported.
+
+## Session: Stop Radon Dev Servers And Playwright Processes (2026-03-12)
+
+### Goal
+Stop the currently running Radon development servers and Playwright-related processes without touching the loaded background product services.
+
+### Dependency Graph
+- T1 (Record the narrowed process-stop scope in `tasks/todo.md` and capture the correction lesson in `tasks/lessons.md`) depends_on: []
+- T2 (Inspect the live process table after the interrupted prior attempt and identify only the Radon dev-server and Playwright targets) depends_on: [T1]
+- T3 (Terminate the targeted Radon dev-server and Playwright processes, then verify they are gone while launch agents remain untouched) depends_on: [T2]
+
+### Checklist
+- [x] T1 Record the narrowed process-stop scope in `tasks/todo.md` and capture the correction lesson in `tasks/lessons.md`
+- [x] T2 Inspect the live process table after the interrupted prior attempt and identify only the Radon dev-server and Playwright targets
+- [x] T3 Terminate the targeted Radon dev-server and Playwright processes, then verify they are gone while launch agents remain untouched
+
+### Review
+- Identified the active targets after the interrupted prior attempt as the Radon web dev stack (`npm run dev:verbose:next`, `concurrently`, `next dev`, `ib_realtime_server.js`), the Radon site dev servers on ports `3335` and `3003`, the repo-scoped Playwright runner for `web/e2e/stale-option-last-price.spec.ts`, and the Playwright MCP bridge.
+- Stopped those targets with targeted `pkill` and direct `kill` cleanup for one orphaned Playwright node process and one respawned Radon web dev stack tree. A final `ps` check showed no remaining Radon `next dev`, Playwright, Playwright MCP, or `ib_realtime_server.js` processes.
+- Verified that the background product services were left untouched: `launchctl list` still shows `com.radon.cta-sync`, `com.radon.monitor-daemon`, and `local.ibc-gateway`.
+
 ## Session: Reduce CTA Auto Schedule To Two Post-Close Runs (2026-03-12)
 
 ### Goal

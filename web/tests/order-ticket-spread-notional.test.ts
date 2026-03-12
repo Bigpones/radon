@@ -92,8 +92,8 @@ const openOrder: OpenOrder = {
   tif: "GTC",
 };
 
-describe("order-ticket spread notional", () => {
-  it("uses displayed quantity in the single-leg instrument ticket spread notional", () => {
+describe("order-ticket spread telemetry", () => {
+  it("uses raw spread dollars and percent in the single-leg instrument ticket", () => {
     const html = renderToStaticMarkup(
       React.createElement(InstrumentDetailModal, {
         leg: shortCallLeg,
@@ -104,10 +104,10 @@ describe("order-ticket spread notional", () => {
       }),
     );
 
-    expect(html).toContain("$3,000.00 / 3,077 bps");
+    expect(html).toContain("$1.20 / 30.77%");
   });
 
-  it("uses quote-level half-spread telemetry in the modify-order modal", () => {
+  it("uses raw spread dollars and percent in the modify-order modal", () => {
     const html = renderToStaticMarkup(
       React.createElement(ModifyOrderModal, {
         order: openOrder,
@@ -119,6 +119,6 @@ describe("order-ticket spread notional", () => {
       }),
     );
 
-    expect(html).toContain("$0.60 / 1,538 bps");
+    expect(html).toContain("$1.20 / 30.77%");
   });
 });

@@ -38,7 +38,7 @@ function makePriceData(overrides: Partial<PriceData> & { symbol: string }): Pric
 }
 
 describe("InstrumentDetailModal spread telemetry", () => {
-  it("shows spread notional for the full displayed quantity", () => {
+  it("shows raw spread dollars and percent", () => {
     const leg: PortfolioLeg = {
       direction: "LONG",
       contracts: 25,
@@ -71,6 +71,6 @@ describe("InstrumentDetailModal spread telemetry", () => {
       }),
     );
 
-    expect(html).toContain("$6,000.00 / 1,600 bps");
+    expect(html).toContain("$2.40 / 16.00%");
   });
 });

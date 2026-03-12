@@ -1,7 +1,7 @@
 import { createElement, type ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { PriceBar } from "../components/TickerDetailModal";
+import { TickerQuoteTelemetry } from "../components/QuoteTelemetry";
 import type { PriceData } from "@/lib/pricesProtocol";
 
 function makePriceData(overrides: Partial<PriceData> & { symbol: string }): PriceData {
@@ -35,8 +35,8 @@ function extractLabels(markup: string): string[] {
   return [...markup.matchAll(/<span class="price-bar-label">([^<]+)<\/span>/g)].map((match) => match[1]);
 }
 
-describe("PriceBar quote telemetry", () => {
-  it("renders BID, MID, ASK, then SPREAD and formats spread as notional plus bps", () => {
+describe("Ticker quote telemetry", () => {
+  it("renders BID, MID, ASK, then SPREAD and formats spread as raw dollars plus percent", () => {
     const priceData = makePriceData({
       symbol: "AAOI_20260320_105_C",
       bid: 13.8,
@@ -49,18 +49,16 @@ describe("PriceBar quote telemetry", () => {
     });
 
     const html = renderToStaticMarkup(
-      createElement(PriceBar as unknown as ComponentType<{
+      createElement(TickerQuoteTelemetry as unknown as ComponentType<{
         priceData: PriceData | null;
         label?: string;
-        spreadNotionalMultiplier?: number;
       }>, {
         priceData,
         label: "AAOI 2026-03-20 $105 C",
-        spreadNotionalMultiplier: 2500,
       }),
     );
 
     expect(extractLabels(html).slice(1, 5)).toEqual(["BID", "MID", "ASK", "SPREAD"]);
-    expect(html).toContain("$6,000.00 / 1,600 bps");
+    expect(html).toContain("$2.40 / 16.00%");
   });
 });

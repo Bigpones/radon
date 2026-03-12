@@ -145,10 +145,10 @@ vi.mock("@/lib/TickerDetailContext", () => ({
 }));
 
 describe("TickerDetailModal spread telemetry", () => {
-  it("shows quote-level spread notional on the shared modal price bar", () => {
+  it("shows raw spread dollars and percent on the shared modal price bar", () => {
     const html = renderToStaticMarkup(createElement(TickerDetailModal, { theme: "dark" }));
 
-    expect(html).toContain("$110.00 / 240 bps");
-    expect(html).not.toContain("$2,200.00 / 240 bps");
+    expect(html).toContain("$1.10 / 2.40%");
+    expect(html).not.toContain("$110.00 / 240 bps");
   });
 });

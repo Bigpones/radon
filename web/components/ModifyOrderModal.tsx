@@ -5,7 +5,9 @@ import type { OpenOrder, PortfolioData } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { optionKey } from "@/lib/pricesProtocol";
 import Modal from "./Modal";
-import { fmtPrice, formatExecutionSpreadTelemetry, getQuoteMetrics, legPriceKey } from "@/lib/positionUtils";
+import { getQuoteMetrics } from "@/lib/quoteTelemetry";
+import { fmtPrice, legPriceKey } from "@/lib/positionUtils";
+import { ModifyOrderQuoteTelemetry } from "./QuoteTelemetry";
 
 type ModifyOrderModalProps = {
   order: OpenOrder | null;
@@ -127,7 +129,6 @@ export default function ModifyOrderModal({ order, loading, prices, portfolio, on
   const hasPriceData = priceData?.bid != null && priceData?.ask != null;
 
   const { bid, mid, ask } = getQuoteMetrics(priceData);
-  const spreadLabel = formatExecutionSpreadTelemetry(priceData);
 
   return (
     <Modal open={!!order} onClose={onClose} title="Modify Order">
@@ -143,30 +144,7 @@ export default function ModifyOrderModal({ order, loading, prices, portfolio, on
         </div>
 
         {/* Market data section */}
-        {hasPriceData ? (
-          <div className="modify-market-data">
-            <div className="modify-market-row">
-              <span className="modify-market-label">BID</span>
-              <span className="modify-market-value">{fmtPrice(bid!)}</span>
-            </div>
-            <div className="modify-market-row">
-              <span className="modify-market-label">MID</span>
-              <span className="modify-market-value">{fmtPrice(mid!)}</span>
-            </div>
-            <div className="modify-market-row">
-              <span className="modify-market-label">ASK</span>
-              <span className="modify-market-value">{fmtPrice(ask!)}</span>
-            </div>
-            <div className="modify-market-row">
-              <span className="modify-market-label">SPREAD</span>
-              <span className="modify-market-value">{spreadLabel}</span>
-            </div>
-          </div>
-        ) : (
-          <div className="modify-market-warning">
-            No real-time market data available
-          </div>
-        )}
+        <ModifyOrderQuoteTelemetry priceData={priceData} />
 
         {/* Stop price (read-only for STP LMT) */}
         {order.orderType === "STP LMT" && order.auxPrice != null && (

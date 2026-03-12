@@ -190,6 +190,7 @@ Visit `http://localhost:3000`.
 **Key capabilities**
 
 - Real-time price streaming with live greeks
+- Shared quote telemetry across ticker, instrument, and modify-order views with `BID`, `MID`, `ASK`, and `SPREAD` rendered in a single layout contract; spread displays use raw quote width plus midpoint percent
 - Multi-leg position monitoring and per-leg P&L
 - YTD portfolio performance analytics with reconstructed institutional metrics
 - Regime history charts with cached 20-session RVOL and COR1M context

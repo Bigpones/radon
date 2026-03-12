@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp } from "lucide-react";
 import type { OpenOrder, PortfolioPosition } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { useTickerDetail } from "@/lib/TickerDetailContext";
-import { fmtPrice, formatSpreadTelemetry, getQuoteMetrics, legPriceKey, resolveSpreadPriceData } from "@/lib/positionUtils";
+import { legPriceKey, resolveSpreadPriceData } from "@/lib/positionUtils";
 import Modal from "./Modal";
 import PriceChart from "./PriceChart";
 import PositionTab from "./ticker-detail/PositionTab";
@@ -14,103 +13,25 @@ import NewsTab from "./ticker-detail/NewsTab";
 import RatingsTab from "./ticker-detail/RatingsTab";
 import SeasonalityTab from "./ticker-detail/SeasonalityTab";
 import CompanyTab from "./ticker-detail/CompanyTab";
+import { TickerQuoteTelemetry } from "./QuoteTelemetry";
 
 type TabId = "company" | "position" | "order" | "news" | "ratings" | "seasonality";
 
-export function PriceBar({
-  priceData,
-  label,
-  spreadNotionalMultiplier = 1,
-}: {
-  priceData: PriceData | null;
-  label?: string;
-  spreadNotionalMultiplier?: number;
-}) {
-  if (!priceData) {
-    return <div className="price-bar price-bar-empty">No real-time data</div>;
-  }
-
-  const { last, volume, close, high, low } = priceData;
-  const { bid, mid, ask } = getQuoteMetrics(priceData);
-  const spreadLabel = formatSpreadTelemetry(priceData, spreadNotionalMultiplier);
-  const dayChange = last != null && last > 0 && close != null && close > 0
-    ? ((last - close) / close) * 100
-    : null;
-
-  return (
-    <div className="price-bar">
-      {label && (
-        <div className="price-bar-item" style={{ gridColumn: "1 / -1" }}>
-          <span className="price-bar-label">{label}</span>
-        </div>
-      )}
-      <div className="price-bar-item">
-        <span className="price-bar-label">BID</span>
-        <span className="price-bar-value">{bid != null ? fmtPrice(bid) : "---"}</span>
-      </div>
-      <div className="price-bar-item">
-        <span className="price-bar-label">MID</span>
-        <span className="price-bar-value">{mid != null ? fmtPrice(mid) : "---"}</span>
-      </div>
-      <div className="price-bar-item">
-        <span className="price-bar-label">ASK</span>
-        <span className="price-bar-value">{ask != null ? fmtPrice(ask) : "---"}</span>
-      </div>
-      <div className="price-bar-item">
-        <span className="price-bar-label">SPREAD</span>
-        <span className="price-bar-value">{spreadLabel}</span>
-      </div>
-      <div className="price-bar-item">
-        <span className="price-bar-label">LAST</span>
-        <span className="price-bar-value">{last != null ? fmtPrice(last) : "---"}</span>
-      </div>
-      <div className="price-bar-item">
-        <span className="price-bar-label">VOLUME</span>
-        <span className="price-bar-value">{volume != null ? volume.toLocaleString() : "---"}</span>
-      </div>
-      <div className="price-bar-item">
-        <span className="price-bar-label">HIGH</span>
-        <span className="price-bar-value">{high != null ? fmtPrice(high) : "---"}</span>
-      </div>
-      <div className="price-bar-item">
-        <span className="price-bar-label">LOW</span>
-        <span className="price-bar-value">{low != null ? fmtPrice(low) : "---"}</span>
-      </div>
-      <div className="price-bar-item">
-        <span className="price-bar-label">DAY</span>
-        <span className={`price-bar-value ${dayChange != null ? (dayChange >= 0 ? "positive" : "negative") : ""}`}>
-          {dayChange != null ? (
-            <>
-              {dayChange >= 0 ? "+" : ""}{dayChange.toFixed(2)}%
-              {dayChange > 0 && <ArrowUp size={10} className="price-trend-icon price-trend-up" />}
-              {dayChange < 0 && <ArrowDown size={10} className="price-trend-icon price-trend-down" />}
-            </>
-          ) : "---"}
-        </span>
-      </div>
-    </div>
-  );
-}
-
 /**
- * Resolve the best price data for the PriceBar.
+ * Resolve the best price data for the shared ticker quote telemetry wrapper.
  * - Stock positions → underlying ticker price
  * - Single-leg option → option contract price (bid/ask from WS)
  * - Multi-leg → net spread price computed from per-leg WS bid/ask (falls back to underlying)
  * - No position → underlying ticker price
  */
-function resolvePriceBar(
+function resolveTickerQuoteTelemetry(
   ticker: string,
   position: PortfolioPosition | null,
   prices: Record<string, PriceData>,
-): { priceData: PriceData | null; label?: string; priceKey?: string; spreadNotionalMultiplier: number } {
+): { priceData: PriceData | null; label?: string; priceKey?: string } {
   if (!position || position.structure_type === "Stock") {
-    return { priceData: prices[ticker] ?? null, spreadNotionalMultiplier: 1 };
+    return { priceData: prices[ticker] ?? null };
   }
-
-  // The shared modal quote bar is quote telemetry, not an order ticket.
-  // Show one option contract or one spread-unit worth of notional friction here.
-  const quoteSpreadMultiplier = 100;
 
   // Single-leg option: use option-level prices
   if (position.legs.length === 1) {
@@ -123,7 +44,6 @@ function resolvePriceBar(
         priceData: prices[key],
         priceKey: key,
         label: `${ticker} ${position.expiry} ${strike} ${type}`,
-        spreadNotionalMultiplier: quoteSpreadMultiplier,
       };
     }
   }
@@ -131,11 +51,11 @@ function resolvePriceBar(
   // Multi-leg: compute net spread price from per-leg WS prices
   const spreadData = resolveSpreadPriceData(ticker, position, prices);
   if (spreadData) {
-    return { priceData: spreadData, label: `${ticker} ${position.structure}`, spreadNotionalMultiplier: quoteSpreadMultiplier };
+    return { priceData: spreadData, label: `${ticker} ${position.structure}` };
   }
 
   // Fallback to underlying if leg prices unavailable
-  return { priceData: prices[ticker] ?? null, label: `${ticker} (underlying)`, spreadNotionalMultiplier: 1 };
+  return { priceData: prices[ticker] ?? null, label: `${ticker} (underlying)` };
 }
 
 export default function TickerDetailModal({ theme = "dark" }: { theme?: "dark" | "light" }) {
@@ -162,9 +82,9 @@ export default function TickerDetailModal({ theme = "dark" }: { theme?: "dark" |
     return ordersData.open_orders.filter((o) => o.contract.symbol === activeTicker);
   }, [activeTicker, ordersData]);
 
-  // Resolve price bar data (option-level for single-leg options)
-  const { priceData, label: priceLabel, priceKey: chartPriceKey, spreadNotionalMultiplier } = useMemo(
-    () => resolvePriceBar(activeTicker ?? "", position, prices),
+  // Resolve quote telemetry data (option-level for single-leg options)
+  const { priceData, label: priceLabel, priceKey: chartPriceKey } = useMemo(
+    () => resolveTickerQuoteTelemetry(activeTicker ?? "", position, prices),
     [activeTicker, position, prices],
   );
 
@@ -201,8 +121,8 @@ export default function TickerDetailModal({ theme = "dark" }: { theme?: "dark" |
           </span>
         </div>
 
-        {/* Price bar */}
-        <PriceBar priceData={priceData} label={priceLabel} spreadNotionalMultiplier={spreadNotionalMultiplier} />
+        {/* Quote telemetry */}
+        <TickerQuoteTelemetry priceData={priceData} label={priceLabel} />
 
         {/* Price chart */}
         <PriceChart ticker={activeTicker} prices={prices} priceKey={chartPriceKey} theme={theme} />

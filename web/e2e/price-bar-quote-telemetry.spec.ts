@@ -180,7 +180,7 @@ function stubApis(page: import("@playwright/test").Page) {
 }
 
 test.describe("Portfolio ticket quote telemetry", () => {
-  test("shows BID, MID, ASK order and quote-level spread notional on the shared ticker modal", async ({ page }) => {
+  test("shows BID, MID, ASK order and raw spread percent on the shared ticker modal", async ({ page }) => {
     await page.unrouteAll({ behavior: "ignoreErrors" });
     stubApis(page);
 
@@ -232,7 +232,7 @@ test.describe("Portfolio ticket quote telemetry", () => {
     const ask = parsePrice(askText);
     const spread = ask - bid;
     const mid = (bid + ask) / 2;
-    const expectedSpread = `${formatUsd(spread * 100)} / ${Math.round((spread / mid) * 10_000).toLocaleString("en-US")} bps`;
+    const expectedSpread = `${formatUsd(spread)} / ${((spread / mid) * 100).toFixed(2)}%`;
 
     expect(spreadText).toBe(expectedSpread);
   });

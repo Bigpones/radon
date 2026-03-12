@@ -206,7 +206,7 @@ function stubApis(page: import("@playwright/test").Page) {
 }
 
 test.describe("Modify-order spread telemetry", () => {
-  test("shows half-spread premium dollars and midpoint bps in the modify modal", async ({ page }) => {
+  test("shows raw spread dollars and midpoint percent in the modify modal", async ({ page }) => {
     await page.unrouteAll({ behavior: "ignoreErrors" });
     stubApis(page);
 
@@ -262,8 +262,7 @@ test.describe("Modify-order spread telemetry", () => {
     const ask = parsePrice(askText);
     const fullSpread = ask - bid;
     const mid = (bid + ask) / 2;
-    const executionSpread = fullSpread / 2;
-    const expectedSpread = `${formatUsd(executionSpread)} / ${Math.round((executionSpread / mid) * 10_000).toLocaleString("en-US")} bps`;
+    const expectedSpread = `${formatUsd(fullSpread)} / ${((fullSpread / mid) * 100).toFixed(2)}%`;
 
     await expect(spreadValue).toHaveText(expectedSpread);
   });

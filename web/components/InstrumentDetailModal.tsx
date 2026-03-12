@@ -5,7 +5,7 @@ import type { PortfolioLeg } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { fmtPrice, fmtUsd, legPriceKey } from "@/lib/positionUtils";
 import Modal from "./Modal";
-import { PriceBar } from "./TickerDetailModal";
+import { InstrumentOrderQuoteTelemetry } from "./QuoteTelemetry";
 
 export type InstrumentDetailProps = {
   leg: PortfolioLeg | null;
@@ -39,8 +39,6 @@ export default function InstrumentDetailModal({ leg, ticker, expiry, prices, onC
 
   // Position summary
   const mult = leg.type === "Stock" ? 1 : 100;
-  const parsedQuantity = Number.parseInt(quantity, 10);
-  const spreadQuantity = Number.isFinite(parsedQuantity) && parsedQuantity > 0 ? parsedQuantity : leg.contracts;
   const rtLast = priceData?.last != null && priceData.last > 0 ? priceData.last : null;
   const legMv = rtLast != null ? rtLast * leg.contracts * mult : leg.market_value != null ? Math.abs(leg.market_value) : null;
   const legEc = Math.abs(leg.entry_cost);
@@ -74,10 +72,9 @@ export default function InstrumentDetailModal({ leg, ticker, expiry, prices, onC
         </div>
 
         {/* Price bar */}
-        <PriceBar
+        <InstrumentOrderQuoteTelemetry
           priceData={priceData}
           label={priceLabel}
-          spreadNotionalMultiplier={mult * spreadQuantity}
         />
 
         {/* Order form */}

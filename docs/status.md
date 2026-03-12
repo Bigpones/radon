@@ -1,9 +1,10 @@
 # Status & Decision Log
 
 ## Last Updated
-2026-03-12T07:14:00-07:00
+2026-03-12T08:43:57-07:00
 
 ## Recent Commits
+- 2026-03-12 08:43:57 -0700 — **fix: unify quote telemetry across ticker, instrument, and modify-order views. Shared calculator/renderer now show `BID`, `MID`, `ASK`, `SPREAD`, with spread rendered as raw quote width plus midpoint percent. Locked with unit and Playwright regressions.**
 - 2026-03-12 07:14:00 -0700 — **fix: All-long combo positions (e.g., AAOI 2x long calls) classified as "complex" → silently dropped from web UI. Fix: ib_sync.py classifies all-long combos as "defined"; UI fallback includes "complex" in undefined bucket. 13 new tests.**
 - 2026-03-11 13:00:00 -0400 — **feat: High-throughput optimization — parallel scanning (15 workers), atomic state (SHA-256), batched WS (100ms flush), vectorized Kelly+Greeks (NumPy), resilient IB client (auto-reconnect + sub recovery), pacing/invalid contract handling. 96 new tests.**
 - 2026-03-11 12:15:00 -0400 — **fix: Rebuild `/regime` RVOL history from CRI cache, prefer richer CRI artifacts, and refresh post-close CRI caches atomically**

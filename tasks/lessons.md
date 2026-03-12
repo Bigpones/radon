@@ -10,6 +10,8 @@
 
 ## 2026-03-12
 
+- When an operator says the spread is “10c, not $500,” treat the quote ladder as quote quality telemetry, not order-size cost; render raw spread width and percentage, and do not multiply by quantity or contract multiplier on that surface.
+- When an operator narrows a process-cleanup request from "all processes" to only dev/test processes, verify the live process list again and target just the repo-scoped dev servers and Playwright runners instead of unloading background product services.
 - When an operator narrows a scheduled service window, update the launch schedule source, installer/status text, docs, and the live loaded LaunchAgent together; changing only the plist on disk is not enough.
 - When the modify-order modal surfaces spread telemetry without displaying quantity, do not scale the dollar figure by `order.totalQuantity`; use the quote-level execution friction the operator can act on, not hidden order-size notional.
 - When a quote ladder is shared across non-order tabs like `Company` and `Position`, do not scale spread notional by the held position size; reserve quantity-sized spread friction for explicit order-entry and modify flows.
