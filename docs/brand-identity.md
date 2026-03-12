@@ -157,6 +157,7 @@ Light theme values are tuned for WCAG contrast on white/light surfaces. Signal c
 - Panel headers read like device labels (module ID + name)
 - Panel metadata rails expose: sampling rate, engine source, confidence, time basis
 - Modules should feel **mountable** — as if they could slide into a rack
+- When a dense telemetry strip collapses on narrow viewports, do not center a compressed cluster inside empty panel space; keep a compact primary readout on the left and move supporting data into a secondary telemetry rail
 
 ---
 
