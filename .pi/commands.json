@@ -85,6 +85,10 @@
       "description": "Fetch tweets via browser scraping and extract ticker sentiment (faster, lower quality)"
     },
     {
+      "command": "tweet-it",
+      "description": "Generate tweet copy + infographic card for sharing a trade on X \u2014 produces preview page with copy button and screenshot-ready card"
+    },
+    {
       "command": "commands",
       "description": "Show this list of all available commands"
     }

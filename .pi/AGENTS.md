@@ -164,6 +164,7 @@ When market is closed, free trade analysis explicitly shows it's using closing p
 | `vcg` | **VCG scan — call `vcg_scan` tool (registered Pi tool).** Do NOT re-read strategy docs. |
 | `strategies` | List available trading strategies (reads `data/strategies.json`) |
 | `stress-test` | **Interactive scenario stress test — asks for market scenario, runs portfolio P&L analysis, generates HTML report** |
+| `tweet-it` | **Generate tweet copy + infographic card for sharing a trade on X — preview page with copy button** |
 | `commands` | **Read `.pi/commands.json` and display all available commands** |
 
 ### Commands List (MANDATORY)
@@ -287,6 +288,44 @@ Describe the scenario you want to stress test. Examples:
 - `run a stress test`
 - `portfolio stress test`
 
+### Tweet-It Command Details
+
+**When user runs `tweet-it`, generate tweet copy + infographic card for the most recent trade (or specified trade).**
+
+**Trigger phrases:**
+- `tweet-it`
+- `tweet this trade`
+- `create a tweet`
+- `X post`
+- `share this trade`
+
+**Workflow:**
+1. Identify the trade (most recent fill, or user-specified)
+2. Generate tweet text using the template voice (see skill)
+3. Generate infographic card HTML (`reports/tweet-{TICKER}-{DATE}-card.html`)
+4. Generate preview page with copy button (`reports/tweet-{TICKER}-{DATE}.html`)
+5. Open preview in browser
+
+**Output files:**
+- `reports/tweet-{TICKER}-{DATE}.html` — Preview with copy button + embedded card
+- `reports/tweet-{TICKER}-{DATE}-card.html` — Standalone card for screenshotting
+
+**Tweet voice rules:**
+- Cashtags: `$OXY`, `$USO`, `$SCO`
+- `>` prefix for bullet lines
+- Include "Analyzed by Radon" and "radon.run" at bottom
+- Precise numbers, no hype, calm/scientific/educational
+- One relevant emoji at start only
+
+**Card design rules:**
+- 600px wide, dark theme (#0a0f14 background)
+- Inter + IBM Plex Mono fonts
+- Sections: direction badge → ticker → structure → metrics strip → payoff SVG → thesis → vehicle comparison → footer
+- 4px max border-radius, no shadows/gradients
+
+**Skill:** `.pi/skills/tweet-it/SKILL.md`
+**Templates:** `.pi/skills/tweet-it/template-card.html`, `.pi/skills/tweet-it/template-preview.html`
+
 ### Scan Command Details
 
 When user runs `scan`, execute BOTH scans in sequence and combine into a single HTML report:
@@ -349,7 +388,7 @@ When user runs `evaluate [TICKER]`, ALWAYS:
 2. Read the output (text report or `--json`)
 3. If decision is `NO_TRADE`: log to `docs/status.md` under Recent Evaluations
 4. If decision is `PENDING` (edge passed): design structure using live IB quotes, run Kelly, generate trade spec HTML report, present for confirmation
-5. If decision is `TRADE` (after user confirms): execute via `ib_execute.py`, log to `trade_log.json`
+5. If decision is `TRADE` (after user confirms): execute via `ib_execute.py`, then **IMMEDIATELY run Post-Trade Logging (MANDATORY)**
 
 ```bash
 # Standard evaluation (human-readable output)
@@ -589,7 +628,7 @@ Always follow in order. Stop immediately if a gate fails.
 4. **Edge Decision** → PASS/FAIL with reasoning (stop if FAIL)
 5. **Structure** → Design convex position (stop if R:R < 2:1)
 6. **Kelly Sizing** → Calculate + enforce caps
-7. **Log Trade** → Append executed trades only to trade_log.json (NO_TRADE decisions go to status.md)
+7. **Log Trade** → **MANDATORY Post-Trade Logging (see below)** — trade_log.json AND docs/status.md AND thesis check. NO EXCEPTIONS.
 
 ## OI Change Analysis (Milestone 3B) — REQUIRED
 
@@ -1292,6 +1331,48 @@ python3 scripts/ib_execute.py --type option --symbol GOOG --expiry 20260417 --st
 | `--thesis "..."` | Add thesis to log entry |
 | `--notes "..."` | Add notes to log entry |
 
+## ⚠️ Post-Trade Logging (MANDATORY — NO EXCEPTIONS)
+
+**After ANY order is filled — whether via `ib_execute.py`, combo order script, or manual IB placement — ALL THREE logging steps below MUST be completed IMMEDIATELY. Do NOT move on to other tasks, do NOT generate reports, do NOT respond to the user with "done" until all three are complete.**
+
+**This is the #1 process failure mode. It has been violated before. It will not be violated again.**
+
+### Step 1: trade_log.json (automatic or manual)
+- `ib_execute.py` logs automatically for single-leg orders
+- For combo/spread orders placed via inline Python, you MUST append to `data/trade_log.json` in the same script or immediately after
+- Required fields: `id`, `date`, `time`, `ticker`, `company_name`, `contract`, `structure`, `action`, `decision`, `order_id`, `quantity`, `fill_price`, `total_cost`, `max_risk`, `max_gain`, `pct_of_bankroll`, `edge_analysis`, `kelly_calculation`, `gates_passed`, `target_exit`, `stop_loss`, `notes`
+- Validate: `python3 -m json.tool data/trade_log.json`
+
+### Step 2: docs/status.md (ALWAYS — never skip)
+Update ALL of the following sections:
+1. **Last Updated** timestamp
+2. **Today's Trades** table — add the new trade with fill price and status
+3. **Trade Log Summary** table — add the new row with ID, date, ticker, structure, status
+4. **Logged Position Thesis Check** — add full thesis block for the new position:
+   - Entry price and date
+   - Edge source and flow data at entry
+   - Kelly parameters
+   - R:R ratio
+   - Thesis status (INTACT/WEAKENING/etc.)
+5. **Rule Violations** — add if the trade creates any violations (undefined risk, oversize)
+6. **Current Portfolio State** — update position count if significantly changed
+
+### Step 3: Validate
+```bash
+python3 -m json.tool data/trade_log.json
+```
+
+### Trigger
+This workflow triggers on ANY of these events:
+- `ib_execute.py` reports a fill
+- Inline Python combo order fill
+- Startup reconciliation detects new trades (`needs_attention: true`)
+- Manual confirmation that an order filled in TWS
+
+**If you find yourself saying "✅ FILLED" to the user without having updated status.md, you have failed this process.**
+
+---
+
 ## Interactive Brokers Integration
 
 ### Client ID Strategy
@@ -1978,6 +2059,7 @@ Skills are loaded on-demand when tasks match their descriptions.
 | `browser-use-cloud` | `.pi/skills/browser-use-cloud/SKILL.md` | AI browser agent for autonomous web tasks |
 | `html-report` | `.pi/skills/html-report/SKILL.md` | Generate styled HTML reports (Terminal theme) |
 | `context-engineering` | `.pi/skills/context-engineering/SKILL.md` | Persistent memory, context pipelines, token budget management |
+| `tweet-it` | `.pi/skills/tweet-it/SKILL.md` | Generate tweet copy + infographic card for sharing trades on X |
 
 ### Web Fetch Quick Reference
 
