@@ -1350,6 +1350,21 @@ When a ticker has both long stock AND short calls:
 
 **Tests:** `scripts/tests/test_covered_call_detection.py` (7 tests)
 
+### All-Long Combo Detection (Automatic)
+
+**`ib_sync.py` automatically classifies all-long option combos as defined risk.**
+
+When a multi-leg position has ALL long option legs (no short legs, no stock):
+- All calls → **Long Call Combo** (defined risk ✅)
+- All puts → **Long Put Combo** (defined risk ✅)
+- Mixed calls + puts → **Long Combo** (defined risk ✅)
+
+**Example:** AAOI 25x Long $105 Call + 25x Long $130 Call = `Long Call Combo (2 legs)`, `risk_profile: "defined"`. Max loss = total premium paid.
+
+**Web UI fallback:** If any position has `risk_profile: "complex"` (unrecognized structure), it falls into the Undefined Risk table as defense-in-depth rather than being silently dropped.
+
+**Tests:** `scripts/tests/test_all_long_combo.py` (8 tests), `web/tests/complex-risk-profile.test.ts` (5 tests)
+
 ### Startup Protocol (Full Visibility)
 
 When Pi starts, the startup extension (`.pi/extensions/startup-protocol.ts`) runs all checks with **numbered progress indicators**:

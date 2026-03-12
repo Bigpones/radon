@@ -1,9 +1,10 @@
 # Status & Decision Log
 
 ## Last Updated
-2026-03-11T13:00:00-04:00
+2026-03-12T07:14:00-07:00
 
 ## Recent Commits
+- 2026-03-12 07:14:00 -0700 — **fix: All-long combo positions (e.g., AAOI 2x long calls) classified as "complex" → silently dropped from web UI. Fix: ib_sync.py classifies all-long combos as "defined"; UI fallback includes "complex" in undefined bucket. 13 new tests.**
 - 2026-03-11 13:00:00 -0400 — **feat: High-throughput optimization — parallel scanning (15 workers), atomic state (SHA-256), batched WS (100ms flush), vectorized Kelly+Greeks (NumPy), resilient IB client (auto-reconnect + sub recovery), pacing/invalid contract handling. 96 new tests.**
 - 2026-03-11 12:15:00 -0400 — **fix: Rebuild `/regime` RVOL history from CRI cache, prefer richer CRI artifacts, and refresh post-close CRI caches atomically**
 - 2026-03-11 11:00:00 -0400 — **feat: Regime strip day change arrows, 20-session dual charts, portfolio arrow alignment, short leg delta sign fix**
@@ -431,6 +432,7 @@ Click any ticker across all 6 table sections → 720px modal with:
 13. ~~RatingsTab shows raw/empty data from UW API~~ **FIXED** — Complete rewrite to properly map nested UW response structure (`ratings.buy`, `target_price.mean`, `upgrade_downgrade_history`). Now shows buy/sell percentages, visual distribution bar, price targets with upside/downside calculation, and analyst actions table with firm name and grade.
 14. **Data normalization rule**: All data files (watchlist.json, discover.json) must use `"ticker"` as the canonical key, never `"symbol"`. Scripts that read these files handle both for backward compatibility.
 15. ~~CRI/VCG/GARCH/LEAP scanners skip UW, fall back IB → Yahoo~~ **FIXED** — All scanners now use IB → UW → Yahoo priority. UW OHLC serves stocks/ETFs. Yahoo only for VIX/VVIX (indices UW cannot serve).
+16. ~~All-long combo positions missing from web UI~~ **FIXED** — `ib_sync.py` classified all-long combos (e.g., AAOI 2x long calls at different strikes) as `risk_profile: "complex"`. The web UI only rendered `defined`/`undefined`/`equity` buckets, silently dropping `complex`. Fix: (a) all-long combos now classified as `"defined"` with descriptive names (`Long Call Combo`, `Long Put Combo`, `Long Combo`); (b) UI fallback includes `"complex"` in undefined bucket. Tests: `test_all_long_combo.py` (8), `complex-risk-profile.test.ts` (5).
 
 ## Follow-ups
 - [x] Implement trade blotter service
