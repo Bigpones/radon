@@ -336,16 +336,28 @@ function completeSnapshot(symbol, requestId) {
   }
 }
 
-function startLiveSubscription(key, ibContract) {
-  if (!ibConnected) return;
-
+function ensureSymbolState(key, ibContract) {
   const existing = symbolStates.get(key);
-  const nextTickerId = nextRequestId += 1;
-  const state = existing ?? {
+  if (existing) {
+    existing.contract = ibContract;
+    return existing;
+  }
+
+  const state = {
     tickerId: null,
     contract: ibContract,
     data: createPriceData(key),
   };
+  symbolStates.set(key, state);
+  return state;
+}
+
+function startLiveSubscription(key, ibContract) {
+  if (!ibConnected) return;
+
+  const existing = ensureSymbolState(key, ibContract);
+  const nextTickerId = nextRequestId += 1;
+  const state = existing;
 
   if (state.tickerId != null) {
     try {
@@ -654,8 +666,8 @@ function restoreSubscriptions() {
   const keys = [...symbolSubscribers.keys()];
   for (const key of keys) {
     const existing = symbolStates.get(key);
-    // Use stored contract if available (option contracts), otherwise build stock contract
-    const ibContract = existing?.contract ?? ib.contract.stock(key, "SMART", "USD");
+    const ibContract = existing?.contract;
+    if (!ibContract) continue;
     startLiveSubscription(key, ibContract);
     const state = symbolStates.get(key);
     if (state) {
@@ -685,8 +697,9 @@ async function handleClientMessage(client, data) {
       // Stock subscriptions (backward compatible)
       for (const symbol of symbols) {
         subscribeClientToSymbol(client, symbol);
+        const ibContract = ib.contract.stock(symbol, "SMART", "USD");
+        ensureSymbolState(symbol, ibContract);
         if (ibConnected) {
-          const ibContract = ib.contract.stock(symbol, "SMART", "USD");
           startLiveSubscription(symbol, ibContract);
           const state = symbolStates.get(symbol);
           if (state) {
@@ -712,8 +725,9 @@ async function handleClientMessage(client, data) {
       for (const c of contracts) {
         const key = optionKey(c);
         subscribeClientToSymbol(client, key);
+        const ibContract = ib.contract.option(c.symbol, c.expiry, c.strike, c.right);
+        ensureSymbolState(key, ibContract);
         if (ibConnected) {
-          const ibContract = ib.contract.option(c.symbol, c.expiry, c.strike, c.right);
           startLiveSubscription(key, ibContract);
           const state = symbolStates.get(key);
           if (state) {
@@ -730,8 +744,9 @@ async function handleClientMessage(client, data) {
       for (const idx of indexes) {
         const key = idx.symbol;
         subscribeClientToSymbol(client, key);
+        const ibContract = ib.contract.index(idx.symbol, "USD", idx.exchange);
+        ensureSymbolState(key, ibContract);
         if (ibConnected) {
-          const ibContract = ib.contract.index(idx.symbol, "USD", idx.exchange);
           startLiveSubscription(key, ibContract);
           const state = symbolStates.get(key);
           if (state) {

@@ -8,6 +8,7 @@ import type { ChartSeries, CriHistoryEntry } from "./CriHistoryChart";
 import InfoTooltip from "./InfoTooltip";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { chartSeriesColor } from "@/lib/chartSystem";
+import { resolveRegimeStripLiveState } from "@/lib/regimeLiveStrip";
 import { useRegime } from "@/lib/useRegime";
 import { SECTION_TOOLTIPS } from "@/lib/sectionTooltips";
 import { computeCri, type CriLevel, type CriResult } from "@/lib/criCalc";
@@ -146,18 +147,32 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
   // flag propagates from the first CRI scan response.
   const marketOpen = data?.market_open ?? true;
 
-  // Live prices from WS — only meaningful while market is open
-  const liveVix = prices["VIX"]?.last ?? null;
-  const liveVvix = prices["VVIX"]?.last ?? null;
-  const liveSpy = prices["SPY"]?.last ?? null;
-  const liveCor1m = marketOpen ? (prices["COR1M"]?.last ?? null) : null;
-  const hasLiveCor1m = liveCor1m != null;
-  const hasLive = marketOpen && (liveVix != null || liveVvix != null || liveSpy != null || hasLiveCor1m);
-
-  // Previous close from WS — for day change computation
-  const vixClose = marketOpen ? (prices["VIX"]?.close ?? null) : null;
-  const vvixClose = marketOpen ? (prices["VVIX"]?.close ?? null) : null;
-  const spyClose = marketOpen ? (prices["SPY"]?.close ?? null) : null;
+  const stripState = useMemo(
+    () => resolveRegimeStripLiveState({ marketOpen, prices, data }),
+    [marketOpen, prices, data],
+  );
+  const {
+    liveVix,
+    liveVvix,
+    liveSpy,
+    liveCor1m,
+    hasLiveVix,
+    hasLiveVvix,
+    hasLiveSpy,
+    hasLiveCor1m,
+    vixValue: vixVal,
+    vvixValue: vvixVal,
+    spyValue: spyVal,
+    cor1mValue: activeCorr,
+    vixClose,
+    vvixClose,
+    spyClose,
+    cor1mPreviousClose,
+    corr5dChange,
+    vvixVixRatio,
+    spxDistancePct: spxDistPct,
+  } = stripState;
+  const hasLive = marketOpen && (hasLiveVix || hasLiveVvix || hasLiveSpy || hasLiveCor1m);
 
   // Timestamps for last live VIX / VVIX value received
   const [vixLastTs, setVixLastTs] = useState<string | null>(null);
@@ -197,14 +212,6 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
   const hasIntradayRvol = intradayRvol != null;
   const activeRvol = intradayRvol ?? data?.realized_vol ?? null;
 
-  const activeCorr = liveCor1m ?? data?.cor1m ?? 0;
-  const lastHistoryCor1m = data?.history && data.history.length > 0
-    ? data.history[data.history.length - 1]?.cor1m ?? null
-    : null;
-  const cor1mPreviousClose = marketOpen
-    ? data?.cor1m_previous_close ?? lastHistoryCor1m ?? null
-    : null;
-  const corr5dChange = data?.cor1m_5d_change ?? null;
   const activeCorrChange = corr5dChange ?? 0;
   const correlationTriggerMet =
     data?.crash_trigger?.conditions.cor1m_gt_60 ?? activeCorr > 60;
@@ -237,15 +244,7 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
 
   const cri = liveCri ?? (data?.cri ? { ...data.cri, level: data.cri.level as CriLevel } : { score: 0, level: "LOW" as CriLevel, components: { vix: 0, vvix: 0, correlation: 0, momentum: 0 } });
   const color = levelColor(cri.level);
-
-  // Display values: use live WS only while market is open.
-  // When closed, always use CRI EOD values so stale WS prices don't appear.
-  const vixVal = (marketOpen ? liveVix : null) ?? data?.vix ?? 0;
-  const vvixVal = (marketOpen ? liveVvix : null) ?? data?.vvix ?? 0;
-  const spyVal = (marketOpen ? liveSpy : null) ?? data?.spy ?? 0;
-  const vvixVixRatio = vixVal > 0 ? vvixVal / vixVal : data?.vvix_vix_ratio ?? 0;
   const ma = data?.spx_100d_ma;
-  const spxDistPct = ma && ma > 0 ? ((spyVal / ma) - 1) * 100 : data?.spx_distance_pct ?? 0;
   const spxBelowMa = ma ? spyVal < ma : data?.crash_trigger?.conditions.spx_below_100d_ma ?? false;
 
   if (!data && !syncing) {
@@ -312,21 +311,21 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
       {/* ── Row 2: Live Tickers Strip ─────────────── */}
       <div className="regime-strip">
         <div className="regime-strip-cell" data-testid="strip-vix">
-          <div className="regime-strip-label">VIX <LiveBadge live={marketOpen && liveVix != null} /></div>
+          <div className="regime-strip-label">VIX <LiveBadge live={hasLiveVix} /></div>
           <div className="regime-strip-value">{fmt(vixVal)}</div>
           <DayChange last={liveVix} close={vixClose} />
           <div className="regime-strip-sub">5d RoC: {fmtPct(data?.vix_5d_roc, 1)}</div>
           <div className="regime-strip-ts">{vixLastTs ?? "---"}</div>
         </div>
         <div className="regime-strip-cell" data-testid="strip-vvix">
-          <div className="regime-strip-label">VVIX <LiveBadge live={marketOpen && liveVvix != null} /></div>
+          <div className="regime-strip-label">VVIX <LiveBadge live={hasLiveVvix} /></div>
           <div className="regime-strip-value">{fmt(vvixVal)}</div>
           <DayChange last={liveVvix} close={vvixClose} />
           <div className="regime-strip-sub">VVIX/VIX: {fmt(vvixVixRatio)}</div>
           <div className="regime-strip-ts">{vvixLastTs ?? "---"}</div>
         </div>
         <div className="regime-strip-cell" data-testid="strip-spy">
-          <div className="regime-strip-label">SPY <LiveBadge live={marketOpen && liveSpy != null} /></div>
+          <div className="regime-strip-label">SPY <LiveBadge live={hasLiveSpy} /></div>
           <div className="regime-strip-value">${fmt(spyVal)}</div>
           <DayChange last={liveSpy} close={spyClose} prefix="$" />
           <div className="regime-strip-sub">vs 100d MA: {fmtPct(spxDistPct)}</div>
@@ -353,10 +352,10 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
             CRI COMPONENTS
             <InfoTooltip text={SECTION_TOOLTIPS["CRI COMPONENTS"]} />
           </div>
-          <ComponentBar label="VIX" score={cri.components.vix} live={marketOpen && liveVix != null} />
-          <ComponentBar label="VVIX" score={cri.components.vvix} live={marketOpen && liveVvix != null} />
+          <ComponentBar label="VIX" score={cri.components.vix} live={hasLiveVix} />
+          <ComponentBar label="VVIX" score={cri.components.vvix} live={hasLiveVvix} />
           <ComponentBar label="CORRELATION" score={cri.components.correlation} live={hasLiveCor1m} />
-          <ComponentBar label="MOMENTUM" score={cri.components.momentum} live={marketOpen && liveSpy != null} />
+          <ComponentBar label="MOMENTUM" score={cri.components.momentum} live={hasLiveSpy} />
         </div>
         <div className="regime-triggers">
           <div className="regime-panel-title">

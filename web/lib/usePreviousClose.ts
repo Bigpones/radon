@@ -17,13 +17,8 @@ export function usePreviousClose(
 
   // Stock symbols (no underscores) with valid last but missing close
   const missingClose = useMemo(() => {
-    return Object.keys(prices).filter(
-      (key) =>
-        !key.includes("_") &&
-        prices[key].last != null &&
-        prices[key].last !== 0 &&
-        (prices[key].close == null || prices[key].close === 0) &&
-        !fetchedRef.current.has(key),
+    return Object.keys(prices).filter((key) =>
+      shouldBackfillPreviousClose(key, prices[key]) && !fetchedRef.current.has(key),
     );
   }, [prices]);
 
@@ -67,4 +62,14 @@ export function usePreviousClose(
     }
     return merged;
   }, [prices, closePrices]);
+}
+
+const REGIME_INDEX_SYMBOLS = new Set(["VIX", "VVIX", "COR1M"]);
+
+export function shouldBackfillPreviousClose(symbol: string, price: PriceData): boolean {
+  return !symbol.includes("_") &&
+    !REGIME_INDEX_SYMBOLS.has(symbol) &&
+    price.last != null &&
+    price.last !== 0 &&
+    (price.close == null || price.close === 0);
 }

@@ -111,6 +111,14 @@ Message:
 {"action": "subscribe", "symbols": ["AAPL", "MSFT", "NVDA"]}
 ```
 
+Index subscriptions use the same websocket action with an `indexes` array:
+
+```json
+{"action":"subscribe","symbols":["SPY"],"indexes":[{"symbol":"VIX","exchange":"CBOE"},{"symbol":"VVIX","exchange":"CBOE"},{"symbol":"COR1M","exchange":"CBOE"}]}
+```
+
+The realtime server preserves the typed IB contract for stock, option, and index subscriptions as soon as the websocket subscription arrives, so reconnect and cold-restore flows resubscribe `/regime` indexes as CBOE indices instead of rebuilding them as stocks.
+
 **Snapshot (one-time):**
 ```bash
 curl -X POST http://localhost:3000/api/prices \
@@ -151,6 +159,7 @@ function PriceDisplay() {
 ```json
 // Client → Server
 {"action": "subscribe", "symbols": ["AAPL", "MSFT"]}
+{"action": "subscribe", "symbols": ["SPY"], "indexes": [{"symbol": "VIX", "exchange": "CBOE"}]}
 {"action": "unsubscribe", "symbols": ["AAPL"]}
 {"action": "snapshot", "symbols": ["NVDA"]}
 {"action": "ping"}
@@ -193,6 +202,7 @@ Tests cover:
 - CTA freshness contract and `/cta` stale/degraded rendering in unit tests (`web/tests/cta-route-freshness.test.ts`, `web/tests/cta-page-freshness.test.ts`)
 - CTA route compatibility coverage in `web/tests/menthorq-cta-route.test.ts`
 - Browser CTA stale-banner coverage in `web/e2e/cta-stale-banner.spec.ts` and the `/cta` stale-state browser contract in `web/e2e/cta-page.spec.ts`
+- `/regime` live index websocket coverage, including cold-start contract preservation and live `VIX` / `VVIX` / `COR1M` strip rendering in `web/tests/ib-index-stream-contracts.test.ts`, `web/tests/use-previous-close-indexes.test.ts`, `web/e2e/regime-live-index-streaming.spec.ts`, and `web/e2e/regime-live-index-stream.spec.ts`
 - `/api/assistant` route (mock mode)
 - PI command entrypoints (`fetch_ticker`, `fetch_flow`, `discover`, `scanner`)
 - `kelly.py` output parsing
