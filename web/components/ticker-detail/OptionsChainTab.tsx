@@ -359,7 +359,7 @@ function OrderBuilder({
           {netPrice != null ? fmtPrice(Math.abs(netPrice)) : "---"}
         </span>
         <span style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-secondary)" }}>
-          {netPrice != null ? `(${fmtPrice(Math.abs(netPrice) * 100 * totalQty)} notional)` : ""}
+          {netPrice != null ? `(${fmtPrice(Math.abs(netPrice) * 100)} notional)` : ""}
         </span>
       </div>
 
