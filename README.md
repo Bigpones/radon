@@ -156,7 +156,7 @@ MENTHORQ_USER=your-menthorq-email
 MENTHORQ_PASS=your-menthorq-password
 ```
 
-The dedicated CTA sync service and wrapper scripts source the project root `.env` directly. Keep MenthorQ credentials there so scheduled post-close and wake/login catch-up runs use the same auth context as manual CLI fetches.
+The dedicated CTA sync service and wrapper scripts source the project root `.env` directly. Keep MenthorQ credentials there so the scheduled `4:15 PM ET` and `5:00 PM ET` CTA runs, plus any `RunAtLoad` catch-up execution after reboot/login/wake, use the same auth context as manual CLI fetches.
 
 **Optional shell exports**:
 
@@ -357,7 +357,7 @@ The repo includes background-service support for the live trading environment:
 |---------|---------|
 | Secure IBC service (`local.ibc-gateway`) | Maintains the local broker session for live quotes, execution, and reports |
 | CRI scan service | Refreshes crash-risk regime data intraday and writes atomic CRI cache snapshots |
-| CTA sync service | Refreshes the latest closed-session MenthorQ CTA cache after the close, on wake/login catch-up, and writes machine-readable health state for stale-data detection |
+| CTA sync service | Refreshes the latest closed-session MenthorQ CTA cache at `4:15 PM ET` and `5:00 PM ET`, with `RunAtLoad` catch-up after reboot/login/wake, and writes machine-readable health state for stale-data detection |
 | Monitor daemon | Tracks fills and manages post-entry workflows |
 | Data refresh services | Keeps portfolio and order-state data current and repairs post-close CRI cache history when needed |
 

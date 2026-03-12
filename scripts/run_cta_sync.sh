@@ -2,9 +2,10 @@
 #
 # MenthorQ CTA refresh wrapper for launchd
 #
-# Runs after the close and on wake/login catch-up windows. The target date is
-# the latest closed US trading session, so if the machine slept through the
-# close the next run will backfill the missing session automatically.
+# Runs at the scheduled post-close windows, with `RunAtLoad` handling
+# reboot/login/wake catch-up. The target date is always the latest closed US
+# trading session, so if the machine slept through the scheduled run the next
+# load-triggered execution backfills the missing session automatically.
 #
 
 cd "$(dirname "$0")/.."

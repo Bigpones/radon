@@ -1,5 +1,53 @@
 # TODO
 
+## Session: Reduce CTA Auto Schedule To Two Post-Close Runs (2026-03-12)
+
+### Goal
+Change the CTA launch schedule so the service only runs automatically at 4:15 PM ET and 5:00 PM ET on trading days, while keeping `RunAtLoad` catch-up behavior for wake/login/reboot.
+
+### Dependency Graph
+- T1 (Inspect the current CTA schedule source, installer, tests, and docs, then record the corrected plan and lesson) depends_on: []
+- T2 (Update regression coverage so the CTA schedule expects only the 4:15 PM ET and 5:00 PM ET automatic runs) depends_on: [T1]
+- T3 (Implement the reduced CTA schedule in the source config and regenerate/reload the live LaunchAgent while preserving RunAtLoad catch-up semantics) depends_on: [T2]
+- T4 (Update docs/status text and verify with tests plus live plist/launchctl inspection) depends_on: [T3]
+
+### Checklist
+- [x] T1 Inspect the current CTA schedule source, installer, tests, and docs, then record the corrected plan and lesson
+- [x] T2 Update regression coverage so the CTA schedule expects only the 4:15 PM ET and 5:00 PM ET automatic runs
+- [x] T3 Implement the reduced CTA schedule in the source config and regenerate/reload the live LaunchAgent while preserving RunAtLoad catch-up semantics
+- [x] T4 Update docs/status text and verify with tests plus live plist/launchctl inspection
+
+### Review
+- Reduced the CTA schedule source in [scripts/utils/cta_sync.py](/Users/joemccann/dev/apps/finance/radon/scripts/utils/cta_sync.py) to two ET runs only: `4:15 PM` and `5:00 PM`. `RunAtLoad` remains enabled, so reboot/login/wake still provides catch-up for a missed closed-session refresh.
+- Updated the installer/operator docs in [scripts/setup_cta_sync_service.sh](/Users/joemccann/dev/apps/finance/radon/scripts/setup_cta_sync_service.sh), [scripts/run_cta_sync.sh](/Users/joemccann/dev/apps/finance/radon/scripts/run_cta_sync.sh), and [README.md](/Users/joemccann/dev/apps/finance/radon/README.md) so they describe the exact two-run schedule instead of the old multi-retry ladder.
+- Fixed a small status-reporting bug in [scripts/setup_cta_sync_service.sh](/Users/joemccann/dev/apps/finance/radon/scripts/setup_cta_sync_service.sh) so `status` now reports the newest daily `cta_YYYY-MM-DD.json` cache instead of accidentally matching `cta_sync_status.json`.
+- Reloaded the live user LaunchAgent with `bash scripts/setup_cta_sync_service.sh install`. The generated plist at [com.radon.cta-sync.plist](/Users/joemccann/Library/LaunchAgents/com.radon.cta-sync.plist) now shows only `13:15` and `14:00` Pacific entries for weekdays, which correspond to `4:15 PM ET` and `5:00 PM ET`, and `launchctl print gui/501/com.radon.cta-sync` reflects the same schedule with `last exit code = 0`.
+- Verification passed with `pytest -q scripts/tests/test_cta_sync_service.py`, `bash -n scripts/setup_cta_sync_service.sh scripts/run_cta_sync.sh`, `bash scripts/setup_cta_sync_service.sh install`, `bash scripts/setup_cta_sync_service.sh status`, `plutil -p ~/Library/LaunchAgents/com.radon.cta-sync.plist`, and `launchctl print gui/$(id -u)/com.radon.cta-sync`.
+
+## Session: Refactor Quote Telemetry To Shared Renderer And Wrappers (2026-03-12)
+
+### Dependency Graph
+- T1 (Inventory existing quote renderers, calculators, and wrappers across ticker, instrument, and modify-order surfaces) depends_on: []
+- T2 (Record the refactor plan with dependency graph in `tasks/todo.md` before implementation) depends_on: [T1]
+- T3 (Write or update unit and Playwright tests to pin the shared renderer/calculator contracts and observe red where needed) depends_on: [T1, T2]
+- T4 (Implement the refactor to a shared quote calculator, shared renderer, and surface-specific wrappers without changing validated semantics) depends_on: [T3]
+- T5 (Run targeted Vitest and Playwright verification, then capture review notes) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inventory existing quote renderers, calculators, and wrappers across ticker, instrument, and modify-order surfaces
+- [x] T2 Record the refactor plan with dependency graph in `tasks/todo.md` before implementation
+- [x] T3 Write or update unit and Playwright tests to pin the shared renderer/calculator contracts and observe red where needed
+- [x] T4 Implement the refactor to a shared quote calculator, shared renderer, and surface-specific wrappers without changing validated semantics
+- [x] T5 Run targeted Vitest and Playwright verification, then capture review notes
+
+### Review
+- Consolidated quote math into [web/lib/quoteTelemetry.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/quoteTelemetry.ts), which is now the single calculator source for bid/mid/ask extraction, spread formatting, execution-spread formatting, and the full quote telemetry view model.
+- Consolidated rendering into [web/components/QuoteTelemetry.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/QuoteTelemetry.tsx), which now owns the renderer variants and the thin wrappers: `TickerQuoteTelemetry`, `InstrumentOrderQuoteTelemetry`, and `ModifyOrderQuoteTelemetry`.
+- Rewired [web/components/TickerDetailModal.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/TickerDetailModal.tsx), [web/components/InstrumentDetailModal.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/InstrumentDetailModal.tsx), and [web/components/ModifyOrderModal.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ModifyOrderModal.tsx) to consume those wrappers instead of owning duplicated quote-row rendering and quote math.
+- The red phase came from the new wrapper tests importing a non-existent shared quote component API: `npx vitest run web/tests/quote-telemetry-wrappers.test.ts web/tests/price-bar-quote-telemetry.test.ts` failed with `Cannot find module '../components/QuoteTelemetry'` before implementation.
+- Added wrapper-level regression coverage in [web/tests/quote-telemetry-wrappers.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/quote-telemetry-wrappers.test.ts) and kept the existing modal/browser coverage for the shared ticker modal, instrument order modal, and modify-order modal.
+- Verified green with `npx vitest run web/tests/quote-telemetry-wrappers.test.ts web/tests/price-bar-quote-telemetry.test.ts web/tests/ticker-detail-spread-notional.test.ts web/tests/order-ticket-spread-notional.test.ts web/tests/instrument-detail-spread-quantity.test.ts` and `cd web && npx playwright test e2e/price-bar-quote-telemetry.spec.ts e2e/order-ticket-quote-telemetry.spec.ts e2e/modify-order-spread-telemetry.spec.ts --config playwright.config.ts`.
+
 ## Session: Load And Verify CTA Launch Agent (2026-03-12)
 
 ### Goal
@@ -31,14 +79,17 @@ Bootstrap the installed `com.radon.cta-sync` launch agent into the live user `la
 - T5 (Run targeted Vitest and Playwright verification, then capture review notes) depends_on: [T4]
 
 ### Checklist
-- [ ] T1 Inspect the modify-order modal quote math and identify the intended spread basis from the current UI path
+- [x] T1 Inspect the modify-order modal quote math and identify the intended spread basis from the current UI path
 - [x] T2 Record the corrected plan and user-correction lesson in `tasks/todo.md` and `tasks/lessons.md`
-- [ ] T3 Update unit and Playwright tests to the corrected modify-order spread contract and observe the red state
-- [ ] T4 Implement the minimal fix in `ModifyOrderModal` without regressing the shared ticker modal or instrument ticket behavior
-- [ ] T5 Run targeted Vitest and Playwright verification, then capture review notes
+- [x] T3 Update unit and Playwright tests to the corrected modify-order spread contract and observe the red state
+- [x] T4 Implement the minimal fix in `ModifyOrderModal` without regressing the shared ticker modal or instrument ticket behavior
+- [x] T5 Run targeted Vitest and Playwright verification, then capture review notes
 
 ### Review
-- Pending.
+- Root cause: [web/components/ModifyOrderModal.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ModifyOrderModal.tsx) was reusing order-sized spread math based on `order.totalQuantity * 100`, which made a quote-only telemetry row display `$4,000.00` for a `12.80 x 14.40` option quote. The operator-facing surface does not show quantity in that block, so the number was misleading.
+- Added a modify-order-specific formatter in [web/lib/positionUtils.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/positionUtils.ts) that reports half-spread execution friction in displayed premium dollars and midpoint bps, and wired only [web/components/ModifyOrderModal.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ModifyOrderModal.tsx) to use it.
+- Locked the correction with unit coverage in [web/tests/order-ticket-spread-notional.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/order-ticket-spread-notional.test.ts) and browser coverage in [web/e2e/modify-order-spread-telemetry.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/modify-order-spread-telemetry.spec.ts). The red phase failed with `$3,000.00 / 3,077 bps` in unit tests and `$4,000.00 / 1,176 bps` in the browser before the fix.
+- Verified green with `npx vitest run web/tests/order-ticket-spread-notional.test.ts web/tests/ticker-detail-spread-notional.test.ts web/tests/instrument-detail-spread-quantity.test.ts web/tests/price-bar-quote-telemetry.test.ts` and `cd web && npx playwright test e2e/modify-order-spread-telemetry.spec.ts e2e/order-ticket-quote-telemetry.spec.ts e2e/price-bar-quote-telemetry.spec.ts --config playwright.config.ts`.
 
 ## Session: Separate Quote-Level And Order-Level Spread Notional (2026-03-12)
 

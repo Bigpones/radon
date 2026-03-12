@@ -35,13 +35,14 @@ class TestLaunchdCalendarEntries:
             {"Weekday": 1, "Hour": 7, "Minute": 0},
         ]
 
-    def test_cta_slots_include_morning_catchup_and_post_close_retries(self):
+    def test_cta_slots_only_include_two_post_close_runs(self):
         entries = convert_et_calendar_entries(
             [(1, hour, minute) for hour, minute in CTA_SYNC_ET_SLOTS],
             local_tz="America/Los_Angeles",
             reference_date=date(2026, 3, 9),
         )
 
-        assert {"Weekday": 1, "Hour": 6, "Minute": 35} in entries
-        assert {"Weekday": 1, "Hour": 13, "Minute": 5} in entries
-        assert {"Weekday": 1, "Hour": 15, "Minute": 5} in entries
+        assert entries == [
+            {"Weekday": 1, "Hour": 13, "Minute": 15},
+            {"Weekday": 1, "Hour": 14, "Minute": 0},
+        ]

@@ -2,9 +2,10 @@
 #
 # MenthorQ CTA Sync Scheduled Service Manager
 #
-# Runs a dedicated CTA cache refresh after the close with a few retry windows,
-# plus one next-session morning catch-up slot. ET slots are converted into local
-# machine time at install time so launchd fires correctly on this machine.
+# Runs a dedicated CTA cache refresh after the close at two verification windows.
+# `RunAtLoad` provides catch-up behavior on reboot/login/wake if the machine was
+# asleep during the scheduled windows. ET slots are converted into local machine
+# time at install time so launchd fires correctly on this machine.
 #
 # Usage:
 #   ./scripts/setup_cta_sync_service.sh install   - Install and load service
@@ -101,7 +102,7 @@ install() {
     echo "  Log directory: $LOG_DIR"
     echo "  Data directory: data/menthorq_cache/"
 
-    echo "  Generating plist (30 schedule entries + RunAtLoad catch-up)..."
+    echo "  Generating plist (10 schedule entries + RunAtLoad catch-up)..."
     generate_plist
 
     if ! plutil -lint "$PLIST_SRC" > /dev/null 2>&1; then
@@ -151,11 +152,11 @@ status() {
         echo "Service: NOT LOADED (plist exists but not loaded)"
     fi
 
-    echo "Schedule: 9:35 AM ET catch-up + 4:05/4:20/4:35/5:05/6:05 PM ET retries, Mon-Fri"
-    echo "Wake behavior: StartCalendarInterval coalesces missed sleep events; RunAtLoad catches reboot/login."
+    echo "Schedule: 4:15 PM ET and 5:00 PM ET, Mon-Fri"
+    echo "Catch-up behavior: RunAtLoad covers reboot/login/wake when the machine missed the scheduled windows."
 
     local latest
-    latest=$(ls -t "$PROJECT_DIR/data/menthorq_cache"/cta_*.json 2>/dev/null | head -1)
+    latest=$(ls -t "$PROJECT_DIR/data/menthorq_cache"/cta_20*.json 2>/dev/null | head -1)
     if [[ -n "$latest" ]]; then
         local filename
         filename=$(basename "$latest")

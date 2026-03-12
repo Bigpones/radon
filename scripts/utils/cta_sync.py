@@ -16,12 +16,8 @@ from utils.market_calendar import _is_trading_day
 ET = ZoneInfo("America/New_York")
 MARKET_CLOSE_MINUTE = 16 * 60
 CTA_SYNC_ET_SLOTS = [
-    (9, 35),
-    (16, 5),
-    (16, 20),
-    (16, 35),
-    (17, 5),
-    (18, 5),
+    (16, 15),
+    (17, 0),
 ]
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
