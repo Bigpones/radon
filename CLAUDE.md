@@ -249,7 +249,7 @@ All portfolio state writes use `scripts/utils/atomic_io.py`:
 | `scripts/scanner.py` | Watchlist batch scan (ThreadPoolExecutor, 15 workers default, `--workers` CLI arg) |
 | `scripts/discover.py` | Market-wide flow scanner (parallel by ticker + by day) |
 | `scripts/kelly.py` | Kelly calculator — scalar `kelly_size()` + vectorized `kelly_size_batch()` (NumPy) |
-| `scripts/ib_sync.py` | Sync live IB portfolio (atomic writes via `atomic_save()`) |
+| `scripts/ib_sync.py` | Sync live IB portfolio (atomic writes via `atomic_save()`). Auto-detects: covered calls, verticals, synthetics, risk reversals, straddles/strangles, **all-long combos** (defined risk). Tests: `test_covered_call_detection.py` (7), `test_all_long_combo.py` (8) |
 | `scripts/ib_reconcile.py` | Reconcile fills vs trade_log |
 | `scripts/blotter.py` | Today's fill P&L |
 | `scripts/trade_blotter/flex_query.py` | Historical fills (365d via Flex) |
@@ -463,6 +463,29 @@ Capital at Risk:
 | PriceBar in modal | `resolvePriceBar()` — option-level for single-leg, underlying for multi-leg |
 
 **Rule**: Never show the underlying stock price where the user expects an option or spread price. If option prices aren't available, show "---" rather than a misleading underlying price.
+
+### Position Structure Classification (`ib_sync.py`)
+
+`detect_structure_type()` classifies multi-leg positions into structures with `risk_profile`:
+
+| Structure | Legs | Risk Profile |
+|-----------|------|--------------|
+| Stock | 1 STK | `equity` |
+| Long Call / Long Put | 1 long OPT | `defined` |
+| Short Call / Short Put | 1 short OPT | `undefined` |
+| Bull/Bear Call/Put Spread | 2 same-type, 1 long + 1 short | `defined` |
+| Synthetic Long/Short | 1 call + 1 put, opposite directions, same strike | `undefined` |
+| Risk Reversal | 1 call + 1 put, opposite directions, diff strikes | `undefined` |
+| Straddle/Strangle | 1 long call + 1 long put | `defined` |
+| Covered Call | Long stock + short calls (shares ≥ contracts × 100) | `defined` |
+| **Long Call/Put/Mixed Combo** | **All legs long (no shorts, no stock)** | **`defined`** |
+| Unrecognized | Anything else | `complex` |
+
+**All-long combo rule**: If every option leg has `position > 0` (no short legs, no stock), the position is fully defined risk (max loss = total premium). Named: `Long Call Combo`, `Long Put Combo`, or `Long Combo`.
+
+**Web UI fallback**: `WorkspaceSections.tsx` routes `risk_profile === "complex"` into the Undefined Risk table as defense-in-depth — positions with unrecognized profiles are never silently dropped.
+
+**Tests**: `test_covered_call_detection.py` (7), `test_all_long_combo.py` (8), `complex-risk-profile.test.ts` (5)
 
 ### Data Normalization
 
