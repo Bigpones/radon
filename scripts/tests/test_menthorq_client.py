@@ -149,6 +149,54 @@ class TestMenthorQClientLogin:
         with pytest.raises(MenthorQAuthError, match="[Ll]ogin"):
             MenthorQClient()
 
+    def test_login_failure_includes_site_error_message(self, mock_env_creds, mock_playwright):
+        """Login failure reports the visible site error text when available."""
+        page = mock_playwright["page"]
+        page.url = "https://menthorq.com/login/"
+        page.locator.return_value.inner_text.return_value = "Your username or password was incorrect"
+
+        with pytest.raises(MenthorQAuthError, match="username or password was incorrect"):
+            MenthorQClient()
+
+    def test_login_failure_includes_page_context(self, mock_env_creds, mock_playwright):
+        """Login failure should include high-signal page context for debugging."""
+        page = mock_playwright["page"]
+        page.url = "https://menthorq.com/login/"
+        page.title.return_value = "Login - MenthorQ"
+        page.text_content.return_value = "Error: invalid password. Please try again."
+        with pytest.raises(MenthorQAuthError) as excinfo:
+            MenthorQClient()
+        message = str(excinfo.value)
+        assert "page_title=Login - MenthorQ" in message
+        assert "invalid password" in message
+
+    def test_login_failure_writes_debug_artifacts_when_enabled(self, mock_env_creds, mock_playwright, tmp_path):
+        """Login failures should emit sanitized artifacts when artifact_dir is provided."""
+        page = mock_playwright["page"]
+        page.url = "https://menthorq.com/login/"
+        page.title.return_value = "Login - MenthorQ"
+        page.locator.return_value.inner_text.return_value = "Your username or password was incorrect"
+        page.content.return_value = "<html><body>user=test@example.com password=testpass123</body></html>"
+        page.screenshot.return_value = b"png-bytes"
+
+        with pytest.raises(MenthorQAuthError):
+            MenthorQClient(artifact_dir=tmp_path)
+
+        html_path = tmp_path / "page.html"
+        screenshot_path = tmp_path / "page.png"
+        context_path = tmp_path / "context.json"
+
+        assert html_path.exists()
+        assert screenshot_path.exists()
+        assert context_path.exists()
+
+        html = html_path.read_text()
+        context = json.loads(context_path.read_text())
+        assert "testpass123" not in html
+        assert "test@example.com" not in html
+        assert context["stage"] == "login"
+        assert context["final_url"] == "https://menthorq.com/login/"
+
 
 # ══════════════════════════════════════════════════════════════════════
 # 3. EOD DATA

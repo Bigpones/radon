@@ -3475,6 +3475,55 @@ tr {
   padding: 16px;
 }
 
+.cta-status-banner {
+  margin: 12px 16px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border-dim);
+  border-left: 2px solid var(--warning);
+  background: var(--bg-hover);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cta-status-banner.cta-status-banner-error {
+  border-left-color: var(--negative);
+}
+
+.cta-status-banner.cta-status-banner-running {
+  border-left-color: var(--signal-core);
+}
+
+.cta-status-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--warning);
+}
+
+.cta-status-banner.cta-status-banner-error .cta-status-title {
+  color: var(--negative);
+}
+
+.cta-status-banner.cta-status-banner-running .cta-status-title {
+  color: var(--signal-core);
+}
+
+.cta-status-copy {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.cta-status-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
 .cta-empty code {
   color: var(--text-primary);
   background: var(--bg-hover);

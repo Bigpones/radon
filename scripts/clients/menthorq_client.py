@@ -19,7 +19,7 @@ Usage::
     finally:
         client.close()
 
-Credentials (project root .env, loaded via python-dotenv):
+Credentials (project root .env, loaded via a local fallback loader):
     MENTHORQ_USER  -- MenthorQ email/username
     MENTHORQ_PASS  -- MenthorQ password
 
@@ -32,16 +32,18 @@ import base64
 import json
 import logging
 import os
+import re
 import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from dotenv import load_dotenv as _load_dotenv
 from playwright.sync_api import sync_playwright, Page
 
+from utils.env_loader import load_env_file
+
 # Load .env from project root
-_load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
+load_env_file(Path(__file__).resolve().parent.parent.parent / ".env")
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +53,8 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://menthorq.com/account/"
 LOGIN_URL = "https://menthorq.com/login/"
+DEFAULT_ARTIFACT_ROOT = Path(__file__).resolve().parent.parent.parent / "logs" / "menthorq_artifacts"
+DEFAULT_STORAGE_STATE_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "menthorq_cache" / "menthorq_storage_state.json"
 
 # CTA card slugs (data-command-slug attributes)
 CTA_SLUGS = {
@@ -204,7 +208,12 @@ class MenthorQClient:
 
     # ── init / lifecycle ───────────────────────────────────────────
 
-    def __init__(self, headless: bool = True):
+    def __init__(
+        self,
+        headless: bool = True,
+        artifact_dir: str | Path | None = None,
+        storage_state_path: str | Path | None = None,
+    ):
         self._username = os.environ.get("MENTHORQ_USER", "").strip() or None
         self._password = os.environ.get("MENTHORQ_PASS", "").strip() or None
 
@@ -221,21 +230,27 @@ class MenthorQClient:
 
         self._api_key = self._resolve_api_key()
         self._headless = headless
+        self._artifact_dir = Path(artifact_dir) if artifact_dir else None
+        self._storage_state_path = Path(storage_state_path) if storage_state_path else None
 
         # Launch browser and login
         self._pw_context = sync_playwright()
         self._pw = self._pw_context.__enter__()
         self._browser = self._pw.chromium.launch(headless=headless)
-        self._browser_context = self._browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            user_agent=(
+        browser_context_kwargs = {
+            "viewport": {"width": 1920, "height": 1080},
+            "user_agent": (
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/120.0.0.0 Safari/537.36"
             ),
-        )
+        }
+        if self._storage_state_path and self._storage_state_path.exists():
+            browser_context_kwargs["storage_state"] = str(self._storage_state_path)
+        self._browser_context = self._browser.new_context(**browser_context_kwargs)
         self._page = self._browser_context.new_page()
-        self._login()
+        if not self._restore_session():
+            self._login()
 
     def close(self) -> None:
         """Close browser and Playwright context."""
@@ -269,6 +284,35 @@ class MenthorQClient:
                 return value
         return None
 
+    def _restore_session(self) -> bool:
+        """Reuse a stored authenticated browser state when still valid."""
+        if not self._storage_state_path or not self._storage_state_path.exists():
+            return False
+
+        try:
+            self._page.goto(BASE_URL, wait_until="domcontentloaded", timeout=30000)
+            time.sleep(2)
+        except Exception as exc:
+            logger.warning(f"MenthorQ storage-state restore failed during navigation: {exc}")
+            return False
+
+        current_url = (self._page.url or "").lower()
+        if "/login" in current_url or "/wp-login" in current_url:
+            logger.info("MenthorQ storage state present but no longer authenticated.")
+            return False
+
+        logger.info("MenthorQ session restored from saved storage state.")
+        return True
+
+    def _persist_storage_state(self) -> None:
+        if not self._storage_state_path:
+            return
+        try:
+            self._storage_state_path.parent.mkdir(parents=True, exist_ok=True)
+            self._browser_context.storage_state(path=str(self._storage_state_path))
+        except Exception as exc:
+            logger.warning(f"Failed to persist MenthorQ storage state: {exc}")
+
     # ── login ──────────────────────────────────────────────────────
 
     def _login(self) -> None:
@@ -292,17 +336,28 @@ class MenthorQClient:
             'input[type="password"]',
         ]
 
+        username_filled = False
         for sel in username_selectors:
             el = self._page.query_selector(sel)
             if el:
                 el.fill(self._username)
+                username_filled = True
                 break
 
+        password_filled = False
         for sel in password_selectors:
             el = self._page.query_selector(sel)
             if el:
                 el.fill(self._password)
+                password_filled = True
                 break
+
+        if not username_filled or not password_filled:
+            self._capture_debug_artifacts("login", "Login form fields not found on MenthorQ login page.")
+            raise MenthorQAuthError(
+                "Login form fields not found on MenthorQ login page. "
+                f"context={self._login_failure_context()}"
+            )
 
         # Submit
         submit_selectors = [
@@ -311,11 +366,20 @@ class MenthorQClient:
             'button[type="submit"]',
             '#wp-submit',
         ]
+        submit_clicked = False
         for sel in submit_selectors:
             el = self._page.query_selector(sel)
             if el:
                 el.click()
+                submit_clicked = True
                 break
+
+        if not submit_clicked:
+            self._capture_debug_artifacts("login", "Login submit control not found on MenthorQ login page.")
+            raise MenthorQAuthError(
+                "Login submit control not found on MenthorQ login page. "
+                f"context={self._login_failure_context()}"
+            )
 
         self._page.wait_for_load_state("networkidle", timeout=30000)
         time.sleep(3)
@@ -323,12 +387,115 @@ class MenthorQClient:
         # Verify login succeeded
         current_url = self._page.url.lower()
         if "/login" in current_url or "/wp-login" in current_url:
+            self._capture_debug_artifacts("login", "Login failed — still on login page after submit.")
             raise MenthorQAuthError(
                 "Login failed — still on login page after submit. "
-                "Check MENTHORQ_USER and MENTHORQ_PASS credentials."
+                f"context={self._login_failure_context()}"
             )
 
         logger.info("MenthorQ login successful.")
+        self._persist_storage_state()
+
+    def _login_failure_context(self) -> str:
+        """Capture a sanitized summary of the login page for debugging."""
+        parts: list[str] = []
+
+        try:
+            title = self._page.title() or ""
+        except Exception:
+            title = ""
+        title = self._sanitize_login_text(title, max_len=120)
+        if title:
+            parts.append(f"page_title={title}")
+
+        body_excerpt = self._page_excerpt()
+        if body_excerpt:
+            parts.append(f"page_excerpt={body_excerpt}")
+
+        current_url = (self._page.url or "").strip()
+        if current_url:
+            parts.append(f"url={current_url}")
+
+        return "; ".join(parts) if parts else "no page context captured"
+
+    @staticmethod
+    def _sanitize_login_text(text: str, max_len: int = 220) -> str:
+        if not isinstance(text, str):
+            return ""
+        collapsed = re.sub(r"\s+", " ", text).strip()
+        if not collapsed:
+            return ""
+        collapsed = re.sub(
+            r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
+            "[redacted-email]",
+            collapsed,
+            flags=re.IGNORECASE,
+        )
+        return collapsed[:max_len]
+
+    def _sanitize_sensitive_text(self, text: str) -> str:
+        if not isinstance(text, str):
+            return ""
+
+        sanitized = text
+        for secret in (self._username, self._password):
+            if secret:
+                sanitized = sanitized.replace(secret, "[redacted]")
+        sanitized = re.sub(
+            r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
+            "[redacted-email]",
+            sanitized,
+            flags=re.IGNORECASE,
+        )
+        return sanitized
+
+    def _page_excerpt(self) -> str:
+        for selector in ("#mepr_error_msg", ".mepr_error", ".message", ".notice", "body"):
+            text = ""
+            try:
+                text = self._page.locator(selector).inner_text(timeout=1000) or ""
+            except Exception:
+                pass
+            text = self._sanitize_login_text(text)
+            if not text:
+                try:
+                    text = self._sanitize_login_text(self._page.text_content(selector) or "")
+                except Exception:
+                    text = ""
+            if text:
+                return text
+        return ""
+
+    def _capture_debug_artifacts(self, stage: str, error_message: str | None = None) -> None:
+        if self._artifact_dir is None:
+            return
+
+        self._artifact_dir.mkdir(parents=True, exist_ok=True)
+        context = {
+            "stage": stage,
+            "final_url": (self._page.url or "").strip(),
+            "page_title": self._sanitize_login_text(self._page.title() or "", max_len=160),
+            "page_excerpt": self._page_excerpt(),
+            "error_message": self._sanitize_login_text(error_message or "", max_len=220),
+        }
+
+        try:
+            html = self._sanitize_sensitive_text(self._page.content() or "")
+            (self._artifact_dir / "page.html").write_text(html, encoding="utf-8")
+        except Exception:
+            pass
+
+        try:
+            png = self._page.screenshot(type="png", full_page=True)
+        except Exception:
+            png = None
+        if isinstance(png, (bytes, bytearray)):
+            (self._artifact_dir / "page.png").write_bytes(bytes(png))
+
+        (self._artifact_dir / "context.json").write_text(
+            json.dumps(context, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
 
     # ── navigation ─────────────────────────────────────────────────
 
@@ -430,6 +597,7 @@ class MenthorQClient:
             images = self._screenshot_cards(self._page, CTA_SLUGS)
 
         if not images:
+            self._capture_debug_artifacts("cta-extraction", f"No CTA card images captured for {date}.")
             raise MenthorQExtractionError(
                 f"No CTA card images captured for {date}."
             )
@@ -441,6 +609,7 @@ class MenthorQClient:
                 tables[table_key] = extracted
 
         if not tables:
+            self._capture_debug_artifacts("cta-extraction", f"Vision extraction returned no data for CTA tables on {date}.")
             raise MenthorQExtractionError(
                 f"Vision extraction returned no data for CTA tables on {date}."
             )

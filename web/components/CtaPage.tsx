@@ -33,17 +33,59 @@ function formatFetchedAt(iso: string | null | undefined): string {
   }
 }
 
+function formatSyncStamp(iso: string | null | undefined): string {
+  return formatFetchedAt(iso);
+}
+
+function normalizeSyncState(value: string | null | undefined): string {
+  if (!value) return "unknown";
+  if (value === "success") return "healthy";
+  if (value === "error") return "degraded";
+  return value;
+}
+
 /* ─── CtaPage ────────────────────────────────────────── */
 
 export default function CtaPage() {
   const { data } = useRegime(true);
-  const { data: ctaData, loading } = useMenthorqCta();
+  const { data: ctaData, loading, error } = useMenthorqCta();
 
   const cta = data?.cta ?? null;
   const exposurePct = cta?.exposure_pct ?? null;
 
   const order = ["main", "index", "commodity", "currency"] as const;
   const fetchLabel = formatFetchedAt(ctaData?.fetched_at);
+  const ctaCacheMeta = ctaData?.cache_meta ?? null;
+  const syncStatus = ctaData?.sync_health ?? ctaData?.sync_status ?? null;
+  const syncState = normalizeSyncState(
+    ctaData?.sync_health?.state
+    ?? ctaData?.sync_status?.state
+    ?? ctaData?.sync_status?.status
+    ?? null,
+  );
+  const ctaIsStale = Boolean(ctaCacheMeta?.is_stale);
+  const staleTargetDate = ctaCacheMeta?.expected_date ?? ctaCacheMeta?.target_date ?? syncStatus?.target_date ?? null;
+  const staleCacheDate = ctaCacheMeta?.latest_available_date ?? ctaCacheMeta?.latest_cache_date ?? ctaData?.date ?? null;
+  const staleCopy = !ctaData?.tables
+    ? `CTA positioning is stale. Expected ${staleTargetDate ?? "---"}. No cached data is available yet.`
+    : `CTA positioning is stale. Expected ${staleTargetDate ?? "---"}. Latest available ${staleCacheDate ?? "---"}.`;
+
+  let syncDetail = "";
+  const syncStartedAt = syncStatus?.last_attempt_started_at ?? syncStatus?.started_at;
+  const syncErrorMessage = syncStatus?.last_error?.message ?? syncStatus?.error_excerpt ?? syncStatus?.message ?? null;
+  if (syncState === "syncing" || syncState === "running") {
+    syncDetail = `Refresh in progress${syncStartedAt ? ` · STARTED ${formatSyncStamp(syncStartedAt)}` : ""}`;
+  } else if (syncState === "degraded") {
+    syncDetail = syncErrorMessage ?? "Last refresh attempt failed.";
+  } else if (error) {
+    syncDetail = error;
+  }
+
+  const statusBannerClass = syncState === "degraded" || error
+    ? "cta-status-banner cta-status-banner-error"
+    : syncState === "syncing" || syncState === "running"
+      ? "cta-status-banner cta-status-banner-running"
+      : "cta-status-banner";
 
   return (
     <div data-testid="cta-page" style={{ width: "100%", display: "flex", flexDirection: "column", gap: "0" }}>
@@ -147,6 +189,14 @@ export default function CtaPage() {
             </span>
           )}
         </div>
+
+        {!loading && ctaIsStale && (
+          <div className={statusBannerClass} data-testid="cta-stale-banner" role="alert">
+            <div className="cta-status-title">CTA CACHE STALE</div>
+            <div className="cta-status-copy">{staleCopy}</div>
+            {syncDetail && <div className="cta-status-meta">{syncDetail}</div>}
+          </div>
+        )}
 
         {loading && (
           <div

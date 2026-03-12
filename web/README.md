@@ -170,6 +170,7 @@ function PriceDisplay() {
 | `/api/portfolio` | POST | Trigger IB sync |
 | `/api/performance` | GET | Read cached YTD performance metrics and trigger background refresh when stale |
 | `/api/performance` | POST | Rebuild YTD performance metrics from the Python engine |
+| `/api/menthorq/cta` | GET | Read the latest MenthorQ CTA cache, attach `cache_meta` plus `sync_health`/`sync_status`, and trigger one background CTA refresh when the latest closed trading day is missing |
 | `/api/orders` | GET | Read open/executed orders |
 | `/api/orders` | POST | Sync orders from IB |
 | `/api/prices` | GET | Deprecated (real-time SSE removed) |
@@ -188,6 +189,10 @@ ASSISTANT_MOCK=1 npm test
 ```
 
 Tests cover:
+
+- CTA freshness contract and `/cta` stale/degraded rendering in unit tests (`web/tests/cta-route-freshness.test.ts`, `web/tests/cta-page-freshness.test.ts`)
+- CTA route compatibility coverage in `web/tests/menthorq-cta-route.test.ts`
+- Browser CTA stale-banner coverage in `web/e2e/cta-stale-banner.spec.ts` and the `/cta` stale-state browser contract in `web/e2e/cta-page.spec.ts`
 - `/api/assistant` route (mock mode)
 - PI command entrypoints (`fetch_ticker`, `fetch_flow`, `discover`, `scanner`)
 - `kelly.py` output parsing

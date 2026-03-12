@@ -4,7 +4,7 @@
 Delegates browser automation and Vision extraction to MenthorQClient,
 handles caching as daily JSON in data/menthorq_cache/.
 
-Credentials (project root .env, loaded via python-dotenv):
+Credentials (project root .env, loaded via a local fallback loader):
   MENTHORQ_USER  — MenthorQ email/username
   MENTHORQ_PASS  — MenthorQ password
 
@@ -26,16 +26,19 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-
-# Load .env from project root (before any os.environ reads)
-from dotenv import load_dotenv as _load_dotenv
-_load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 from typing import Any, Dict, List, Optional
 
 # ── path setup ────────────────────────────────────────────────────
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _PROJECT_DIR = _SCRIPT_DIR.parent
 CACHE_DIR = _PROJECT_DIR / "data" / "menthorq_cache"
+
+from utils.env_loader import load_env_file
+from utils.atomic_io import atomic_save
+
+# Load .env from project root (before any os.environ reads)
+load_env_file(_PROJECT_DIR / ".env")
+STORAGE_STATE_PATH = _PROJECT_DIR / "data" / "menthorq_cache" / "menthorq_storage_state.json"
 
 # ── MenthorQ CTA table slugs ─────────────────────────────────────
 CTA_TABLES = {
@@ -149,7 +152,7 @@ def write_cache(date_str: str, tables: Dict[str, List[Dict]]) -> Path:
         "tables": tables,
     }
     p = cache_path(date_str)
-    p.write_text(json.dumps(entry, indent=2))
+    atomic_save(str(p), entry)
     return p
 
 
@@ -162,11 +165,13 @@ def fetch_menthorq_cta(
     force: bool = False,
     headless: bool = True,
     save_images: bool = False,
+    artifact_dir: str | Path | None = None,
+    storage_state_path: str | Path | None = STORAGE_STATE_PATH,
 ) -> Optional[Dict[str, Any]]:
     """Fetch MenthorQ CTA data: check cache, use client to extract, cache.
 
     Args:
-        date_str: Date to fetch (YYYY-MM-DD). Defaults to today.
+        date_str: Date to fetch (YYYY-MM-DD). Defaults to the latest trading day.
         force: Bypass cache and re-fetch.
         headless: Run browser in headless mode.
         save_images: Save raw S3 PNGs to tmp/ for visual verification.
@@ -174,7 +179,7 @@ def fetch_menthorq_cta(
     Returns the full cache entry dict, or None on failure.
     """
     if date_str is None:
-        date_str = datetime.now().strftime("%Y-%m-%d")
+        date_str = resolve_trading_date()
 
     # Check cache (unless forced)
     if not force:
@@ -186,13 +191,21 @@ def fetch_menthorq_cta(
     # Use MenthorQClient for browser + vision extraction
     try:
         from clients.menthorq_client import MenthorQClient, MenthorQError
+        from clients.menthorq_client import CTA_SLUGS
+    except Exception as exc:
+        print(f"  ERROR: Failed to initialize MenthorQ client: {exc}", file=sys.stderr)
+        return None
 
-        with MenthorQClient(headless=headless) as client:
+    try:
+        with MenthorQClient(
+            headless=headless,
+            artifact_dir=artifact_dir,
+            storage_state_path=storage_state_path,
+        ) as client:
             tables = client.get_cta(date_str)
 
             # After get_cta(), page is still on CTA — download images for verification
             if save_images:
-                from clients.menthorq_client import CTA_SLUGS
                 images = client._download_card_images(client._page, CTA_SLUGS)
                 if images:
                     tmp_dir = _PROJECT_DIR / "tmp"
@@ -321,7 +334,7 @@ Examples:
 """,
     )
     parser.add_argument("--json", action="store_true", help="Output JSON to stdout")
-    parser.add_argument("--date", help="Date to fetch (YYYY-MM-DD, default: today)")
+    parser.add_argument("--date", help="Date to fetch (YYYY-MM-DD, default: latest trading day)")
     parser.add_argument("--force", action="store_true", help="Bypass cache, force re-fetch")
     parser.add_argument("--no-headless", action="store_true", help="Show browser (debug)")
     parser.add_argument("--save-images", action="store_true", help="Save raw S3 PNGs to tmp/ for verification")

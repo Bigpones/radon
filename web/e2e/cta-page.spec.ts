@@ -48,6 +48,7 @@ const CRI_MOCK = {
 const CTA_MOCK = {
   date: "2026-03-09",
   fetched_at: "2026-03-09T16:45:00Z",
+  source: "menthorq_s3_vision",
   tables: {
     main: [
       { underlying: "SPX", position_today: 0.45, position_yesterday: 0.42, position_1m_ago: 0.60, percentile_1m: 13, percentile_3m: 18, percentile_1y: 22, z_score_3m: -1.56 },
@@ -59,6 +60,58 @@ const CTA_MOCK = {
     commodity: [],
     currency: [],
   },
+  cache_meta: {
+    last_refresh: "2026-03-09T16:45:00Z",
+    age_seconds: 120,
+    is_stale: false,
+    stale_threshold_seconds: null,
+    target_date: "2026-03-09",
+    latest_cache_date: "2026-03-09",
+    stale_reason: "fresh",
+  },
+  sync_status: {
+    service: "cta-sync",
+    status: "success",
+    trigger: "launchd",
+    target_date: "2026-03-09",
+    started_at: "2026-03-09T16:40:00Z",
+    finished_at: "2026-03-09T16:45:00Z",
+    duration_ms: 30_000,
+    attempt_count: 1,
+    cache_path: "data/menthorq_cache/cta_2026-03-09.json",
+    error_type: null,
+    error_excerpt: null,
+    artifact_log_path: null,
+  },
+};
+
+const CTA_STALE_MOCK = {
+  ...CTA_MOCK,
+  date: "2026-03-08",
+  fetched_at: "2026-03-08T16:45:00Z",
+  cache_meta: {
+    last_refresh: "2026-03-08T16:45:00Z",
+    age_seconds: 86_400,
+    is_stale: true,
+    stale_threshold_seconds: null,
+    target_date: "2026-03-09",
+    latest_cache_date: "2026-03-08",
+    stale_reason: "behind_target",
+  },
+  sync_status: {
+    service: "cta-sync",
+    status: "error",
+    trigger: "launchd",
+    target_date: "2026-03-09",
+    started_at: "2026-03-09T16:40:00Z",
+    finished_at: "2026-03-09T16:45:00Z",
+    duration_ms: 30_000,
+    attempt_count: 2,
+    cache_path: null,
+    error_type: "auth_rejected",
+    error_excerpt: "Your username or password was incorrect",
+    artifact_log_path: "logs/cta-sync-artifacts/cta-sync-20260309T164500.log",
+  },
 };
 
 const PORTFOLIO_EMPTY = {
@@ -68,13 +121,20 @@ const ORDERS_EMPTY = {
   last_sync: new Date().toISOString(), open_orders: [], executed_orders: [], open_count: 0, executed_count: 0,
 };
 
-async function setupMocks(page: import("@playwright/test").Page) {
+async function setupMocks(
+  page: import("@playwright/test").Page,
+  overrides?: { cta?: Record<string, unknown> },
+) {
   await page.unrouteAll({ behavior: "ignoreErrors" });
   await page.route("**/api/regime", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(CRI_MOCK) }),
   );
   await page.route("**/api/menthorq/cta", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(CTA_MOCK) }),
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(overrides?.cta ?? CTA_MOCK),
+    }),
   );
   await page.route("**/api/portfolio", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(PORTFOLIO_EMPTY) }),
@@ -169,6 +229,18 @@ test.describe("/cta page", () => {
     // Direction should have changed
     expect(firstSort).not.toEqual(secondSort);
   });
+
+  test("shows a stale CTA banner when the cache is behind the latest closed trading day", async ({ page }) => {
+    await setupMocks(page, { cta: CTA_STALE_MOCK });
+    await page.goto("/cta");
+
+    const banner = page.locator('[data-testid="cta-stale-banner"]');
+    await expect(banner).toBeVisible({ timeout: 10_000 });
+    await expect(banner).toContainText("CTA CACHE STALE");
+    await expect(banner).toContainText("2026-03-08");
+    await expect(banner).toContainText("2026-03-09");
+    await expect(banner).toContainText("Your username or password was incorrect");
+  });
 });
 
 test.describe("/regime page — CTA section removed, D3 history chart present", () => {
@@ -184,7 +256,7 @@ test.describe("/regime page — CTA section removed, D3 history chart present", 
     await setupMocks(page);
     await page.goto("/regime");
 
-    const chart = page.locator('[data-testid="cri-history-chart"]');
+    const chart = page.locator('[data-testid="regime-history-chart-vix-vvix"] [data-testid="cri-history-chart"]');
     await chart.waitFor({ timeout: 10_000 });
     await expect(chart).toBeVisible();
 
@@ -196,7 +268,7 @@ test.describe("/regime page — CTA section removed, D3 history chart present", 
     await setupMocks(page);
     await page.goto("/regime");
 
-    const chart = page.locator('[data-testid="cri-history-chart"]');
+    const chart = page.locator('[data-testid="regime-history-chart-vix-vvix"] [data-testid="cri-history-chart"]');
     await chart.waitFor({ timeout: 10_000 });
 
     // D3 should render circle or path elements for VIX data

@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
+import fetch_menthorq_cta as fetch_menthorq_cta_module
 from fetch_menthorq_cta import (
     CACHE_DIR,
     CTA_TABLES,
@@ -258,6 +259,30 @@ class TestLoadMenthorqCache:
         result = load_menthorq_cache("2026-03-07")
         assert result is not None
         assert result["date"] == "2026-03-07"
+
+
+class TestFetchMenthorqCtaFailures:
+    def test_client_import_failure_returns_none(self, monkeypatch, capsys):
+        """Client import failures should report cleanly instead of raising UnboundLocalError."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def guarded_import(name, *args, **kwargs):
+            if name == "clients.menthorq_client":
+                raise ModuleNotFoundError("playwright")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", guarded_import)
+
+        result = fetch_menthorq_cta_module.fetch_menthorq_cta(
+            date_str="2026-03-07",
+            force=True,
+        )
+
+        captured = capsys.readouterr()
+        assert result is None
+        assert "Failed to initialize MenthorQ client" in captured.err
 
     def test_load_missing_date(self, tmp_path, monkeypatch):
         """Missing date returns None."""
