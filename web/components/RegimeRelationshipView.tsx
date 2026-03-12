@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import * as d3 from "d3";
 import InfoTooltip from "./InfoTooltip";
 import ChartLegend from "./charts/ChartLegend";
@@ -10,6 +10,7 @@ import {
   buildRegimeRelationshipEntries,
   REGIME_QUADRANT_DETAILS,
   summarizeRegimeRelationship,
+  type RegimeRelationshipEntry,
   type RegimeQuadrant,
   type RegimeRelationshipLiveValues,
   type RegimeRelationshipSource,
@@ -94,10 +95,21 @@ const QUADRANT_DISPLAY_ORDER: RegimeQuadrant[] = [
   "Goldilocks",
 ];
 
+type ZScoreHoverState = {
+  entry: RegimeRelationshipEntry;
+  index: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export default function RegimeRelationshipView({
   history,
   liveValues,
 }: RegimeRelationshipViewProps) {
+  const zScoreSvgRef = useRef<SVGSVGElement>(null);
+  const [zScoreHover, setZScoreHover] = useState<ZScoreHoverState | null>(null);
   const entries = useMemo(
     () => buildRegimeRelationshipEntries(history, liveValues),
     [history, liveValues],
@@ -169,6 +181,41 @@ export default function RegimeRelationshipView({
   const latest = entries[entries.length - 1];
   const spreadColor = spreadStateColor(summary.spreadState);
   const quadrantColor = quadrantTone(summary.latestQuadrant);
+  const zScoreTooltipSideStyle = zScoreHover
+    ? zScoreHover.x > zScoreHover.width / 2
+      ? { right: zScoreHover.width - zScoreHover.x + 12 }
+      : { left: zScoreHover.x + 12 }
+    : {};
+  const zScoreTooltipTop = zScoreHover
+    ? Math.max(12, Math.min(zScoreHover.y - 54, zScoreHover.height - 96))
+    : 0;
+
+  function updateZScoreHover(clientX: number, clientY: number) {
+    const svgRect = zScoreSvgRef.current?.getBoundingClientRect();
+    if (!svgRect) return;
+
+    const pointerX = clientX - svgRect.left;
+    const pointerY = clientY - svgRect.top;
+    const chartX = (pointerX / svgRect.width) * CHART_WIDTH;
+    const clampedInnerX = Math.max(0, Math.min(innerWidth, chartX - MARGIN.left));
+    const index = Math.max(
+      0,
+      Math.min(entries.length - 1, Math.round((clampedInnerX / innerWidth) * (entries.length - 1))),
+    );
+
+    setZScoreHover({
+      entry: entries[index],
+      index,
+      x: pointerX,
+      y: pointerY,
+      width: svgRect.width,
+      height: svgRect.height,
+    });
+  }
+
+  function handleZScoreHover(event: ReactMouseEvent<HTMLElement | SVGRectElement>) {
+    updateZScoreHover(event.clientX, event.clientY);
+  }
 
   return (
     <ChartPanel
@@ -461,7 +508,15 @@ export default function RegimeRelationshipView({
         <section className="regime-relationship-panel" data-testid="regime-zscore-card">
           <div className="regime-relationship-panel-head">
             <div>
-              <div className="regime-panel-title">NORMALIZED DIVERGENCE</div>
+              <div className="regime-panel-title">
+                NORMALIZED DIVERGENCE
+                <InfoTooltip
+                  text={SECTION_TOOLTIPS["NORMALIZED DIVERGENCE"]}
+                  ariaLabel="Explain normalized divergence"
+                  triggerTestId="regime-zscore-tooltip-trigger"
+                  contentTestId="regime-zscore-tooltip-bubble"
+                />
+              </div>
               <div className="regime-relationship-note">20-session z-score overlay</div>
             </div>
             <div className="regime-relationship-summary">
@@ -478,79 +533,150 @@ export default function RegimeRelationshipView({
             </div>
           </div>
 
-          <svg
-            className="regime-relationship-chart"
-            data-testid="regime-zscore-chart"
-            viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-            role="img"
-            aria-label="Normalized COR1M and RVOL z-score comparison"
+          <div
+            className="regime-relationship-chart-shell"
+            data-testid="regime-zscore-chart-shell"
+            onMouseMove={handleZScoreHover}
+            onMouseLeave={() => setZScoreHover(null)}
           >
-            <g transform={`translate(${MARGIN.left},${MARGIN.top})`}>
-              {zScale.ticks(5).map((tick) => (
-                <g key={`z-grid-${tick}`}>
-                  <line
-                    x1={0}
-                    x2={innerWidth}
-                    y1={zScale(tick)}
-                    y2={zScale(tick)}
-                    className="regime-relationship-grid-line"
-                  />
-                  <text
-                    x={-10}
-                    y={zScale(tick) + 4}
-                    textAnchor="end"
-                    className="regime-relationship-axis-label"
-                  >
-                    {fmtSigned(tick, 1)}
-                  </text>
-                </g>
-              ))}
+            <svg
+              ref={zScoreSvgRef}
+              className="regime-relationship-chart"
+              data-testid="regime-zscore-chart"
+              viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+              role="img"
+              aria-label="Normalized COR1M and RVOL z-score comparison"
+            >
+              <g transform={`translate(${MARGIN.left},${MARGIN.top})`}>
+                {zScale.ticks(5).map((tick) => (
+                  <g key={`z-grid-${tick}`}>
+                    <line
+                      x1={0}
+                      x2={innerWidth}
+                      y1={zScale(tick)}
+                      y2={zScale(tick)}
+                      className="regime-relationship-grid-line"
+                    />
+                    <text
+                      x={-10}
+                      y={zScale(tick) + 4}
+                      textAnchor="end"
+                      className="regime-relationship-axis-label"
+                    >
+                      {fmtSigned(tick, 1)}
+                    </text>
+                  </g>
+                ))}
 
-              <line
-                x1={0}
-                x2={innerWidth}
-                y1={zScale(0)}
-                y2={zScale(0)}
-                className="regime-relationship-baseline"
-              />
+                <line
+                  x1={0}
+                  x2={innerWidth}
+                  y1={zScale(0)}
+                  y2={zScale(0)}
+                  className="regime-relationship-baseline"
+                />
 
-              <path d={zRvolLine ?? ""} className="regime-relationship-line regime-relationship-line-rvol" />
-              <path d={zCor1mLine ?? ""} className="regime-relationship-line regime-relationship-line-cor1m" />
+                <path d={zRvolLine ?? ""} className="regime-relationship-line regime-relationship-line-rvol" />
+                <path d={zCor1mLine ?? ""} className="regime-relationship-line regime-relationship-line-cor1m" />
 
-              <circle
-                cx={xScale(entries.length - 1)}
-                cy={zScale(latest.realizedVolZ)}
-                r={4}
-                className="regime-relationship-marker regime-relationship-marker-rvol"
-              />
-              <circle
-                cx={xScale(entries.length - 1)}
-                cy={zScale(latest.cor1mZ)}
-                r={4}
-                className="regime-relationship-marker regime-relationship-marker-cor1m"
-              />
+                <circle
+                  cx={xScale(entries.length - 1)}
+                  cy={zScale(latest.realizedVolZ)}
+                  r={4}
+                  className="regime-relationship-marker regime-relationship-marker-rvol"
+                />
+                <circle
+                  cx={xScale(entries.length - 1)}
+                  cy={zScale(latest.cor1mZ)}
+                  r={4}
+                  className="regime-relationship-marker regime-relationship-marker-cor1m"
+                />
 
-              {tickIndices.map((index) => (
-                <g key={`z-x-${entries[index]?.date}`}>
-                  <line
-                    x1={xScale(index)}
-                    x2={xScale(index)}
-                    y1={innerHeight}
-                    y2={innerHeight + 6}
-                    className="regime-relationship-axis-tick"
-                  />
-                  <text
-                    x={xScale(index)}
-                    y={innerHeight + 20}
-                    textAnchor="middle"
-                    className="regime-relationship-axis-label"
-                  >
-                    {formatDateLabel(entries[index]?.date ?? "")}
-                  </text>
-                </g>
-              ))}
-            </g>
-          </svg>
+                {zScoreHover && (
+                  <>
+                    <line
+                      x1={xScale(zScoreHover.index)}
+                      x2={xScale(zScoreHover.index)}
+                      y1={0}
+                      y2={innerHeight}
+                      className="regime-relationship-hover-line"
+                    />
+                    <circle
+                      cx={xScale(zScoreHover.index)}
+                      cy={zScale(zScoreHover.entry.realizedVolZ)}
+                      r={5}
+                      className="regime-relationship-marker regime-relationship-marker-rvol"
+                    />
+                    <circle
+                      cx={xScale(zScoreHover.index)}
+                      cy={zScale(zScoreHover.entry.cor1mZ)}
+                      r={5}
+                      className="regime-relationship-marker regime-relationship-marker-cor1m"
+                    />
+                  </>
+                )}
+
+                {tickIndices.map((index) => (
+                  <g key={`z-x-${entries[index]?.date}`}>
+                    <line
+                      x1={xScale(index)}
+                      x2={xScale(index)}
+                      y1={innerHeight}
+                      y2={innerHeight + 6}
+                      className="regime-relationship-axis-tick"
+                    />
+                    <text
+                      x={xScale(index)}
+                      y={innerHeight + 20}
+                      textAnchor="middle"
+                      className="regime-relationship-axis-label"
+                    >
+                      {formatDateLabel(entries[index]?.date ?? "")}
+                    </text>
+                  </g>
+                ))}
+
+                <rect
+                  x={0}
+                  y={0}
+                  width={innerWidth}
+                  height={innerHeight}
+                  fill="transparent"
+                  pointerEvents="all"
+                  className="regime-relationship-chart-overlay"
+                  data-testid="regime-zscore-chart-overlay"
+                  onMouseMove={handleZScoreHover}
+                />
+              </g>
+            </svg>
+
+            {zScoreHover && (
+              <div
+                className="chart-tooltip regime-relationship-chart-tooltip"
+                data-testid="regime-zscore-hover-tooltip"
+                style={{
+                  top: `${zScoreTooltipTop}px`,
+                  ...zScoreTooltipSideStyle,
+                }}
+              >
+                <div className="chart-tooltip-date" data-testid="regime-zscore-hover-date">
+                  {formatDateLabel(zScoreHover.entry.date)}
+                </div>
+                <div className="chart-tooltip-row">
+                  <span className="chart-tooltip-label">RVOL z-score</span>
+                  <span className="chart-tooltip-value">{fmtSigned(zScoreHover.entry.realizedVolZ)}σ</span>
+                </div>
+                <div className="chart-tooltip-row">
+                  <span className="chart-tooltip-label">COR1M z-score</span>
+                  <span className="chart-tooltip-value">{fmtSigned(zScoreHover.entry.cor1mZ)}σ</span>
+                </div>
+                <div className="chart-tooltip-row">
+                  <span className="chart-tooltip-label">Divergence</span>
+                  <span className="chart-tooltip-value">{fmtSigned(zScoreHover.entry.zDivergence)}σ</span>
+                </div>
+              </div>
+            )}
+          </div>
 
           <ChartLegend
             className="regime-relationship-shared-legend"

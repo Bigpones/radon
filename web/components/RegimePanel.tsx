@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowDown, ArrowUp, Check, Shield, X, Zap } from "lucide-react";
+import { AlertTriangle, Check, Shield, X, Zap } from "lucide-react";
 import CriHistoryChart from "./CriHistoryChart";
 import RegimeRelationshipView from "./RegimeRelationshipView";
+import { DayChange, LiveBadge, PointChange, RegimeStrip, RegimeStripCell } from "./RegimeStrip";
 import type { ChartSeries, CriHistoryEntry } from "./CriHistoryChart";
 import InfoTooltip from "./InfoTooltip";
 import type { PriceData } from "@/lib/pricesProtocol";
@@ -41,57 +42,6 @@ function fmtPct(v: number | null | undefined, decimals = 2): string {
 function fmtSigned(v: number | null | undefined, decimals = 2): string {
   if (v == null || !Number.isFinite(v)) return "---";
   return `${v >= 0 ? "+" : ""}${v.toFixed(decimals)}`;
-}
-
-type BadgeVariant = "live" | "daily";
-
-function LiveBadge({ live, variant }: { live: boolean; variant?: BadgeVariant }) {
-  const resolved: BadgeVariant = variant ?? (live ? "live" : "daily");
-  const bg =
-    resolved === "live" ? "rgba(5,173,152,0.15)"
-    : "rgba(226,232,240,0.06)";
-  const color =
-    resolved === "live" ? "var(--positive)"
-    : "var(--text-muted)";
-  const label =
-    resolved === "live" ? "LIVE"
-    : "DAILY";
-  return (
-    <span className="regime-badge" style={{ background: bg, color }}>
-      {label}
-    </span>
-  );
-}
-
-/* ─── Day Change Indicator ───────────────────────────── */
-
-function DayChange({ last, close, prefix }: { last: number | null; close: number | null; prefix?: string }) {
-  if (last == null || close == null || close <= 0) return null;
-  const change = last - close;
-  const pct = (change / close) * 100;
-  const isUp = change >= 0;
-  const color = isUp ? "var(--positive)" : "var(--negative)";
-  const Arrow = isUp ? ArrowUp : ArrowDown;
-  return (
-    <div className="regime-strip-day-chg" style={{ color }} data-testid="regime-day-chg">
-      <span>{prefix}{isUp ? "+" : ""}{change.toFixed(2)} ({isUp ? "+" : ""}{pct.toFixed(2)}%)</span>
-      <Arrow size={10} />
-    </div>
-  );
-}
-
-/** Displays a signed point-change value with arrow (e.g. RVOL delta, COR1M 5d chg) */
-function PointChange({ change, suffix, label }: { change: number | null; suffix?: string; label?: string }) {
-  if (change == null || Math.abs(change) < 0.005) return null;
-  const isUp = change >= 0;
-  const color = isUp ? "var(--positive)" : "var(--negative)";
-  const Arrow = isUp ? ArrowUp : ArrowDown;
-  return (
-    <div className="regime-strip-day-chg" style={{ color }} data-testid="regime-day-chg">
-      <span>{isUp ? "+" : ""}{change.toFixed(2)}{suffix}{label ? ` ${label}` : ""}</span>
-      <Arrow size={10} />
-    </div>
-  );
 }
 
 /* ─── Component Bar ──────────────────────────────────── */
@@ -309,43 +259,54 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
       )}
 
       {/* ── Row 2: Live Tickers Strip ─────────────── */}
-      <div className="regime-strip">
-        <div className="regime-strip-cell" data-testid="strip-vix">
-          <div className="regime-strip-label">VIX <LiveBadge live={hasLiveVix} /></div>
-          <div className="regime-strip-value">{fmt(vixVal)}</div>
-          <DayChange last={liveVix} close={vixClose} />
-          <div className="regime-strip-sub">5d RoC: {fmtPct(data?.vix_5d_roc, 1)}</div>
-          <div className="regime-strip-ts">{vixLastTs ?? "---"}</div>
-        </div>
-        <div className="regime-strip-cell" data-testid="strip-vvix">
-          <div className="regime-strip-label">VVIX <LiveBadge live={hasLiveVvix} /></div>
-          <div className="regime-strip-value">{fmt(vvixVal)}</div>
-          <DayChange last={liveVvix} close={vvixClose} />
-          <div className="regime-strip-sub">VVIX/VIX: {fmt(vvixVixRatio)}</div>
-          <div className="regime-strip-ts">{vvixLastTs ?? "---"}</div>
-        </div>
-        <div className="regime-strip-cell" data-testid="strip-spy">
-          <div className="regime-strip-label">SPY <LiveBadge live={hasLiveSpy} /></div>
-          <div className="regime-strip-value">${fmt(spyVal)}</div>
-          <DayChange last={liveSpy} close={spyClose} prefix="$" />
-          <div className="regime-strip-sub">vs 100d MA: {fmtPct(spxDistPct)}</div>
-        </div>
-        <div className="regime-strip-cell" data-testid="strip-rvol">
-          <div className="regime-strip-label">REALIZED VOL <LiveBadge live={hasIntradayRvol} /></div>
-          <div className="regime-strip-value">{activeRvol != null ? `${fmt(activeRvol)}%` : "---"}</div>
-          <PointChange change={intradayRvol != null && data?.realized_vol != null ? intradayRvol - data.realized_vol : null} suffix="%" label="intraday" />
-          <div className="regime-strip-sub">20d annualized</div>
-        </div>
-        <div className="regime-strip-cell" data-testid="strip-cor1m">
-          <div className="regime-strip-label">COR1M <LiveBadge live={hasLiveCor1m} /></div>
-          <div className="regime-strip-value">{fmt(activeCorr, 2)}</div>
-          <DayChange last={liveCor1m} close={cor1mPreviousClose} />
-          <div className="regime-strip-sub">{`5d chg: ${corr5dChange != null ? `${fmtSigned(corr5dChange)} pts` : "---"}`}</div>
-        </div>
-      </div>
+      <RegimeStrip>
+        <RegimeStripCell
+          testId="strip-vix"
+          label={<>VIX <LiveBadge live={hasLiveVix} /></>}
+          value={fmt(vixVal)}
+          change={<DayChange last={liveVix} close={vixClose} />}
+          sub={<>5d RoC: {fmtPct(data?.vix_5d_roc, 1)}</>}
+          timestamp={vixLastTs ?? "---"}
+        />
+        <RegimeStripCell
+          testId="strip-vvix"
+          label={<>VVIX <LiveBadge live={hasLiveVvix} /></>}
+          value={fmt(vvixVal)}
+          change={<DayChange last={liveVvix} close={vvixClose} />}
+          sub={<>VVIX/VIX: {fmt(vvixVixRatio)}</>}
+          timestamp={vvixLastTs ?? "---"}
+        />
+        <RegimeStripCell
+          testId="strip-spy"
+          label={<>SPY <LiveBadge live={hasLiveSpy} /></>}
+          value={`$${fmt(spyVal)}`}
+          change={<DayChange last={liveSpy} close={spyClose} prefix="$" />}
+          sub={<>vs 100d MA: {fmtPct(spxDistPct)}</>}
+        />
+        <RegimeStripCell
+          testId="strip-rvol"
+          label={(
+            <>
+              <span className="regime-strip-label-text-full">REALIZED VOL</span>
+              <span className="regime-strip-label-text-short">RVOL</span>
+              <LiveBadge live={hasIntradayRvol} />
+            </>
+          )}
+          value={activeRvol != null ? `${fmt(activeRvol)}%` : "---"}
+          change={<PointChange change={intradayRvol != null && data?.realized_vol != null ? intradayRvol - data.realized_vol : null} suffix="%" label="intraday" />}
+          sub={<>20d annualized</>}
+        />
+        <RegimeStripCell
+          testId="strip-cor1m"
+          label={<>COR1M <LiveBadge live={hasLiveCor1m} /></>}
+          value={fmt(activeCorr, 2)}
+          change={<DayChange last={liveCor1m} close={cor1mPreviousClose} />}
+          sub={<>{`5d chg: ${corr5dChange != null ? `${fmtSigned(corr5dChange)} pts` : "---"}`}</>}
+        />
+      </RegimeStrip>
 
       {/* ── Row 3+4: Components + Crash Trigger side by side ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0" }}>
+      <div className="regime-detail-grid">
         <div className="regime-components">
           <div className="regime-panel-title">
             <Zap size={12} />

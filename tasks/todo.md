@@ -1,5 +1,271 @@
 # TODO
 
+## Session: Document And Ship Regime Responsive UI Pass (2026-03-12)
+
+### Goal
+Capture the `/regime` strip and relationship-view learnings in the repo docs, then create a scoped commit and push only the relevant UI, test, and documentation changes without pulling unrelated dirty files into the batch.
+
+### Dependency Graph
+- T1 (Inspect the current worktree and identify the operator-facing docs that should record the `/regime` responsive learnings) depends_on: []
+- T2 (Update the selected docs plus the task log with the final `/regime` responsive-strip and relationship-view learnings) depends_on: [T1]
+- T3 (Stage only the relevant `/regime` UI, tests, task-log, and documentation files, then create a scoped commit) depends_on: [T2]
+- T4 (Push the commit, verify the pushed state, and capture the exact ship summary in the task log) depends_on: [T3]
+
+### Checklist
+- [ ] T1 Inspect the current worktree and identify the operator-facing docs that should record the `/regime` responsive learnings
+- [ ] T2 Update the selected docs plus the task log with the final `/regime` responsive-strip and relationship-view learnings
+- [ ] T3 Stage only the relevant `/regime` UI, tests, task-log, and documentation files, then create a scoped commit
+- [ ] T4 Push the commit, verify the pushed state, and capture the exact ship summary in the task log
+
+## Session: Replace Centered Mobile Strip Rows With Anchored Telemetry Rails (2026-03-12)
+
+### Goal
+When the `/regime` strip collapses to a single-column stack, stop centering the telemetry cluster inside each row. Use the full row width with an anchored compact rail: keep the instrument label and value as the left-side primary signal, keep the change arrow attached to the change text, and pack the supporting context into a horizontal meta rail instead of wasting half the viewport as empty panel space.
+
+### Dependency Graph
+- T1 (Record the corrected anchored-row contract and the latest user-correction lesson before editing tests or UI code) depends_on: []
+- T2 (Update unit and Playwright strip coverage to require the anchored telemetry-rail layout in the stacked mobile state and observe the red state) depends_on: [T1]
+- T3 (Refactor the stacked strip markup/CSS to a left-anchored telemetry rail without regressing the desktop and mid-width strip presentations) depends_on: [T2]
+- T4 (Run targeted Vitest and Playwright verification, inspect the live `/regime` result, and capture review notes) depends_on: [T3]
+
+### Checklist
+- [x] T1 Record the corrected anchored-row contract and the latest user-correction lesson before editing tests or UI code
+- [x] T2 Update unit and Playwright strip coverage to require the anchored telemetry-rail layout in the stacked mobile state and observe the red state
+- [x] T3 Refactor the stacked strip markup/CSS to a left-anchored telemetry rail without regressing the desktop and mid-width strip presentations
+- [x] T4 Run targeted Vitest and Playwright verification, inspect the live `/regime` result, and capture review notes
+
+### Review
+- Moved the stacked-strip renderer to an intentional two-column mobile rail in [web/components/RegimeStrip.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/RegimeStrip.tsx): each row now has a compact primary column for label plus value and a shared `regime-strip-meta-row` for delta, context, and timestamp instead of dumping every token into one centered cluster.
+- Refined the small-screen strip rules in [web/app/globals.css](/Users/joemccann/dev/apps/finance/radon/web/app/globals.css) so `760px` and below use a `minmax(96px, 112px) / 1fr` grid plus a bordered meta rail with segmented dividers. That turns the wasted panel space into a deliberate telemetry tape while keeping the delta arrow attached to the change text.
+- Locked the source contract in [web/tests/regime-strip-responsive.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/regime-strip-responsive.test.ts) and updated the Playwright strip harness in [web/e2e/regime-strip-responsive.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-strip-responsive.spec.ts) so it validates the shared `RegimeStrip` renderer in the browser. The red phase failed first on the missing `regime-strip-primary`/`regime-strip-meta-row` structure and the missing mobile grid contract.
+- Verified green with `npx vitest run web/tests/regime-strip-responsive.test.ts` and `cd web && npx playwright test e2e/regime-strip-responsive.spec.ts --config playwright.config.ts`.
+
+## Session: Compress Stacked Mobile Strip Cells Into Single-Line Rows (2026-03-12)
+
+### Goal
+When the `/regime` strip is in its single-column stacked state, use the full row width by centering the telemetry content vertically and laying the cell metadata out in one horizontal line instead of a tall vertical stack.
+
+### Dependency Graph
+- T1 (Record the corrected stacked-row compactness contract and the user-correction lesson before editing tests or CSS) depends_on: []
+- T2 (Update unit and Playwright strip coverage to require a centered single-line cell layout in the stacked mobile state and observe the red state) depends_on: [T1]
+- T3 (Refine the small-screen strip layout/CSS so each stacked cell uses a compact horizontal row presentation without regressing the mid-width strip states) depends_on: [T2]
+- T4 (Run targeted strip verification and capture review notes before resuming any additional browser validation) depends_on: [T3]
+
+### Checklist
+- [x] T1 Record the corrected stacked-row compactness contract and the user-correction lesson before editing tests or CSS
+- [x] T2 Update unit and Playwright strip coverage to require a centered single-line cell layout in the stacked mobile state and observe the red state
+- [x] T3 Refine the small-screen strip layout/CSS so each stacked cell uses a compact horizontal row presentation without regressing the mid-width strip states
+- [x] T4 Run targeted strip verification and capture review notes before resuming any additional browser validation
+
+### Review
+- Refined the stacked-mobile strip presentation in [web/app/globals.css](/Users/joemccann/dev/apps/finance/radon/web/app/globals.css) so each `regime-strip-cell` becomes a compact centered row at `760px` and below: label, value, delta, context subline, and timestamp now sit on one horizontal line instead of stacking vertically.
+- Tightened the supporting small-screen rules so the delta row remains inline and the surrounding telemetry tokens stop wrapping vertically in the collapsed state.
+- Locked the contract in [web/tests/regime-strip-responsive.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/regime-strip-responsive.test.ts) and [web/e2e/regime-strip-responsive.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-strip-responsive.spec.ts). The red phase failed because the stacked strip still kept the desktop column layout inside each cell.
+- Verified green with `npx vitest run web/tests/regime-strip-responsive.test.ts` and `cd web && npx playwright test e2e/regime-strip-responsive.spec.ts --config playwright.config.ts`.
+
+## Session: Left Align Mobile Strip Delta Rows (2026-03-12)
+
+### Goal
+Keep the small-screen `/regime` strip vertically stacked, but make the delta rows inside each cell stay left aligned and inline so the arrow stays attached to the change text instead of drifting to the far right edge.
+
+### Dependency Graph
+- T1 (Record the corrected mobile delta-row contract and the user-correction lesson before editing tests or CSS) depends_on: []
+- T2 (Update unit and Playwright strip coverage to require inline, left-aligned delta rows in the stacked mobile strip and observe the red state) depends_on: [T1]
+- T3 (Refine the small-screen strip CSS so delta rows use an inline left-aligned layout without disturbing the mid-width strip geometry) depends_on: [T2]
+- T4 (Run targeted strip verification and capture review notes before resuming the rebuild/restart flow) depends_on: [T3]
+
+### Checklist
+- [x] T1 Record the corrected mobile delta-row contract and the user-correction lesson before editing tests or CSS
+- [x] T2 Update unit and Playwright strip coverage to require inline, left-aligned delta rows in the stacked mobile strip and observe the red state
+- [x] T3 Refine the small-screen strip CSS so delta rows use an inline left-aligned layout without disturbing the mid-width strip geometry
+- [x] T4 Run targeted strip verification and capture review notes before resuming the rebuild/restart flow
+
+### Review
+- Refined the stacked-mobile strip behavior in [web/app/globals.css](/Users/joemccann/dev/apps/finance/radon/web/app/globals.css) so `.regime-strip-day-chg` switches from the desktop `minmax(0, 1fr) auto` split to an inline left-aligned flex row at `760px` and below. The arrow now stays attached to the change text inside each vertically stacked cell instead of drifting to the far right edge.
+- Locked that contract in [web/tests/regime-strip-responsive.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/regime-strip-responsive.test.ts) and [web/e2e/regime-strip-responsive.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-strip-responsive.spec.ts). The red phase failed because the small-screen strip still used the desktop split layout.
+- Verified green with `npx vitest run web/tests/regime-strip-responsive.test.ts` and `cd web && npx playwright test e2e/regime-strip-responsive.spec.ts --config playwright.config.ts`.
+
+## Session: Make Mid-Width Regime Strip Bottom Row Symmetric (2026-03-12)
+
+### Goal
+Keep the `/regime` strip on a clean mid-width `3 x 2` presentation without an empty slot and without an asymmetrical bottom row, so the two second-row cards render at equal width before the strip collapses vertically on small screens.
+
+### Dependency Graph
+- T1 (Record the corrected symmetric-bottom-row contract and the user-correction lesson before editing tests or CSS) depends_on: []
+- T2 (Update unit and Playwright strip coverage to require two equal-width bottom-row cards in the mid-width state and observe the red state) depends_on: [T1]
+- T3 (Refine the mid-width strip grid so the first row stays three-up while the second row renders two equal-width cards, then preserve the small-screen vertical collapse) depends_on: [T2]
+- T4 (Run targeted strip verification and capture review notes before resuming the rebuild/restart flow) depends_on: [T3]
+
+### Checklist
+- [x] T1 Record the corrected symmetric-bottom-row contract and the user-correction lesson before editing tests or CSS
+- [x] T2 Update unit and Playwright strip coverage to require two equal-width bottom-row cards in the mid-width state and observe the red state
+- [x] T3 Refine the mid-width strip grid so the first row stays three-up while the second row renders two equal-width cards, then preserve the small-screen vertical collapse
+- [x] T4 Run targeted strip verification and capture review notes before resuming the rebuild/restart flow
+
+### Review
+- Reworked the mid-width strip geometry in [web/app/globals.css](/Users/joemccann/dev/apps/finance/radon/web/app/globals.css) to a six-track internal grid at `1180px` and below: the first three cards span two tracks each, and the bottom two cards span three tracks each. That preserves the visual `3 x 2` presentation while making the bottom row symmetric.
+- Updated [web/tests/regime-strip-responsive.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/regime-strip-responsive.test.ts) and [web/e2e/regime-strip-responsive.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-strip-responsive.spec.ts) to require equal-width bottom-row cards in the mid-width state. The red phase failed because the previous fix still stretched `COR1M` while leaving `RVOL` narrow.
+- Verified green with `npx vitest run web/tests/regime-strip-responsive.test.ts` and `cd web && npx playwright test e2e/regime-strip-responsive.spec.ts --config playwright.config.ts`.
+
+## Session: Rebuild And Restart Radon Web For Browser Validation (2026-03-12)
+
+### Goal
+Rebuild the Radon web app, restart the repo-owned web server cleanly on the standard local port, confirm it responds, and open `/regime` in the browser for direct inspection.
+
+### Dependency Graph
+- T1 (Inspect the current web scripts and running Radon web processes so the correct server can be rebuilt and restarted) depends_on: []
+- T2 (Run a fresh production build for `web` and address any build blocker that prevents restart) depends_on: [T1]
+- T3 (Stop the repo-owned Radon web/IB dev stack, restart it cleanly, and confirm the target local URL responds) depends_on: [T2]
+- T4 (Open the validated `/regime` URL in the browser and capture the execution result in the task log) depends_on: [T3]
+
+### Checklist
+- [x] T1 Inspect the current web scripts and running Radon web processes so the correct server can be rebuilt and restarted
+- [x] T2 Run a fresh production build for `web` and address any build blocker that prevents restart
+- [x] T3 Stop the repo-owned Radon web/IB dev stack, restart it cleanly, and confirm the target local URL responds
+- [x] T4 Open the validated `/regime` URL in the browser and capture the execution result in the task log
+
+### Review
+- Rebuilt the current `web` worktree successfully with `cd web && npm run build`. The only blocker was a pre-existing TypeScript union-access issue in [web/components/CtaPage.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/CtaPage.tsx), which is now fixed by explicitly separating `sync_health` and `sync_status` fallback access instead of reading mixed properties off the union.
+- Stopped the repo-owned `localhost:3000` Radon dev stack and its paired IB websocket process, then restarted it from [web/package.json](/Users/joemccann/dev/apps/finance/radon/web/package.json) with `npm run dev`. The stack came back cleanly: Next.js reported `Local: http://localhost:3000` and the IB realtime server reported `listening on ws://0.0.0.0:8765` plus `IB connected`.
+- Confirmed the rebuilt server is serving the target page with `curl -I http://localhost:3000/regime`, which returned `HTTP/1.1 200 OK`, and opened `http://localhost:3000/regime` in the browser with `open http://localhost:3000/regime`.
+
+## Session: Remove Empty Regime Strip Placeholder At Mid Widths (2026-03-12)
+
+### Goal
+Keep the `/regime` telemetry strip on a clean `3 x 2` layout at mid-width desktop/tablet sizes without rendering an empty placeholder cell, then collapse to a fully vertical stack on small viewports.
+
+### Dependency Graph
+- T1 (Record the corrected odd-card strip contract and the user-correction lesson before editing tests or CSS) depends_on: []
+- T2 (Update unit and Playwright coverage to require a filled `3 x 2` strip with no empty placeholder and a vertical small-screen collapse, then observe the red state) depends_on: [T1]
+- T3 (Implement the minimal grid/CSS change so the fifth card fills the last row cleanly and the strip stacks to one column on small viewports) depends_on: [T2]
+- T4 (Run targeted Vitest and Playwright verification and capture review notes) depends_on: [T3]
+
+### Checklist
+- [x] T1 Record the corrected odd-card strip contract and the user-correction lesson before editing tests or CSS
+- [x] T2 Update unit and Playwright coverage to require a filled `3 x 2` strip with no empty placeholder and a vertical small-screen collapse, then observe the red state
+- [x] T3 Implement the minimal grid/CSS change so the fifth card fills the last row cleanly and the strip stacks to one column on small viewports
+- [x] T4 Run targeted Vitest and Playwright verification and capture review notes
+
+### Review
+- Root cause: [web/app/globals.css](/Users/joemccann/dev/apps/finance/radon/web/app/globals.css) collapsed the five-card strip to `repeat(3, minmax(0, 1fr))` at `1180px` and below while leaving the grid container background visible. With only five cards, that produced an unused sixth grid slot that read like a fake empty card.
+- Fixed the mid-width collapse in [web/app/globals.css](/Users/joemccann/dev/apps/finance/radon/web/app/globals.css) by making the last strip cell span the remaining two columns in the `3 x 2` state, then resetting that span and switching to a true `1fr` stack at `760px` and below so smaller screens collapse vertically instead of to a sparse multi-column layout.
+- Locked the new contract in [web/tests/regime-strip-responsive.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/regime-strip-responsive.test.ts) and [web/e2e/regime-strip-responsive.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-strip-responsive.spec.ts). The red phase failed because the old CSS had no last-card span rule and still used a smaller-screen multi-column collapse.
+- Verified green with `npx vitest run web/tests/regime-strip-responsive.test.ts web/tests/regime-relationship-tooltips.test.ts` and `cd web && npx playwright test e2e/regime-strip-responsive.spec.ts e2e/regime-relationship-view.spec.ts --config playwright.config.ts`.
+
+## Session: Make Normalized Divergence Tooltip Actionable And Hoverable (2026-03-12)
+
+### Goal
+Update the `/regime` `NORMALIZED DIVERGENCE` surface so the tooltip explains the concrete trade and portfolio actions implied by the RVOL versus COR1M relationship, and the chart itself exposes hoverable point-in-time readouts like the analytical time-series charts.
+
+### Dependency Graph
+- T1 (Record the corrected tooltip-plus-hover goal and the user-correction lessons before editing tests or code) depends_on: []
+- T2 (Update unit and Playwright coverage to require actionable normalized-divergence guidance plus a hoverable z-score chart and observe the red state) depends_on: [T1]
+- T3 (Revise the centralized tooltip copy and implement the z-score chart hover overlay using the shared analytical-chart interaction pattern) depends_on: [T2]
+- T4 (Run targeted Vitest and Playwright verification and capture review notes) depends_on: [T3]
+
+### Checklist
+- [x] T1 Record the corrected tooltip-plus-hover goal and the user-correction lessons before editing tests or code
+- [x] T2 Update unit and Playwright coverage to require actionable normalized-divergence guidance plus a hoverable z-score chart and observe the red state
+- [x] T3 Revise the centralized tooltip copy and implement the z-score chart hover overlay using the shared analytical-chart interaction pattern
+- [x] T4 Run targeted Vitest and Playwright verification and capture review notes
+
+### Review
+- Centralized the actionable `NORMALIZED DIVERGENCE` guidance in [web/lib/sectionTooltips.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/sectionTooltips.ts) so the tooltip now explains both sides of the signal in portfolio terms: positive-gap posture (`reduce gross exposure`, `keep or add index hedges`) and negative-gap posture (`harvest crash hedges`, rotate back toward `single-name` expression when the gap mean-reverts).
+- Added chart hover telemetry to [web/components/RegimeRelationshipView.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/RegimeRelationshipView.tsx) with a dedicated chart shell, SVG overlay hook, hover state, and a shared `.chart-tooltip` readout for date, `RVOL z-score`, `COR1M z-score`, and `Divergence`, while keeping the rest of the relationship view static.
+- Added the minimal supporting styles in [web/app/globals.css](/Users/joemccann/dev/apps/finance/radon/web/app/globals.css) and locked the surface contract in [web/tests/regime-relationship-tooltips.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/regime-relationship-tooltips.test.ts) plus [web/e2e/regime-relationship-view.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-relationship-view.spec.ts). The red phase failed because the tooltip copy was still definition-only and the z-score chart had no hover DOM or readout.
+- Verified green with `npx vitest run web/tests/regime-strip-responsive.test.ts web/tests/regime-relationship-tooltips.test.ts` and `cd web && npx playwright test e2e/regime-strip-responsive.spec.ts e2e/regime-relationship-view.spec.ts --config playwright.config.ts`.
+
+## Session: Fix Regime Detail Panels Collapse On Narrower Viewports (2026-03-12)
+
+### Goal
+Make the `/regime` `CRI COMPONENTS` and `CRASH TRIGGER CONDITIONS` panels collapse cleanly on narrower viewports instead of staying in a cramped two-column row, and add the missing `NORMALIZED DIVERGENCE` info bubble in the relationship section.
+
+### Dependency Graph
+- T1 (Inspect the shared detail-panel row and record the responsive-fix plan plus correction lesson before changing code) depends_on: []
+- T2 (Add failing unit and Playwright coverage that requires the two panels to stack cleanly at narrower widths and exposes the missing `NORMALIZED DIVERGENCE` tooltip) depends_on: [T1]
+- T3 (Implement the responsive detail-panel grid, any minimal internal spacing adjustments needed to avoid clipping, and the tooltip wiring/copy) depends_on: [T2]
+- T4 (Run targeted Vitest and Playwright verification and capture review notes) depends_on: [T3]
+
+### Checklist
+- [x] T1 Inspect the shared detail-panel row and record the responsive-fix plan plus correction lesson before changing code
+- [x] T2 Add failing unit and Playwright coverage that requires the two panels to stack cleanly at narrower widths and exposes the missing `NORMALIZED DIVERGENCE` tooltip
+- [x] T3 Implement the responsive detail-panel grid, any minimal internal spacing adjustments needed to avoid clipping, and the tooltip wiring/copy
+- [x] T4 Run targeted Vitest and Playwright verification and capture review notes
+
+### Review
+- Replaced the inline `1fr 1fr` split in [web/components/RegimePanel.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/RegimePanel.tsx) with a shared `.regime-detail-grid` in [web/app/globals.css](/Users/joemccann/dev/apps/finance/radon/web/app/globals.css). The row now stays two-up on wide screens and stacks to one column at `980px` and below, with small-screen adjustments for component bars and trigger rows so the full-width stacked panels do not clip internal labels or values.
+- Added the missing `NORMALIZED DIVERGENCE` tooltip in [web/components/RegimeRelationshipView.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/RegimeRelationshipView.tsx) and centralized its copy in [web/lib/sectionTooltips.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/sectionTooltips.ts), using explicit trigger and bubble test IDs so the operator-facing info surface is covered by browser tests.
+- The red phase failed in [web/tests/regime-detail-panels-responsive.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/regime-detail-panels-responsive.test.ts), [web/tests/regime-relationship-tooltips.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/regime-relationship-tooltips.test.ts), [web/e2e/regime-detail-panels-responsive.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-detail-panels-responsive.spec.ts), and [web/e2e/regime-relationship-view.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-relationship-view.spec.ts) because the detail row was still permanently side by side and the z-score panel had no tooltip trigger or copy key.
+- Verified green with `npx vitest run web/tests/regime-strip-responsive.test.ts web/tests/regime-detail-panels-responsive.test.ts web/tests/regime-cor1m-live.test.ts web/tests/regime-relationship-tooltips.test.ts` and `cd web && npx playwright test e2e/regime-strip-responsive.spec.ts e2e/regime-detail-panels-responsive.spec.ts e2e/regime-cor1m.spec.ts e2e/regime-live-index-stream.spec.ts e2e/regime-relationship-view.spec.ts --config playwright.config.ts`.
+
+## Session: Replace One-Row Regime Strip Compression With Balanced Collapse (2026-03-12)
+
+### Goal
+Fix the `/regime` strip so narrower widths do not clip cards and do not force an awkward one-row squeeze; use `RVOL` in the compressed state and collapse into a balanced multi-row grid before the cards become unreadable.
+
+### Dependency Graph
+- T1 (Record the revised strip-responsive contract and correction lesson before changing tests or CSS again) depends_on: []
+- T2 (Update unit and Playwright coverage to expect a balanced multi-row collapse and observe the red state) depends_on: [T1]
+- T3 (Implement the revised breakpoint/layout strategy in the shared regime strip markup and CSS) depends_on: [T2]
+- T4 (Run targeted Vitest and Playwright verification, then capture review notes) depends_on: [T3]
+
+### Checklist
+- [x] T1 Record the revised strip-responsive contract and correction lesson before changing tests or CSS again
+- [x] T2 Update unit and Playwright coverage to expect a balanced multi-row collapse and observe the red state
+- [x] T3 Implement the revised breakpoint/layout strategy in the shared regime strip markup and CSS
+- [x] T4 Run targeted Vitest and Playwright verification, then capture review notes
+
+### Review
+- Replaced the failed one-row compression strategy with a tiered strip layout in [web/app/globals.css](/Users/joemccann/dev/apps/finance/radon/web/app/globals.css): the strip stays five-up at full width, collapses to three columns at `1180px` and below, then two columns at `760px` and below, with a one-column fallback at `520px`. The `RVOL` abbreviation remains active in the compressed states.
+- Kept the semantic label swap in [web/components/RegimePanel.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/RegimePanel.tsx) so `REALIZED VOL` becomes `RVOL` when the strip is compacted, but stopped relying on abbreviation alone to save the layout.
+- Locked the corrected contract in [web/tests/regime-strip-responsive.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/regime-strip-responsive.test.ts) and [web/e2e/regime-strip-responsive.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-strip-responsive.spec.ts). The red phase failed because the previous CSS only had the one-row compressed strip and no explicit `3 / 2` collapse tiers.
+- Verified green with `npx vitest run web/tests/regime-strip-responsive.test.ts web/tests/regime-cor1m-live.test.ts` and `cd web && npx playwright test e2e/regime-strip-responsive.spec.ts e2e/regime-cor1m.spec.ts e2e/regime-live-index-stream.spec.ts --config playwright.config.ts`.
+
+## Session: Replace Regime Strip Wrap With RVOL Abbreviation (2026-03-12)
+
+### Goal
+Refine the `/regime` strip responsive behavior so narrower desktop widths keep the five-card row intact by abbreviating `REALIZED VOL` to `RVOL`, while preserving a true wrap fallback only for genuinely small viewports.
+
+### Dependency Graph
+- T1 (Record the corrected responsive contract and capture the user-correction lesson before changing the strip again) depends_on: []
+- T2 (Update unit and Playwright coverage to expect an `RVOL` abbreviation at narrower widths and observe the red state) depends_on: [T1]
+- T3 (Implement the label-abbreviation and breakpoint refinement in the shared strip markup/CSS) depends_on: [T2]
+- T4 (Run targeted Vitest and Playwright verification, then capture review notes) depends_on: [T3]
+
+### Checklist
+- [x] T1 Record the corrected responsive contract and capture the user-correction lesson before changing the strip again
+- [x] T2 Update unit and Playwright coverage to expect an `RVOL` abbreviation at narrower widths and observe the red state
+- [x] T3 Implement the label-abbreviation and breakpoint refinement in the shared strip markup/CSS
+- [x] T4 Run targeted Vitest and Playwright verification, then capture review notes
+
+### Review
+- Replaced the previous wrap-first responsive behavior with a narrower-desktop compaction strategy: [web/components/RegimePanel.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/RegimePanel.tsx) now provides both `REALIZED VOL` and `RVOL` label tokens for the strip, and [web/app/globals.css](/Users/joemccann/dev/apps/finance/radon/web/app/globals.css) keeps the strip as a five-column grid by default, abbreviates that label at `1180px` and below, tightens spacing/type slightly, and only falls back to the wrapped auto-fit grid at `860px` and below.
+- The corrected red phase is locked in [web/tests/regime-strip-responsive.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/regime-strip-responsive.test.ts) and [web/e2e/regime-strip-responsive.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-strip-responsive.spec.ts): before the patch, unit tests failed because the strip was still auto-fit at all widths and the `RVOL` abbreviation did not exist, and Playwright failed because the narrower-desktop strip still rendered `REALIZED VOL`.
+- Verified green with `npx vitest run web/tests/regime-strip-responsive.test.ts web/tests/regime-cor1m-live.test.ts` and `cd web && npx playwright test e2e/regime-strip-responsive.spec.ts e2e/regime-cor1m.spec.ts e2e/regime-live-index-stream.spec.ts --config playwright.config.ts`.
+
+## Session: Fix Regime Strip Card Collapse On Narrower Viewports (2026-03-12)
+
+### Goal
+Prevent the `/regime` live-strip cards from overlapping on narrower desktop/tablet widths by introducing a cleaner responsive collapse pattern for the five telemetry cards.
+
+### Dependency Graph
+- T1 (Inspect the current `/regime` strip layout and record the responsive-fix plan in `tasks/todo.md` plus the correction lesson in `tasks/lessons.md`) depends_on: []
+- T2 (Add failing unit and Playwright coverage that reproduces the strip overlap risk at a narrower viewport) depends_on: [T1]
+- T3 (Implement the smallest clean collapse strategy in the shared strip markup/CSS without regressing the existing desktop layout) depends_on: [T2]
+- T4 (Run targeted Vitest and Playwright verification, then capture review notes) depends_on: [T3]
+
+### Checklist
+- [x] T1 Inspect the current `/regime` strip layout and record the responsive-fix plan in `tasks/todo.md` plus the correction lesson in `tasks/lessons.md`
+- [x] T2 Add failing unit and Playwright coverage that reproduces the strip overlap risk at a narrower viewport
+- [x] T3 Implement the smallest clean collapse strategy in the shared strip markup/CSS without regressing the existing desktop layout
+- [x] T4 Run targeted Vitest and Playwright verification, then capture review notes
+
+### Review
+- Root cause: [web/app/globals.css](/Users/joemccann/dev/apps/finance/radon/web/app/globals.css) forced the regime strip into `repeat(5, 1fr)` while the strip cells had no `min-width: 0`, and the day-change line used `white-space: nowrap`. On narrower desktop widths the strip kept five compressed cards in one row, which is why the `COR1M` card could visually collide with its neighbor instead of collapsing cleanly.
+- Added red-phase coverage in [web/tests/regime-strip-responsive.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/regime-strip-responsive.test.ts) and [web/e2e/regime-strip-responsive.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/regime-strip-responsive.spec.ts). The unit test failed on the old fixed five-column grid and nowrap day-change rule, and the Playwright test failed because the `COR1M` card remained on the same row as `VIX` at a `960px` viewport.
+- Fixed the strip by converting it to an auto-fitting grid with a real card minimum width, giving cells an explicit shrink boundary, and letting change/subline text wrap instead of forcing a single unbreakable telemetry row in [web/app/globals.css](/Users/joemccann/dev/apps/finance/radon/web/app/globals.css).
+- Verified green with `npx vitest run web/tests/regime-strip-responsive.test.ts web/tests/regime-cor1m-live.test.ts` and `cd web && npx playwright test e2e/regime-strip-responsive.spec.ts e2e/regime-cor1m.spec.ts e2e/regime-live-index-stream.spec.ts --config playwright.config.ts`.
+
 ## Session: Document And Ship Quote Telemetry Contract (2026-03-12)
 
 ### Dependency Graph

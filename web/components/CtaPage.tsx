@@ -56,23 +56,30 @@ export default function CtaPage() {
   const order = ["main", "index", "commodity", "currency"] as const;
   const fetchLabel = formatFetchedAt(ctaData?.fetched_at);
   const ctaCacheMeta = ctaData?.cache_meta ?? null;
-  const syncStatus = ctaData?.sync_health ?? ctaData?.sync_status ?? null;
+  const syncHealth = ctaData?.sync_health ?? null;
+  const syncStatus = ctaData?.sync_status ?? null;
+  const activeSyncStatus = syncHealth ?? syncStatus;
   const syncState = normalizeSyncState(
-    ctaData?.sync_health?.state
-    ?? ctaData?.sync_status?.state
-    ?? ctaData?.sync_status?.status
+    syncHealth?.state
+    ?? syncStatus?.state
+    ?? syncStatus?.status
     ?? null,
   );
   const ctaIsStale = Boolean(ctaCacheMeta?.is_stale);
-  const staleTargetDate = ctaCacheMeta?.expected_date ?? ctaCacheMeta?.target_date ?? syncStatus?.target_date ?? null;
+  const staleTargetDate = ctaCacheMeta?.expected_date ?? ctaCacheMeta?.target_date ?? activeSyncStatus?.target_date ?? null;
   const staleCacheDate = ctaCacheMeta?.latest_available_date ?? ctaCacheMeta?.latest_cache_date ?? ctaData?.date ?? null;
   const staleCopy = !ctaData?.tables
     ? `CTA positioning is stale. Expected ${staleTargetDate ?? "---"}. No cached data is available yet.`
     : `CTA positioning is stale. Expected ${staleTargetDate ?? "---"}. Latest available ${staleCacheDate ?? "---"}.`;
 
   let syncDetail = "";
-  const syncStartedAt = syncStatus?.last_attempt_started_at ?? syncStatus?.started_at;
-  const syncErrorMessage = syncStatus?.last_error?.message ?? syncStatus?.error_excerpt ?? syncStatus?.message ?? null;
+  const syncStartedAt = syncHealth?.last_attempt_started_at ?? syncStatus?.started_at ?? null;
+  const syncErrorMessage = syncHealth?.last_error?.message
+    ?? syncStatus?.last_error?.message
+    ?? syncStatus?.error_excerpt
+    ?? syncHealth?.message
+    ?? syncStatus?.message
+    ?? null;
   if (syncState === "syncing" || syncState === "running") {
     syncDetail = `Refresh in progress${syncStartedAt ? ` · STARTED ${formatSyncStamp(syncStartedAt)}` : ""}`;
   } else if (syncState === "degraded") {

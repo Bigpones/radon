@@ -107,6 +107,12 @@ export const SECTION_TOOLTIPS: Record<string, string> = {
     "The spread panel shows the correlation risk premium (COR1M minus RVOL), the quadrant view classifies the latest session by realized volatility versus implied correlation, " +
     "and the normalized overlay compares their z-scores so divergence is visible on one scale.",
 
+  "NORMALIZED DIVERGENCE":
+    "20-session z-score overlay for RVOL and COR1M. " +
+    "Both series are normalized to the same scale so you can compare relative stretch instead of raw units. " +
+    "A positive gap means COR1M is richer than RVOL on a normalized basis: reduce gross exposure, keep or add index hedges, and avoid pressing short-vol beta until realized stress confirms. " +
+    "A negative gap means realized volatility is leading implied correlation: harvest crash hedges into strength, lean back toward single-name expression or dispersion, and only add market beta if the gap starts to mean-revert.",
+
   /* ── CTA Page ────────────────────────────────────────── */
 
   "VOL-TARGETING MODEL":

@@ -173,4 +173,51 @@ test.describe("/regime page — RVOL/COR1M relationship view", () => {
     await expect(fragileCalmBubble).toContainText("RVOL is below its 20-session mean");
     await expect(fragileCalmBubble).toContainText("COR1M is at or above its 20-session mean");
   });
+
+  test("shows a tooltip for the normalized divergence panel", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1800 });
+    await setupMocks(page);
+    await page.goto("/regime");
+
+    const trigger = page.locator('[data-testid="regime-zscore-tooltip-trigger"]');
+    await trigger.hover();
+
+    const bubble = page.locator('[data-testid="regime-zscore-tooltip-bubble"]');
+    await expect(bubble).toBeVisible();
+    await expect(bubble).toContainText("z-score");
+    await expect(bubble).toContainText("COR1M");
+    await expect(bubble).toContainText("RVOL");
+    await expect(bubble).toContainText("reduce gross exposure");
+    await expect(bubble).toContainText("keep or add index hedges");
+    await expect(bubble).toContainText("harvest crash hedges");
+    await expect(bubble).toContainText("single-name");
+  });
+
+  test("shows a hover readout for the normalized divergence chart", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1800 });
+    await setupMocks(page);
+    await page.goto("/regime");
+
+    const chartShell = page.locator('[data-testid="regime-zscore-chart-shell"]');
+    await expect(chartShell).toBeVisible();
+
+    const shellBox = await chartShell.boundingBox();
+    expect(shellBox).not.toBeNull();
+    if (!shellBox) {
+      throw new Error("Expected z-score chart shell to have a bounding box");
+    }
+
+    await chartShell.dispatchEvent("mousemove", {
+      bubbles: true,
+      clientX: shellBox.x + shellBox.width * 0.74,
+      clientY: shellBox.y + shellBox.height * 0.5,
+    });
+
+    const tooltip = page.locator('[data-testid="regime-zscore-hover-tooltip"]');
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip.locator('[data-testid="regime-zscore-hover-date"]')).toContainText("Mar");
+    await expect(tooltip).toContainText("RVOL z-score");
+    await expect(tooltip).toContainText("COR1M z-score");
+    await expect(tooltip).toContainText("Divergence");
+  });
 });

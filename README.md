@@ -193,6 +193,7 @@ Visit `http://localhost:3000`.
 - Shared quote telemetry across ticker, instrument, and modify-order views with `BID`, `MID`, `ASK`, and `SPREAD` rendered in a single layout contract; spread displays use raw quote width plus midpoint percent
 - Multi-leg position monitoring and per-leg P&L
 - YTD portfolio performance analytics with reconstructed institutional metrics
+- Shared `/regime` strip renderer with a responsive `5-up -> 3x2 -> stacked telemetry rail` contract so label, value, delta, and context remain readable on narrower viewports
 - Regime history charts with cached 20-session RVOL and COR1M context
 - RVOL/COR1M relationship view with spread, quadrant state, and normalized divergence
 - Order management, including combo spread workflows
@@ -211,6 +212,8 @@ On `/regime`, the relationship view classifies the latest RVOL and COR1M point a
 | **Goldilocks** | RVOL < 20-session mean and COR1M < 20-session mean | Both realized volatility and implied correlation are below their recent norms. This is the cleanest diversification backdrop in the relationship model. |
 
 Implementation note: when live data is available, the latest relationship-state calculation uses the current intraday RVOL and/or live COR1M value on top of the cached 20-session history.
+
+Responsive note: the live-strip cards on `/regime` now share a dedicated renderer that holds a fixed information hierarchy across widths. Desktop stays five-up, narrower desktop/tablet collapses to a symmetric `3 x 2`, and the small-screen stack switches each row to a compact telemetry rail so the delta arrow, context text, and timestamp stay scan-friendly instead of collapsing into dead whitespace.
 
 ## Marketing Site
 

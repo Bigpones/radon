@@ -10,6 +10,17 @@
 
 ## 2026-03-12
 
+- When a stacked telemetry row still wastes width after collapsing to one line, do not just center the cluster; anchor the primary label/value on the left and use the remaining width for an intentional meta rail.
+- When a telemetry strip collapses to single-column rows, do not just preserve desktop stacking inside each cell; use the full row width with a compact horizontal presentation so the operator does not waste half the viewport on empty space.
+- When a telemetry strip collapses to single-column mobile cells, do not keep the desktop `1fr auto` change-row layout; the delta text and arrow should stay left aligned as one inline signal, not split across the cell width.
+- When an operator asks for a 3 x 2 telemetry strip, removing the empty slot is not enough; the second-row cards must still read as intentional peers, which means equal-width bottom-row cards rather than one narrow card plus one stretched card.
+- When an odd-number telemetry strip collapses into a multi-column grid, do not leave the final slot empty and let the strip background read as a fake card; make the last real card span the remaining columns or collapse the strip further.
+- When an operator asks for a diagnostic chart to behave like an existing analytical time-series chart, match the interaction affordance directly; static lines are not enough when the comparison depends on point-in-time values.
+- When an operator asks how to make a regime tooltip actionable, do not stop at metric definition; include the concrete portfolio posture and trade response for both sides of the signal.
+- When a dashboard row contains only two dense diagnostic panels, do not leave it as a permanent `1fr 1fr` split on narrow widths; stack the panels earlier and remove inline layout rules so the responsive contract lives in CSS and tests.
+- When five telemetry cards cannot fit cleanly, do not hold the strip on a single row past readability; abbreviations can help, but the layout still needs an earlier balanced collapse breakpoint before cards clip or truncate.
+- When a dense strip only breaks at narrower desktop widths, prefer a semantic abbreviation and tighter spacing before dropping to a wrapped multi-row grid; preserve the operator’s scan rhythm until the viewport is genuinely too small.
+- When a dense telemetry strip starts collapsing on narrower desktop widths, do not keep forcing a fixed five-column grid; give the cards a responsive grid with real minimum widths and let supporting lines wrap or stack before values overlap.
 - When an operator says the spread is “10c, not $500,” treat the quote ladder as quote quality telemetry, not order-size cost; render raw spread width and percentage, and do not multiply by quantity or contract multiplier on that surface.
 - When an operator narrows a process-cleanup request from "all processes" to only dev/test processes, verify the live process list again and target just the repo-scoped dev servers and Playwright runners instead of unloading background product services.
 - When an operator narrows a scheduled service window, update the launch schedule source, installer/status text, docs, and the live loaded LaunchAgent together; changing only the plist on disk is not enough.
