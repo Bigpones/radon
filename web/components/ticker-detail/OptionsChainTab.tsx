@@ -5,6 +5,7 @@ import type { PriceData, OptionContract } from "@/lib/pricesProtocol";
 import { optionKey } from "@/lib/pricesProtocol";
 import { fmtPrice } from "@/lib/positionUtils";
 import { useTickerDetail } from "@/lib/TickerDetailContext";
+import { useChainPrefetch } from "@/lib/useChainPrefetch";
 import {
   type OrderLeg,
   formatExpiry,
@@ -423,6 +424,13 @@ export default function OptionsChainTab({
   const [strikesPerSide, setStrikesPerSide] = useState(15);
   const atmRef = useRef<HTMLTableRowElement>(null);
 
+  // Background prefetch of all expirations for instant switching
+  const { cacheStrikes, getCachedStrikes } = useChainPrefetch(
+    ticker,
+    expirations,
+    selectedExpiry,
+  );
+
   // Fetch expirations on mount
   useEffect(() => {
     let cancelled = false;
@@ -455,9 +463,18 @@ export default function OptionsChainTab({
     return () => { cancelled = true; };
   }, [ticker]);
 
-  // Fetch strikes when expiry changes
+  // Fetch strikes when expiry changes — check prefetch cache first
   useEffect(() => {
     if (!selectedExpiry) return;
+
+    // Use cached strikes if available (from background prefetch)
+    const cached = getCachedStrikes(selectedExpiry);
+    if (cached) {
+      setStrikes(cached);
+      setLoadingStrikes(false);
+      return;
+    }
+
     let cancelled = false;
     setLoadingStrikes(true);
 
@@ -470,7 +487,9 @@ export default function OptionsChainTab({
           setLoadingStrikes(false);
           return;
         }
-        setStrikes(data.strikes ?? []);
+        const fetchedStrikes: number[] = data.strikes ?? [];
+        setStrikes(fetchedStrikes);
+        cacheStrikes(selectedExpiry, fetchedStrikes);
         setLoadingStrikes(false);
       })
       .catch(() => {
@@ -481,6 +500,8 @@ export default function OptionsChainTab({
       });
 
     return () => { cancelled = true; };
+    // getCachedStrikes and cacheStrikes are stable refs — omit from deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticker, selectedExpiry]);
 
   // Determine ATM strike

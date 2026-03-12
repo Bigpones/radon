@@ -3848,13 +3848,14 @@ tr {
 }
 
 .chain-grid thead {
+  z-index: 2;
+}
+
+.chain-header {
   position: sticky;
   top: 0;
   z-index: 2;
   background: var(--bg-panel-raised);
-}
-
-.chain-header {
   padding: 4px 6px;
   text-align: right;
   font-weight: 500;
@@ -3876,6 +3877,10 @@ tr {
 }
 
 .chain-side-label {
+  position: sticky;
+  top: 24px;
+  z-index: 2;
+  background: var(--bg-panel-raised);
   padding: 2px 6px;
   font-size: 9px;
   font-weight: 600;
