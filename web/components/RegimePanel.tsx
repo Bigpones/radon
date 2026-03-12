@@ -425,18 +425,22 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
               )}
             </div>
             <div className="regime-history-grid" data-testid="regime-history-grid">
-              <CriHistoryChart
-                history={data.history}
-                series={vixVvixSeries}
-                title="VIX / VVIX"
-                liveValues={Object.keys(vixVvixLive).length > 0 ? vixVvixLive : undefined}
-              />
-              <CriHistoryChart
-                history={data.history}
-                series={rvolCorrSeries}
-                title="REALIZED VOL / COR1M"
-                liveValues={Object.keys(rvolCorrLive).length > 0 ? rvolCorrLive : undefined}
-              />
+              <div data-testid="regime-history-chart-vix-vvix">
+                <CriHistoryChart
+                  history={data.history}
+                  series={vixVvixSeries}
+                  title="VIX / VVIX"
+                  liveValues={Object.keys(vixVvixLive).length > 0 ? vixVvixLive : undefined}
+                />
+              </div>
+              <div data-testid="regime-history-chart-rvol-cor1m">
+                <CriHistoryChart
+                  history={data.history}
+                  series={rvolCorrSeries}
+                  title="REALIZED VOL / COR1M"
+                  liveValues={Object.keys(rvolCorrLive).length > 0 ? rvolCorrLive : undefined}
+                />
+              </div>
             </div>
             <RegimeRelationshipView
               history={data.history}

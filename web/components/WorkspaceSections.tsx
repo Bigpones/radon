@@ -412,7 +412,7 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
 
   const definedPositions = portfolio.positions.filter((p) => p.risk_profile === "defined");
   const equityPositions = portfolio.positions.filter((p) => p.risk_profile === "equity");
-  const undefinedPositions = portfolio.positions.filter((p) => p.risk_profile === "undefined");
+  const undefinedPositions = portfolio.positions.filter((p) => p.risk_profile === "undefined" || p.risk_profile === "complex");
 
   return (
     <>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { PortfolioLeg } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { fmtPrice, fmtUsd, legPriceKey } from "@/lib/positionUtils";
@@ -18,6 +18,16 @@ export type InstrumentDetailProps = {
 type OrderAction = "BUY" | "SELL";
 
 export default function InstrumentDetailModal({ leg, ticker, expiry, prices, onClose }: InstrumentDetailProps) {
+  const [quantity, setQuantity] = useState(() => String(leg?.contracts ?? ""));
+
+  useEffect(() => {
+    if (!leg) {
+      setQuantity("");
+      return;
+    }
+    setQuantity(String(leg.contracts));
+  }, [leg?.contracts, leg?.direction, leg?.strike, leg?.type, ticker, expiry]);
+
   if (!leg) return null;
 
   const priceKey = legPriceKey(ticker, expiry, leg);
@@ -29,6 +39,8 @@ export default function InstrumentDetailModal({ leg, ticker, expiry, prices, onC
 
   // Position summary
   const mult = leg.type === "Stock" ? 1 : 100;
+  const parsedQuantity = Number.parseInt(quantity, 10);
+  const spreadQuantity = Number.isFinite(parsedQuantity) && parsedQuantity > 0 ? parsedQuantity : leg.contracts;
   const rtLast = priceData?.last != null && priceData.last > 0 ? priceData.last : null;
   const legMv = rtLast != null ? rtLast * leg.contracts * mult : leg.market_value != null ? Math.abs(leg.market_value) : null;
   const legEc = Math.abs(leg.entry_cost);
@@ -62,7 +74,11 @@ export default function InstrumentDetailModal({ leg, ticker, expiry, prices, onC
         </div>
 
         {/* Price bar */}
-        <PriceBar priceData={priceData} label={priceLabel} />
+        <PriceBar
+          priceData={priceData}
+          label={priceLabel}
+          spreadNotionalMultiplier={mult * spreadQuantity}
+        />
 
         {/* Order form */}
         <div style={{ paddingTop: 16 }}>
@@ -71,6 +87,8 @@ export default function InstrumentDetailModal({ leg, ticker, expiry, prices, onC
             expiry={expiry}
             leg={leg}
             priceData={priceData}
+            quantity={quantity}
+            onQuantityChange={setQuantity}
           />
         </div>
       </div>
@@ -85,11 +103,15 @@ function LegOrderForm({
   expiry,
   leg,
   priceData,
+  quantity,
+  onQuantityChange,
 }: {
   ticker: string;
   expiry: string;
   leg: PortfolioLeg;
   priceData: PriceData | null;
+  quantity: string;
+  onQuantityChange: (value: string) => void;
 }) {
   const bid = priceData?.bid ?? null;
   const ask = priceData?.ask ?? null;
@@ -97,7 +119,6 @@ function LegOrderForm({
 
   const defaultAction: OrderAction = leg.direction === "LONG" ? "SELL" : "BUY";
   const [action, setAction] = useState<OrderAction>(defaultAction);
-  const [quantity, setQuantity] = useState(() => String(leg.contracts));
   const [limitPrice, setLimitPrice] = useState("");
   const [tif, setTif] = useState<"DAY" | "GTC">("GTC");
   const [confirmStep, setConfirmStep] = useState(false);
@@ -181,7 +202,7 @@ function LegOrderForm({
           min="1"
           step="1"
           value={quantity}
-          onChange={(e) => { setQuantity(e.target.value); setConfirmStep(false); }}
+          onChange={(e) => { onQuantityChange(e.target.value); setConfirmStep(false); }}
           placeholder="Contracts"
         />
       </div>

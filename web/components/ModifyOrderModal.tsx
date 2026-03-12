@@ -5,7 +5,7 @@ import type { OpenOrder, PortfolioData } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { optionKey } from "@/lib/pricesProtocol";
 import Modal from "./Modal";
-import { fmtPrice, legPriceKey } from "@/lib/positionUtils";
+import { fmtPrice, formatSpreadTelemetry, getQuoteMetrics, legPriceKey } from "@/lib/positionUtils";
 
 type ModifyOrderModalProps = {
   order: OpenOrder | null;
@@ -125,11 +125,11 @@ export default function ModifyOrderModal({ order, loading, prices, portfolio, on
 
   const delta = isValid ? parsedNew - currentPrice : 0;
   const hasPriceData = priceData?.bid != null && priceData?.ask != null;
+  const quantityMultiplier = Math.abs(order.totalQuantity);
+  const spreadNotionalMultiplier = (order.contract.secType === "STK" ? 1 : 100) * quantityMultiplier;
 
-  const bid = priceData?.bid ?? null;
-  const ask = priceData?.ask ?? null;
-  const mid = bid != null && ask != null ? (bid + ask) / 2 : null;
-  const spread = bid != null && ask != null ? ask - bid : null;
+  const { bid, mid, ask } = getQuoteMetrics(priceData);
+  const spreadLabel = formatSpreadTelemetry(priceData, spreadNotionalMultiplier);
 
   return (
     <Modal open={!!order} onClose={onClose} title="Modify Order">
@@ -152,16 +152,16 @@ export default function ModifyOrderModal({ order, loading, prices, portfolio, on
               <span className="modify-market-value">{fmtPrice(bid!)}</span>
             </div>
             <div className="modify-market-row">
-              <span className="modify-market-label">ASK</span>
-              <span className="modify-market-value">{fmtPrice(ask!)}</span>
-            </div>
-            <div className="modify-market-row">
               <span className="modify-market-label">MID</span>
               <span className="modify-market-value">{fmtPrice(mid!)}</span>
             </div>
             <div className="modify-market-row">
+              <span className="modify-market-label">ASK</span>
+              <span className="modify-market-value">{fmtPrice(ask!)}</span>
+            </div>
+            <div className="modify-market-row">
               <span className="modify-market-label">SPREAD</span>
-              <span className="modify-market-value">{fmtPrice(spread!)}</span>
+              <span className="modify-market-value">{spreadLabel}</span>
             </div>
           </div>
         ) : (

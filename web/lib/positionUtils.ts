@@ -8,6 +8,39 @@ export const fmtUsd = (n: number) => `$${n.toLocaleString("en-US", { maximumFrac
 export const fmtPrice = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 export const fmtPriceOrCalculated = (n: number, isCalculated: boolean) => isCalculated ? `C${fmtPrice(n)}` : fmtPrice(n);
 
+function roundQuoteValue(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+export function getQuoteMetrics(priceData?: Pick<PriceData, "bid" | "ask"> | null): {
+  bid: number | null;
+  mid: number | null;
+  ask: number | null;
+  spread: number | null;
+  spreadBps: number | null;
+} {
+  const bid = priceData?.bid ?? null;
+  const ask = priceData?.ask ?? null;
+  const mid = bid != null && ask != null ? roundQuoteValue((bid + ask) / 2) : null;
+  const spread = bid != null && ask != null ? roundQuoteValue(ask - bid) : null;
+  const spreadBps = spread != null && mid != null && mid > 0
+    ? Math.round((spread / mid) * 10_000)
+    : null;
+
+  return { bid, mid, ask, spread, spreadBps };
+}
+
+export function formatSpreadTelemetry(
+  priceData?: Pick<PriceData, "bid" | "ask"> | null,
+  spreadNotionalMultiplier = 1,
+): string {
+  const { spread, spreadBps } = getQuoteMetrics(priceData);
+  if (spread == null) return "---";
+  const notionalSpread = spread * spreadNotionalMultiplier;
+  if (spreadBps == null) return fmtPrice(notionalSpread);
+  return `${fmtPrice(notionalSpread)} / ${spreadBps.toLocaleString("en-US")} bps`;
+}
+
 /* ─── Position math ───────────────────────────────────────── */
 
 export function resolveMarketValue(pos: PortfolioPosition): number | null {
