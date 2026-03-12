@@ -1,5 +1,75 @@
 # TODO
 
+## Session: Remove Generic IB Reconnect Banner Regression (2026-03-12)
+
+### Goal
+Limit the shell-level IB connection banner to the actionable MFA/IBC approval state only. Generic reconnect and disconnect states should not render the upper banner again; those belong on the existing toast channel. This specifically fixes the regression where `IB Gateway reconnected` is shown as a full-width top banner.
+
+### Dependency Graph
+- T1 (Inspect the current banner contract, record the regression scope, and capture the user-correction lesson before editing tests or UI code) depends_on: []
+- T2 (Add failing unit and Playwright coverage proving that generic reconnect status must not render the upper banner while MFA approval still does) depends_on: [T1]
+- T3 (Tighten the connection-banner helper and renderer so only the actionable MFA state surfaces in the upper shell banner) depends_on: [T2]
+- T4 (Run targeted Vitest, Playwright, and build verification, then capture review notes) depends_on: [T3]
+
+### Checklist
+- [x] T1 Inspect the current banner contract, record the regression scope, and capture the user-correction lesson before editing tests or UI code
+- [x] T2 Add failing unit and Playwright coverage proving that generic reconnect status must not render the upper banner while MFA approval still does
+- [x] T3 Tighten the connection-banner helper and renderer so only the actionable MFA state surfaces in the upper shell banner
+- [x] T4 Run targeted Vitest, Playwright, and build verification, then capture review notes
+
+### Review
+- Root cause: the earlier MFA fix expanded [ibConnectionAlert.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/ibConnectionAlert.ts) and [ConnectionBanner.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ConnectionBanner.tsx) into a generic shell-level connection banner. That reintroduced the top-of-shell `IB Gateway reconnected` / `IB Gateway disconnected` strip, which should have remained on the existing toast channel only.
+- Tightened the banner contract so the upper shell banner now renders only for the actionable `ibc_mfa_required` state. Generic websocket disconnects, generic IB disconnects, and reconnect success states now return `null` from [ibConnectionAlert.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/ibConnectionAlert.ts), and [ConnectionBanner.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ConnectionBanner.tsx) is now a stateless MFA-warning renderer instead of a reconnect/disconnect state machine.
+- Locked the regression with unit coverage in [connection-banner-state.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/connection-banner-state.test.ts) and browser coverage in [ib-mfa-reconnect-alert.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/ib-mfa-reconnect-alert.spec.ts). The browser file now proves three cases: MFA warning does show the upper banner, generic disconnect does not, and generic reconnect success does not.
+- Verified green with `npx vitest run web/tests/connection-banner-state.test.ts web/tests/ib-connection-issue.test.ts`, `cd web && npx playwright test e2e/ib-mfa-reconnect-alert.spec.ts --config playwright.config.ts`, and `cd web && npm run build`.
+
+## Session: Surface IB Gateway MFA Approval In The UI (2026-03-12)
+
+### Goal
+When the repo-owned realtime server starts while IB Gateway is still reconnecting behind IBC and emits `IB error: connect ECONNREFUSED 127.0.0.1:4001`, surface an explicit operator-facing UI alert that tells the user to check the Interactive Brokers push notification on their phone and approve MFA instead of leaving the cause buried in terminal logs.
+
+### Dependency Graph
+- T1 (Inspect the current realtime status flow and record the MFA-alert contract before editing code) depends_on: []
+- T2 (Add failing regression tests for the server-side IB-issue classification and the UI alert-copy contract) depends_on: [T1]
+- T3 (Implement the server status reason, client-side status plumbing, and the visible UI alert/toast behavior) depends_on: [T2]
+- T4 (Run targeted Vitest and Playwright verification, then capture review notes) depends_on: [T3]
+
+### Checklist
+- [x] T1 Inspect the current realtime status flow and record the MFA-alert contract before editing code
+- [x] T2 Add failing regression tests for the server-side IB-issue classification and the UI alert-copy contract
+- [x] T3 Implement the server status reason, client-side status plumbing, and the visible UI alert/toast behavior
+- [x] T4 Run targeted Vitest and Playwright verification, then capture review notes
+
+### Review
+- Root cause: [scripts/ib_realtime_server.js](/Users/joemccann/dev/apps/finance/radon/scripts/ib_realtime_server.js) only surfaced the IB Gateway reconnect failure as a terminal log (`IB error: connect ECONNREFUSED 127.0.0.1:4001`). The websocket status payload sent to the browser only carried `ib_connected`, so the UI could not distinguish "gateway disconnected" from "IBC is waiting on phone MFA approval."
+- Added a server-side classifier in [ib_connection_status.js](/Users/joemccann/dev/apps/finance/radon/scripts/ib_connection_status.js) and wired it into [ib_realtime_server.js](/Users/joemccann/dev/apps/finance/radon/scripts/ib_realtime_server.js). When the reconnect error matches the local gateway refusal, the websocket status now includes `ib_issue: "ibc_mfa_required"` plus an operator-facing `ib_status_message` telling the user to check the Interactive Brokers push notification on their phone and approve MFA.
+- Extended the browser protocol and client plumbing in [pricesProtocol.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/pricesProtocol.ts), [usePrices.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/usePrices.ts), [ibConnectionAlert.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/ibConnectionAlert.ts), [ConnectionBanner.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ConnectionBanner.tsx), and [WorkspaceShell.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/WorkspaceShell.tsx). The shell now renders a visible warning banner and uses MFA-specific disconnect toast copy instead of a generic lost-connection message.
+- Locked the fix with targeted regression coverage in [ib-connection-issue.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/ib-connection-issue.test.ts), [connection-banner-state.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/connection-banner-state.test.ts), and [ib-mfa-reconnect-alert.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/ib-mfa-reconnect-alert.spec.ts). Verified green with `npx vitest run web/tests/ib-connection-issue.test.ts web/tests/connection-banner-state.test.ts`, `cd web && npx playwright test e2e/ib-mfa-reconnect-alert.spec.ts --config playwright.config.ts`, and `cd web && npm run build`.
+
+## Session: Make IB Realtime Dev Startup Survive Port 8765 Conflicts (2026-03-12)
+
+### Goal
+Fix the `web` verbose dev workflow so `node ../scripts/ib_realtime_server.js` does not crash the whole startup path when websocket port `8765` is already occupied. The dev server should handle a reusable existing listener or a collision gracefully instead of throwing an unhandled `EADDRINUSE`.
+
+### Dependency Graph
+- T1 (Record the port-conflict bug contract and the latest user-correction lesson before editing tests or startup code) depends_on: []
+- T2 (Inspect the verbose dev startup path and add a failing regression test that reproduces the current `EADDRINUSE` crash) depends_on: [T1]
+- T3 (Implement the minimal IB realtime server startup fix so the dev workflow handles an occupied port cleanly) depends_on: [T2]
+- T4 (Run targeted regression and startup verification, then capture review notes) depends_on: [T3]
+
+### Checklist
+- [x] T1 Record the port-conflict bug contract and the latest user-correction lesson before editing tests or startup code
+- [x] T2 Inspect the verbose dev startup path and add a failing regression test that reproduces the current `EADDRINUSE` crash
+- [x] T3 Implement the minimal IB realtime server startup fix so the dev workflow handles an occupied port cleanly
+- [x] T4 Run targeted regression and startup verification, then capture review notes
+
+### Review
+- Root cause: [scripts/ib_realtime_server.js](/Users/joemccann/dev/apps/finance/radon/scripts/ib_realtime_server.js) created the `WebSocketServer` at module load. If `8765` was already occupied, Node emitted an uncaught `EADDRINUSE` before the dev workflow could recover, which is exactly the crash shown in your `dev:verbose:next` output.
+- Fixed startup by probing the websocket port before creating the server in [scripts/ib_realtime_server.js](/Users/joemccann/dev/apps/finance/radon/scripts/ib_realtime_server.js). When the port is already bound, the script now prints an explicit reuse message and exits `0` instead of throwing.
+- Added a real regression in [ib-realtime-port-conflict.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/ib-realtime-port-conflict.test.ts) that occupies an ephemeral TCP port, spawns the realtime server against it, and asserts a clean exit plus the reuse message.
+- Verified green with `npx vitest run web/tests/ib-realtime-port-conflict.test.ts` and `cd web && node ../scripts/ib_realtime_server.js`, which now returns:
+  `WebSocket port already in use at ws://0.0.0.0:8765; assuming an existing IB realtime server and skipping duplicate startup.`
+
 ## Session: Document And Ship Regime Responsive UI Pass (2026-03-12)
 
 ### Goal

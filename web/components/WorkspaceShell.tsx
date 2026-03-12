@@ -22,6 +22,7 @@ import MetricCards from "@/components/MetricCards";
 import WorkspaceSections from "@/components/WorkspaceSections";
 import ToastContainer from "@/components/Toast";
 import TickerDetailModal from "@/components/TickerDetailModal";
+import ConnectionBanner from "@/components/ConnectionBanner";
 import { useTickerDetail } from "@/lib/TickerDetailContext";
 
 type WorkspaceShellProps = {
@@ -124,7 +125,14 @@ export default function WorkspaceShell({ section }: WorkspaceShellProps) {
     [activeSection],
   );
 
-  const { prices: rawPrices, fundamentals, connected: wsConnected, ibConnected: rawIbConnected } = usePrices({
+  const {
+    prices: rawPrices,
+    fundamentals,
+    connected: wsConnected,
+    ibConnected: rawIbConnected,
+    ibIssue,
+    ibStatusMessage,
+  } = usePrices({
     symbols: allSymbols,
     contracts: allContracts,
     indexes: regimeIndexes,
@@ -171,10 +179,20 @@ export default function WorkspaceShell({ section }: WorkspaceShellProps) {
   const prevIbConnectedRef = useRef<boolean | null>(null);
   useEffect(() => {
     if (prevIbConnectedRef.current !== null && prevIbConnectedRef.current !== ibConnected) {
-      addToast(ibConnected ? "success" : "error", ibConnected ? "IB Gateway reconnected" : "IB Gateway connection lost", ibConnected ? 4000 : 6000);
+      if (ibConnected) {
+        addToast("success", "IB Gateway reconnected", 4000);
+      } else if (ibIssue === "ibc_mfa_required") {
+        addToast(
+          "warning",
+          ibStatusMessage ?? "Interactive Brokers Gateway is reconnecting. Check the push notification from Interactive Brokers on your phone to approve MFA.",
+          8000,
+        );
+      } else {
+        addToast("error", "IB Gateway connection lost", 6000);
+      }
     }
     prevIbConnectedRef.current = ibConnected;
-  }, [ibConnected, addToast]);
+  }, [ibConnected, ibIssue, ibStatusMessage, addToast]);
   const syncing = isOrdersPage ? ordersSyncing : portfolioSyncing;
   const error = isOrdersPage ? ordersError : portfolioError;
   const lastSync = isOrdersPage ? ordersLastSync : portfolioLastSync;
@@ -289,6 +307,13 @@ export default function WorkspaceShell({ section }: WorkspaceShellProps) {
             </button>
           </div>
         </Header>
+
+        <ConnectionBanner
+          ibConnected={ibConnected}
+          wsConnected={wsConnected}
+          ibIssue={ibIssue}
+          ibStatusMessage={ibStatusMessage}
+        />
 
         <div className="content">
           {activeSection === "dashboard" ? <ChatPanel activeSection={activeSection} /> : null}

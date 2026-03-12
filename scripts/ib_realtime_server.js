@@ -9,8 +9,10 @@
 import process from "node:process";
 import fs from "node:fs";
 import path from "node:path";
+import net from "node:net";
 import { WebSocketServer } from "ws";
 import IB from "ib";
+import { classifyIBConnectionError } from "./ib_connection_status.js";
 import {
   createPriceData,
   createFundamentalsData,
@@ -136,7 +138,8 @@ function parseActionMessage(raw) {
 }
 
 const cli = parseArgs(process.argv.slice(2));
-const wsUrl = `ws://0.0.0.0:${cli.port}`;
+const WS_HOST = "0.0.0.0";
+const wsUrl = `ws://${WS_HOST}:${cli.port}`;
 
 function verbose(...args) {
   if (cli.verbose) console.log(`\x1b[90m[verbose]\x1b[0m`, ...args);
@@ -148,7 +151,35 @@ const ib = new IB({
   clientId: 100,
 });
 
-const wss = new WebSocketServer({ host: "0.0.0.0", port: cli.port });
+async function isPortAvailable(host, port) {
+  return new Promise((resolve) => {
+    const probe = net.createServer();
+    probe.unref();
+
+    probe.once("error", (error) => {
+      if (error?.code === "EADDRINUSE") {
+        resolve(false);
+        return;
+      }
+      console.error(`Failed to probe websocket port ${host}:${port}:`, error?.message ?? String(error));
+      resolve(false);
+    });
+
+    probe.once("listening", () => {
+      probe.close(() => resolve(true));
+    });
+
+    probe.listen({ host, port, exclusive: true });
+  });
+}
+
+if (!(await isPortAvailable(WS_HOST, cli.port))) {
+  console.log(`WebSocket port already in use at ${wsUrl}; assuming an existing IB realtime server and skipping duplicate startup.`);
+  console.log(`IB target ${cli.ibHost}:${cli.ibPort}`);
+  process.exit(0);
+}
+
+const wss = new WebSocketServer({ host: WS_HOST, port: cli.port });
 
 const clients = new Set();
 const symbolSubscribers = new Map();
@@ -237,6 +268,7 @@ let shuttingDown = false;
 let reconnectTimer = null;
 let nextRequestId = 1;
 let statusBroadcastTick = null;
+let ibConnectionIssue = null;
 
 /* ─── Batched Price Relay ──────────────────────────────────────────────────
  * Buffers price ticks per symbol (last-write-wins) and flushes to each
@@ -308,6 +340,8 @@ function sendStatus(client) {
   sendMessage(client, {
     type: "status",
     ib_connected: ibConnected,
+    ib_issue: ibConnectionIssue?.code ?? null,
+    ib_status_message: ibConnectionIssue?.operatorMessage ?? null,
     subscriptions,
   });
 }
@@ -854,6 +888,7 @@ function scheduleReconnect() {
 
 ib.on("connected", () => {
   ibConnected = true;
+  ibConnectionIssue = null;
   console.log("IB connected");
   reconnectTimer = null;
   // Request Delayed-Frozen data so closed-market queries return last known prices
@@ -878,9 +913,25 @@ ib.on("error", (error, data) => {
   const tickerId = data?.id;
   const code = data?.code;
   const symbol = tickerId != null ? requestIdToSymbol.get(tickerId) : null;
+  const connectionIssue = classifyIBConnectionError(msg, {
+    ibHost: cli.ibHost,
+    ibPort: cli.ibPort,
+  });
 
   if (/connection is OK|farm connection is OK/i.test(msg)) {
     console.log(`\x1b[32mIB status: ${msg}\x1b[0m`);
+  } else if (code === 200 || /No security definition has been found/i.test(msg)) {
+    // Invalid contract (e.g. non-existent option strike) — clean up silently
+    verbose(`no security def for ${symbol ?? `tickerId:${tickerId}`}`);
+    if (symbol) {
+      const state = symbolStates.get(symbol);
+      if (state && state.tickerId === tickerId) {
+        requestIdToSymbol.delete(tickerId);
+        state.tickerId = null;
+      }
+    } else if (tickerId != null) {
+      requestIdToSymbol.delete(tickerId);
+    }
   } else if (code === 354 || /market data is not subscribed/i.test(msg)) {
     // IB account lacks market data subscription for this symbol
     console.warn(`\x1b[33mIB warning: no market data subscription for ${symbol ?? `tickerId:${tickerId}`}\x1b[0m`);
@@ -908,8 +959,13 @@ ib.on("error", (error, data) => {
   } else {
     console.error(`\x1b[31mIB error: ${msg}${symbol ? ` (${symbol})` : tickerId != null ? ` (tickerId:${tickerId})` : ""}\x1b[0m`);
   }
-  // Only broadcast status on actual connection-affecting errors, not benign IB messages.
-  // The connected/disconnected handlers already broadcast on real state changes.
+
+  if (connectionIssue) {
+    ibConnected = false;
+    ibConnectionIssue = connectionIssue;
+    broadcastStatus();
+    scheduleReconnect();
+  }
 });
 
 ib.on("tickPrice", (tickerId, tickType, price) => {

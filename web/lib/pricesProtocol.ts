@@ -78,6 +78,8 @@ export type WSPongMessage = {
 export type WSStatusMessage = {
   type: "status";
   ib_connected: boolean;
+  ib_issue: string | null;
+  ib_status_message: string | null;
   subscriptions: string[];
 };
 

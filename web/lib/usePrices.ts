@@ -42,6 +42,10 @@ export type UsePricesReturn = {
   connected: boolean;
   /** Whether IB is connected on the server */
   ibConnected: boolean;
+  /** Structured IB-side issue code from the realtime server, when available */
+  ibIssue: string | null;
+  /** Operator-facing IB-side status guidance, when available */
+  ibStatusMessage: string | null;
   /** Any error message */
   error: string | null;
   /** Manually reconnect */
@@ -67,6 +71,8 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
   const [fundamentals, setFundamentals] = useState<Record<string, FundamentalsData>>({});
   const [connected, setConnected] = useState(false);
   const [ibConnected, setIbConnected] = useState(false);
+  const [ibIssue, setIbIssue] = useState<string | null>(null);
+  const [ibStatusMessage, setIbStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -167,6 +173,8 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
           }
           case "status":
             setIbConnected(message.ib_connected);
+            setIbIssue(message.ib_issue ?? null);
+            setIbStatusMessage(message.ib_status_message ?? null);
             break;
           case "error":
             setError(message.message);
@@ -189,6 +197,8 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
       // scheduling a 5s reconnect that creates an infinite reconnection cycle.
       if (!mountedRef.current || ws !== wsRef.current) return;
       setConnected(false);
+      setIbIssue(null);
+      setIbStatusMessage(null);
       onConnectionChange?.(false);
 
       if (!enabled || (normalizedSymbols.length === 0 && normalizedContracts.length === 0 && normalizedIndexes.length === 0)) return;
@@ -203,6 +213,8 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
     ws.onerror = () => {
       if (!mountedRef.current || ws !== wsRef.current) return;
       setConnected(false);
+      setIbIssue(null);
+      setIbStatusMessage(null);
       setError("Connection lost");
       onConnectionChange?.(false);
       ws.close();
@@ -302,6 +314,8 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
     fundamentals,
     connected,
     ibConnected,
+    ibIssue,
+    ibStatusMessage,
     error,
     reconnect,
     getSnapshot,

@@ -10,6 +10,8 @@
 
 ## 2026-03-12
 
+- When adding a new shell-level alert surface for an actionable broker issue, do not broaden it into a generic connection-status banner; keep the new banner scoped to the actionable state and leave generic reconnect/disconnect notices on the existing toast channel.
+- When a repo-owned dev service binds a fixed local port, do not let `EADDRINUSE` crash the whole startup workflow; detect the port conflict and either reuse the existing listener intentionally or fail with an explicit, non-catastrophic message.
 - When a stacked telemetry row still wastes width after collapsing to one line, do not just center the cluster; anchor the primary label/value on the left and use the remaining width for an intentional meta rail.
 - When a telemetry strip collapses to single-column rows, do not just preserve desktop stacking inside each cell; use the full row width with a compact horizontal presentation so the operator does not waste half the viewport on empty space.
 - When a telemetry strip collapses to single-column mobile cells, do not keep the desktop `1fr auto` change-row layout; the delta text and arrow should stay left aligned as one inline signal, not split across the cell width.
