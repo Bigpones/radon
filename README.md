@@ -156,6 +156,8 @@ MENTHORQ_USER=your-menthorq-email
 MENTHORQ_PASS=your-menthorq-password
 ```
 
+The dedicated CTA sync service and wrapper scripts source the project root `.env` directly. Keep MenthorQ credentials there so scheduled post-close and wake/login catch-up runs use the same auth context as manual CLI fetches.
+
 **Optional shell exports**:
 
 ```bash
@@ -289,7 +291,7 @@ If local port binding is unavailable, build the static site and point the audit 
 | Command | Description |
 |---------|-------------|
 | `strategies` | Show the strategy registry |
-| `menthorq-cta` | Fetch institutional CTA positioning data |
+| `menthorq-cta` | Fetch or backfill institutional CTA positioning data manually |
 | `x-scan [@ACCOUNT]` | Fetch X sentiment through xAI |
 | `x-scan-browser [@ACCOUNT]` | Fetch X sentiment through browser scraping |
 | `commands` | Display the full command registry |
@@ -355,10 +357,18 @@ The repo includes background-service support for the live trading environment:
 |---------|---------|
 | Secure IBC service (`local.ibc-gateway`) | Maintains the local broker session for live quotes, execution, and reports |
 | CRI scan service | Refreshes crash-risk regime data intraday and writes atomic CRI cache snapshots |
+| CTA sync service | Refreshes the latest closed-session MenthorQ CTA cache after the close, on wake/login catch-up, and writes machine-readable health state for stale-data detection |
 | Monitor daemon | Tracks fills and manages post-entry workflows |
 | Data refresh services | Keeps portfolio and order-state data current and repairs post-close CRI cache history when needed |
 
 Historical setup helpers remain in `scripts/`, and the broader implementation notes live in [docs/implement.md](docs/implement.md).
+
+CTA freshness is now an explicit contract:
+
+- `data/menthorq_cache/cta_{DATE}.json` remains the daily cache artifact.
+- `data/menthorq_cache/health/cta-sync-latest.json` is the primary machine-readable health record, and `data/menthorq_cache/health/history/cta-sync-*.json` preserves run history. For older tooling, the latest record is also mirrored to `data/service_health/cta-sync.json`.
+- `scripts/run_cta_sync.sh` is the launchd-safe wrapper. It resolves the repo Python runtime, sources the root `.env`, and delegates to `scripts/cta_sync_service.py`.
+- `/api/menthorq/cta` compares the latest cache date against the latest closed trading day, triggers one background CTA sync when stale, and returns explicit `cache_meta` plus `sync_health` metadata (with a `sync_status` compatibility alias) so `/cta` can show stale/degraded state instead of silently presenting old data as current.
 
 For the `/regime` RVOL/COR1M chart, the CRI cache now preserves enough trailing SPY closes to rebuild the full prior 20 sessions of realized volatility. COR1M history now falls back to the official Cboe dashboard feed before Yahoo, and the API prefers the richer CRI cache candidate when scheduled snapshots lag and backfills missing `history[].realized_vol` values from cached closes before rendering the chart.
 

@@ -204,6 +204,17 @@ def detect_structure_type(legs: list) -> Tuple[str, str]:
             else:
                 return "Bull Put Spread", "defined"
     
+    # ── All-long combos: fully defined risk ──
+    # If every option leg is long (position > 0), max loss = total premium paid.
+    # Examples: 2 long calls at different strikes, long call + long put (strangle handled above),
+    #           3-leg all-long butterflies, etc.
+    if opt_legs and all(l['position'] > 0 for l in opt_legs) and not stk_legs:
+        if len(calls) > 0 and len(puts) == 0:
+            return f"Long Call Combo ({len(opt_legs)} legs)", "defined"
+        if len(puts) > 0 and len(calls) == 0:
+            return f"Long Put Combo ({len(opt_legs)} legs)", "defined"
+        return f"Long Combo ({len(opt_legs)} legs)", "defined"
+
     # Default for complex structures
     return f"Combo ({len(legs)} legs)", "complex"
 

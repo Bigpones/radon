@@ -789,9 +789,14 @@ The vol-targeting model estimates CTA exposure from realized vol. MenthorQ provi
 
 **Integration with CRI**: When MenthorQ data is available, the CRI report overlays actual SPX CTA positioning alongside the vol-targeting model. Low percentile + negative z-score confirms deleveraging pressure. When unavailable, falls back to vol-targeting model only.
 
-**Credentials**: `MENTHORQ_USER` and `MENTHORQ_PASS` in project root `.env` (loaded via `python-dotenv`). Never committed to source.
+**Credentials**: `MENTHORQ_USER` and `MENTHORQ_PASS` in the project root `.env` (loaded by the local env loader used by both manual fetches and the scheduled CTA sync wrapper). Never committed to source.
 
 **Cache**: `data/menthorq_cache/cta_{DATE}.json` — one file per trading day.
+
+**Freshness contract**:
+- `data/menthorq_cache/health/cta-sync-latest.json` records the last CTA sync state (`syncing`, `healthy`, `degraded`), `target_date`, attempt count, sanitized error detail, and any captured artifact paths. `data/menthorq_cache/health/history/cta-sync-*.json` preserves the run history, and the latest record is mirrored to `data/service_health/cta-sync.json` for older tooling.
+- `/api/menthorq/cta` compares the freshest CTA cache date against the latest closed trading day and triggers one background CTA refresh when the cache is behind.
+- `/cta` now renders stale state explicitly. If the cache is behind or missing, the page shows which session is being displayed, which target session is missing, and the last CTA sync failure detail instead of silently presenting old data as current.
 
 ### Scripts
 
@@ -808,6 +813,9 @@ python3 scripts/cri_scan.py --no-open
 # Fetch MenthorQ CTA data (requires login, ~40s)
 python3 scripts/fetch_menthorq_cta.py
 
+# Run the hardened CTA sync runtime (used by launchd/service wrappers)
+python3 scripts/cta_sync_service.py --source manual
+
 # MenthorQ JSON output
 python3 scripts/fetch_menthorq_cta.py --json
 
@@ -815,7 +823,7 @@ python3 scripts/fetch_menthorq_cta.py --json
 python3 scripts/fetch_menthorq_cta.py --date 2026-03-06
 ```
 
-**Cache behavior:** the CRI JSON cache now stores enough trailing SPY closes to reconstruct the prior 20 realized-vol sessions used by `/regime`. Scheduled CRI snapshots and the post-close data refresh both refresh `data/cri.json`, and the API backfills missing `history[].realized_vol` values from cached closes when a newer snapshot is less complete than the legacy cache.
+**Cache behavior:** the CRI JSON cache now stores enough trailing SPY closes to reconstruct the prior 20 realized-vol sessions used by `/regime`. Scheduled CRI snapshots and the post-close data refresh both refresh `data/cri.json`, and the API backfills missing `history[].realized_vol` values from cached closes when a newer snapshot is less complete than the legacy cache. CTA sync now also keeps a machine-readable health file plus per-attempt log artifacts so stale MenthorQ data fails loudly and can self-heal through the dedicated sync runtime.
 
 ### `/regime` RVOL/COR1M Relationship States
 

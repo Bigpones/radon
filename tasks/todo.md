@@ -1,5 +1,27 @@
 # TODO
 
+## Session: Separate Quote-Level And Order-Level Spread Notional (2026-03-12)
+
+### Dependency Graph
+- T1 (Inspect the shared ticker-detail quote path and confirm which surfaces should use quote-level vs quantity-sized spread notional) depends_on: []
+- T2 (Record the corrected plan and user-correction lesson in `tasks/todo.md` and `tasks/lessons.md`) depends_on: [T1]
+- T3 (Update regression tests to encode quote-level spread on the shared ticker modal and quantity-sized spread on explicit order surfaces, then observe red) depends_on: [T1, T2]
+- T4 (Implement the minimal fix so `TickerDetailModal` uses quote-level spread notional while `InstrumentDetailModal` and `ModifyOrderModal` stay quantity-aware) depends_on: [T3]
+- T5 (Run targeted Vitest and Playwright verification, then capture review notes) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inspect the shared ticker-detail quote path and confirm which surfaces should use quote-level vs quantity-sized spread notional
+- [x] T2 Record the corrected plan and user-correction lesson in `tasks/todo.md` and `tasks/lessons.md`
+- [x] T3 Update regression tests to encode quote-level spread on the shared ticker modal and quantity-sized spread on explicit order surfaces, then observe red
+- [x] T4 Implement the minimal fix so `TickerDetailModal` uses quote-level spread notional while `InstrumentDetailModal` and `ModifyOrderModal` stay quantity-aware
+- [x] T5 Run targeted Vitest and Playwright verification, then capture review notes
+
+### Review
+- Root cause: the shared top quote bar in [web/components/TickerDetailModal.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/TickerDetailModal.tsx) was multiplying option spread width by `position.contracts`, even though that bar is shared across `Company`, `Position`, and `Order` tabs and does not own an explicit order quantity. That made general quote telemetry look like order-sized friction.
+- Kept quantity-aware spread notional on the true order-sized surfaces: [web/components/InstrumentDetailModal.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/InstrumentDetailModal.tsx) still uses the displayed leg quantity, and [web/components/ModifyOrderModal.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ModifyOrderModal.tsx) still uses `order.totalQuantity`.
+- Added a focused regression in [web/tests/ticker-detail-spread-notional.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/ticker-detail-spread-notional.test.ts) plus browser coverage in [web/e2e/price-bar-quote-telemetry.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/price-bar-quote-telemetry.spec.ts) to lock the shared ticker modal to quote-level spread notional. The pre-fix red phase failed with `$2,200.00 / 240 bps` instead of `$110.00 / 240 bps`.
+- Verified green with `npx vitest run web/tests/ticker-detail-spread-notional.test.ts web/tests/order-ticket-spread-notional.test.ts web/tests/instrument-detail-spread-quantity.test.ts web/tests/price-bar-quote-telemetry.test.ts` and `cd web && npx playwright test e2e/price-bar-quote-telemetry.spec.ts e2e/order-ticket-quote-telemetry.spec.ts --config playwright.config.ts`.
+
 ## Session: Document And Ship Site Surface Fix (2026-03-11)
 
 ### Dependency Graph
