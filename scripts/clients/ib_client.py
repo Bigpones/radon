@@ -434,6 +434,26 @@ class IBClient:
         if pnl_obj:
             self._ib.cancelPnL(pnl_obj)
 
+    def get_pnl_single(self, account: str, con_id: int) -> Any:
+        """Request per-position P&L via reqPnLSingle.
+
+        Returns a PnLSingle with dailyPnL, unrealizedPnL, realizedPnL,
+        value, and position. IB correctly handles intraday additions
+        (e.g., buying more contracts today) — the dailyPnL reflects
+        overnight-held contracts' mark-to-close plus intraday fills.
+        """
+        self._require_connection()
+        pnl = self._ib.reqPnLSingle(account, "", con_id)
+        self._ib.sleep(0.5)  # brief sleep; batch callers will poll separately
+        return pnl
+
+    def cancel_pnl_single(self, account: str, con_id: int) -> None:
+        """Cancel per-position P&L subscription."""
+        try:
+            self._ib.cancelPnLSingle(account, "", con_id)
+        except Exception:
+            pass  # ignore cancel errors
+
     # -- order operations ---------------------------------------------------
 
     def place_order(self, contract: Any, order: Any) -> Any:

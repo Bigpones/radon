@@ -40,6 +40,10 @@ const PortfolioPosition = Type.Object({
   market_value: Type.Union([Type.Number(), Type.Null()]),
   legs: Type.Array(PortfolioLeg),
   market_price_is_calculated: Type.Optional(Type.Boolean()),
+  /** IB's per-position daily P&L from reqPnLSingle.
+   *  Correctly handles intraday additions (overnight contracts use
+   *  yesterday's close; today's adds use fill price as reference). */
+  ib_daily_pnl: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   kelly_optimal: Type.Union([Type.Number(), Type.Null()]),
   target: Type.Union([Type.Number(), Type.Null()]),
   stop: Type.Union([Type.Number(), Type.Null()]),

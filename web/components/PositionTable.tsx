@@ -149,7 +149,9 @@ function getTodayPnlDollars(pos: PortfolioPosition, prices?: Record<string, Pric
     if (!p || p.last == null || p.last <= 0 || p.close == null || p.close <= 0) return null;
     return (p.last - p.close) * pos.contracts;
   }
-  // Options/spreads — use WS last, fall back to synced market_price
+  // Prefer IB's per-position daily P&L (handles intraday additions correctly)
+  if (pos.ib_daily_pnl != null) return pos.ib_daily_pnl;
+  // Fall back to WS close-based calculation
   let pnl = 0;
   let hasClose = false;
   for (const leg of pos.legs) {
@@ -301,19 +303,27 @@ function PositionRow({ pos, showExpiry = true, showStrike = false, showUnderlyin
   const lastPriceIsCalculated = rtLast != null || optionsRt != null ? false : getLastPriceIsCalculated(pos);
   const { direction: priceDirection, flashDirection } = usePriceDirection(lastPrice);
   // Stock: daily change from underlying WS price
-  // Options: daily change from leg-level WS prices as % of yesterday's close value
+  // Options: prefer IB's per-position daily P&L (handles intraday additions correctly)
+  //          then fall back to WS close-based calculation
+  const wsDailyPnl = optionsRt?.dailyPnl ?? null;
+  const wsCloseValue = optionsRt?.closeValue ?? 0;
+  // IB's reqPnLSingle daily P&L — correctly handles blended positions
+  // (overnight contracts use yesterday's close, intraday adds use fill price)
+  const ibDailyPnl = (!isStock && pos.ib_daily_pnl != null) ? pos.ib_daily_pnl : null;
+  const effectiveDailyPnl = ibDailyPnl ?? wsDailyPnl;
+
   const dailyChg = isStock
     ? getDailyChange(realtimePrice)
-    : optionsRt != null && optionsRt.dailyPnl != null && optionsRt.closeValue !== 0
-      ? (optionsRt.dailyPnl / Math.abs(optionsRt.closeValue)) * 100
+    : effectiveDailyPnl != null && wsCloseValue !== 0
+      ? (effectiveDailyPnl / Math.abs(wsCloseValue)) * 100
       : null;
 
-  // Today's P&L in dollars
+  // Today's P&L in dollars — prefer IB's authoritative number
   const todayPnl = isStock
     ? (realtimePrice?.last != null && realtimePrice.last > 0 && realtimePrice?.close != null && realtimePrice.close > 0
         ? (realtimePrice.last - realtimePrice.close) * pos.contracts
         : null)
-    : optionsRt?.dailyPnl ?? null;
+    : effectiveDailyPnl;
 
   // For single-leg options, show strike in structure column
   const isSingleLegOption = pos.legs.length === 1 && pos.structure_type !== "Stock";

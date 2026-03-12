@@ -74,6 +74,11 @@ export type PortfolioPosition = {
   market_value: number | null;
   legs: PortfolioLeg[];
   market_price_is_calculated?: boolean;
+  /** IB's per-position daily P&L from reqPnLSingle.
+   *  Correctly handles intraday additions (only overnight contracts use
+   *  yesterday's close; today's adds use fill price as reference).
+   *  Preferred over WS close-based calculation. */
+  ib_daily_pnl?: number | null;
   kelly_optimal: number | null;
   target: number | null;
   stop: number | null;

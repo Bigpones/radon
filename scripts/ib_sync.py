@@ -402,6 +402,16 @@ def collapse_positions(positions: list) -> list:
         else:
             max_risk = None  # Undefined risk
         
+        # Aggregate per-position daily P&L from IB's reqPnLSingle.
+        # This is more accurate than WS close-based calculation because IB
+        # correctly handles intraday additions (only overnight contracts use
+        # yesterday's close; intraday adds use fill price as reference).
+        ib_daily_pnl_parts = [leg.get('ibDailyPnl') for leg in legs]
+        if all(p is not None for p in ib_daily_pnl_parts):
+            ib_daily_pnl = round(sum(ib_daily_pnl_parts), 2)
+        else:
+            ib_daily_pnl = None
+
         # Format legs for subtree
         formatted_legs = []
         for leg in sorted(legs, key=lambda x: (x.get('right', 'Z'), x.get('strike', 0))):
@@ -430,6 +440,7 @@ def collapse_positions(positions: list) -> list:
             "max_risk": round(max_risk, 2) if max_risk is not None else None,
             "market_value": round(total_market_value, 2) if total_market_value is not None else None,
             "market_price_is_calculated": bool(is_market_price_calculated) if total_market_value is not None else False,
+            "ib_daily_pnl": ib_daily_pnl,
             "legs": formatted_legs,
             "kelly_optimal": None,
             "target": None,
@@ -506,6 +517,7 @@ def fetch_positions(client: IBClient) -> list:
             "strike": getattr(contract, 'strike', None),
             "right": getattr(contract, 'right', None),
             "structure": format_option_structure(contract, position_size),
+            "conId": contract.conId,  # Needed for reqPnLSingle
             "contract": contract  # Keep for market data requests
         })
     
@@ -549,6 +561,63 @@ def fetch_market_prices(client: IBClient, positions: list) -> list:
             pos['marketPriceIsCalculated'] = False
         client.cancel_market_data(pos['contract'])
         del pos['contract']  # Remove non-serializable contract object
+
+    return positions
+
+
+def fetch_position_daily_pnl(client: IBClient, positions: list, account: str = "") -> list:
+    """Fetch IB's per-position daily P&L via reqPnLSingle.
+    
+    IB correctly handles intraday additions — if you held 25 contracts
+    overnight and bought 25 more today, IB's dailyPnL reflects:
+      overnight_contracts × (current - yesterday_close) + 
+      intraday_contracts × (current - fill_price)
+    
+    This is more accurate than our WS close-based calculation which
+    assumes all contracts were held overnight.
+    """
+    from ib_insync import util as ib_util
+
+    def _valid(val):
+        return val is not None and not ib_util.isNan(val) and val != 1.7976931348623157e+308
+
+    if not account:
+        accounts = client.ib.managedAccounts()
+        account = accounts[0] if accounts else ""
+
+    if not account:
+        return positions
+
+    # Request PnL for all positions simultaneously
+    pnl_requests = []
+    for pos in positions:
+        con_id = pos.get('conId')
+        if con_id:
+            try:
+                pnl_single = client.get_pnl_single(account, con_id)
+                pnl_requests.append((pos, pnl_single, con_id))
+            except Exception as e:
+                print(f"  Warning: reqPnLSingle failed for {pos['symbol']} conId={con_id}: {e}")
+                pnl_requests.append((pos, None, con_id))
+        else:
+            pnl_requests.append((pos, None, None))
+
+    # Wait for data to arrive (all subscriptions are concurrent)
+    client.sleep(3)
+
+    # Read results and cancel subscriptions
+    for pos, pnl_single, con_id in pnl_requests:
+        if pnl_single is not None:
+            daily = getattr(pnl_single, 'dailyPnL', None)
+            if _valid(daily):
+                pos['ibDailyPnl'] = round(float(daily), 2)
+            else:
+                pos['ibDailyPnl'] = None
+            # Cancel subscription
+            if con_id:
+                client.cancel_pnl_single(account, con_id)
+        else:
+            pos['ibDailyPnl'] = None
 
     return positions
 
@@ -741,6 +810,11 @@ def main():
             for pos in positions:
                 if 'contract' in pos:
                     del pos['contract']
+
+        # Fetch per-position daily P&L from IB (handles intraday additions correctly)
+        if positions:
+            print("Fetching per-position daily P&L...")
+            positions = fetch_position_daily_pnl(client, positions)
 
         # Collapse multi-leg structures
         print("Analyzing position structures...")
