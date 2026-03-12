@@ -144,6 +144,15 @@
       border-color: #05AD98;
       color: #05AD98;
     }
+
+    .copy-img-btn {
+      background: #4A9EEA; color: #0a0f14; border: none; padding: 6px 14px;
+      font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer;
+      border-radius: 4px; transition: all 150ms;
+    }
+    .copy-img-btn:hover { opacity: 0.9; }
+    .copy-img-btn.copied { background: #357ABD; }
   </style>
 </head>
 <body>
@@ -168,12 +177,16 @@
         <div class="tweet-chars" id="tweet-chars"></div>
       </div>
 
-      <!-- RIGHT: Card preview -->
+      <!-- RIGHT: Card image -->
       <div>
-        <div class="card-section-label">Infographic Card — Screenshot This</div>
-        {{CARD_HTML}}
+        <div class="card-section-label" style="display:flex; justify-content:space-between; align-items:center;">
+          <span>Infographic Card — Right-click to copy or use button</span>
+          <button class="copy-img-btn" onclick="copyImage()">COPY IMAGE</button>
+        </div>
+        <img id="card-img" src="{{CARD_PNG}}" alt="{{TICKER}} Trade Infographic" style="width:600px; border:1px solid #1e293b; border-radius:4px; display:block; cursor:pointer;" crossorigin="anonymous" />
         <div class="card-actions">
-          <a class="action-btn" href="{{CARD_FILE}}" target="_blank">Open Card Full Size ↗</a>
+          <a class="action-btn" href="{{CARD_FILE}}" target="_blank">Open Card HTML ↗</a>
+          <a class="action-btn" href="{{CARD_PNG}}" download="{{TICKER}}-trade-{{DATE}}.png">Download PNG ↓</a>
         </div>
       </div>
 
@@ -195,6 +208,35 @@
           btn.classList.remove('copied');
         }, 2000);
       });
+    }
+
+    async function copyImage() {
+      const btn = document.querySelector('.copy-img-btn');
+      try {
+        const img = document.getElementById('card-img');
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob })
+        ]);
+        btn.textContent = '✓ COPIED';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = 'COPY IMAGE';
+          btn.classList.remove('copied');
+        }, 2000);
+      } catch (err) {
+        btn.textContent = '⚠ RIGHT-CLICK IMG';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = 'COPY IMAGE';
+          btn.classList.remove('copied');
+        }, 3000);
+      }
     }
 
     // Character count

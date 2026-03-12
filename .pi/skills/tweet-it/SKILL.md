@@ -95,10 +95,19 @@ The card is a standalone HTML file optimized for screenshotting:
 ```bash
 # 1. Agent generates tweet text from trade data
 # 2. Agent generates card HTML from trade data
-# 3. Agent generates preview HTML with copy button
-# 4. Open preview in browser
+#    → reports/tweet-{TICKER}-{DATE}-card.html
+# 3. Screenshot the card HTML via browser automation
+#    → agent-browser open file:///.../tweet-{TICKER}-{DATE}-card.html
+#    → agent-browser screenshot .card reports/tweet-{TICKER}-{DATE}-card.png
+# 4. Agent generates preview HTML with embedded PNG + copy buttons
+#    → reports/tweet-{TICKER}-{DATE}.html
+# 5. Open preview in browser
 open reports/tweet-{TICKER}-{DATE}.html
 ```
+
+The preview page embeds the PNG (right-clickable) and has two buttons:
+- **COPY TEXT** — copies raw tweet text to clipboard
+- **COPY IMAGE** — copies the PNG to clipboard via Canvas API
 
 ## Template Files
 
@@ -131,7 +140,9 @@ open reports/tweet-{TICKER}-{DATE}.html
 ### Preview Template
 | Placeholder | Description |
 |-------------|-------------|
-| `{{TWEET_TEXT}}` | The formatted tweet copy |
-| `{{CARD_HTML}}` | The full card HTML (embedded) |
+| `{{TWEET_TEXT_HTML}}` | The formatted tweet copy (with HTML spans for cashtags) |
+| `{{TWEET_TEXT_RAW}}` | The raw tweet copy (plain text, for clipboard) |
+| `{{CARD_FILE}}` | Relative path to the card HTML file |
+| `{{CARD_PNG}}` | Relative path to the card PNG screenshot |
 | `{{TICKER}}` | Ticker for title |
 | `{{DATE}}` | Date for title |
