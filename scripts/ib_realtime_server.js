@@ -158,6 +158,12 @@ const requestIdToSymbol = new Map();
 const snapshotRequests = new Map();
 const fundamentalsStore = new Map(); // symbol → FundamentalsData
 
+/* ─── Symbol Search Cache ─────────────────────────────────────────────── */
+const SEARCH_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
+const SEARCH_CACHE_MAX = 200;
+const searchCache = new Map(); // pattern → { results, ts }
+const searchRequestClients = new Map(); // reqId → { client, pattern }
+
 /* ─── Option close price cache ─────────────────────────────────────────────
  * IB sends previous-close for option contracts only during market hours.
  * After hours, delayed-frozen data omits close. We persist close prices to
@@ -765,6 +771,42 @@ async function handleClientMessage(client, data) {
       sendMessage(client, { type: "pong" });
       return;
     }
+    case "search": {
+      const pattern = typeof data.pattern === "string" ? data.pattern.trim() : "";
+      if (!pattern || pattern.length < 1) {
+        sendMessage(client, { type: "error", message: "Search requires a non-empty pattern" });
+        return;
+      }
+      if (!ibConnected) {
+        sendMessage(client, { type: "searchResults", pattern, results: [] });
+        return;
+      }
+
+      // Check cache
+      const cached = searchCache.get(pattern.toUpperCase());
+      if (cached && (Date.now() - cached.ts) < SEARCH_CACHE_TTL_MS) {
+        sendMessage(client, { type: "searchResults", pattern, results: cached.results });
+        return;
+      }
+
+      const reqId = nextRequestId += 1;
+      searchRequestClients.set(reqId, { client, pattern: pattern.toUpperCase() });
+      try {
+        ib.reqMatchingSymbols(reqId, pattern);
+      } catch (error) {
+        searchRequestClients.delete(reqId);
+        sendMessage(client, { type: "searchResults", pattern, results: [] });
+      }
+
+      // Timeout: if IB doesn't respond in 5s, return empty
+      setTimeout(() => {
+        if (searchRequestClients.has(reqId)) {
+          searchRequestClients.delete(reqId);
+          sendMessage(client, { type: "searchResults", pattern, results: [] });
+        }
+      }, SNAPSHOT_TIMEOUT_MS);
+      return;
+    }
     default: {
       sendMessage(client, {
         type: "error",
@@ -898,6 +940,36 @@ ib.on("tickOptionComputation", (tickerId, tickType, impliedVol, delta, optPrice,
   pd.timestamp = nowIso();
   verbose(`greeks ${symbol} tickType=${tickType} delta=${delta} iv=${impliedVol}`);
   hydrateAndBroadcast(symbol);
+});
+
+ib.on("symbolSamples", (reqId, contracts) => {
+  const req = searchRequestClients.get(reqId);
+  if (!req) return;
+  searchRequestClients.delete(reqId);
+
+  const results = contracts.map((c) => ({
+    conId: c.conId,
+    symbol: c.symbol,
+    secType: c.secType,
+    primaryExchange: c.primaryExchange,
+    currency: c.currency,
+    derivativeSecTypes: c.derivativeSecTypes || [],
+  }));
+
+  // Cache results
+  if (searchCache.size >= SEARCH_CACHE_MAX) {
+    const oldest = searchCache.keys().next().value;
+    searchCache.delete(oldest);
+  }
+  searchCache.set(req.pattern, { results, ts: Date.now() });
+
+  sendMessage(req.client, {
+    type: "searchResults",
+    pattern: req.pattern,
+    results,
+  });
+
+  verbose(`search "${req.pattern}" → ${results.length} results`);
 });
 
 wss.on("connection", (client) => {

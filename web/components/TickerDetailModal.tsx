@@ -14,8 +14,10 @@ import NewsTab from "./ticker-detail/NewsTab";
 import RatingsTab from "./ticker-detail/RatingsTab";
 import SeasonalityTab from "./ticker-detail/SeasonalityTab";
 import CompanyTab from "./ticker-detail/CompanyTab";
+import BookTab from "./ticker-detail/BookTab";
+import OptionsChainTab from "./ticker-detail/OptionsChainTab";
 
-type TabId = "company" | "position" | "order" | "news" | "ratings" | "seasonality";
+type TabId = "company" | "book" | "chain" | "position" | "order" | "news" | "ratings" | "seasonality";
 
 export function PriceBar({
   priceData,
@@ -180,6 +182,8 @@ export default function TickerDetailModal({ theme = "dark" }: { theme?: "dark" |
 
   const tabs: { id: TabId; label: string; hidden?: boolean }[] = [
     { id: "company", label: "Company" },
+    { id: "book", label: "Book" },
+    { id: "chain", label: "Chain" },
     { id: "position", label: "Position", hidden: !position },
     { id: "order", label: tickerOrders.length > 0 ? `Orders (${tickerOrders.length})` : "Order" },
     { id: "news", label: "News" },
@@ -224,6 +228,22 @@ export default function TickerDetailModal({ theme = "dark" }: { theme?: "dark" |
         <div className="ticker-tab-content">
           {resolvedTab === "company" && (
             <CompanyTab ticker={activeTicker} active={resolvedTab === "company"} priceData={prices[activeTicker] ?? null} fundamentals={fundStore[activeTicker] ?? null} />
+          )}
+          {resolvedTab === "book" && (
+            <BookTab
+              ticker={activeTicker}
+              position={position}
+              prices={prices}
+              openOrders={tickerOrders}
+              tickerPriceData={priceData}
+            />
+          )}
+          {resolvedTab === "chain" && (
+            <OptionsChainTab
+              ticker={activeTicker}
+              prices={prices}
+              tickerPriceData={prices[activeTicker] ?? null}
+            />
           )}
           {resolvedTab === "position" && position && (
             <PositionTab position={position} prices={prices} />

@@ -160,7 +160,7 @@ export default function WorkspaceShell({ section }: WorkspaceShellProps) {
   );
 
   // Sync prices + portfolio into ticker-detail context (refs, no re-renders)
-  const { setPrices: setTickerPrices, setFundamentals: setTickerFundamentals, setPortfolio: setTickerPortfolio, setOrders: setTickerOrders } = useTickerDetail();
+  const { openTicker, setPrices: setTickerPrices, setFundamentals: setTickerFundamentals, setPortfolio: setTickerPortfolio, setOrders: setTickerOrders } = useTickerDetail();
   useEffect(() => { setTickerPrices(prices); }, [prices, setTickerPrices]);
   useEffect(() => { setTickerFundamentals(fundamentals); }, [fundamentals, setTickerFundamentals]);
   useEffect(() => { setTickerPortfolio(portfolio); }, [portfolio, setTickerPortfolio]);
@@ -270,6 +270,7 @@ export default function WorkspaceShell({ section }: WorkspaceShellProps) {
           onToggleFullscreen={toggleFullscreen}
           onToggleTheme={toggleTheme}
           theme={resolvedTheme}
+          onTickerSelect={openTicker}
         >
           <div className="sync-controls">
             <span className={`sync-status ${error ? "sync-error" : syncing ? "sync-active" : ""}`}>
