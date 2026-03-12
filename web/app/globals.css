@@ -2359,7 +2359,7 @@ tr.leg-row td {
 
 /* ── Ticker Detail Modal ── */
 
-.ticker-detail-modal .modal-content { width: 720px; max-height: 85vh; }
+.ticker-detail-modal .modal-content { width: 90vw; max-width: 1200px; max-height: 90vh; }
 
 .ticker-detail-content { display: flex; flex-direction: column; gap: 0; }
 
@@ -3825,6 +3825,7 @@ tr {
   padding: 4px 8px;
   outline: none;
   cursor: pointer;
+  min-width: 64px;
 }
 
 .chain-expiry-select:focus {
@@ -3834,7 +3835,7 @@ tr {
 .chain-grid-wrapper {
   overflow-x: auto;
   overflow-y: auto;
-  max-height: 420px;
+  max-height: 520px;
   border: 1px solid var(--line-grid);
   border-radius: 4px;
 }
@@ -3844,7 +3845,6 @@ tr {
   border-collapse: collapse;
   font-family: var(--font-mono);
   font-size: 11px;
-  table-layout: fixed;
 }
 
 .chain-grid thead {

@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { PriceData } from "@/lib/pricesProtocol";
+import type { PriceData, OptionContract } from "@/lib/pricesProtocol";
 import { optionKey } from "@/lib/pricesProtocol";
 import { fmtPrice } from "@/lib/positionUtils";
+import { useTickerDetail } from "@/lib/TickerDetailContext";
 import {
   type OrderLeg,
   formatExpiry,
@@ -499,6 +500,22 @@ export default function OptionsChainTab({
       putKey: optionKey({ symbol: ticker, expiry: selectedExpiry, strike, right: "P" }),
     }));
   }, [ticker, selectedExpiry, strikes, atmStrike, strikesPerSide]);
+
+  // Subscribe visible chain contracts for WS price streaming
+  const { setChainContracts } = useTickerDetail();
+  useEffect(() => {
+    if (!selectedExpiry || visibleStrikes.length === 0) {
+      setChainContracts([]);
+      return;
+    }
+    const contracts: OptionContract[] = [];
+    for (const row of visibleStrikes) {
+      contracts.push({ symbol: ticker, expiry: selectedExpiry, strike: row.strike, right: "C" });
+      contracts.push({ symbol: ticker, expiry: selectedExpiry, strike: row.strike, right: "P" });
+    }
+    setChainContracts(contracts);
+    return () => setChainContracts([]);
+  }, [ticker, selectedExpiry, visibleStrikes, setChainContracts]);
 
   // Scroll to ATM on load
   useEffect(() => {

@@ -24,16 +24,22 @@ def main():
     parser.add_argument("--client-id", type=int, default=27)
     args = parser.parse_args()
 
-    client = IBClient(port=args.port, client_id=args.client_id)
+    client = IBClient()
 
     try:
-        client.connect()
+        client.connect(port=args.port, client_id=args.client_id)
+
+        # Qualify the underlying to get a valid conId (required by reqSecDefOptParams)
+        from ib_insync import Stock
+        stk = Stock(args.symbol, "SMART", "USD")
+        client._ib.qualifyContracts(stk)
+        if not stk.conId:
+            print(json.dumps({"error": f"Could not qualify {args.symbol}"}))
+            return
+
+        chains = client._ib.reqSecDefOptParams(args.symbol, "", "STK", stk.conId)
 
         if args.expiry:
-            # Fetch specific expiry chain with strikes
-            from ib_insync import Option
-            chains = client.get_option_chain(args.symbol)
-
             # Find the matching chain
             target_chain = None
             for chain in chains:
@@ -57,8 +63,6 @@ def main():
             }))
         else:
             # Fetch all expirations
-            chains = client.get_option_chain(args.symbol)
-
             all_expirations = set()
             exchanges = []
             for chain in chains:
