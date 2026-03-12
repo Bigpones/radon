@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { CommandChip } from "@/components/atoms/CommandChip";
+import { ThemeToggle } from "@/components/atoms/ThemeToggle";
 import { headerLinks } from "@/lib/landing-content";
 
 export function HeaderShell() {
@@ -24,6 +25,7 @@ export function HeaderShell() {
           ))}
         </nav>
         <div className="flex items-center gap-3">
+          <ThemeToggle />
           <a
             href="https://github.com/joemccann/radon"
             target="_blank"

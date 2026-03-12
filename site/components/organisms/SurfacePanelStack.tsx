@@ -13,11 +13,12 @@ export function SurfacePanelStack({ item }: { item: SurfaceItem }) {
       </div>
       <div className="grid gap-px border-b border-grid bg-grid sm:grid-cols-2">
         {item.metrics.map((metric, index) => (
-          <div key={metric.label} className="bg-panel">
+          <div key={metric.label} className="min-w-0 bg-panel">
             <MonoMetric
               label={metric.label}
               value={metric.value}
               tone={index === 0 ? "core" : "primary"}
+              size="compact"
             />
           </div>
         ))}

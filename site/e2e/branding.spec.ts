@@ -51,8 +51,8 @@ test.describe("Radon site branding", () => {
 
     expect(manifest.name).toBe("Radon Terminal");
     
-    const icons = manifest.icons;
-    const sizes = icons.map((icon: any) => icon.sizes);
+    const icons = manifest.icons as Array<{ sizes: string }>;
+    const sizes = icons.map((icon) => icon.sizes);
     
     expect(sizes).toContain("32x32");
     expect(sizes).toContain("16x16");

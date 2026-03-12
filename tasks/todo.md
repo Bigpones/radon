@@ -1,5 +1,48 @@
 # TODO
 
+## Session: Document And Ship Site Surface Fix (2026-03-11)
+
+### Dependency Graph
+- T1 (Inspect the current `/site` fix worktree and identify the minimal doc touchpoints that should be updated before shipping) depends_on: []
+- T2 (Update the relevant docs and record the ship plan in `tasks/todo.md`) depends_on: [T1]
+- T3 (Stage only the `/site` bug-fix, doc, and task-log files for this batch) depends_on: [T2]
+- T4 (Create a scoped commit for the standalone-site surface fix and verification updates) depends_on: [T3]
+- T5 (Push the current branch and capture the shipping review note) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inspect the current `/site` fix worktree and identify the minimal doc touchpoints that should be updated before shipping
+- [x] T2 Update the relevant docs and record the ship plan in `tasks/todo.md`
+- [x] T3 Stage only the `/site` bug-fix, doc, and task-log files for this batch
+- [x] T4 Create a scoped commit for the standalone-site surface fix and verification updates
+- [x] T5 Push the current branch and capture the shipping review note
+
+### Review
+- Shipped only the standalone-site surface fix batch: the compact preview-card metric treatment, the restored header theme toggle, the new browser regression for the surface-preview divider spacing, the small branding-spec lint cleanup, the site verification docs update, and the task log / lesson updates.
+- Commit and push completed on `main` after the green standalone-site verification set: `cd web && npx playwright test branding.spec.ts theme-toggle.spec.ts surface-preview.spec.ts --config playwright.site.config.ts`, `cd site && npm run lint`, and `cd site && NEXT_DIST_DIR=.next-build npm run build`.
+
+## Session: Site Surface Metric Overflow Fix (2026-03-11)
+
+### Dependency Graph
+- T1 (Inspect the `/site` surface-preview section and identify why the performance metric value bleeds into the adjacent tile at desktop width) depends_on: []
+- T2 (Record the bug-fix plan in `tasks/todo.md` and capture the user-correction lesson in `tasks/lessons.md`) depends_on: [T1]
+- T3 (Add failing regression coverage for the overflowing metric tile on the standalone site) depends_on: [T1, T2]
+- T4 (Implement the minimal layout fix in the shared site metric/tile components without regressing the existing brand treatment) depends_on: [T3]
+- T5 (Run targeted verification, update review notes, and confirm the preview cards stay contained on desktop widths) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inspect the `/site` surface-preview section and identify why the performance metric value bleeds into the adjacent tile at desktop width
+- [x] T2 Record the bug-fix plan in `tasks/todo.md` and capture the user-correction lesson in `tasks/lessons.md`
+- [x] T3 Add failing regression coverage for the overflowing metric tile on the standalone site
+- [x] T4 Implement the minimal layout fix in the shared site metric/tile components without regressing the existing brand treatment
+- [x] T5 Run targeted verification, update review notes, and confirm the preview cards stay contained on desktop widths
+
+### Review
+- Root cause: the `/site` surface-preview cards render split metric tiles through [site/components/organisms/SurfacePanelStack.tsx](/Users/joemccann/dev/apps/finance/radon/site/components/organisms/SurfacePanelStack.tsx), but the shared mono metric in [site/components/atoms/MonoMetric.tsx](/Users/joemccann/dev/apps/finance/radon/site/components/atoms/MonoMetric.tsx) used the same large value treatment as wider hero cards, leaving the `Institutional` value visually too tight to the divider in the narrower two-column tile layout.
+- Added a failing browser regression in [site/e2e/surface-preview.spec.ts](/Users/joemccann/dev/apps/finance/radon/site/e2e/surface-preview.spec.ts) that measures the rendered value against the adjacent tile at desktop width; the original rendering failed the divider-gap expectation before the UI patch.
+- Implemented the fix by introducing a compact mono-metric treatment in [site/components/atoms/MonoMetric.tsx](/Users/joemccann/dev/apps/finance/radon/site/components/atoms/MonoMetric.tsx) and applying it only to the preview-card metric grid in [site/components/organisms/SurfacePanelStack.tsx](/Users/joemccann/dev/apps/finance/radon/site/components/organisms/SurfacePanelStack.tsx), preserving the larger hero-panel metric treatment while giving split tiles enough breathing room.
+- Verification also exposed that the existing site theme-toggle coverage was broken because [site/components/sections/HeaderShell.tsx](/Users/joemccann/dev/apps/finance/radon/site/components/sections/HeaderShell.tsx) no longer mounted the toggle. Restored the header toggle and cleaned a pre-existing lint issue in [site/e2e/branding.spec.ts](/Users/joemccann/dev/apps/finance/radon/site/e2e/branding.spec.ts) so the focused standalone-site checks are green again.
+- Verified with `cd web && npx playwright test surface-preview.spec.ts --config playwright.site.config.ts`, `cd web && npx playwright test branding.spec.ts theme-toggle.spec.ts --config playwright.site.config.ts`, `cd site && npm run lint`, and `cd site && NEXT_DIST_DIR=.next-build npm run build`.
+
 ## Session: Commit Residual Chart-System Fixes (2026-03-11)
 
 ### Dependency Graph

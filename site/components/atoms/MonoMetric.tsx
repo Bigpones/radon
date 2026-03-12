@@ -1,6 +1,7 @@
 import { TelemetryLabel } from "@/components/atoms/TelemetryLabel";
 
 type MonoTone = "primary" | "core" | "strong";
+type MonoMetricSize = "default" | "compact";
 
 type MonoMetricProps = {
   value: string;
@@ -9,6 +10,7 @@ type MonoMetricProps = {
   label?: string;
   detail?: string;
   tone?: MonoTone;
+  size?: MonoMetricSize;
 };
 
 const toneClass: Record<MonoTone, string> = {
@@ -23,14 +25,20 @@ export function MonoMetric({
   detail,
   suffix,
   tone = "primary",
+  size = "default",
   className,
 }: MonoMetricProps) {
+  const valueClass =
+    size === "compact"
+      ? "mt-3 max-w-full break-words font-mono text-[clamp(1.375rem,1.35vw,1.5rem)] leading-[1.08]"
+      : "mt-3 font-mono text-[28px] leading-[1.05]";
+
   if (label || detail) {
     return (
-      <div className={["border border-grid bg-panel px-4 py-4", className].filter(Boolean).join(" ")}>
+      <div className={["min-w-0 border border-grid bg-panel px-4 py-4", className].filter(Boolean).join(" ")}>
         {label ? <TelemetryLabel>{label}</TelemetryLabel> : null}
-        <div className={["mt-3 font-mono text-[28px] leading-[1.05]", toneClass[tone]].join(" ")}>
-          {value}
+        <div className={[valueClass, toneClass[tone]].join(" ")}>
+          <span className="mono-metric-value">{value}</span>
         </div>
         {detail ? (
           <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.14em] text-secondary">

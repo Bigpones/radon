@@ -38,6 +38,15 @@ python3 scripts/seo_audit_report.py
 
 `NEXT_DIST_DIR` is supported so local verification can build without colliding with another live Next.js process using the default `.next/` directory.
 
+Standalone browser coverage for the marketing site lives under `site/e2e/` and runs through the shared Playwright harness in [playwright.site.config.ts](/Users/joemccann/dev/apps/finance/radon/web/playwright.site.config.ts):
+
+```bash
+cd web
+npx playwright test branding.spec.ts theme-toggle.spec.ts surface-preview.spec.ts --config playwright.site.config.ts
+```
+
+That suite covers the site metadata/brand chrome, the header theme toggle, and the surface-preview metric containment regression on the landing page.
+
 ## SEO Audit Workflow
 
 The site ships an audit script that verifies the rendered landing page, `robots.txt`, `sitemap.xml`, `manifest.webmanifest`, and the social-image metadata routes against a local production server.
