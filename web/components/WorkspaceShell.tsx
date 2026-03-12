@@ -106,9 +106,11 @@ export default function WorkspaceShell({ section }: WorkspaceShellProps) {
     [portfolioSymbols, orderSymbols, regimeStocks],
   );
 
+  const tickerDetail = useTickerDetail();
+
   const allContracts = useMemo(
-    () => [...portfolioContracts, ...orderContracts],
-    [portfolioContracts, orderContracts],
+    () => [...portfolioContracts, ...orderContracts, ...tickerDetail.chainContracts],
+    [portfolioContracts, orderContracts, tickerDetail.chainContracts],
   );
 
   const regimeIndexes = useMemo<IndexContract[]>(
@@ -160,7 +162,7 @@ export default function WorkspaceShell({ section }: WorkspaceShellProps) {
   );
 
   // Sync prices + portfolio into ticker-detail context (refs, no re-renders)
-  const { setPrices: setTickerPrices, setFundamentals: setTickerFundamentals, setPortfolio: setTickerPortfolio, setOrders: setTickerOrders } = useTickerDetail();
+  const { openTicker, setPrices: setTickerPrices, setFundamentals: setTickerFundamentals, setPortfolio: setTickerPortfolio, setOrders: setTickerOrders } = tickerDetail;
   useEffect(() => { setTickerPrices(prices); }, [prices, setTickerPrices]);
   useEffect(() => { setTickerFundamentals(fundamentals); }, [fundamentals, setTickerFundamentals]);
   useEffect(() => { setTickerPortfolio(portfolio); }, [portfolio, setTickerPortfolio]);
@@ -270,6 +272,7 @@ export default function WorkspaceShell({ section }: WorkspaceShellProps) {
           onToggleFullscreen={toggleFullscreen}
           onToggleTheme={toggleTheme}
           theme={resolvedTheme}
+          onTickerSelect={openTicker}
         >
           <div className="sync-controls">
             <span className={`sync-status ${error ? "sync-error" : syncing ? "sync-active" : ""}`}>

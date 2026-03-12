@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useEffect, type ReactNode } from "react";
+import { useRef, useEffect, useCallback, type ReactNode } from "react";
 import { Maximize2, Minimize2, Moon, Sun } from "lucide-react";
+import TickerSearch from "./TickerSearch";
 
 type HeaderProps = {
   activeLabel: string;
@@ -9,6 +10,7 @@ type HeaderProps = {
   onToggleFullscreen: () => void;
   onToggleTheme: () => void;
   theme?: "dark" | "light";
+  onTickerSelect?: (symbol: string) => void;
   children?: ReactNode;
 };
 
@@ -18,6 +20,7 @@ export default function Header({
   onToggleFullscreen,
   onToggleTheme,
   theme,
+  onTickerSelect,
   children,
 }: HeaderProps) {
   const searchRef = useRef<HTMLInputElement | null>(null);
@@ -34,6 +37,13 @@ export default function Header({
     return () => document.removeEventListener("keydown", handler);
   }, []);
 
+  const handleSelect = useCallback(
+    (symbol: string) => {
+      onTickerSelect?.(symbol);
+    },
+    [onTickerSelect],
+  );
+
   return (
     <header className="header">
       <div className="breadcrumb">
@@ -41,13 +51,11 @@ export default function Header({
       </div>
       <div className="header-actions" suppressHydrationWarning>
         {children}
-        <input
-          suppressHydrationWarning
+        <TickerSearch
           ref={searchRef}
-          type="text"
-          className="search-input"
+          onSelect={handleSelect}
           placeholder="CMD+K to search..."
-          aria-label="Search"
+          className="search-input-wrapper"
         />
         <button
           suppressHydrationWarning

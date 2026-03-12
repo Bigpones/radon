@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
-import type { PriceData, FundamentalsData } from "@/lib/pricesProtocol";
+import type { PriceData, FundamentalsData, OptionContract } from "@/lib/pricesProtocol";
 import type { OrdersData, PortfolioData } from "@/lib/types";
 
 type TickerDetailContextValue = {
@@ -17,6 +17,8 @@ type TickerDetailContextValue = {
   setFundamentals: (f: Record<string, FundamentalsData>) => void;
   setPortfolio: (p: PortfolioData | null) => void;
   setOrders: (o: OrdersData | null) => void;
+  chainContracts: OptionContract[];
+  setChainContracts: (c: OptionContract[]) => void;
 };
 
 const TickerDetailContext = createContext<TickerDetailContextValue | null>(null);
@@ -24,6 +26,7 @@ const TickerDetailContext = createContext<TickerDetailContextValue | null>(null)
 export function TickerDetailProvider({ children }: { children: ReactNode }) {
   const [activeTicker, setActiveTicker] = useState<string | null>(null);
   const [activePositionId, setActivePositionId] = useState<number | null>(null);
+  const [chainContracts, setChainContractsState] = useState<OptionContract[]>([]);
   const pricesRef = useRef<Record<string, PriceData>>({});
   const fundamentalsRef = useRef<Record<string, FundamentalsData>>({});
   const portfolioRef = useRef<PortfolioData | null>(null);
@@ -37,6 +40,11 @@ export function TickerDetailProvider({ children }: { children: ReactNode }) {
   const closeTicker = useCallback(() => {
     setActiveTicker(null);
     setActivePositionId(null);
+    setChainContractsState([]);
+  }, []);
+
+  const setChainContracts = useCallback((c: OptionContract[]) => {
+    setChainContractsState(c);
   }, []);
 
   const getPrices = useCallback(() => pricesRef.current, []);
@@ -62,7 +70,7 @@ export function TickerDetailProvider({ children }: { children: ReactNode }) {
 
   return (
     <TickerDetailContext.Provider
-      value={{ activeTicker, activePositionId, openTicker, closeTicker, getPrices, getFundamentals, getPortfolio, getOrders, setPrices, setFundamentals, setPortfolio, setOrders }}
+      value={{ activeTicker, activePositionId, openTicker, closeTicker, getPrices, getFundamentals, getPortfolio, getOrders, setPrices, setFundamentals, setPortfolio, setOrders, chainContracts, setChainContracts }}
     >
       {children}
     </TickerDetailContext.Provider>
