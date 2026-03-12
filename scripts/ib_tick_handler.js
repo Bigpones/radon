@@ -137,6 +137,28 @@ export function updatePriceFromTickPrice(data, tickType, value) {
   if (data.last == null) {
     updateDerivedLast(data);
   }
+
+  // ── Stale frozen LAST detection for options ──
+  // IB with reqMarketDataType(4) sends frozen LAST = yesterday's close before
+  // live ticks arrive. For options (symbol contains "_"), if LAST equals CLOSE
+  // and bid/ask indicate a very different price (>20% divergence), replace LAST
+  // with bid/ask midpoint. Stocks are excluded — last=close is normal after hours.
+  if (
+    data.last != null &&
+    data.close != null &&
+    data.last === data.close &&
+    data.bid != null &&
+    data.ask != null &&
+    data.symbol.includes("_") // options only (keyed as SYMBOL_EXPIRY_STRIKE_RIGHT)
+  ) {
+    const mid = (data.bid + data.ask) / 2;
+    const divergence = Math.abs(mid - data.last) / data.last;
+    if (divergence > 0.20) {
+      data.last = Number(mid.toFixed(4));
+      data.lastIsCalculated = true;
+    }
+  }
+
   data.timestamp = new Date().toISOString();
 }
 
