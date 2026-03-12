@@ -183,10 +183,10 @@
           <span>Infographic Card — Right-click to copy or use button</span>
           <button class="copy-img-btn" onclick="copyImage()">COPY IMAGE</button>
         </div>
-        <img id="card-img" src="{{CARD_PNG}}" alt="{{TICKER}} Trade Infographic" style="width:600px; border:1px solid #1e293b; border-radius:4px; display:block; cursor:pointer;" crossorigin="anonymous" />
+        <img id="card-img" src="{{CARD_DATA_URI}}" alt="{{TICKER}} Trade Infographic" style="width:600px; border:1px solid #1e293b; border-radius:4px; display:block; cursor:pointer;" />
         <div class="card-actions">
           <a class="action-btn" href="{{CARD_FILE}}" target="_blank">Open Card HTML ↗</a>
-          <a class="action-btn" href="{{CARD_PNG}}" download="{{TICKER}}-trade-{{DATE}}.png">Download PNG ↓</a>
+          <a class="action-btn" href="{{CARD_DATA_URI}}" download="{{TICKER}}-trade-{{DATE}}.png">Download PNG ↓</a>
         </div>
       </div>
 

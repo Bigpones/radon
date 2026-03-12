@@ -1,7 +1,7 @@
 # Status & Decision Log
 
 ## Last Updated
-2026-03-12T08:43:57-07:00
+2026-03-12T09:38:00-07:00
 
 ## Recent Commits
 - 2026-03-12 08:43:57 -0700 — **fix: unify quote telemetry across ticker, instrument, and modify-order views. Shared calculator/renderer now show `BID`, `MID`, `ASK`, `SPREAD`, with spread rendered as raw quote width plus midpoint percent. Locked with unit and Playwright regressions.**
@@ -61,14 +61,13 @@
 - ⚠️ *This section is a cache — verify against IB for current state*
 - **Today's Realized P&L**: +$6,513 (AAOI call sale)
 
-## Today's Trades (2026-03-06)
+## Today's Trades (2026-03-12)
 | Trade | Structure | P&L | Status |
 |-------|-----------|-----|--------|
-| IWM | Risk Reversal P$248/C$259 Apr 17 (6 contracts) | — (open) | ✓ FILLED |
-| AAOI | Sold 25x Mar 6 $105 Call @ $5.25 | +$6,513 | ✓ CLOSED |
-| APO | Risk Reversal P$100/C$115 Apr 17 (25 contracts) | — (open) | ✓ FILLED |
-| TMUS | Bull Call Spread $230/$250 Apr 17 (100 contracts) | — (open) | ✓ FILLED |
-| **Net Realized P&L Today** | | **+$6,513** | |
+| OXY | Bear Put Spread P$55/P$50 Apr 17 (222 contracts) | — (open) | ✓ FILLED @ $0.98 |
+| AAOI | BTC 25x Mar 20 $130C @ $0.10 | +$14,025 | ✓ CLOSED (reconciled) |
+| AAOI | BTO 25x Mar 20 $105C @ $9.45 | — (open) | ✓ FILLED (reconciled) |
+| **Net Realized P&L Today** | | **+$14,025** | |
 
 ## Positions Requiring Attention
 
@@ -123,6 +122,9 @@
 | **17** | **03-06** | **AAOI** | **Sold Mar 6 $105C (25x @ $5.25)** | **CLOSED** | **+$6,513** |
 | **18** | **03-06** | **APO** | **Risk Reversal P$100/C$115 (Apr 17, 25x)** | **OPEN** | — |
 | **19** | **03-06** | **TMUS** | **Bull Call Spread $230/$250 (Apr 17, 100x)** | **OPEN** | — |
+| **37** | **03-12** | **AAOI** | **BTC 25x $130C Mar 20 @ $0.10** | **CLOSED** | **+$14,025** |
+| **38** | **03-12** | **AAOI** | **BTO 25x $105C Mar 20 @ $9.45** | **OPEN** | — |
+| **39** | **03-12** | **OXY** | **Bear Put Spread P$55/P$50 (Apr 17, 222x)** | **OPEN** | — |
 
 ---
 
@@ -164,9 +166,33 @@
 - **R:R**: 3.0:1 (max gain $82,456 / max risk $27,544)
 - **Thesis**: ✅ STRONG — First fully-compliant trade from standard evaluation. All three gates passed. Highest signal score on watchlist (129.7).
 
+### OXY — Bear Put Spread $55/$50 (Trade #39) ✨ NEW
+- **Entry**: 03-12 @ $0.98 net debit | **Structure**: 222 contracts, Apr 17 expiry (35 DTE)
+- **Edge**: THESIS TRADE — bearish oil macro view, no dark pool confirmation
+  - OXY selected as best vehicle after surveying USO, SCO, XLE, XOP, COP, APA, OIH, HAL, SLB, DVN, FANG, MPC
+  - USO rejected: options illiquid ($1+ wide bid/ask), IV 120% (2× HV) = massive vol premium
+  - SCO rejected: 2× inverse ETF decay ~11.5%/35 days, Kelly was NEGATIVE, path-dependent
+  - XLE rejected: only 0.25 oil beta — needs 4× oil move vs OXY
+  - OXY chosen: 0.43 oil beta + $0.03-0.08 bid/ask + 49% HV ≈ 42-49% IV (fairly priced) + no leveraged decay
+- **Dark Pool at Entry**: MIXED (53% buy aggregate, no sustained direction)
+- **Kelly**: P=0.25, odds=4.15:1, full Kelly 6.93%, 0.25× = 1.73% → 222 contracts
+- **R:R**: 4.1:1 (max gain $89,244 / max risk $21,756)
+- **Breakeven**: OXY ≤ $54.02 (oil needs to drop ~14%)
+- **Max gain at**: OXY ≤ $50 (oil needs to drop ~35%)
+- **Thesis**: ⚠️ THESIS ONLY — No institutional flow confirmation. Convexity and risk management pass. Edge gate marked as thesis-based override by operator.
+
 ---
 
 ## Recent Evaluations
+
+### OXY — 2026-03-12 ✅ EXECUTED (Thesis Trade)
+- **Decision**: TRADE
+- **Structure**: Bear Put Spread P$55/P$50 Apr 17 (222 contracts)
+- **Fill**: $0.98 net debit ($21,756 total)
+- **Gates**: Convexity 4.1:1 ✅, Risk 1.75% ✅, Edge: THESIS ONLY ⚠️
+- **📊 Data as of**: 2026-03-12 09:33 AM PT (LIVE)
+- **Thesis**: Bearish oil macro view. OXY selected after comprehensive vehicle comparison (12 tickers evaluated). No dark pool distribution signal — institutions are NOT selling oil/energy names. Flow shows mixed/accumulation on OXY. Operator accepted thesis-only edge.
+- **Vehicle analysis**: USO (illiquid options), SCO (leveraged decay), XLE (low beta), XOP (DP accumulation = wrong way), COP (low beta), APA (1 strike available). OXY had highest usable oil beta (0.43) with best option liquidity ($0.03-0.08 spreads).
 
 ### IBM — 2026-03-05 ⛔ NO_TRADE
 - **Decision**: NO_TRADE
@@ -390,6 +416,7 @@ Click any ticker across all 6 table sections → 720px modal with:
 | `ib-order-execution` | Order placement and fill monitoring |
 | `html-report` | Trade specification + P&L + Portfolio templates |
 | `context-engineering` | Persistent memory architecture (always-on) |
+| `tweet-it` | Tweet copy + infographic card for X posts (base64 PNG embed) |
 
 ### Services
 | Service | Status | Description |

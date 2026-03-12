@@ -299,16 +299,46 @@ Describe the scenario you want to stress test. Examples:
 - `X post`
 - `share this trade`
 
-**Workflow:**
-1. Identify the trade (most recent fill, or user-specified)
-2. Generate tweet text using the template voice (see skill)
-3. Generate infographic card HTML (`reports/tweet-{TICKER}-{DATE}-card.html`)
-4. Generate preview page with copy button (`reports/tweet-{TICKER}-{DATE}.html`)
-5. Open preview in browser
+**Workflow (6 steps — MANDATORY, in order):**
+
+| Step | Action | Output |
+|------|--------|--------|
+| 1 | Generate tweet text from trade data | Raw text + HTML-formatted version |
+| 2 | Generate card HTML from trade data | `reports/tweet-{TICKER}-{DATE}-card.html` |
+| 3 | Screenshot card via `agent-browser` | `reports/tweet-{TICKER}-{DATE}-card.png` |
+| 4 | **Base64-encode PNG into data URI** | `data:image/png;base64,...` string |
+| 5 | Generate preview HTML with data URI inlined | `reports/tweet-{TICKER}-{DATE}.html` |
+| 6 | Open preview in browser | User sees text + image with copy buttons |
+
+**Step 3 — Screenshot:**
+```bash
+agent-browser open file:///path/to/reports/tweet-{TICKER}-{DATE}-card.html
+agent-browser screenshot .card /path/to/reports/tweet-{TICKER}-{DATE}-card.png
+```
+
+**Step 4 — Base64 embed (CRITICAL):**
+```python
+import base64
+with open('reports/tweet-{TICKER}-{DATE}-card.png', 'rb') as f:
+    b64 = base64.b64encode(f.read()).decode('ascii')
+data_uri = f"data:image/png;base64,{b64}"
+# Inject data_uri into preview HTML for <img src> and <a href download>
+```
+
+**⚠️ Why base64:** Chrome blocks `file://` → `file://` cross-origin image loads (CORS). Relative paths, absolute paths, and `file:///` URIs ALL fail. The only reliable method for local HTML is inlining the PNG as a data URI. Typical card is ~100KB base64 — no issue.
 
 **Output files:**
-- `reports/tweet-{TICKER}-{DATE}.html` — Preview with copy button + embedded card
-- `reports/tweet-{TICKER}-{DATE}-card.html` — Standalone card for screenshotting
+- `reports/tweet-{TICKER}-{DATE}.html` — **Self-contained** preview (PNG inlined as base64, no external deps)
+- `reports/tweet-{TICKER}-{DATE}-card.html` — Card HTML source (kept for re-screenshotting)
+- `reports/tweet-{TICKER}-{DATE}-card.png` — Screenshot artifact (inlined into preview)
+
+**Preview page features:**
+- **Left column**: Tweet text with **COPY TEXT** button (clipboard API)
+- **Right column**: Card PNG image (base64 inline) with:
+  - Right-click → Copy Image (native browser)
+  - **COPY IMAGE** button (Canvas → ClipboardItem API)
+  - **Download PNG ↓** button (data URI download)
+  - **Open Card HTML ↗** link (to source HTML for re-screenshotting)
 
 **Tweet voice rules:**
 - Cashtags: `$OXY`, `$USO`, `$SCO`
@@ -321,6 +351,7 @@ Describe the scenario you want to stress test. Examples:
 - 600px wide, dark theme (#0a0f14 background)
 - Inter + IBM Plex Mono fonts
 - Sections: direction badge → ticker → structure → metrics strip → payoff SVG → thesis → vehicle comparison → footer
+- Footer: "radon.run" (left) · "Analyzed by Radon" (center, teal) · date (right)
 - 4px max border-radius, no shadows/gradients
 
 **Skill:** `.pi/skills/tweet-it/SKILL.md`
