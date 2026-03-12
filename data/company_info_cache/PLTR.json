@@ -1,11 +1,11 @@
 {
   "ticker": "PLTR",
   "profile_expires": null,
-  "stats_expires": "2026-03-11T14:43:02.449Z",
+  "stats_expires": "2026-03-13T18:21:51.018Z",
   "uw_info": {
     "symbol": "PLTR",
     "logo": "https://storage.googleapis.com/uwassets/logos/PLTR.png",
-    "beta": "1.9109",
+    "beta": "1.8826",
     "full_name": "PALANTIR",
     "sector": "Technology",
     "has_options": true,
@@ -13,9 +13,9 @@
     "outstanding": "2291470751",
     "announce_time": "unknown",
     "issue_type": "Common Stock",
-    "marketcap": "358454769579",
+    "marketcap": "347386965852",
     "next_earnings_date": "2026-05-04",
-    "avg30_volume": "56253875.9",
+    "avg30_volume": "54690112",
     "uw_tags": [],
     "short_name": "PALANTIR",
     "short_description": "palantir technologies builds software platforms that help human experts perform powerful, collaborative analysis of data at scale. palantir’s ...",
@@ -24,15 +24,15 @@
     "has_earnings_history": true
   },
   "stock_state": {
-    "close": "152.11",
-    "high": "156.6571",
-    "low": "150.97",
-    "open": "155.91",
-    "volume": 14147745,
-    "tape_time": "2026-03-10T14:43:01Z",
+    "close": "153.8",
+    "high": "155.88",
+    "low": "150.98",
+    "open": "153.01",
+    "volume": 40176989,
     "market_time": "regular",
-    "total_volume": 15321715,
-    "prev_close": "156.03"
+    "tape_time": "2026-03-12T18:41:14Z",
+    "total_volume": 41629957,
+    "prev_close": "153.2396"
   },
   "exa_profile": {
     "ceo": "Alexander Caedmon Karp",
@@ -47,5 +47,5 @@
     "week_52_high": 207.52,
     "week_52_low": 66.12
   },
-  "fetched_at": "2026-03-10T14:43:02.449Z"
+  "fetched_at": "2026-03-12T18:21:51.018Z"
 }
