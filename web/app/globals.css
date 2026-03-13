@@ -4109,7 +4109,7 @@ tr {
 .chain-header {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 10;
   background: var(--bg-panel-raised);
   padding: 4px 6px;
   text-align: right;
@@ -4134,7 +4134,7 @@ tr {
 .chain-side-label {
   position: sticky;
   top: 24px;
-  z-index: 2;
+  z-index: 10;
   background: var(--bg-panel-raised);
   padding: 2px 6px;
   font-size: 9px;

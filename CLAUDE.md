@@ -6,9 +6,9 @@ These rules apply to ALL work in this project. Violating any rule is a blocking 
 
 1. **Be concise.** Get straight to the point. No preamble, no filler, no restating what was asked. Long output only when explicitly requested.
 
-2. **E2E browser verification for ALL UI work.** Any change touching UI code (components, styles, layouts, modals, tooltips, charts) MUST be verified with Playwright end-to-end browser automation before marking complete. Playwright is installed at `@playwright/test` in `web/`. Config: `web/playwright.config.ts`. No UI change is done until visually confirmed in a real browser.
+2. **E2E browser verification for ALL UI work.** Any change touching UI code (components, styles, layouts, modals, tooltips, charts) MUST be verified in a real browser before marking complete. **Primary**: use the `chrome-cdp` skill for live browser automation and visual confirmation. **Fallback**: Playwright E2E tests (`@playwright/test` in `web/`, config: `web/playwright.config.ts`) when chrome-cdp is unavailable. No UI change is done until visually confirmed in a real browser.
 
-3. **Red/green TDD for ALL code.** Every bug fix, feature, and refactor follows test-driven development: write a failing test first (red), implement the fix (green), then refactor. No exceptions. Unit tests via Vitest, E2E via Playwright.
+3. **Red/green TDD for ALL code.** Every bug fix, feature, and refactor follows test-driven development: write a failing test first (red), implement the fix (green), then refactor. No exceptions. Unit tests via Vitest, E2E via chrome-cdp skill (primary) or Playwright (fallback).
 
 4. **95% test coverage target.** Always create, update, or delete tests (unit, integration, E2E) to maintain ≥95% coverage. Every PR-worthy change must include corresponding tests.
 
@@ -376,7 +376,7 @@ Tests     : web/tests/share-pnl.test.ts (12 unit), web/e2e/share-pnl.spec.ts (6 
 1. Write a failing test that reproduces the bug (test must be RED before any code change)
 2. Implement the minimal fix
 3. Confirm the test turns GREEN
-4. For UI bugs: add a Playwright E2E test — unit tests alone are not sufficient confirmation
+4. For UI bugs: verify with chrome-cdp skill (primary) for live browser confirmation, then add a Playwright E2E test as regression coverage. Unit tests alone are not sufficient
 
 ---
 
