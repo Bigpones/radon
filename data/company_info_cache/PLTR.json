@@ -24,15 +24,15 @@
     "has_earnings_history": true
   },
   "stock_state": {
-    "close": "153.8",
-    "high": "155.88",
-    "low": "150.98",
-    "open": "153.01",
-    "volume": 40176989,
+    "close": "150.755",
+    "high": "154.56",
+    "low": "148.5801",
+    "open": "153.25",
+    "volume": 30378187,
     "market_time": "regular",
-    "tape_time": "2026-03-12T18:41:14Z",
-    "total_volume": 41629957,
-    "prev_close": "153.2396"
+    "tape_time": "2026-03-13T18:06:50Z",
+    "total_volume": 31280021,
+    "prev_close": "153.33"
   },
   "exa_profile": {
     "ceo": "Alexander Caedmon Karp",

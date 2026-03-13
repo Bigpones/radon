@@ -203,11 +203,27 @@ test.describe("Portfolio ticket quote telemetry", () => {
     const aoiiLink = page.locator('[aria-label="View details for AAOI"]').first();
     await aoiiLink.waitFor({ timeout: 10_000 });
     await aoiiLink.click();
+    await page.waitForURL("**/AAOI**", { timeout: 5_000 });
 
-    const modal = page.locator(".ticker-detail-modal");
-    await modal.waitFor({ timeout: 5_000 });
+    const detail = page.locator(".ticker-detail-page");
+    await detail.waitFor({ timeout: 5_000 });
 
-    const priceBar = modal.locator(".price-bar");
+    // Re-inject prices after page navigation (prices lost on route change)
+    await page.evaluate((prices) => {
+      for (const [, priceData] of Object.entries(prices)) {
+        window.dispatchEvent(
+          new CustomEvent("ws-price", {
+            detail: {
+              type: "price",
+              symbol: (priceData as { symbol: string }).symbol,
+              data: priceData,
+            },
+          }),
+        );
+      }
+    }, PRICES);
+
+    const priceBar = detail.locator(".price-bar");
     await priceBar.waitFor({ timeout: 5_000 });
 
     const labels = await priceBar.locator(".price-bar-label").allTextContents();

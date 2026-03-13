@@ -136,7 +136,7 @@ test("chart tooltip light mode: toggling theme changes html[data-theme] to 'ligh
   expect(stored).toBe("light");
 });
 
-test("chart tooltip: ticker detail modal survives theme toggle without crash", async ({ page }) => {
+test("chart tooltip: ticker detail page survives theme toggle without crash", async ({ page }) => {
   await stubRoutes(page);
 
   await page.addInitScript(() => {
@@ -145,30 +145,31 @@ test("chart tooltip: ticker detail modal survives theme toggle without crash", a
 
   await page.goto("/orders");
 
-  // Open the AAPL ticker detail modal
+  // Open the AAPL ticker detail page
   const aaplRow = page.locator('[aria-label="View details for AAPL"]').first();
   await aaplRow.waitFor({ timeout: 10_000 });
   await aaplRow.click();
+  await page.waitForURL("**/AAPL**", { timeout: 5_000 });
 
-  const modal = page.locator(".ticker-detail-modal");
-  await modal.waitFor({ timeout: 5_000 });
+  const detail = page.locator(".ticker-detail-page");
+  await detail.waitFor({ timeout: 5_000 });
 
-  // Confirm modal is open in dark mode
+  // Confirm page is in dark mode
   expect(await page.getAttribute("html", "data-theme")).toBe("dark");
 
-  // Toggle theme while modal is open
+  // Toggle theme while page is open
   const themeToggle = page.locator('[aria-label="Toggle theme"], button:has-text("Light"), button:has-text("Dark"), .theme-toggle').first();
   await themeToggle.waitFor({ timeout: 5_000 });
   await themeToggle.evaluate((element: HTMLButtonElement) => element.click());
 
-  // Modal must still be visible — no crash from re-render
-  await expect(modal).toBeVisible();
+  // Page must still be visible — no crash from re-render
+  await expect(detail).toBeVisible();
 
   // Theme must now be light
   expect(await page.getAttribute("html", "data-theme")).toBe("light");
 });
 
-test("chart tooltip: canvas element is present inside ticker detail modal", async ({ page }) => {
+test("chart tooltip: canvas element is present inside ticker detail page", async ({ page }) => {
   await stubRoutes(page);
 
   await page.addInitScript(() => {
@@ -180,15 +181,16 @@ test("chart tooltip: canvas element is present inside ticker detail modal", asyn
   const aaplRow = page.locator('[aria-label="View details for AAPL"]').first();
   await aaplRow.waitFor({ timeout: 10_000 });
   await aaplRow.click();
+  await page.waitForURL("**/AAPL**", { timeout: 5_000 });
 
-  const modal = page.locator(".ticker-detail-modal");
-  await modal.waitFor({ timeout: 5_000 });
+  const detail = page.locator(".ticker-detail-page");
+  await detail.waitFor({ timeout: 5_000 });
 
-  const chartShell = modal.locator('[data-testid="price-chart-panel"]');
+  const chartShell = detail.locator('[data-testid="price-chart-panel"]');
   await expect(chartShell).toHaveAttribute("data-chart-family", "Live Trace");
   await expect(chartShell).toHaveAttribute("data-chart-renderer", "canvas-adapter");
 
   // Liveline renders a <canvas> element — its presence confirms the chart mounted
-  const canvas = modal.locator("canvas").first();
+  const canvas = detail.locator("canvas").first();
   await expect(canvas).toBeVisible({ timeout: 5_000 });
 });

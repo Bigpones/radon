@@ -172,16 +172,26 @@ test.describe("Spread PriceBar — net pricing from per-leg WS data", () => {
       }
     }, PRICES);
 
-    // Open the ticker detail modal for GOOG
+    // Open the ticker detail page for GOOG
     const googLink = page.locator('[aria-label="View details for GOOG"]').first();
     await googLink.waitFor({ timeout: 10_000 });
     await googLink.click();
+    await page.waitForURL("**/GOOG**", { timeout: 5_000 });
 
-    const modal = page.locator(".ticker-detail-modal");
-    await modal.waitFor({ timeout: 5_000 });
+    const detail = page.locator(".ticker-detail-page");
+    await detail.waitFor({ timeout: 5_000 });
+
+    // Re-inject WS prices after page navigation (prices lost on route change)
+    await page.evaluate((prices) => {
+      for (const [, priceData] of Object.entries(prices)) {
+        window.dispatchEvent(
+          new CustomEvent("ws-price", { detail: { type: "price", symbol: (priceData as { symbol: string }).symbol, data: priceData } }),
+        );
+      }
+    }, PRICES);
 
     // The PriceBar should NOT show "GOOG (underlying)"
-    const priceBar = modal.locator(".price-bar");
+    const priceBar = detail.locator(".price-bar");
     await priceBar.waitFor({ timeout: 5_000 });
     const label = priceBar.locator(".price-bar-label").first();
     const labelText = await label.textContent();
@@ -222,12 +232,20 @@ test.describe("Spread PriceBar — net pricing from per-leg WS data", () => {
     const googLink = page.locator('[aria-label="View details for GOOG"]').first();
     await googLink.waitFor({ timeout: 10_000 });
     await googLink.click();
+    await page.waitForURL("**/GOOG**", { timeout: 5_000 });
 
-    const modal = page.locator(".ticker-detail-modal");
-    await modal.waitFor({ timeout: 5_000 });
+    const detail = page.locator(".ticker-detail-page");
+    await detail.waitFor({ timeout: 5_000 });
+
+    // Re-inject underlying price only after page navigation
+    await page.evaluate((price) => {
+      window.dispatchEvent(
+        new CustomEvent("ws-price", { detail: { type: "price", symbol: price.symbol, data: price } }),
+      );
+    }, PRICES.GOOG);
 
     // Should fall back to underlying when leg prices are missing
-    const priceBar = modal.locator(".price-bar");
+    const priceBar = detail.locator(".price-bar");
     await priceBar.waitFor({ timeout: 5_000 });
     await expect(priceBar).toContainText("(underlying)");
   });
