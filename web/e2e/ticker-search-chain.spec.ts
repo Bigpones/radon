@@ -116,8 +116,8 @@ function stubApis(page: import("@playwright/test").Page) {
   page.route("**/api/prices", (route) => route.abort());
 }
 
-test.describe("Ticker Search → Detail Modal → Chain", () => {
-  test("search input focuses on CMD+K and opens detail modal on selection", async ({ page }) => {
+test.describe("Ticker Search → Detail Page → Chain", () => {
+  test("search input focuses on CMD+K and opens detail page on selection", async ({ page }) => {
     await page.unrouteAll({ behavior: "ignoreErrors" });
     stubApis(page);
     await page.goto("/portfolio");
@@ -140,25 +140,14 @@ test.describe("Ticker Search → Detail Modal → Chain", () => {
       );
     }, makePriceData("AAPL", 205.50, 205.40, 205.60));
 
-    // Simulate opening ticker detail (via context — we need to trigger openTicker)
-    // Since TickerSearch needs WS, we'll click the ticker link if available,
-    // or directly open via URL params / context.
-    // For this test, let's use the ticker detail context via evaluate:
-    await page.evaluate(() => {
-      window.dispatchEvent(new CustomEvent("open-ticker", { detail: "AAPL" }));
-    });
+    // Navigate directly to ticker detail page
+    await page.goto("/AAPL?tab=book");
 
-    // Wait for modal to appear
-    const modal = page.locator(".ticker-detail-modal");
-    // If the modal doesn't appear via custom event, the feature may need
-    // the TickerDetailContext to listen for it. For now, verify the Book tab exists.
-    // This is a structural test.
-    const bookTab = modal.locator('button.ticker-tab:has-text("Book")');
-    if (await modal.isVisible()) {
-      await bookTab.click();
-      // Verify L1 order book section exists
-      await expect(modal.locator("text=ORDER BOOK")).toBeVisible();
-    }
+    const detail = page.locator(".ticker-detail-page");
+    await detail.waitFor({ timeout: 5_000 });
+
+    // Verify L1 order book section exists
+    await expect(detail.locator("text=ORDER BOOK")).toBeVisible();
   });
 
   test("Chain tab loads expirations and shows strike grid", async ({ page }) => {
@@ -173,33 +162,27 @@ test.describe("Ticker Search → Detail Modal → Chain", () => {
       );
     }, makePriceData("AAPL", 205.50, 205.40, 205.60));
 
-    // Open ticker detail
-    await page.evaluate(() => {
-      window.dispatchEvent(new CustomEvent("open-ticker", { detail: "AAPL" }));
-    });
+    // Navigate directly to ticker detail page with chain tab
+    await page.goto("/AAPL?tab=chain");
 
-    const modal = page.locator(".ticker-detail-modal");
-    if (await modal.isVisible()) {
-      // Click Chain tab
-      const chainTab = modal.locator('button.ticker-tab:has-text("Chain")');
-      await chainTab.click();
+    const detail = page.locator(".ticker-detail-page");
+    await detail.waitFor({ timeout: 5_000 });
 
-      // Should show expiry selector
-      const expirySelect = modal.locator(".chain-expiry-select").first();
-      await expect(expirySelect).toBeVisible();
+    // Should show expiry selector
+    const expirySelect = detail.locator(".chain-expiry-select").first();
+    await expect(expirySelect).toBeVisible();
 
-      // Should show the strike grid table
-      const chainGrid = modal.locator(".chain-grid");
-      await expect(chainGrid).toBeVisible();
+    // Should show the strike grid table
+    const chainGrid = detail.locator(".chain-grid");
+    await expect(chainGrid).toBeVisible();
 
-      // Should have CALLS and PUTS headers
-      await expect(modal.locator("th:has-text('CALLS')")).toBeVisible();
-      await expect(modal.locator("th:has-text('PUTS')")).toBeVisible();
+    // Should have CALLS and PUTS headers
+    await expect(detail.locator("th:has-text('CALLS')")).toBeVisible();
+    await expect(detail.locator("th:has-text('PUTS')")).toBeVisible();
 
-      // ATM strike (205) should be highlighted
-      const atmRow = modal.locator(".chain-row-atm");
-      await expect(atmRow).toBeVisible();
-    }
+    // ATM strike (205) should be highlighted
+    const atmRow = detail.locator(".chain-row-atm");
+    await expect(atmRow).toBeVisible();
   });
 
   test("clicking chain bid/ask adds legs to order builder", async ({ page }) => {
@@ -222,32 +205,27 @@ test.describe("Ticker Search → Detail Modal → Chain", () => {
       }
     }, prices);
 
-    // Open ticker detail
-    await page.evaluate(() => {
-      window.dispatchEvent(new CustomEvent("open-ticker", { detail: "AAPL" }));
-    });
+    // Navigate directly to ticker detail page with chain tab
+    await page.goto("/AAPL?tab=chain");
 
-    const modal = page.locator(".ticker-detail-modal");
-    if (await modal.isVisible()) {
-      // Click Chain tab
-      await modal.locator('button.ticker-tab:has-text("Chain")').click();
+    const detail = page.locator(".ticker-detail-page");
+    await detail.waitFor({ timeout: 5_000 });
 
-      // Wait for chain to load
-      await modal.locator(".chain-grid").waitFor();
+    // Wait for chain to load
+    await detail.locator(".chain-grid").waitFor();
 
-      // Click a call mid price (should add BUY leg)
-      const callMid = modal.locator('.chain-mid.chain-clickable').first();
-      if (await callMid.isVisible()) {
-        await callMid.click();
+    // Click a call mid price (should add BUY leg)
+    const callMid = detail.locator('.chain-mid.chain-clickable').first();
+    if (await callMid.isVisible()) {
+      await callMid.click();
 
-        // Order builder should appear
-        const orderBuilder = modal.locator(".order-builder");
-        await expect(orderBuilder).toBeVisible();
+      // Order builder should appear
+      const orderBuilder = detail.locator(".order-builder");
+      await expect(orderBuilder).toBeVisible();
 
-        // Should show the leg
-        const legRow = orderBuilder.locator(".order-builder-leg");
-        await expect(legRow).toHaveCount(1);
-      }
+      // Should show the leg
+      const legRow = orderBuilder.locator(".order-builder-leg");
+      await expect(legRow).toHaveCount(1);
     }
   });
 });

@@ -229,14 +229,30 @@ test.describe("Modify-order spread telemetry", () => {
     const detailLink = page.locator('[aria-label="View details for AAOI"]').first();
     await detailLink.waitFor({ timeout: 10_000 });
     await detailLink.click();
+    await page.waitForURL("**/AAOI**", { timeout: 5_000 });
 
-    const tickerModal = page.locator(".ticker-detail-modal");
-    await tickerModal.waitFor({ timeout: 5_000 });
+    const tickerPage = page.locator(".ticker-detail-page");
+    await tickerPage.waitFor({ timeout: 5_000 });
 
-    const orderTab = tickerModal.locator(".ticker-tab", { hasText: /^Order/ }).first();
+    // Re-inject prices after page navigation (prices lost on route change)
+    await page.evaluate((prices) => {
+      for (const [, priceData] of Object.entries(prices)) {
+        window.dispatchEvent(
+          new CustomEvent("ws-price", {
+            detail: {
+              type: "price",
+              symbol: (priceData as { symbol: string }).symbol,
+              data: priceData,
+            },
+          }),
+        );
+      }
+    }, PRICES);
+
+    const orderTab = tickerPage.locator(".ticker-tab", { hasText: /^Order/ }).first();
     await orderTab.click();
 
-    const modifyButton = tickerModal.locator(".btn-modify").first();
+    const modifyButton = tickerPage.locator(".btn-modify").first();
     await modifyButton.waitFor({ timeout: 5_000 });
     await modifyButton.click();
 
