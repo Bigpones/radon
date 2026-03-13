@@ -10,6 +10,7 @@ import {
   normalizeSymbolList,
   symbolKey,
   contractsKey,
+  optionKey,
 } from "./pricesProtocol";
 
 export type PriceUpdate = {
@@ -54,8 +55,24 @@ export type UsePricesReturn = {
   getSnapshot: (symbols: string[]) => Promise<Record<string, PriceData>>;
 };
 
+type ConnState = "idle" | "connecting" | "open" | "closed";
+
+const WS_DEBUG = process.env.NODE_ENV === "development";
+function wsLog(...args: unknown[]) {
+  if (WS_DEBUG) console.debug("[usePrices]", ...args);
+}
+
+const RECONNECT_BASE_MS = 1000;
+const RECONNECT_MAX_MS = 30000;
+const RECONNECT_JITTER_MS = 500;
+const MAX_RECONNECT_ATTEMPTS = 10;
+
 /**
  * React hook for real-time price streaming from IB via WebSocket.
+ *
+ * Uses a connection state machine to prevent teardown/recreate cycles
+ * when subscriptions change. Subscriptions are synced via diff-based
+ * messages over the existing connection.
  */
 export function usePrices(options: UsePricesOptions): UsePricesReturn {
   const {
@@ -79,6 +96,24 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
 
+  // Connection state machine (ref — not rendered)
+  const connStateRef = useRef<ConnState>("idle");
+  const socketGenRef = useRef(0);
+
+  // Desired subscription tracking (ref — not rendered)
+  const desiredRef = useRef<{
+    symbols: string[];
+    contracts: OptionContract[];
+    indexes: IndexContract[];
+  }>({ symbols: [], contracts: [], indexes: [] });
+  const lastSentHashRef = useRef("");
+  const reconnectAttemptRef = useRef(0);
+
+  // Callback refs (avoid stale closures in WS handlers)
+  const onPriceUpdateRef = useRef(onPriceUpdate);
+  const onConnectionChangeRef = useRef(onConnectionChange);
+
+  // Stable hashes for change detection
   const symbolHash = symbolKey(symbols);
   const contractHash = contractsKey(contracts);
   const indexHash = useMemo(
@@ -98,46 +133,182 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
     [indexHash],
   );
 
+  const hasSubscriptions =
+    normalizedSymbols.length > 0 ||
+    normalizedContracts.length > 0 ||
+    normalizedIndexes.length > 0;
+
+  // Sync refs during render (before any useCallback/useEffect)
+  desiredRef.current = {
+    symbols: normalizedSymbols,
+    contracts: normalizedContracts,
+    indexes: normalizedIndexes,
+  };
+  onPriceUpdateRef.current = onPriceUpdate;
+  onConnectionChangeRef.current = onConnectionChange;
+
   const socketUrl =
     process.env.NEXT_PUBLIC_IB_REALTIME_WS_URL ??
     process.env.IB_REALTIME_WS_URL ??
     "ws://localhost:8765";
 
-  const connect = useCallback(() => {
-    if (!enabled || (normalizedSymbols.length === 0 && normalizedContracts.length === 0 && normalizedIndexes.length === 0)) return;
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
 
+  const clearReconnectTimer = useCallback(() => {
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
+  }, []);
+
+  const buildHash = useCallback(
+    (syms: string[], cts: OptionContract[], idxs: IndexContract[]) =>
+      symbolKey(syms) +
+      "|" +
+      contractsKey(cts) +
+      "|" +
+      idxs
+        .map((i) => `${i.symbol}@${i.exchange}`)
+        .sort()
+        .join(","),
+    [],
+  );
+
+  /** Send diff-based subscribe/unsubscribe over an open socket. */
+  const syncSubscriptions = useCallback(
+    (ws: WebSocket) => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+
+      const desired = desiredRef.current;
+      const currentHash = buildHash(desired.symbols, desired.contracts, desired.indexes);
+
+      if (currentHash === lastSentHashRef.current) return; // No change
+
+      // Parse last-sent state to compute diff
+      const [lastSyms = "", lastCts = ""] = lastSentHashRef.current.split("|");
+      const prevSymbolSet = new Set(lastSyms.split(",").filter(Boolean));
+      const prevContractSet = new Set(lastCts.split(",").filter(Boolean));
+
+      const currSymbolSet = new Set(desired.symbols);
+      const currContractKeys = desired.contracts.map(optionKey);
+      const currContractSet = new Set(currContractKeys);
+
+      // Compute adds
+      const addedSymbols = desired.symbols.filter((s) => !prevSymbolSet.has(s));
+      const addedContracts = desired.contracts.filter(
+        (c) => !prevContractSet.has(optionKey(c)),
+      );
+
+      // Compute removes
+      const removedSymbols = [...prevSymbolSet].filter((s) => !currSymbolSet.has(s));
+      const removedContractKeys = [...prevContractSet].filter(
+        (k) => !currContractSet.has(k),
+      );
+
+      wsLog("sync-diff", {
+        addedSymbols,
+        addedContracts: addedContracts.map(optionKey),
+        removedSymbols,
+        removedContractKeys,
+      });
+
+      // Subscribe new (indexes always sent in full — small & stable)
+      if (
+        addedSymbols.length > 0 ||
+        addedContracts.length > 0 ||
+        desired.indexes.length > 0
+      ) {
+        ws.send(
+          JSON.stringify({
+            action: "subscribe",
+            symbols: addedSymbols,
+            ...(addedContracts.length > 0
+              ? { contracts: addedContracts }
+              : {}),
+            ...(desired.indexes.length > 0
+              ? { indexes: desired.indexes }
+              : {}),
+          }),
+        );
+      }
+
+      // Unsubscribe old
+      if (removedSymbols.length > 0 || removedContractKeys.length > 0) {
+        ws.send(
+          JSON.stringify({
+            action: "unsubscribe",
+            symbols: [...removedSymbols, ...removedContractKeys],
+          }),
+        );
+        // Evict stale price entries
+        setPrices((prev) => {
+          const next = { ...prev };
+          for (const k of [...removedSymbols, ...removedContractKeys])
+            delete next[k];
+          return next;
+        });
+      }
+
+      lastSentHashRef.current = currentHash;
+    },
+    [buildHash],
+  );
+
+  // ---------------------------------------------------------------------------
+  // scheduleReconnect — ref-based to break circular dep with connect
+  // ---------------------------------------------------------------------------
+  const scheduleReconnectRef = useRef<() => void>(() => {});
+
+  // ---------------------------------------------------------------------------
+  // connect — idempotent, state-machine-guarded
+  // ---------------------------------------------------------------------------
+  const connect = useCallback(() => {
+    if (!enabled) return;
+    const { symbols: syms, contracts: cts, indexes: idxs } = desiredRef.current;
+    if (syms.length === 0 && cts.length === 0 && idxs.length === 0) return;
+
+    // Idempotent: no-op if already connecting or open
+    if (
+      connStateRef.current === "connecting" ||
+      connStateRef.current === "open"
+    ) {
+      wsLog("connect-noop", connStateRef.current);
+      return;
+    }
+
+    clearReconnectTimer();
+
+    const gen = ++socketGenRef.current;
+    connStateRef.current = "connecting";
+    wsLog("connect", { gen });
 
     if (wsRef.current) {
       wsRef.current.close();
+      wsRef.current = null;
     }
 
     const ws = new WebSocket(socketUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      if (!mountedRef.current) return;
+      if (gen !== socketGenRef.current || !mountedRef.current) return;
+      connStateRef.current = "open";
+      reconnectAttemptRef.current = 0; // Reset backoff on success
       setConnected(true);
       setError(null);
-      onConnectionChange?.(true);
-
-      ws.send(
-        JSON.stringify({
-          action: "subscribe",
-          symbols: normalizedSymbols,
-          ...(normalizedContracts.length > 0 ? { contracts: normalizedContracts } : {}),
-          ...(normalizedIndexes.length > 0 ? { indexes: normalizedIndexes } : {}),
-        }),
-      );
+      onConnectionChangeRef.current?.(true);
+      // Force full send on new connection
+      lastSentHashRef.current = "";
+      syncSubscriptions(ws);
+      wsLog("open", { gen });
     };
 
     ws.onmessage = (event) => {
-      if (!mountedRef.current || ws !== wsRef.current) return;
+      if (gen !== socketGenRef.current || !mountedRef.current) return;
       try {
-        const message = JSON.parse(event.data) as WSMessage;
+        const message = JSON.parse(event.data as string) as WSMessage;
 
         switch (message.type) {
           case "price":
@@ -147,7 +318,7 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
               ...prev,
               [data.symbol]: data,
             }));
-            onPriceUpdate?.({
+            onPriceUpdateRef.current?.({
               symbol: data.symbol,
               data,
               receivedAt: new Date(),
@@ -159,7 +330,7 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
             setPrices((prev) => ({ ...prev, ...updates }));
             const now = new Date();
             for (const [sym, data] of Object.entries(updates)) {
-              onPriceUpdate?.({ symbol: sym, data, receivedAt: now });
+              onPriceUpdateRef.current?.({ symbol: sym, data, receivedAt: now });
             }
             break;
           }
@@ -192,122 +363,172 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
     };
 
     ws.onclose = () => {
-      // If this WS was replaced by a newer connection, ignore the stale close event.
-      // Without this guard, the old onclose fires after mountedRef is reset to true,
-      // scheduling a 5s reconnect that creates an infinite reconnection cycle.
-      if (!mountedRef.current || ws !== wsRef.current) return;
+      if (gen !== socketGenRef.current || !mountedRef.current) return;
+      connStateRef.current = "closed";
       setConnected(false);
       setIbIssue(null);
       setIbStatusMessage(null);
-      onConnectionChange?.(false);
-
-      if (!enabled || (normalizedSymbols.length === 0 && normalizedContracts.length === 0 && normalizedIndexes.length === 0)) return;
-
-      reconnectTimeoutRef.current = setTimeout(() => {
-        if (mountedRef.current && enabled && (normalizedSymbols.length > 0 || normalizedContracts.length > 0 || normalizedIndexes.length > 0)) {
-          connect();
-        }
-      }, 5000);
+      onConnectionChangeRef.current?.(false);
+      lastSentHashRef.current = ""; // Next connect must full-sync
+      wsLog("close", { gen });
+      scheduleReconnectRef.current();
     };
 
     ws.onerror = () => {
-      if (!mountedRef.current || ws !== wsRef.current) return;
+      if (gen !== socketGenRef.current || !mountedRef.current) return;
+      connStateRef.current = "closed";
       setConnected(false);
-      setIbIssue(null);
-      setIbStatusMessage(null);
       setError("Connection lost");
-      onConnectionChange?.(false);
+      onConnectionChangeRef.current?.(false);
+      wsLog("error", { gen });
       ws.close();
     };
-  }, [enabled, normalizedSymbols, normalizedContracts, normalizedIndexes, onConnectionChange, onPriceUpdate, socketUrl, symbolHash, contractHash, indexHash]);
+  }, [enabled, socketUrl, clearReconnectTimer, syncSubscriptions]);
+
+  // Wire scheduleReconnect via ref to avoid circular dep
+  const scheduleReconnect = useCallback(() => {
+    if (!mountedRef.current || !enabled) return;
+    const { symbols: syms, contracts: cts, indexes: idxs } = desiredRef.current;
+    if (syms.length === 0 && cts.length === 0 && idxs.length === 0) return;
+    if (reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) {
+      setError("Max reconnect attempts reached");
+      return;
+    }
+
+    const attempt = reconnectAttemptRef.current++;
+    const delay =
+      Math.min(RECONNECT_BASE_MS * Math.pow(2, attempt), RECONNECT_MAX_MS) +
+      Math.random() * RECONNECT_JITTER_MS;
+
+    wsLog("reconnect-scheduled", { attempt, delay: Math.round(delay) });
+
+    clearReconnectTimer();
+    reconnectTimeoutRef.current = setTimeout(() => {
+      if (mountedRef.current && enabled) {
+        connStateRef.current = "idle"; // Allow connect()
+        connect();
+      }
+    }, delay);
+  }, [enabled, clearReconnectTimer, connect]);
+
+  // Keep the ref in sync
+  scheduleReconnectRef.current = scheduleReconnect;
 
   const reconnect = useCallback(() => {
+    // Force re-entry into idle so connect() isn't a no-op
+    connStateRef.current = "idle";
+    reconnectAttemptRef.current = 0;
     connect();
   }, [connect]);
 
-  const getSnapshot = useCallback(async (snapshotSymbols: string[]): Promise<Record<string, PriceData>> => {
-    const symbolsToRequest = normalizeSymbolList(snapshotSymbols);
-    if (symbolsToRequest.length === 0) {
-      return {};
-    }
+  // ---------------------------------------------------------------------------
+  // getSnapshot — isolated WS, unchanged
+  // ---------------------------------------------------------------------------
+  const getSnapshot = useCallback(
+    async (snapshotSymbols: string[]): Promise<Record<string, PriceData>> => {
+      const symbolsToRequest = normalizeSymbolList(snapshotSymbols);
+      if (symbolsToRequest.length === 0) {
+        return {};
+      }
 
-    return new Promise<Record<string, PriceData>>((resolve, reject) => {
-      const ws = new WebSocket(socketUrl);
-      const results: Record<string, PriceData> = {};
-      const pending = new Set(symbolsToRequest);
-      
-      const timeout = setTimeout(() => {
-        ws.close();
-        resolve(results);
-      }, 5000);
+      return new Promise<Record<string, PriceData>>((resolve, reject) => {
+        const ws = new WebSocket(socketUrl);
+        const results: Record<string, PriceData> = {};
+        const pending = new Set(symbolsToRequest);
 
-      ws.onopen = () => {
-        ws.send(JSON.stringify({ action: "snapshot", symbols: symbolsToRequest }));
-      };
+        const timeout = setTimeout(() => {
+          ws.close();
+          resolve(results);
+        }, 5000);
 
-      ws.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data as string) as WSMessage;
-          if (message.type === "snapshot") {
-            const symbol = message.data.symbol.toUpperCase();
-            results[symbol] = message.data;
-            pending.delete(symbol);
-            
-            if (pending.size === 0) {
+        ws.onopen = () => {
+          ws.send(
+            JSON.stringify({ action: "snapshot", symbols: symbolsToRequest }),
+          );
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data as string) as WSMessage;
+            if (message.type === "snapshot") {
+              const symbol = message.data.symbol.toUpperCase();
+              results[symbol] = message.data;
+              pending.delete(symbol);
+
+              if (pending.size === 0) {
+                clearTimeout(timeout);
+                ws.close();
+                resolve(results);
+              }
+            } else if (message.type === "error") {
               clearTimeout(timeout);
               ws.close();
-              resolve(results);
+              reject(new Error(message.message));
             }
-          } else if (message.type === "error") {
-            clearTimeout(timeout);
-            ws.close();
-            reject(new Error(message.message));
+          } catch (e) {
+            console.error("Failed to parse message:", e);
           }
-        } catch (e) {
-          console.error("Failed to parse message:", e);
-        }
-      };
+        };
 
-      ws.onerror = () => {
-        clearTimeout(timeout);
-        ws.close();
-        reject(new Error("Failed to connect to price server"));
-      };
-    }).catch((error_) => {
-      setError(error_ instanceof Error ? error_.message : "Failed to get snapshot");
-      console.error("Snapshot error:", error_);
-      return {};
-    });
-  }, [socketUrl]);
+        ws.onerror = () => {
+          clearTimeout(timeout);
+          ws.close();
+          reject(new Error("Failed to connect to price server"));
+        };
+      }).catch((error_) => {
+        setError(
+          error_ instanceof Error ? error_.message : "Failed to get snapshot",
+        );
+        console.error("Snapshot error:", error_);
+        return {};
+      });
+    },
+    [socketUrl],
+  );
 
+  // ---------------------------------------------------------------------------
+  // Main lifecycle effect — connect/disconnect based on enabled + subscriptions
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     mountedRef.current = true;
 
-    if (enabled && (normalizedSymbols.length > 0 || normalizedContracts.length > 0 || normalizedIndexes.length > 0)) {
+    if (enabled && hasSubscriptions) {
       connect();
     } else {
+      // Teardown
+      clearReconnectTimer();
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
       }
+      connStateRef.current = "idle";
+      lastSentHashRef.current = "";
       setConnected(false);
-      onConnectionChange?.(false);
+      onConnectionChangeRef.current?.(false);
     }
 
     return () => {
       mountedRef.current = false;
-
+      clearReconnectTimer();
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
       }
-
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
+      connStateRef.current = "idle";
+      lastSentHashRef.current = "";
     };
-  }, [connect, enabled, onConnectionChange, symbolHash, contractHash, indexHash, normalizedSymbols.length, normalizedContracts.length, normalizedIndexes.length]);
+  }, [enabled, hasSubscriptions, connect, clearReconnectTimer]);
+
+  // ---------------------------------------------------------------------------
+  // Subscription sync effect — sends diffs over open connection
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const ws = wsRef.current;
+    if (ws && connStateRef.current === "open") {
+      syncSubscriptions(ws);
+    }
+    // If still connecting, onopen will flush via syncSubscriptions
+  }, [symbolHash, contractHash, indexHash, syncSubscriptions]);
 
   return {
     prices,
@@ -350,7 +571,10 @@ export function formatVolume(volume: number | null | undefined): string {
 /**
  * Calculate price change percentage
  */
-export function calcChangePercent(current: number | null, previous: number | null): number | null {
+export function calcChangePercent(
+  current: number | null,
+  previous: number | null,
+): number | null {
   if (current == null || previous == null || previous === 0) return null;
   return ((current - previous) / previous) * 100;
 }

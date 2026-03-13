@@ -1,7 +1,7 @@
 {
   "ticker": "SPXU",
   "profile_expires": null,
-  "stats_expires": "2026-03-14T18:48:02.352Z",
+  "stats_expires": "2026-03-14T18:53:45.713Z",
   "uw_info": {
     "symbol": "SPXU",
     "logo": "https://storage.googleapis.com/uwassets/logos/SPXU.png",
@@ -26,14 +26,14 @@
     "has_earnings_history": false
   },
   "stock_state": {
-    "close": "54.37",
+    "close": "54.425",
     "high": "54.96",
     "low": "52.47",
     "open": "53.24",
-    "volume": 7545361,
+    "volume": 7669287,
     "market_time": "regular",
-    "tape_time": "2026-03-13T18:47:55Z",
-    "total_volume": 7931526,
+    "tape_time": "2026-03-13T18:53:43Z",
+    "total_volume": 8055452,
     "prev_close": "53.2206"
   },
   "exa_profile": {},
@@ -43,5 +43,5 @@
     "week_52_high": 153,
     "week_52_low": 46.65
   },
-  "fetched_at": "2026-03-13T18:48:02.353Z"
+  "fetched_at": "2026-03-13T18:53:45.713Z"
 }
