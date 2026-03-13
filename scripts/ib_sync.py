@@ -566,7 +566,7 @@ def fetch_market_prices(client: IBClient, positions: list) -> list:
 
 
 def fetch_position_daily_pnl(client: IBClient, positions: list, account: str = "") -> list:
-    """Fetch IB's per-position daily P&L via reqPnLSingle.
+    """Fetch IB's per-position daily P&L via reqPnLSingle (batched).
     
     IB correctly handles intraday additions — if you held 25 contracts
     overnight and bought 25 more today, IB's dailyPnL reflects:
@@ -575,6 +575,9 @@ def fetch_position_daily_pnl(client: IBClient, positions: list, account: str = "
     
     This is more accurate than our WS close-based calculation which
     assumes all contracts were held overnight.
+    
+    Performance: All PnL subscriptions are requested at once (no per-request
+    sleep), then a single combined sleep waits for data to arrive.
     """
     from ib_insync import util as ib_util
 
@@ -588,13 +591,14 @@ def fetch_position_daily_pnl(client: IBClient, positions: list, account: str = "
     if not account:
         return positions
 
-    # Request PnL for all positions simultaneously
+    # Request PnL for all positions simultaneously — bypass IBClient's
+    # get_pnl_single() which sleeps 0.5s per call, and call IB API directly.
     pnl_requests = []
     for pos in positions:
         con_id = pos.get('conId')
         if con_id:
             try:
-                pnl_single = client.get_pnl_single(account, con_id)
+                pnl_single = client.ib.reqPnLSingle(account, "", con_id)
                 pnl_requests.append((pos, pnl_single, con_id))
             except Exception as e:
                 print(f"  Warning: reqPnLSingle failed for {pos['symbol']} conId={con_id}: {e}")
@@ -602,7 +606,7 @@ def fetch_position_daily_pnl(client: IBClient, positions: list, account: str = "
         else:
             pnl_requests.append((pos, None, None))
 
-    # Wait for data to arrive (all subscriptions are concurrent)
+    # Single combined sleep — all subscriptions are concurrent
     client.sleep(3)
 
     # Read results and cancel subscriptions
