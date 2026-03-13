@@ -1,5 +1,22 @@
 # TODO
 
+## Session: Document And Ship The `/api/performance` ET-Session Route Refresh Fix (2026-03-13)
+
+### Goal
+Update the operator-facing docs to reflect the stronger `/api/performance` ET-session refresh behavior, then ship the two unpushed performance fixes from `main` and confirm the worktree is clean.
+
+### Dependency Graph
+- T1 (Confirm the active branch and identify the docs that should mention the route-level ET-session refresh contract) depends_on: []
+- T2 (Update the selected docs plus the task log for the route-refresh fix and the branch-state correction) depends_on: [T1]
+- T3 (Create a scoped docs-only commit on top of the existing unpushed `main` commits) depends_on: [T2]
+- T4 (Push `main` and confirm the worktree is clean) depends_on: [T3]
+
+### Checklist
+- [x] T1 Confirm the active branch and identify the docs that should mention the route-level ET-session refresh contract
+- [ ] T2 Update the selected docs plus the task log for the route-refresh fix and the branch-state correction
+- [ ] T3 Create a scoped docs-only commit on top of the existing unpushed `main` commits
+- [ ] T4 Push `main` and confirm the worktree is clean
+
 ## Session: Refresh `/api/performance` Against The Current ET Session Before Rebuild (2026-03-13)
 
 ### Goal

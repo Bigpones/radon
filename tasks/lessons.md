@@ -2,6 +2,7 @@
 
 ## 2026-03-13
 
+- Before a ship/push step, confirm whether the current checkout is already on `main`; do not talk about merge cleanup as if a worktree branch exists when the active checkout is already the main branch.
 - When a scoped commit leaves behind a dirty regression file that encodes a stronger route contract, do not just explain why it was excluded; either revert it immediately or ship the stronger contract as the next scoped change so the worktree does not stay in a half-promised state.
 - When a derived page like `/performance` depends on the portfolio sync lifecycle, do not give it an isolated long-poll loop and assume the cache route will save you; if the shell can advance `portfolio.last_sync` first, the dependent page must react to that fresher timestamp and revalidate immediately.
 
