@@ -827,8 +827,9 @@ def main():
             print("Requesting market data + per-position PnL...")
             client.set_market_data_type(4)
             for pos in positions:
-                if not pos['contract'].exchange:
-                    pos['contract'].exchange = 'SMART'
+                # Force SMART for all — stocks from get_positions() may have
+                # exchange-specific values (AMEX, BATS) that fail with reqMktData type 4
+                pos['contract'].exchange = 'SMART'
 
             # Request PnL Single FIRST (takes slightly longer to arrive)
             pnl_requests = []
@@ -856,7 +857,7 @@ def main():
             # Market data + PnL Single + account PnL all stream concurrently.
             # 2.7 seconds — accounts for the faster Phase 1 (accountValues is instant
             # vs accountSummary's ~200ms round-trip that used to provide implicit delay).
-            client.sleep(2.8)
+            client.sleep(2.7)
 
             # ── Phase 5: Read all results ──
             # Market prices
