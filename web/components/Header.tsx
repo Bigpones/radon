@@ -3,6 +3,7 @@
 import { useRef, useEffect, useCallback, type ReactNode } from "react";
 import { Maximize2, Minimize2, Moon, Sun } from "lucide-react";
 import TickerSearch from "./TickerSearch";
+import { useTickerNav } from "@/lib/useTickerNav";
 
 type HeaderProps = {
   activeLabel: string;
@@ -10,7 +11,6 @@ type HeaderProps = {
   onToggleFullscreen: () => void;
   onToggleTheme: () => void;
   theme?: "dark" | "light";
-  onTickerSelect?: (symbol: string) => void;
   children?: ReactNode;
 };
 
@@ -20,10 +20,10 @@ export default function Header({
   onToggleFullscreen,
   onToggleTheme,
   theme,
-  onTickerSelect,
   children,
 }: HeaderProps) {
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const { navigateToTicker } = useTickerNav();
 
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
@@ -39,9 +39,9 @@ export default function Header({
 
   const handleSelect = useCallback(
     (symbol: string) => {
-      onTickerSelect?.(symbol);
+      navigateToTicker(symbol);
     },
-    [onTickerSelect],
+    [navigateToTicker],
   );
 
   return (

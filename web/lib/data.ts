@@ -48,6 +48,7 @@ export const quickPromptsBySection: Record<WorkspaceSection, string[]> = {
   journal: ["journal --limit 25", "portfolio", "analyze nfLx", "help"],
   regime: ["cri-scan", "portfolio", "scan --top 12", "help"],
   cta: ["menthorq-cta", "cri-scan", "portfolio", "help"],
+  "ticker-detail": ["portfolio", "scan --top 12", "help"],
 };
 
 export const sectionDescription: Record<WorkspaceSection, string> = {
@@ -61,4 +62,5 @@ export const sectionDescription: Record<WorkspaceSection, string> = {
   journal: "Trade decision logs and history review.",
   regime: "Crash Risk Index — real-time CTA deleveraging monitor.",
   cta: "CTA positioning, vol-targeting exposure model and institutional flow.",
+  "ticker-detail": "Instrument research surface — company, book, chain, position, orders, news, ratings, seasonality.",
 };

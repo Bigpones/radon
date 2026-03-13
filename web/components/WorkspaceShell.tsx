@@ -21,20 +21,21 @@ import ChatPanel from "@/components/ChatPanel";
 import MetricCards from "@/components/MetricCards";
 import WorkspaceSections from "@/components/WorkspaceSections";
 import ToastContainer from "@/components/Toast";
-import TickerDetailModal from "@/components/TickerDetailModal";
 import ConnectionBanner from "@/components/ConnectionBanner";
 import { useTickerDetail } from "@/lib/TickerDetailContext";
 
 type WorkspaceShellProps = {
   section?: WorkspaceSection;
+  tickerParam?: string;
 };
 
-export default function WorkspaceShell({ section }: WorkspaceShellProps) {
+export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellProps) {
   const [theme, setTheme] = useState<"dark" | "light" | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const pathname = usePathname();
   const activeSection: WorkspaceSection = section ?? resolveSectionFromPath(pathname, "dashboard");
-  const activeLabel = navItems.find((item) => item.route === activeSection)?.label ?? "Dashboard";
+  const navLabel = navItems.find((item) => item.route === activeSection)?.label ?? "Dashboard";
+  const activeLabel = activeSection === "ticker-detail" && tickerParam ? tickerParam : navLabel;
   const { toasts, addToast, removeToast } = useToast();
 
   const { data: portfolio, syncing: portfolioSyncing, error: portfolioError, lastSync: portfolioLastSync, syncNow: portfolioSyncNow } = usePortfolio();
@@ -102,9 +103,14 @@ export default function WorkspaceShell({ section }: WorkspaceShellProps) {
     [activeSection],
   );
 
+  const tickerSymbols = useMemo(
+    () => tickerParam ? [tickerParam] : [],
+    [tickerParam],
+  );
+
   const allSymbols = useMemo(
-    () => [...new Set([...portfolioSymbols, ...orderSymbols, ...regimeStocks])],
-    [portfolioSymbols, orderSymbols, regimeStocks],
+    () => [...new Set([...portfolioSymbols, ...orderSymbols, ...regimeStocks, ...tickerSymbols])],
+    [portfolioSymbols, orderSymbols, regimeStocks, tickerSymbols],
   );
 
   const tickerDetail = useTickerDetail();
@@ -170,11 +176,16 @@ export default function WorkspaceShell({ section }: WorkspaceShellProps) {
   );
 
   // Sync prices + portfolio into ticker-detail context (refs, no re-renders)
-  const { openTicker, setPrices: setTickerPrices, setFundamentals: setTickerFundamentals, setPortfolio: setTickerPortfolio, setOrders: setTickerOrders } = tickerDetail;
+  const { setActiveTicker, setPrices: setTickerPrices, setFundamentals: setTickerFundamentals, setPortfolio: setTickerPortfolio, setOrders: setTickerOrders } = tickerDetail;
   useEffect(() => { setTickerPrices(prices); }, [prices, setTickerPrices]);
   useEffect(() => { setTickerFundamentals(fundamentals); }, [fundamentals, setTickerFundamentals]);
   useEffect(() => { setTickerPortfolio(portfolio); }, [portfolio, setTickerPortfolio]);
   useEffect(() => { setTickerOrders(orders); }, [orders, setTickerOrders]);
+
+  // Sync tickerParam to context
+  useEffect(() => {
+    setActiveTicker(tickerParam ?? null);
+  }, [tickerParam, setActiveTicker]);
 
   const prevIbConnectedRef = useRef<boolean | null>(null);
   useEffect(() => {
@@ -290,7 +301,6 @@ export default function WorkspaceShell({ section }: WorkspaceShellProps) {
           onToggleFullscreen={toggleFullscreen}
           onToggleTheme={toggleTheme}
           theme={resolvedTheme}
-          onTickerSelect={openTicker}
         >
           <div className="sync-controls">
             <span className={`sync-status ${error ? "sync-error" : syncing ? "sync-active" : ""}`}>
@@ -318,7 +328,7 @@ export default function WorkspaceShell({ section }: WorkspaceShellProps) {
         <div className="content">
           {activeSection === "dashboard" ? <ChatPanel activeSection={activeSection} /> : null}
 
-          {activeSection !== "dashboard" ? <MetricCards portfolio={portfolio} prices={prices} realizedPnl={todayRealizedPnl} executedOrders={executedOrders} section={activeSection} /> : null}
+          {activeSection !== "dashboard" && activeSection !== "ticker-detail" ? <MetricCards portfolio={portfolio} prices={prices} realizedPnl={todayRealizedPnl} executedOrders={executedOrders} section={activeSection} /> : null}
 
           {activeSection !== "dashboard" ? (
             <WorkspaceSections
@@ -327,12 +337,13 @@ export default function WorkspaceShell({ section }: WorkspaceShellProps) {
               portfolioLastSync={portfolioLastSync}
               orders={orders}
               prices={prices}
+              tickerParam={tickerParam}
+              theme={resolvedTheme}
             />
           ) : null}
         </div>
       </main>
 
-      <TickerDetailModal theme={resolvedTheme} />
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
     </div>
   );

@@ -28,7 +28,6 @@ import { useFlowAnalysis } from "@/lib/useFlowAnalysis";
 import { useScanner } from "@/lib/useScanner";
 import { useBlotter } from "@/lib/useBlotter";
 import { useSort, type SortDirection } from "@/lib/useSort";
-import { useTickerDetail } from "@/lib/TickerDetailContext";
 import { fmtPrice, fmtUsd, legPriceKey } from "@/lib/positionUtils";
 import PositionTable from "./PositionTable";
 import { TableSkeleton } from "@/components/ui/Skeleton";
@@ -40,6 +39,8 @@ import PerformancePanel from "./PerformancePanel";
 import InfoTooltip from "./InfoTooltip";
 import SharePnlButton, { type SharePnlData } from "./SharePnlButton";
 import { SECTION_TOOLTIPS } from "@/lib/sectionTooltips";
+import TickerLink from "./TickerLink";
+import TickerWorkspace from "./TickerWorkspace";
 
 /* ─── Re-exports for backward compat ──────────────────── */
 
@@ -104,21 +105,6 @@ function blotterShareData(t: BlotterTrade): SharePnlData {
     fillPrice: lastExec?.price ?? null,
     time: lastExec?.time ? new Date(lastExec.time).toLocaleString() : "",
   };
-}
-
-/* ─── Ticker link (clickable) ──────────────────────────── */
-
-function TickerLink({ ticker, positionId }: { ticker: string; positionId?: number }) {
-  const { openTicker } = useTickerDetail();
-  return (
-    <button
-      className="ticker-link"
-      onClick={() => openTicker(ticker, positionId)}
-      aria-label={`View details for ${ticker}`}
-    >
-      {ticker}
-    </button>
-  );
 }
 
 /* ─── Sortable header cell ──────────────────────────────── */
@@ -1337,9 +1323,11 @@ type WorkspaceSectionsProps = {
   portfolioLastSync?: string | null;
   orders?: OrdersData | null;
   prices?: Record<string, PriceData>;
+  tickerParam?: string;
+  theme?: "dark" | "light";
 };
 
-export default function WorkspaceSections({ section, portfolio, portfolioLastSync, orders, prices }: WorkspaceSectionsProps) {
+export default function WorkspaceSections({ section, portfolio, portfolioLastSync, orders, prices, tickerParam, theme }: WorkspaceSectionsProps) {
   switch (section) {
     case "dashboard":
       return null;
@@ -1361,6 +1349,10 @@ export default function WorkspaceSections({ section, portfolio, portfolioLastSyn
       return <RegimePanel prices={prices ?? {}} />;
     case "cta":
       return <CtaPage />;
+    case "ticker-detail":
+      return tickerParam ? (
+        <TickerWorkspace ticker={tickerParam} theme={theme ?? "dark"} />
+      ) : null;
     default:
       return <FlowSections />;
   }

@@ -2370,9 +2370,11 @@ tr.leg-row td {
 .ticker-link { cursor: pointer; transition: text-decoration 150ms; background: none; border: none; color: inherit; font: inherit; font-weight: 700; padding: 0; text-align: left; }
 .ticker-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
-/* ── Ticker Detail Modal ── */
+/* ── Ticker Detail Page ── */
 
-.ticker-detail-modal .modal-content { width: 90vw; max-width: 1200px; max-height: 90vh; }
+.ticker-detail-page { max-width: 1200px; padding: 16px 0; }
+.ticker-back-nav { display: inline-flex; align-items: center; gap: 6px; background: none; border: none; color: var(--text-secondary); font-family: var(--font-mono); font-size: 11px; cursor: pointer; padding: 0; margin-bottom: 12px; transition: color 150ms; }
+.ticker-back-nav:hover { color: var(--signal-core); }
 
 .ticker-detail-content { display: flex; flex-direction: column; gap: 0; }
 

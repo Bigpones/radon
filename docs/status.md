@@ -1,9 +1,10 @@
 # Status & Decision Log
 
 ## Last Updated
-2026-03-13T09:36:18-07:00
+2026-03-13T10:45:00-07:00
 
 ## Recent Commits
+- 2026-03-13 — **feat: Ticker detail page — modal → dedicated route refactor.** Ticker detail is now a first-class page at `/{TICKER}` (e.g., `/AAPL`) with bookmarkable tabs (`?tab=chain`), browser back/forward, case normalization (`/aapl` → `/AAPL`), and 404 for invalid paths. Extracted `TickerDetailContent` from modal, created `TickerWorkspace` (URL tab sync), shared `TickerLink`, `useTickerNav` hook. Simplified `TickerDetailContext` (URL-driven). 24 unit + 8 E2E tests.
 - 2026-03-13 09:31:00 -0700 — **fix: refresh `/api/performance` for the current ET session. The route now refreshes `portfolio.json` through `ibSync` before rebuilding when the cached snapshot still points at a prior ET session, and preserves the cached performance payload instead of rewriting from stale inputs if that portfolio refresh fails. Locked with Vitest route regressions.**
 - 2026-03-13 09:17:01 -0700 — **fix: keep `/performance` reconstructed YTD aligned with portfolio sync. Added a shared freshness contract, made the performance panel revalidate as soon as the shell portfolio sync advances, and locked the handoff with Vitest plus Playwright regressions.**
 - 2026-03-12 10:45:00 -0700 — **fix: tighten `/regime` operator telemetry. Added a shared responsive strip renderer (`5-up -> 3x2 -> stacked telemetry rail`), stacked the CRI detail panels earlier on narrow widths, and made `NORMALIZED DIVERGENCE` actionable plus hoverable. Locked with Vitest and Playwright coverage.**
@@ -380,14 +381,19 @@ When startup shows `⚠️ IB: N new trades`, **IMMEDIATELY**:
 | `data/watchlist.json` | Tickers under surveillance |
 | `data/discover.json` | Cached discover scan results (auto-refreshed) |
 
-### Ticker Detail Modal (NEW)
-Click any ticker across all 6 table sections → 720px modal with:
+### Ticker Detail Page (`/{TICKER}`)
+Navigate to any ticker via search (CMD+K), ticker links in tables, or direct URL → dedicated page at `/{TICKER}` with 8 tabs:
 - **Price Bar**: Real-time bid/ask/mid/spread/last/volume/day-change. Option positions show option-level prices (not underlying). Spreads show net mid computed from leg prices.
+- **Company Tab**: Fundamentals, sector, description from UW.
+- **Book Tab**: Level 2 order book data.
+- **Chain Tab**: Options chain with expiry selection, strike filtering.
 - **Position Tab**: Structure, direction, qty, entry date, avg entry, last price, entry cost, market value, unrealized P&L, expiry, target/stop. Multi-leg positions show individual legs.
 - **Order Tab**: If open orders exist → inline modify/cancel (reuses `useOrderActions`). Below that, new order form with BUY/SELL, qty, limit price with BID/MID/ASK quick-set (option-level), TIF, 2-step confirm. Combo positions show "close via Orders page" message.
 - **News Tab**: UW headlines with date, source, MAJOR badge, external link icon.
 - **Ratings Tab**: Analyst recommendation, ratings bar, price targets, recent changes (via `fetch_analyst_ratings.py`).
-- **Context**: `TickerDetailContext` provides `openTicker()`/`closeTicker()` app-wide. Prices, portfolio, orders synced via refs (no re-renders).
+- **Seasonality Tab**: Monthly seasonality from UW with EquityClock Vision fallback.
+- **URL ownership**: Active tab persisted as `?tab=chain`, position ID as `?posId=123`. Bookmarkable, shareable, no lost state on refresh. `/aapl` auto-redirects to `/AAPL`. Invalid paths return 404.
+- **Architecture**: `[ticker]/page.tsx` (server validation) → `WorkspaceShell` → `TickerWorkspace` (URL tab sync) → `TickerDetailContent` (8 tabs). Navigation via `useTickerNav` hook and shared `TickerLink` component. `TickerDetailContext` provides `setActiveTicker()`/`setActivePositionId()` URL-driven state. Prices, portfolio, orders synced via refs (no re-renders).
 - **API Routes**: `/api/ticker/news` (UW proxy), `/api/ticker/ratings` (Python script), `/api/orders/place` (IB order placement via `ib_place_order.py`).
 
 ### Key Scripts
@@ -483,13 +489,13 @@ Click any ticker across all 6 table sections → 720px modal with:
 - [x] **Journal route renders trade log table (date, ticker, structure, P&L, gates, edge)**
 - [x] **Discover route with auto-sync (5-min interval) + server startup pre-warm**
 - [x] **ChatPanel removed from non-dashboard routes**
-- [x] **Ticker detail modal — position, order (with modify/cancel), news, ratings**
+- [x] **Ticker detail page at `/{TICKER}` — company, book, chain, position, order (with modify/cancel), news, ratings, seasonality (refactored from modal to dedicated route)**
 - [x] **Option-level pricing in price bar and order form BID/MID/ASK**
 - [x] **Spread net mid computation for BAG orders (long leg mid - short leg mid)**
 - [x] **ib_place_order.py — JSON-in/JSON-out order placement for web API**
 - [x] **Fix Day Chg % for options/spreads (divide by close value, not entry cost)**
 - [x] **Fix spread last price (net mid from leg prices, not underlying)**
-- [x] **Ticker detail modal works identically on all pages (portfolio, orders, discover, journal, flow)**
+- [x] **Ticker detail page accessible from all pages via search/links, bookmarkable with `?tab=` and `?posId=` params**
 - [x] **useOrders() always loads cached orders on mount for cross-page ticker detail**
 - [x] **Fix discover.py watchlist KeyError (normalize ticker/symbol key)**
 - [x] **News tab UW → Yahoo Finance fallback on 429 rate limit**

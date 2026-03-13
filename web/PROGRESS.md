@@ -1,5 +1,48 @@
 # Progress
 
+## Session: 2026-03-13 — Ticker Detail Page (Modal → Route Refactor)
+
+### Problem
+Ticker detail was a modal overlay (`TickerDetailModal`). No URL, no browser back/forward, no bookmarkable tabs, state lost on refresh.
+
+### Solution
+Refactored to a dedicated page at `/{TICKER}` using Next.js App Router dynamic route `[ticker]`. URL owns tab state (`?tab=chain`) and position ID (`?posId=123`).
+
+### Files Created (7)
+1. **`web/app/[ticker]/page.tsx`** — Server component: validates ticker format (1-5 alpha), guards reserved paths, normalizes case (redirect lowercase → uppercase)
+2. **`web/app/[ticker]/not-found.tsx`** — Custom 404 styled to Radon brand
+3. **`web/components/TickerDetailContent.tsx`** — Extracted modal body: 8 tabs, hero telemetry, chart. Props-driven (activeTab, onTabChange) instead of local state
+4. **`web/components/TickerWorkspace.tsx`** — Page wrapper: back nav button, URL tab sync via `searchParams`, reads data from `TickerDetailContext` refs
+5. **`web/components/TickerLink.tsx`** — Shared component replacing duplicates in WorkspaceSections + PositionTable. Uses `useTickerNav`
+6. **`web/lib/useTickerNav.ts`** — `navigateToTicker(ticker, positionId?)` hook using `router.push`
+7. **`web/tests/ticker-nav.test.ts`** — 24 unit tests (route validation, tab sync, section resolution)
+8. **`web/e2e/ticker-page.spec.ts`** — 5 E2E tests (direct nav, case redirect, tab click URL, back button)
+
+### Files Modified (12)
+1. **`web/lib/types.ts`** — Added `"ticker-detail"` to `WorkspaceSection` union
+2. **`web/lib/chat.ts`** — Added ticker path detection in `resolveSectionFromPath`
+3. **`web/lib/data.ts`** — Added `ticker-detail` to `quickPromptsBySection` + `sectionDescription`
+4. **`web/lib/TickerDetailContext.tsx`** — Simplified: `openTicker/closeTicker` → `setActiveTicker/setActivePositionId` (URL-driven)
+5. **`web/components/WorkspaceShell.tsx`** — Added `tickerParam` prop, WS subscription for ticker, context sync, removed modal + `onTickerSelect`
+6. **`web/components/WorkspaceSections.tsx`** — Added `ticker-detail` switch case, shared `TickerLink` import, `tickerParam`/`theme` props
+7. **`web/components/Header.tsx`** — Uses `useTickerNav` instead of `onTickerSelect` prop
+8. **`web/components/PositionTable.tsx`** — Uses shared `TickerLink` import
+9. **`web/app/globals.css`** — Replaced `.ticker-detail-modal` CSS with `.ticker-detail-page` + `.ticker-back-nav`
+10. **`web/tests/data.test.ts`** — Added `ticker-detail` to `allSections` array
+11. **`web/tests/ticker-detail-spread-notional.test.ts`** — Updated to use `TickerDetailContent`
+12. **`web/tests/modify-order-ticker-detail.test.ts`** — Updated to read from `TickerDetailContent.tsx`
+
+### Files Deleted (1)
+- **`web/components/TickerDetailModal.tsx`** — Replaced by `TickerDetailContent` + `TickerWorkspace`
+
+### Verification
+- **66/66** unit tests pass (24 new + 42 updated)
+- **8/8** E2E tests pass (5 ticker-page + 3 ticker-search)
+- TypeScript compilation: clean
+- 0 regressions introduced
+
+---
+
 ## Session: 2026-03-04 — Cancel & Modify Order Actions on /orders Page
 
 ### Problem

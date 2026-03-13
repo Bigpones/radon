@@ -2,7 +2,7 @@
  * TDD: Modify order from the ticker detail view
  *
  * Tests cover the structural wiring that ensures modify works from
- * TickerDetailModal → OrderTab → ModifyOrderModal (same pattern as main workspace).
+ * TickerDetailContent → OrderTab → ModifyOrderModal (same pattern as main workspace).
  *
  * The bug: OrderTab had an inline modify form that bypassed ModifyOrderModal and
  * lacked the "FILL OUTSIDE RTH" (outsideRth) flag. The fix moves the modify flow
@@ -113,14 +113,14 @@ describe("requestModify — outsideRth forwarding", () => {
 });
 
 // =============================================================================
-// TickerDetailModal: passes portfolio to OrderTab for BAG price resolution
+// TickerDetailContent: passes portfolio to OrderTab for BAG price resolution
 // =============================================================================
 
-describe("TickerDetailModal — OrderTab props", () => {
+describe("TickerDetailContent — OrderTab props", () => {
   let tickerDetailSource: string;
 
   beforeAll(async () => {
-    tickerDetailSource = await readSource("../components/TickerDetailModal.tsx");
+    tickerDetailSource = await readSource("../components/TickerDetailContent.tsx");
   });
 
   it("renders OrderTab with openOrders prop", () => {

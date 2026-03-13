@@ -1,14 +1,9 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import TickerDetailModal from "../components/TickerDetailModal";
+import TickerDetailContent from "../components/TickerDetailContent";
 import type { PortfolioData } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
-
-vi.mock("../components/Modal", () => ({
-  default: ({ children, className }: { children: React.ReactNode; className?: string }) =>
-    createElement("div", { className: className ?? "mock-modal" }, children),
-}));
 
 vi.mock("../components/PriceChart", () => ({
   default: () => createElement("div", { "data-testid": "mock-price-chart" }),
@@ -126,27 +121,29 @@ const prices: Record<string, PriceData> = {
   }),
 };
 
-vi.mock("@/lib/TickerDetailContext", () => ({
-  useTickerDetail: () => ({
-    activeTicker: "AMD",
-    activePositionId: 7,
-    closeTicker: () => {},
-    getPrices: () => prices,
-    getFundamentals: () => ({}),
-    getPortfolio: () => portfolio,
-    getOrders: () => ({
-      last_sync: new Date().toISOString(),
-      open_orders: [],
-      executed_orders: [],
-      open_count: 0,
-      executed_count: 0,
-    }),
-  }),
-}));
+const orders = {
+  last_sync: new Date().toISOString(),
+  open_orders: [],
+  executed_orders: [],
+  open_count: 0,
+  executed_count: 0,
+};
 
-describe("TickerDetailModal spread telemetry", () => {
-  it("shows raw spread dollars and percent on the shared modal price bar", () => {
-    const html = renderToStaticMarkup(createElement(TickerDetailModal, { theme: "dark" }));
+describe("TickerDetailContent spread telemetry", () => {
+  it("shows raw spread dollars and percent on the shared price bar", () => {
+    const html = renderToStaticMarkup(
+      createElement(TickerDetailContent, {
+        ticker: "AMD",
+        positionId: 7,
+        activeTab: "company",
+        onTabChange: () => {},
+        prices,
+        fundamentals: {},
+        portfolio,
+        orders,
+        theme: "dark",
+      }),
+    );
 
     expect(html).toContain("$1.10 / 2.40%");
     expect(html).not.toContain("$110.00 / 240 bps");

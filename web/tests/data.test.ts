@@ -167,6 +167,7 @@ describe("quickPromptsBySection", () => {
     "journal",
     "regime",
     "cta",
+    "ticker-detail",
   ];
 
   it("covers all WorkspaceSection keys", () => {
@@ -215,6 +216,7 @@ describe("sectionDescription", () => {
     "journal",
     "regime",
     "cta",
+    "ticker-detail",
   ];
 
   it("covers all WorkspaceSection keys", () => {

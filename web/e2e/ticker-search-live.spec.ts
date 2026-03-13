@@ -6,7 +6,7 @@
  * 2. WS connection is established (or graceful fallback)
  * 3. Typing a ticker shows results dropdown (with mocked WS)
  * 4. Arrow key navigation + Enter selects a result
- * 5. Selection opens the TickerDetailModal
+ * 5. Selection navigates to /{TICKER} page
  */
 
 import { test, expect } from "@playwright/test";
@@ -96,7 +96,6 @@ test.describe("Ticker Search E2E", () => {
 
     // Mock WebSocket to inject search results
     await page.addInitScript(() => {
-      const RealWS = window.WebSocket;
       const fakeResults = [
         { conId: 265598, symbol: "AAPL", secType: "STK", primaryExchange: "NASDAQ", currency: "USD", derivativeSecTypes: ["OPT"] },
         { conId: 100, symbol: "AAPLD", secType: "STK", primaryExchange: "NYSE", currency: "USD", derivativeSecTypes: [] },
@@ -126,8 +125,6 @@ test.describe("Ticker Search E2E", () => {
         constructor(url: string) {
           super();
           this.url = url;
-          // If this is the price WS (usePrices), use real WS
-          // If search WS, fake it
           setTimeout(() => {
             this.readyState = 1;
             if (this.onopen) this.onopen(new Event("open"));
@@ -138,7 +135,6 @@ test.describe("Ticker Search E2E", () => {
           try {
             const msg = JSON.parse(data);
             if (msg.action === "search") {
-              // Respond with fake results after small delay
               setTimeout(() => {
                 const response = JSON.stringify({
                   type: "searchResults",
@@ -150,7 +146,6 @@ test.describe("Ticker Search E2E", () => {
                 }
               }, 50);
             } else if (msg.action === "subscribe") {
-              // Send status for usePrices
               setTimeout(() => {
                 const status = JSON.stringify({
                   type: "status",
@@ -195,7 +190,7 @@ test.describe("Ticker Search E2E", () => {
     await expect(resultItems.first()).toContainText("AAPL");
   });
 
-  test("arrow keys navigate results and Enter selects", async ({ page }) => {
+  test("arrow keys navigate results and Enter selects — navigates to ticker page", async ({ page }) => {
     await page.unrouteAll({ behavior: "ignoreErrors" });
     stubApis(page);
 
@@ -284,15 +279,15 @@ test.describe("Ticker Search E2E", () => {
     const secondItem = page.locator('[role="option"]').nth(1);
     await expect(secondItem).toHaveAttribute("aria-selected", "true");
 
-    // Enter to select — should open ticker detail modal
+    // Enter to select — should navigate to ticker page
     await searchInput.press("Enter");
 
-    // Modal should appear
-    const modal = page.locator(".ticker-detail-modal");
-    await expect(modal).toBeVisible({ timeout: 3000 });
+    // URL should change to /AMZN (second result was selected)
+    await page.waitForURL("**/AMZN", { timeout: 5000 });
+    expect(page.url()).toContain("/AMZN");
   });
 
-  test("selecting a ticker opens detail modal with Company tab", async ({ page }) => {
+  test("selecting a ticker navigates to ticker page with Company tab", async ({ page }) => {
     await page.unrouteAll({ behavior: "ignoreErrors" });
     stubApis(page);
 
@@ -373,11 +368,12 @@ test.describe("Ticker Search E2E", () => {
     await expect(firstResult).toBeVisible();
     await firstResult.click();
 
-    // Modal should appear with ticker name
-    const modal = page.locator(".ticker-detail-modal");
-    await expect(modal).toBeVisible({ timeout: 3000 });
+    // URL should change to /AAPL
+    await page.waitForURL("**/AAPL", { timeout: 5000 });
+    expect(page.url()).toContain("/AAPL");
 
-    // Should show AAPL in the modal header
-    await expect(modal).toContainText("AAPL");
+    // Page should show ticker detail content with AAPL
+    const content = page.locator(".ticker-detail-content");
+    await expect(content).toBeVisible({ timeout: 5000 });
   });
 });

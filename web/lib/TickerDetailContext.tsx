@@ -7,8 +7,8 @@ import type { OrdersData, PortfolioData } from "@/lib/types";
 type TickerDetailContextValue = {
   activeTicker: string | null;
   activePositionId: number | null;
-  openTicker: (ticker: string, positionId?: number) => void;
-  closeTicker: () => void;
+  setActiveTicker: (ticker: string | null) => void;
+  setActivePositionId: (id: number | null) => void;
   getPrices: () => Record<string, PriceData>;
   getFundamentals: () => Record<string, FundamentalsData>;
   getPortfolio: () => PortfolioData | null;
@@ -24,23 +24,24 @@ type TickerDetailContextValue = {
 const TickerDetailContext = createContext<TickerDetailContextValue | null>(null);
 
 export function TickerDetailProvider({ children }: { children: ReactNode }) {
-  const [activeTicker, setActiveTicker] = useState<string | null>(null);
-  const [activePositionId, setActivePositionId] = useState<number | null>(null);
+  const [activeTicker, setActiveTickerState] = useState<string | null>(null);
+  const [activePositionId, setActivePositionIdState] = useState<number | null>(null);
   const [chainContracts, setChainContractsState] = useState<OptionContract[]>([]);
   const pricesRef = useRef<Record<string, PriceData>>({});
   const fundamentalsRef = useRef<Record<string, FundamentalsData>>({});
   const portfolioRef = useRef<PortfolioData | null>(null);
   const ordersRef = useRef<OrdersData | null>(null);
 
-  const openTicker = useCallback((ticker: string, positionId?: number) => {
-    setActiveTicker(ticker.toUpperCase());
-    setActivePositionId(positionId ?? null);
+  const setActiveTicker = useCallback((ticker: string | null) => {
+    setActiveTickerState(ticker ? ticker.toUpperCase() : null);
+    if (!ticker) {
+      setActivePositionIdState(null);
+      setChainContractsState([]);
+    }
   }, []);
 
-  const closeTicker = useCallback(() => {
-    setActiveTicker(null);
-    setActivePositionId(null);
-    setChainContractsState([]);
+  const setActivePositionId = useCallback((id: number | null) => {
+    setActivePositionIdState(id);
   }, []);
 
   const setChainContracts = useCallback((c: OptionContract[]) => {
@@ -70,7 +71,7 @@ export function TickerDetailProvider({ children }: { children: ReactNode }) {
 
   return (
     <TickerDetailContext.Provider
-      value={{ activeTicker, activePositionId, openTicker, closeTicker, getPrices, getFundamentals, getPortfolio, getOrders, setPrices, setFundamentals, setPortfolio, setOrders, chainContracts, setChainContracts }}
+      value={{ activeTicker, activePositionId, setActiveTicker, setActivePositionId, getPrices, getFundamentals, getPortfolio, getOrders, setPrices, setFundamentals, setPortfolio, setOrders, chainContracts, setChainContracts }}
     >
       {children}
     </TickerDetailContext.Provider>

@@ -6,7 +6,7 @@ import type { PortfolioLeg, PortfolioPosition } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import InstrumentDetailModal from "./InstrumentDetailModal";
 import { useSort, type SortDirection } from "@/lib/useSort";
-import { useTickerDetail } from "@/lib/TickerDetailContext";
+import TickerLink from "./TickerLink";
 import {
   fmtUsd,
   fmtPrice,
@@ -20,21 +20,6 @@ import {
   legPriceKey,
   getOptionDailyChg,
 } from "@/lib/positionUtils";
-
-/* ─── Ticker link (clickable) ──────────────────────────── */
-
-function TickerLink({ ticker, positionId }: { ticker: string; positionId?: number }) {
-  const { openTicker } = useTickerDetail();
-  return (
-    <button
-      className="ticker-link"
-      onClick={() => openTicker(ticker, positionId)}
-      aria-label={`View details for ${ticker}`}
-    >
-      {ticker}
-    </button>
-  );
-}
 
 /* ─── Sortable header cell ─────────────────────────────── */
 
