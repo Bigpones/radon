@@ -1,4 +1,6 @@
 /**
+ * @vitest-environment jsdom
+ *
  * Unit tests for usePrices WebSocket connection stability.
  *
  * Validates the state-machine + diff-based subscription sync refactor:

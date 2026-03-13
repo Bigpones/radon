@@ -816,22 +816,16 @@ def main():
         positions = fetch_positions(client)
 
         if not args.no_prices and positions:
-            # ── Phase 3: Qualify contracts + request ALL data at once ──
-            # Request market data AND per-position PnL simultaneously,
-            # then do ONE combined sleep instead of sequential sleeps.
-            print("Qualifying contracts...")
-            client.set_market_data_type(4)
-            contracts = [pos['contract'] for pos in positions]
-            client.qualify_contracts(*contracts)
-
-            # Request all market data
+            # ── Phase 3: Set exchange + request ALL data at once ──
+            # Contracts from get_positions() already have conId but lack exchange.
+            # Setting exchange='SMART' avoids the 1s qualifyContracts() round-trip.
             print("Requesting market data + per-position PnL...")
-            tickers = []
+            client.set_market_data_type(4)
             for pos in positions:
-                ticker = client.get_quote(pos['contract'])
-                tickers.append(ticker)
+                if not pos['contract'].exchange:
+                    pos['contract'].exchange = 'SMART'
 
-            # Request all PnL Single subscriptions (batched, no per-request sleep)
+            # Request PnL Single FIRST (takes slightly longer to arrive)
             pnl_requests = []
             if ib_account:
                 for pos in positions:
@@ -846,10 +840,16 @@ def main():
                     else:
                         pnl_requests.append((pos, None, None))
 
+            # Then request market data (arrives faster)
+            tickers = []
+            for pos in positions:
+                ticker = client.get_quote(pos['contract'])
+                tickers.append(ticker)
+
             # ── Phase 4: ONE combined sleep for all streaming data ──
-            # Market data + PnL Single + account PnL all arrive concurrently.
-            # 2 seconds is sufficient for IB to stream back most data.
-            client.sleep(2)
+            # Market data + PnL Single + account PnL all stream concurrently.
+            # 2.5 seconds ensures all positions receive data reliably.
+            client.sleep(2.5)
 
             # ── Phase 5: Read all results ──
             # Market prices
