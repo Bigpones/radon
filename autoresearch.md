@@ -48,4 +48,26 @@ Market data and PnL Single both need time for IB to stream data back. Currently 
 5. The `collapse_positions()` logic and structure detection must not change behavior.
 
 ## What's Been Tried
-(Nothing yet — this is the baseline.)
+
+### Wins (kept)
+1. **Batch PnL Single requests** (23.3s → 9.7s, −58%): Bypass IBClient's `get_pnl_single()` which sleeps 0.5s per position. Call `ib.reqPnLSingle()` directly for all positions, then one combined sleep.
+2. **Overlap MktData + PnL + account PnL** (9.7s → 5.2s, −37%): Restructure main() so all subscriptions are requested concurrently, then ONE combined sleep replaces 3 sequential sleeps.
+3. **Reduce combined sleep to 2s** (5.2s → 5.2s, kept with conditional PnL poll): 2s main sleep + conditional 1s poll for account PnL if not arrived.
+4. **Skip qualifyContracts** (5.2s → 3.7s, −28%): Set `exchange='SMART'` manually. Contracts from `get_positions()` already have conId but lack exchange. Saves 1.1s round-trip.
+5. **Request PnL BEFORE market data** (improves reliability): PnL Single takes slightly longer to arrive, so requesting first gives it more lead time.
+6. **Direct ib.reqMktData/cancelMktData** (minor cleanup): Skip subscription tracking in IBClient.get_quote.
+
+### Dead ends (discarded)
+- **1.5s combined sleep**: Lost 3 PnL + 2 market values. Too aggressive.
+- **1.75s combined sleep**: Lost 1 PnL. Still too aggressive.
+- **Adaptive polling (0.1s intervals)**: Per-iteration `client.sleep()` overhead dominates savings. 7.3s (worse than fixed 2s).
+- **Adaptive polling (0.25s intervals)**: 6.35s, still slower than fixed 2s.
+- **2s sleep with completeness retry**: IB throttles rapid-fire connections, causing cascading failures on consecutive runs.
+- **2.25s sleep**: 4/5 runs perfect but 1 run lost 4 market values. Not reliable.
+- **Move account summary AFTER subscriptions**: Account summary takes 2.4s (vs 200ms) because IB event loop is clogged with incoming data. Must fetch account BEFORE starting subscriptions.
+
+### Architecture insights
+- **2.5s is the minimum reliable sleep for 20+ positions** during market hours. Below this, delayed/frozen data for thin options may not arrive in time.
+- **IB event loop processing**: Calling any ib_insync method that polls for responses (like `accountSummary()`) when there's heavy incoming data causes massive slowdown. Always do blocking calls BEFORE starting streaming subscriptions.
+- **IB throttles rapid connections**: Running >5 connect/disconnect cycles in quick succession causes CLOSE_WAIT accumulation and eventual connection refusal. Add pauses between test runs.
+- **Client ID conflicts**: Each connection needs a unique client ID. Stale connections hold IDs for 30-60s after disconnect.
