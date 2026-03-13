@@ -4,6 +4,7 @@ const mockReadFile = vi.fn();
 const mockWriteFile = vi.fn();
 const mockStat = vi.fn();
 const mockSpawn = vi.fn();
+const mockIbSync = vi.fn();
 
 vi.mock("fs/promises", () => ({
   readFile: mockReadFile,
@@ -13,6 +14,10 @@ vi.mock("fs/promises", () => ({
 
 vi.mock("child_process", () => ({
   spawn: mockSpawn,
+}));
+
+vi.mock("@tools/wrappers/ib-sync", () => ({
+  ibSync: mockIbSync,
 }));
 
 function makeProc({ stdout = "", stderr = "", code = 0 }: { stdout?: string; stderr?: string; code?: number }) {
@@ -36,11 +41,15 @@ function makeProc({ stdout = "", stderr = "", code = 0 }: { stdout?: string; std
 describe("/api/performance route", () => {
   beforeEach(() => {
     vi.resetModules();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-13T16:10:00Z"));
     mockReadFile.mockReset();
     mockWriteFile.mockReset();
     mockStat.mockReset();
     mockSpawn.mockReset();
+    mockIbSync.mockReset();
     mockWriteFile.mockResolvedValue(undefined);
+    mockIbSync.mockResolvedValue({ ok: false, stderr: "mocked" });
   });
 
   it("GET returns cached performance data when the cache exists", async () => {
@@ -99,6 +108,86 @@ describe("/api/performance route", () => {
     expect(body.summary.ending_equity).toBe(1_313_112.03);
     expect(mockSpawn).toHaveBeenCalledTimes(1);
     expect(mockWriteFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("GET refreshes the portfolio snapshot before rebuilding when the cached performance lags the current ET session", async () => {
+    mockStat.mockResolvedValue({ mtimeMs: Date.now() });
+    mockReadFile.mockImplementation(async (path: string) => {
+      if (path.includes("performance.json")) {
+        return JSON.stringify({
+          as_of: "2026-03-12",
+          last_sync: "2026-03-12T13:23:21Z",
+          summary: { ending_equity: 1_218_410.03 },
+          series: [],
+        });
+      }
+      if (path.includes("portfolio.json")) {
+        return JSON.stringify({
+          last_sync: "2026-03-12T13:23:21Z",
+          account_summary: { net_liquidation: 1_218_410.03 },
+        });
+      }
+      throw new Error(`unexpected read: ${path}`);
+    });
+    mockIbSync.mockResolvedValue({
+      ok: true,
+      data: {
+        last_sync: "2026-03-13T20:02:06Z",
+        account_summary: { net_liquidation: 1_250_902.19 },
+      },
+    });
+    mockSpawn.mockReturnValue(makeProc({
+      stdout: JSON.stringify({
+        as_of: "2026-03-13",
+        last_sync: "2026-03-13T20:02:06Z",
+        summary: { ending_equity: 1_250_902.19 },
+        series: [],
+      }),
+      code: 0,
+    }));
+
+    const { GET } = await import("../app/api/performance/route");
+    const res = await GET();
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.as_of).toBe("2026-03-13");
+    expect(body.summary.ending_equity).toBe(1_250_902.19);
+    expect(mockIbSync).toHaveBeenCalledWith({ sync: true, port: 4001 });
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    expect(mockWriteFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("GET does not rewrite performance.json from a stale prior-session portfolio snapshot when the portfolio refresh fails", async () => {
+    mockStat.mockResolvedValue({ mtimeMs: Date.now() });
+    mockReadFile.mockImplementation(async (path: string) => {
+      if (path.includes("performance.json")) {
+        return JSON.stringify({
+          as_of: "2026-03-12",
+          last_sync: "2026-03-12T13:23:21Z",
+          summary: { ending_equity: 1_218_410.03 },
+          series: [],
+        });
+      }
+      if (path.includes("portfolio.json")) {
+        return JSON.stringify({
+          last_sync: "2026-03-12T13:23:21Z",
+          account_summary: { net_liquidation: 1_218_410.03 },
+        });
+      }
+      throw new Error(`unexpected read: ${path}`);
+    });
+    mockIbSync.mockResolvedValue({ ok: false, stderr: "IB unavailable" });
+
+    const { GET } = await import("../app/api/performance/route");
+    const res = await GET();
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.as_of).toBe("2026-03-12");
+    expect(mockIbSync).toHaveBeenCalledWith({ sync: true, port: 4001 });
+    expect(mockSpawn).not.toHaveBeenCalled();
+    expect(mockWriteFile).not.toHaveBeenCalled();
   });
 
   it("POST runs the Python sync and persists the generated JSON", async () => {

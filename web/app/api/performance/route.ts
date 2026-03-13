@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { readFile, stat, writeFile } from "fs/promises";
 import { spawn } from "child_process";
 import { join } from "path";
-import { isPerformanceBehindPortfolioSync } from "@/lib/performanceFreshness";
+import { isPerformanceBehindPortfolioSync, isPortfolioBehindCurrentEtSession } from "@/lib/performanceFreshness";
+import { ibSync } from "@tools/wrappers/ib-sync";
 
 export const runtime = "nodejs";
 
@@ -86,11 +87,23 @@ function isCacheBehindPortfolio(
 }
 
 export async function GET(): Promise<Response> {
-  const [stale, cachedPerformance, portfolioSnapshot] = await Promise.all([
+  const [stale, cachedPerformance, initialPortfolioSnapshot] = await Promise.all([
     isPerformanceStale(),
     readJsonFile(PERFORMANCE_PATH),
     readJsonFile(PORTFOLIO_PATH),
   ]);
+
+  let portfolioSnapshot = initialPortfolioSnapshot;
+  const portfolioLastSync = extractTimestampValue(portfolioSnapshot, "last_sync");
+
+  if (isPortfolioBehindCurrentEtSession(portfolioLastSync)) {
+    const refreshedPortfolio = await ibSync({ sync: true, port: 4001 });
+    if (refreshedPortfolio.ok) {
+      portfolioSnapshot = refreshedPortfolio.data as unknown as Record<string, unknown>;
+    } else if (cachedPerformance && !isCacheBehindPortfolio(cachedPerformance, portfolioSnapshot)) {
+      return NextResponse.json(cachedPerformance);
+    }
+  }
 
   const shouldSync = !cachedPerformance || stale || isCacheBehindPortfolio(cachedPerformance, portfolioSnapshot);
   if (!shouldSync && cachedPerformance) {

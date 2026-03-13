@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { isPerformanceBehindPortfolioSync, portfolioAsOfFromLastSync } from "../lib/performanceFreshness";
+import {
+  isPerformanceBehindPortfolioSync,
+  isPortfolioBehindCurrentEtSession,
+  latestPortfolioTargetDateET,
+  portfolioAsOfFromLastSync,
+} from "../lib/performanceFreshness";
 
 describe("performance freshness", () => {
   it("derives the portfolio session date from last_sync", () => {
@@ -25,5 +30,15 @@ describe("performance freshness", () => {
       },
       "2026-03-13T21:01:00Z",
     )).toBe(false);
+  });
+
+  it("targets the latest weekday in ET for portfolio freshness checks", () => {
+    expect(latestPortfolioTargetDateET(new Date("2026-03-13T16:10:00Z"))).toBe("2026-03-13");
+    expect(latestPortfolioTargetDateET(new Date("2026-03-14T16:10:00Z"))).toBe("2026-03-13");
+  });
+
+  it("marks a portfolio snapshot as behind when it still points at a prior ET session", () => {
+    expect(isPortfolioBehindCurrentEtSession("2026-03-12T13:23:21Z", "2026-03-13")).toBe(true);
+    expect(isPortfolioBehindCurrentEtSession("2026-03-13T13:23:21Z", "2026-03-13")).toBe(false);
   });
 });

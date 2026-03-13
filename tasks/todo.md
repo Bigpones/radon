@@ -1,5 +1,29 @@
 # TODO
 
+## Session: Refresh `/api/performance` Against The Current ET Session Before Rebuild (2026-03-13)
+
+### Goal
+Strengthen the `/api/performance` GET route so it does not trust a stale `portfolio.json` snapshot when the current ET session has advanced. If the cached reconstructed performance still points at the prior session, the route should first refresh the portfolio snapshot via the existing IB sync wrapper, then rebuild performance from that fresher portfolio state. If that portfolio refresh fails, the route should preserve the cached performance payload instead of overwriting it from stale inputs.
+
+### Dependency Graph
+- T1 (Inspect the leftover route-test diff, the current `/api/performance` route, and the existing `ibSync` wrapper contract before editing code) depends_on: []
+- T2 (Drive the route regressions red for current-session lag and portfolio-refresh failure handling) depends_on: [T1]
+- T3 (Implement the minimal route fix so GET refreshes portfolio first when the cached performance lags the current ET session) depends_on: [T2]
+- T4 (Run targeted Vitest verification, capture review notes, and create a separate scoped commit) depends_on: [T3]
+
+### Checklist
+- [x] T1 Inspect the leftover route-test diff, the current `/api/performance` route, and the existing `ibSync` wrapper contract before editing code
+- [x] T2 Drive the route regressions red for current-session lag and portfolio-refresh failure handling
+- [x] T3 Implement the minimal route fix so GET refreshes portfolio first when the cached performance lags the current ET session
+- [x] T4 Run targeted Vitest verification, capture review notes, and create a separate scoped commit
+
+### Review
+- Root cause: [route.ts](/Users/joemccann/dev/apps/finance/radon/web/app/api/performance/route.ts) only compared `performance.json` to the current `portfolio.json`. If both caches were still on yesterday’s session while today’s ET session had already started, the route treated them as mutually consistent and skipped the rebuild. The leftover route tests correctly captured the stronger contract: before rebuilding from a prior-session portfolio snapshot, GET must first try to refresh `portfolio.json` through the existing [ib-sync wrapper](/Users/joemccann/dev/apps/finance/radon/lib/tools/wrappers/ib-sync.ts).
+- Added ET-session targeting to [performanceFreshness.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/performanceFreshness.ts) with `latestPortfolioTargetDateET()` and `isPortfolioBehindCurrentEtSession()`. The target uses the latest ET weekday, which keeps weekend checks pinned to Friday instead of treating Saturday/Sunday as fresh portfolio sessions.
+- Fixed [route.ts](/Users/joemccann/dev/apps/finance/radon/web/app/api/performance/route.ts) so GET now calls `ibSync({ sync: true, port: 4001 })` when `portfolio.json` is behind the current ET session. If that refresh succeeds, the route rebuilds performance from the fresher portfolio snapshot. If it fails and the cached performance is only as fresh as the stale portfolio snapshot, the route returns the cached performance payload instead of rewriting `performance.json` from stale inputs. If the cached performance already lags a newer `portfolio.json`, the route still rebuilds from that newer on-disk portfolio snapshot.
+- Locked the route contract with [performance-route.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/performance-route.test.ts) and expanded [performance-freshness.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/performance-freshness.test.ts) for the ET target-date helpers.
+- Verification was green with `npx vitest run web/tests/performance-route.test.ts web/tests/performance-freshness.test.ts` and `cd web && npm run build`.
+
 ## Session: Keep /performance Reconstructed YTD In Sync With Portfolio Refreshes (2026-03-13)
 
 ### Goal
