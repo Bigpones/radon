@@ -97,6 +97,7 @@ test-results/
 *.temp
 reports/*.html
 reports/*.json
+reports/*.png
 data/*.json
 data/*.bak
 
