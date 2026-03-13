@@ -9,7 +9,7 @@ import time, subprocess, re, sys
 
 start = time.perf_counter()
 result = subprocess.run(
-    [sys.executable, 'scripts/ib_sync.py', '--sync', '--client-id', '97'],
+    [sys.executable, 'scripts/ib_sync.py', '--sync', '--client-id', '80'],
     capture_output=True, text=True, timeout=120
 )
 elapsed = round(time.perf_counter() - start, 3)
