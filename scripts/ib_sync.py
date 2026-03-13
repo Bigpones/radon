@@ -840,15 +840,16 @@ def main():
                     else:
                         pnl_requests.append((pos, None, None))
 
-            # Then request market data (arrives faster)
+            # Then request market data — use ib.reqMktData directly
+            # (bypasses subscription tracking in IBClient.get_quote)
             tickers = []
             for pos in positions:
-                ticker = client.get_quote(pos['contract'])
+                ticker = client.ib.reqMktData(pos['contract'], "", False, False)
                 tickers.append(ticker)
 
             # ── Phase 4: ONE combined sleep for all streaming data ──
             # Market data + PnL Single + account PnL all stream concurrently.
-            # 2.5 seconds ensures all positions receive data reliably.
+            # 2.25 seconds — PnL is requested first for extra lead time.
             client.sleep(2.5)
 
             # ── Phase 5: Read all results ──
@@ -868,7 +869,7 @@ def main():
                     pos['marketPrice'] = None
                     pos['marketValue'] = None
                     pos['marketPriceIsCalculated'] = False
-                client.cancel_market_data(pos['contract'])
+                client.ib.cancelMktData(pos['contract'])
                 del pos['contract']
 
             # Per-position PnL
