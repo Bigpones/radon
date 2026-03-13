@@ -566,7 +566,7 @@ def fetch_market_prices(client: IBClient, positions: list) -> list:
 
 
 def fetch_position_daily_pnl(client: IBClient, positions: list, account: str = "") -> list:
-    """Fetch IB's per-position daily P&L via reqPnLSingle.
+    """Fetch IB's per-position daily P&L via reqPnLSingle (batched).
     
     IB correctly handles intraday additions — if you held 25 contracts
     overnight and bought 25 more today, IB's dailyPnL reflects:
@@ -575,6 +575,9 @@ def fetch_position_daily_pnl(client: IBClient, positions: list, account: str = "
     
     This is more accurate than our WS close-based calculation which
     assumes all contracts were held overnight.
+    
+    Performance: All PnL subscriptions are requested at once (no per-request
+    sleep), then a single combined sleep waits for data to arrive.
     """
     from ib_insync import util as ib_util
 
@@ -588,13 +591,14 @@ def fetch_position_daily_pnl(client: IBClient, positions: list, account: str = "
     if not account:
         return positions
 
-    # Request PnL for all positions simultaneously
+    # Request PnL for all positions simultaneously — bypass IBClient's
+    # get_pnl_single() which sleeps 0.5s per call, and call IB API directly.
     pnl_requests = []
     for pos in positions:
         con_id = pos.get('conId')
         if con_id:
             try:
-                pnl_single = client.get_pnl_single(account, con_id)
+                pnl_single = client.ib.reqPnLSingle(account, "", con_id)
                 pnl_requests.append((pos, pnl_single, con_id))
             except Exception as e:
                 print(f"  Warning: reqPnLSingle failed for {pos['symbol']} conId={con_id}: {e}")
@@ -602,7 +606,7 @@ def fetch_position_daily_pnl(client: IBClient, positions: list, account: str = "
         else:
             pnl_requests.append((pos, None, None))
 
-    # Wait for data to arrive (all subscriptions are concurrent)
+    # Single combined sleep — all subscriptions are concurrent
     client.sleep(3)
 
     # Read results and cancel subscriptions
@@ -792,29 +796,121 @@ def main():
     client = connect_ib(args.host, args.port, args.client_id)
 
     try:
-        # Fetch data
+        # ── Phase 1: Account summary (fast, no sleep needed) ──
         print("Fetching account summary...")
         account = get_account_summary(client)
 
-        print("Fetching P&L...")
-        pnl_data = get_pnl(client)
+        # ── Phase 2: Request account PnL + positions concurrently ──
+        # reqPnL is a subscription — request it, then do other work while it streams
+        print("Fetching P&L + positions...")
+        from ib_insync import util as ib_util
 
-        print("Fetching positions...")
+        def _valid_pnl(val):
+            return val is not None and not ib_util.isNan(val)
+
+        accounts = client.ib.managedAccounts()
+        ib_account = accounts[0] if accounts else ""
+        pnl_obj = client.ib.reqPnL(ib_account) if ib_account else None
+
+        # Fetch positions while PnL streams
         positions = fetch_positions(client)
 
         if not args.no_prices and positions:
-            print("Fetching market prices...")
-            positions = fetch_market_prices(client, positions)
+            # ── Phase 3: Set exchange + request ALL data at once ──
+            # Contracts from get_positions() already have conId but lack exchange.
+            # Setting exchange='SMART' avoids the 1s qualifyContracts() round-trip.
+            print("Requesting market data + per-position PnL...")
+            client.set_market_data_type(4)
+            for pos in positions:
+                if not pos['contract'].exchange:
+                    pos['contract'].exchange = 'SMART'
+
+            # Request PnL Single FIRST (takes slightly longer to arrive)
+            pnl_requests = []
+            if ib_account:
+                for pos in positions:
+                    con_id = pos.get('conId')
+                    if con_id:
+                        try:
+                            pnl_single = client.ib.reqPnLSingle(ib_account, "", con_id)
+                            pnl_requests.append((pos, pnl_single, con_id))
+                        except Exception as e:
+                            print(f"  Warning: reqPnLSingle failed for {pos['symbol']} conId={con_id}: {e}")
+                            pnl_requests.append((pos, None, con_id))
+                    else:
+                        pnl_requests.append((pos, None, None))
+
+            # Then request market data — use ib.reqMktData directly
+            # (bypasses subscription tracking in IBClient.get_quote)
+            tickers = []
+            for pos in positions:
+                ticker = client.ib.reqMktData(pos['contract'], "", False, False)
+                tickers.append(ticker)
+
+            # ── Phase 4: ONE combined sleep for all streaming data ──
+            # Market data + PnL Single + account PnL all stream concurrently.
+            # 2.25 seconds — PnL is requested first for extra lead time.
+            client.sleep(2.5)
+
+            # ── Phase 5: Read all results ──
+            # Market prices
+            for pos, ticker in zip(positions, tickers):
+                market_price = _normalize_market_price(ticker.marketPrice())
+                bid = _normalize_market_price(ticker.bid)
+                ask = _normalize_market_price(ticker.ask)
+                price, is_calculated = _resolve_market_price(market_price, bid, ask)
+
+                if price is not None:
+                    multiplier = 100 if pos['secType'] == 'OPT' else 1
+                    pos['marketPrice'] = price
+                    pos['marketValue'] = round(price * abs(pos['position']) * multiplier, 2)
+                    pos['marketPriceIsCalculated'] = is_calculated
+                else:
+                    pos['marketPrice'] = None
+                    pos['marketValue'] = None
+                    pos['marketPriceIsCalculated'] = False
+                client.ib.cancelMktData(pos['contract'])
+                del pos['contract']
+
+            # Per-position PnL
+            def _valid_daily(val):
+                return val is not None and not ib_util.isNan(val) and val != 1.7976931348623157e+308
+
+            for pos, pnl_single, con_id in pnl_requests:
+                if pnl_single is not None:
+                    daily = getattr(pnl_single, 'dailyPnL', None)
+                    if _valid_daily(daily):
+                        pos['ibDailyPnl'] = round(float(daily), 2)
+                    else:
+                        pos['ibDailyPnl'] = None
+                    if con_id:
+                        client.cancel_pnl_single(ib_account, con_id)
+                else:
+                    pos['ibDailyPnl'] = None
         else:
-            # Remove contract objects if not fetching prices
+            # No prices requested
             for pos in positions:
                 if 'contract' in pos:
                     del pos['contract']
+                pos['ibDailyPnl'] = None
 
-        # Fetch per-position daily P&L from IB (handles intraday additions correctly)
-        if positions:
-            print("Fetching per-position daily P&L...")
-            positions = fetch_position_daily_pnl(client, positions)
+        # ── Phase 6: Read account PnL (should have arrived during the combined sleep) ──
+        pnl_data = {}
+        if pnl_obj:
+            # Data usually arrives within the combined sleep above.
+            # Only poll briefly if not yet available.
+            if not _valid_pnl(getattr(pnl_obj, 'dailyPnL', None)):
+                client.sleep(1)
+            daily = pnl_obj.dailyPnL
+            unrealized = pnl_obj.unrealizedPnL
+            realized = pnl_obj.realizedPnL
+            pnl_data['dailyPnL'] = float(daily) if _valid_pnl(daily) else None
+            pnl_data['unrealizedPnL'] = float(unrealized) if _valid_pnl(unrealized) else None
+            pnl_data['realizedPnL'] = float(realized) if _valid_pnl(realized) else None
+            try:
+                client.cancel_pnl(pnl_obj)
+            except Exception:
+                pass
 
         # Collapse multi-leg structures
         print("Analyzing position structures...")
