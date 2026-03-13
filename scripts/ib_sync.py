@@ -848,8 +848,8 @@ def main():
 
             # ── Phase 4: ONE combined sleep for all streaming data ──
             # Market data + PnL Single + account PnL all arrive concurrently.
-            # 3 seconds is sufficient for all to complete.
-            client.sleep(3)
+            # 2 seconds is sufficient for IB to stream back most data.
+            client.sleep(2)
 
             # ── Phase 5: Read all results ──
             # Market prices
@@ -893,14 +893,13 @@ def main():
                     del pos['contract']
                 pos['ibDailyPnl'] = None
 
-        # ── Phase 6: Read account PnL (should have arrived during the 3s sleep) ──
+        # ── Phase 6: Read account PnL (should have arrived during the combined sleep) ──
         pnl_data = {}
         if pnl_obj:
-            # Brief poll — data should already be available
-            for _ in range(3):
-                if _valid_pnl(getattr(pnl_obj, 'dailyPnL', None)):
-                    break
-                client.sleep(0.5)
+            # Data usually arrives within the combined sleep above.
+            # Only poll briefly if not yet available.
+            if not _valid_pnl(getattr(pnl_obj, 'dailyPnL', None)):
+                client.sleep(1)
             daily = pnl_obj.dailyPnL
             unrealized = pnl_obj.unrealizedPnL
             realized = pnl_obj.realizedPnL
