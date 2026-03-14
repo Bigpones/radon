@@ -63,8 +63,13 @@ ACCOUNT_TAGS = [
 
 
 def get_account_summary(client: IBClient) -> dict:
-    """Fetch account summary (cash, net liquidation, margin, etc.)"""
-    account_values = client.get_account_summary()
+    """Fetch account summary from cached account values (instant, no round-trip).
+
+    Uses ib.accountValues() which reads from ib_insync's internal cache
+    (populated automatically at connect time) instead of ib.accountSummary()
+    which makes a blocking round-trip (~200-700ms).
+    """
+    account_values = client.ib.accountValues()
 
     summary = {}
     for av in account_values:
@@ -822,8 +827,9 @@ def main():
             print("Requesting market data + per-position PnL...")
             client.set_market_data_type(4)
             for pos in positions:
-                if not pos['contract'].exchange:
-                    pos['contract'].exchange = 'SMART'
+                # Force SMART for all — stocks from get_positions() may have
+                # exchange-specific values (AMEX, BATS) that fail with reqMktData type 4
+                pos['contract'].exchange = 'SMART'
 
             # Request PnL Single FIRST (takes slightly longer to arrive)
             pnl_requests = []
@@ -849,8 +855,9 @@ def main():
 
             # ── Phase 4: ONE combined sleep for all streaming data ──
             # Market data + PnL Single + account PnL all stream concurrently.
-            # 2.25 seconds — PnL is requested first for extra lead time.
-            client.sleep(2.5)
+            # 2.7 seconds — accounts for the faster Phase 1 (accountValues is instant
+            # vs accountSummary's ~200ms round-trip that used to provide implicit delay).
+            client.sleep(2.7)
 
             # ── Phase 5: Read all results ──
             # Market prices
