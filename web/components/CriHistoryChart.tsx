@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState, useEffect, type MouseEvent } from "react";
 import { scaleLinear, scaleTime, type ScaleLinear } from "d3-scale";
-import { line, curveMonotoneX } from "d3-shape";
+import { linePath } from "@/lib/svgPath";
 import { extent, bisectLeft } from "@/lib/arrayUtils";
 import ChartPanel from "./charts/ChartPanel";
 
@@ -132,10 +132,9 @@ export default function CriHistoryChart({
         (d) => d[s.key] != null && Number.isFinite(d[s.key] as number),
       );
       if (valid.length < 2) return { path: null, dots: [], lastDot: null };
-      const pathFn = line<CriHistoryEntry>()
+      const pathFn = linePath<CriHistoryEntry>()
         .x((d) => xScale(new Date(d.date)))
-        .y((d) => yScale(d[s.key] as number))
-        .curve(curveMonotoneX);
+        .y((d) => yScale(d[s.key] as number));
       const dots = valid.map((d) => ({
         cx: xScale(new Date(d.date)),
         cy: yScale(d[s.key] as number),

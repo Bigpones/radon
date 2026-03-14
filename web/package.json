@@ -19,7 +19,6 @@
   },
   "dependencies": {
     "d3-scale": "^4.0.2",
-    "d3-shape": "^3.2.0",
     "liveline": "^0.0.6",
     "lucide-react": "^0.544.0",
     "next": "^16.1.6",
@@ -34,7 +33,6 @@
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@types/d3-scale": "^4.0.9",
-    "@types/d3-shape": "^3.1.8",
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { scaleLinear } from "d3-scale";
-import { line, curveMonotoneX } from "d3-shape";
+import { linePath } from "@/lib/svgPath";
 import { extent, mean } from "@/lib/arrayUtils";
 import InfoTooltip from "./InfoTooltip";
 import ChartLegend from "./charts/ChartLegend";
@@ -138,10 +138,9 @@ export default function RegimeRelationshipView({
   const spreadScale = scaleLinear()
     .domain([-(spreadMax * 1.15), spreadMax * 1.15])
     .range([innerHeight, 0]);
-  const spreadLine = line<(typeof entries)[number]>()
-    .x((entry, index) => xScale(index))
-    .y((entry) => spreadScale(entry.spread))
-    .curve(curveMonotoneX)(entries);
+  const spreadLine = linePath<(typeof entries)[number]>()
+    .x((_entry, index) => xScale(index))
+    .y((entry) => spreadScale(entry.spread))(entries);
 
   const realizedExtent = extent(entries, (entry) => entry.realizedVol) as [number, number];
   const cor1mExtent = extent(entries, (entry) => entry.cor1m) as [number, number];
@@ -164,14 +163,12 @@ export default function RegimeRelationshipView({
   const zScale = scaleLinear()
     .domain([-(zMax * 1.15), zMax * 1.15])
     .range([innerHeight, 0]);
-  const zRvolLine = line<(typeof entries)[number]>()
-    .x((entry, index) => xScale(index))
-    .y((entry) => zScale(entry.realizedVolZ))
-    .curve(curveMonotoneX)(entries);
-  const zCor1mLine = line<(typeof entries)[number]>()
-    .x((entry, index) => xScale(index))
-    .y((entry) => zScale(entry.cor1mZ))
-    .curve(curveMonotoneX)(entries);
+  const zRvolLine = linePath<(typeof entries)[number]>()
+    .x((_entry, index) => xScale(index))
+    .y((entry) => zScale(entry.realizedVolZ))(entries);
+  const zCor1mLine = linePath<(typeof entries)[number]>()
+    .x((_entry, index) => xScale(index))
+    .y((entry) => zScale(entry.cor1mZ))(entries);
 
   const latest = entries[entries.length - 1];
   const spreadColor = spreadStateColor(summary.spreadState);
