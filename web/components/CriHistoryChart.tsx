@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState, useEffect, type MouseEvent } from "react";
-import { scaleLinear, scaleTime, type ScaleLinear } from "d3-scale";
+import { scaleLinear, scaleTime, type ScaleLinear } from "@/lib/scales";
 import { linePath } from "@/lib/svgPath";
 import { extent, bisectLeft } from "@/lib/arrayUtils";
 import ChartPanel from "./charts/ChartPanel";
@@ -127,7 +127,7 @@ export default function CriHistoryChart({
 
   // Line path generators
   const buildPath = useCallback(
-    (s: ChartSeries, yScale: ScaleLinear<number, number>) => {
+    (s: ChartSeries, yScale: ScaleLinear<number>) => {
       const valid = chartData.filter(
         (d) => d[s.key] != null && Number.isFinite(d[s.key] as number),
       );

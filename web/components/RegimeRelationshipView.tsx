@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { scaleLinear } from "d3-scale";
+import { scaleLinear } from "@/lib/scales";
 import { linePath } from "@/lib/svgPath";
 import { extent, mean } from "@/lib/arrayUtils";
 import InfoTooltip from "./InfoTooltip";
