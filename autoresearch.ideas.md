@@ -1,27 +1,29 @@
-# IB Sync Latency — Ideas Backlog
+# Web Bundle Size — Ideas Backlog
 
-## Status: EXHAUSTED — No actionable ideas remain.
-
-All paths with meaningful impact have been explored and either applied or rejected.
-The optimization is at the theoretical floor (~2.9s) bounded by IB's 2.5s data streaming requirement.
-
-## Applied (merged to main)
-- Batch PnL Single (−13.6s)
-- Overlap all sleeps (−4.5s)
-- Skip qualifyContracts (−1.5s)
-- accountValues() cache read (−0.3s)
-- Phase 6 elimination (−0.3s)
-- Sleep 2.7→2.5s (−0.2s)
-- Close price fallback (data quality, no timing impact)
+## Applied (1124KB → 921KB, −18.1%)
+- Replace react-markdown + remark-gfm with lightweight inline renderer (−137KB raw)
+- d3 selective imports instead of `import * as d3` (−16KB raw)
+- Remove dead dependencies: @fontsource/ibm-plex-mono, @vercel/analytics, ib
+- SWC removeConsole in production (−1KB)
+- Replace d3-time-format with Intl.DateTimeFormat
+- Rewrite CriHistoryChart from imperative d3 DOM to declarative React SVG (−13KB, removes d3-selection + d3-axis)
+- Replace d3-array with 1.5KB arrayUtils.ts (extent, mean, bisectLeft)
+- Replace d3-shape with 2.6KB svgPath.ts (monotone cubic Hermite line generator) (−5KB)
+- Replace d3-scale with 3.9KB scales.ts (scaleLinear + scaleTime with ticks) (−31KB, removes d3-format + d3-interpolate + d3-time + d3-time-format + d3-color)
+- Move @sinclair/typebox to devDependencies
 
 ## Explored and rejected
-- Adaptive polling (0.1s/0.25s): iteration overhead exceeds savings
-- Snapshot market data: broken with delayed-frozen (type 4)
-- Move account summary after subs: event loop backlog regression
-- Import optimization: ib_insync 121ms, unavoidable
-- Post-IB processing: <3ms total, negligible
-- Skip cancel calls: <2ms total, negligible
-- Sleep <2.5s: overfits to degraded gateway, loses live data during market hours
+- Dynamic import ChatPanel/MetricCards/WorkspaceSections: +13KB overhead from chunk wrappers
+- Dynamic import PriceChart only: +4KB overhead
+- Dynamic import all ticker-detail tabs: +11KB overhead
+- optimizePackageImports / modularizeImports: Turbopack already handles tree-shaking
+- reactStrictMode: false: no effect on production bundle
+- Remove dead packages: no bundle change (Turbopack tracks imports, not package.json)
 
-## Not worth pursuing
-- Persistent connection pool: saves ~125ms connect, needs daemon architecture change — beyond scope
+## Remaining ideas (diminishing returns territory)
+- CSS audit: ~134 potentially unused selectors in globals.css (risky — many dynamic class names)
+- Deduplicate className string constants (minimal impact — gzip handles repetition)
+- Move WorkspaceSections into per-route components (requires architecture change)
+- Check if liveline (PriceChart) canvas code can be reduced via tree-shaking config
+- Remove dead lib modules: store.ts, useIBStatus.ts (already excluded by Turbopack)
+- Reduce sectionTooltips.ts verbose text (changes content, not a pure optimization)
