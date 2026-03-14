@@ -424,3 +424,69 @@ export type PriceUpdate = {
   data: PriceData;
   receivedAt: Date;
 };
+
+// Attribution types
+export type StrategyAttribution = {
+  strategy_id: string;
+  strategy_name: string;
+  trade_count: number;
+  closed_count: number;
+  open_count: number;
+  winners: number;
+  losers: number;
+  realized_pnl: number;
+  total_cost: number;
+  win_rate: number | null;
+  avg_win: number | null;
+  avg_loss: number | null;
+  expected_win_rate: number | null;
+  kelly_accuracy: number | null;
+};
+
+export type TickerAttributionEntry = {
+  ticker: string;
+  trade_count: number;
+  realized_pnl: number;
+  strategies: string[];
+};
+
+export type EdgeAttribution = {
+  edge_type: string;
+  trade_count: number;
+  closed_count: number;
+  realized_pnl: number;
+  win_rate: number | null;
+  winners: number;
+  losers: number;
+};
+
+export type RiskAttribution = {
+  risk_type: string;
+  trade_count: number;
+  closed_count: number;
+  realized_pnl: number;
+  win_rate: number | null;
+  winners: number;
+  losers: number;
+};
+
+export type KellyCalibrationEntry = {
+  expected_win_rate: number | null;
+  actual_win_rate: number | null;
+  accuracy: number | null;
+  sample_size: number;
+};
+
+export type AttributionData = {
+  total_trades: number;
+  closed_trades: number;
+  open_trades: number;
+  total_realized_pnl: number;
+  by_strategy: StrategyAttribution[];
+  by_ticker: TickerAttributionEntry[];
+  by_edge: EdgeAttribution[];
+  by_risk: RiskAttribution[];
+  best_ticker: string | null;
+  worst_ticker: string | null;
+  kelly_calibration: Record<string, KellyCalibrationEntry>;
+};

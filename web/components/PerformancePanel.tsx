@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, Gauge, ShieldAlert, Sigma, TrendingDown } from "lucide-react";
+import AttributionPanel from "./AttributionPanel";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DEFAULT_PERFORMANCE_CHART_HEIGHT,
@@ -516,6 +517,8 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
           </div>
         </div>
       </div>
+
+      <AttributionPanel />
 
       {activeCard && (
         <MetricDefinitionModal

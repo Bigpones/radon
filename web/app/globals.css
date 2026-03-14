@@ -4267,3 +4267,103 @@ tr {
   margin-top: 8px;
   border-top: 1px solid var(--line-grid);
 }
+
+/* ── Attribution Panel ─────────────────────────────────────────────── */
+
+.attribution-table {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  font-size: 12px;
+}
+
+.attribution-table-header {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1.5fr 2fr;
+  gap: 8px;
+  padding: 6px 8px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--line-grid);
+}
+
+.attribution-table-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1.5fr 2fr;
+  gap: 8px;
+  padding: 6px 8px;
+  align-items: center;
+  border-bottom: 1px solid var(--line-grid);
+}
+
+.attribution-table-row:last-child {
+  border-bottom: none;
+}
+
+.attribution-strategy-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.attribution-pnl-bar {
+  height: 6px;
+  background: var(--bg-panel);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.attribution-pnl-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.attribution-pnl-fill.positive {
+  background: var(--signal-core);
+}
+
+.attribution-pnl-fill.negative {
+  background: var(--negative);
+}
+
+.attribution-mini-header {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 0 8px;
+  border-bottom: 1px solid var(--line-grid);
+  margin-bottom: 4px;
+}
+
+.attribution-mini-header.positive {
+  color: var(--signal-core);
+}
+
+.attribution-mini-header.negative {
+  color: var(--negative);
+}
+
+.attribution-ticker-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+/* Risk/Edge tables — 4 columns (no bar) */
+.attribution-table[data-testid="attribution-risk-table"] .attribution-table-header,
+.attribution-table[data-testid="attribution-risk-table"] .attribution-table-row,
+.attribution-table[data-testid="attribution-kelly-table"] .attribution-table-header,
+.attribution-table[data-testid="attribution-kelly-table"] .attribution-table-row {
+  grid-template-columns: 2fr 1fr 1fr 1.5fr;
+}
+
+/* Kelly table — 5 columns */
+.attribution-table[data-testid="attribution-kelly-table"] .attribution-table-header,
+.attribution-table[data-testid="attribution-kelly-table"] .attribution-table-row {
+  grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+}
