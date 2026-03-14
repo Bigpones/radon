@@ -56,16 +56,16 @@ export default function InstrumentDetailModal({ leg, ticker, expiry, prices, onC
         {/* Position summary pill */}
         <div className="instrument-summary-grid">
           <div className="pos-stat">
-            <span className="pos-stat-label">DIRECTION</span>
-            <span className="pos-stat-value">{leg.direction} {leg.contracts}x</span>
+            <span className="ps-l">DIRECTION</span>
+            <span className="ps-v">{leg.direction} {leg.contracts}x</span>
           </div>
           <div className="pos-stat">
-            <span className="pos-stat-label">AVG ENTRY</span>
-            <span className="pos-stat-value">{fmtPrice(avgEntry)}</span>
+            <span className="ps-l">AVG ENTRY</span>
+            <span className="ps-v">{fmtPrice(avgEntry)}</span>
           </div>
           <div className="pos-stat">
-            <span className="pos-stat-label">P&L</span>
-            <span className={`pos-stat-value ${legPnl != null ? (legPnl >= 0 ? "positive" : "negative") : ""}`}>
+            <span className="ps-l">P&L</span>
+            <span className={`ps-v ${legPnl != null ? (legPnl >= 0 ? "positive" : "negative") : ""}`}>
               {legPnl != null ? `${legPnl >= 0 ? "+" : ""}${fmtUsd(Math.abs(legPnl))}` : "---"}
             </span>
           </div>

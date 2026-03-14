@@ -37,7 +37,7 @@ function L1OrderBook({
   return (
     <div className="book-l1">
       <div
-        className="book-section-header"
+        className="book-s-hd"
       >
         ORDER BOOK
       </div>
@@ -125,24 +125,24 @@ function PositionSummary({ position }: { position: PortfolioPosition }) {
   return (
     <div style={{ marginTop: "16px" }}>
       <div
-        className="book-section-header"
+        className="book-s-hd"
       >
         POSITION
       </div>
       <div className="instrument-summary-grid">
         <div className="pos-stat">
-          <span className="pos-stat-label">DIRECTION</span>
-          <span className="pos-stat-value">
+          <span className="ps-l">DIRECTION</span>
+          <span className="ps-v">
             {position.direction} {position.contracts}x
           </span>
         </div>
         <div className="pos-stat">
-          <span className="pos-stat-label">STRUCTURE</span>
-          <span className="pos-stat-value">{position.structure}</span>
+          <span className="ps-l">STRUCTURE</span>
+          <span className="ps-v">{position.structure}</span>
         </div>
         <div className="pos-stat">
-          <span className="pos-stat-label">AVG COST</span>
-          <span className="pos-stat-value">
+          <span className="ps-l">AVG COST</span>
+          <span className="ps-v">
             {position.entry_cost != null
               ? fmtPrice(
                   Math.abs(position.entry_cost) /
@@ -153,8 +153,8 @@ function PositionSummary({ position }: { position: PortfolioPosition }) {
           </span>
         </div>
         <div className="pos-stat">
-          <span className="pos-stat-label">MKT VALUE</span>
-          <span className="pos-stat-value">
+          <span className="ps-l">MKT VALUE</span>
+          <span className="ps-v">
             {position.market_value != null
               ? fmtPrice(Math.abs(position.market_value))
               : "---"}
@@ -171,7 +171,7 @@ function OpenOrdersList({ orders }: { orders: OpenOrder[] }) {
   return (
     <div style={{ marginTop: "16px" }}>
       <div
-        className="book-section-header"
+        className="book-s-hd"
       >
         OPEN ORDERS ({orders.length})
       </div>
@@ -299,7 +299,7 @@ function StockOrderForm({
   return (
     <div className="order-form" style={{ marginTop: "16px" }}>
       <div
-        className="book-section-header"
+        className="book-s-hd"
       >
         STOCK ORDER
       </div>

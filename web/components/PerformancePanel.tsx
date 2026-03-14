@@ -318,14 +318,14 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
   if (loading && !data) {
     return (
       <div className="section">
-        <div className="section-header">
-          <div className="section-title">
+        <div className="s-hd">
+          <div className="s-tt">
             <Gauge size={14} />
             Performance
           </div>
           <span className="pill neutral">LOADING</span>
         </div>
-        <div className="section-body performance-empty">
+        <div className="s-bd performance-empty">
           Reconstructing YTD portfolio performance...
         </div>
       </div>
@@ -335,14 +335,14 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
   if (!data) {
     return (
       <div className="section">
-        <div className="section-header">
-          <div className="section-title">
+        <div className="s-hd">
+          <div className="s-tt">
             <ShieldAlert size={14} />
             Performance
           </div>
           <span className="pill undefined">UNAVAILABLE</span>
         </div>
-        <div className="section-body performance-empty">
+        <div className="s-bd performance-empty">
           {error ?? "No performance data available."}
         </div>
       </div>
@@ -354,7 +354,7 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
   return (
     <div className="performance-panel" data-testid="performance-panel">
       <div className="section performance-hero">
-        <div className="section-body performance-hero-body">
+        <div className="s-bd performance-hero-body">
           <div>
             <div className="section-label-mono">RECONSTRUCTED {data.period_label}</div>
             <div className="performance-hero-value">
@@ -373,14 +373,14 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
       </div>
 
       <div className="section">
-        <div className="section-header">
-          <div className="section-title">
+        <div className="s-hd">
+          <div className="s-tt">
             <Gauge size={14} />
             Core Performance
           </div>
           <span className="pill defined">INSTITUTIONAL</span>
         </div>
-        <div className="section-body">
+        <div className="s-bd">
           <div className="metrics-grid">
             {cardConfigs.slice(0, 4).map((card) => (
               <StatCard key={card.id} {...card} onClick={() => setActiveCardId(card.id)} />
@@ -399,14 +399,14 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
 
       <div className="performance-grid-2">
         <div className="section">
-          <div className="section-header">
-            <div className="section-title">
+          <div className="s-hd">
+            <div className="s-tt">
               <TrendingDown size={14} />
               Tail And Path Risk
             </div>
             <span className="pill neutral">DAILY</span>
           </div>
-          <div className="section-body">
+          <div className="s-bd">
             <div className="performance-metric-list">
               <div><span>VaR 95%</span><strong>{fmtPct(summary.var_95)}</strong></div>
               <div><span>CVaR 95%</span><strong>{fmtPct(summary.cvar_95)}</strong></div>
@@ -419,14 +419,14 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
         </div>
 
         <div className="section">
-          <div className="section-header">
-            <div className="section-title">
+          <div className="s-hd">
+            <div className="s-tt">
               <Sigma size={14} />
               Distribution And Capture
             </div>
             <span className="pill neutral">{data.benchmark}</span>
           </div>
-          <div className="section-body">
+          <div className="s-bd">
             <div className="performance-metric-list">
               <div><span>Hit Rate</span><strong>{fmtPct(summary.hit_rate)}</strong></div>
               <div><span>Upside Capture</span><strong>{fmtRatio(summary.upside_capture)}</strong></div>
@@ -441,14 +441,14 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
 
       <div className="performance-grid-2">
         <div className="section">
-          <div className="section-header">
-            <div className="section-title">
+          <div className="s-hd">
+            <div className="s-tt">
               <AlertTriangle size={14} />
               Methodology
             </div>
             <span className="pill neutral">{data.methodology.return_basis.replace(/_/g, " ").toUpperCase()}</span>
           </div>
-          <div className="section-body performance-meta-grid">
+          <div className="s-bd performance-meta-grid">
             <div className="performance-meta-item">
               <span className="performance-meta-label">Curve Type</span>
               <span className="performance-meta-value">{data.methodology.curve_type.replace(/_/g, " ")}</span>
@@ -469,14 +469,14 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
         </div>
 
         <div className="section">
-          <div className="section-header">
-            <div className="section-title">
+          <div className="s-hd">
+            <div className="s-tt">
               <AlertTriangle size={14} />
               Warnings
             </div>
             <span className="pill undefined">{data.warnings.length} FLAGS</span>
           </div>
-          <div className="section-body">
+          <div className="s-bd">
             <ul className="performance-note-list">
               {data.warnings.map((warning) => (
                 <li key={warning}>{warning}</li>

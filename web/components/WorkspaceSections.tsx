@@ -279,13 +279,13 @@ function FlowSections() {
 
       {error && (
         <div className="section">
-          <div className="section-body"><div className="alert-item bearish">{error}</div></div>
+          <div className="s-bd"><div className="alert-item bearish">{error}</div></div>
         </div>
       )}
 
       <div className="section">
-        <div className="section-header">
-          <div className="section-title">
+        <div className="s-hd">
+          <div className="s-tt">
             <CheckCircle2 size={14} />
             Flow Supports Position
             <InfoTooltip text={SECTION_TOOLTIPS["Flow Supports Position"]} />
@@ -301,7 +301,7 @@ function FlowSections() {
             </span>
           </div>
         </div>
-        <div className="section-body">
+        <div className="s-bd">
           {supportsArr.length > 0 ? (
             <FlowTable rows={supportsArr} lastColumn="Signal" />
           ) : (
@@ -311,15 +311,15 @@ function FlowSections() {
       </div>
 
       <div className="section">
-        <div className="section-header">
-          <div className="section-title">
+        <div className="s-hd">
+          <div className="s-tt">
             <TrendingDown size={14} />
             Flow Against Position
             <InfoTooltip text={SECTION_TOOLTIPS["Flow Against Position"]} />
           </div>
           <span className="pill distrib">{againstArr.length} POSITIONS</span>
         </div>
-        <div className="section-body">
+        <div className="s-bd">
           {againstArr.length > 0 ? (
             <FlowTable rows={againstArr} lastColumn="Concern" />
           ) : (
@@ -329,15 +329,15 @@ function FlowSections() {
       </div>
 
       <div className="section">
-        <div className="section-header">
-          <div className="section-title">
+        <div className="s-hd">
+          <div className="s-tt">
             <Circle size={14} />
             Neutral / Low Signal
             <InfoTooltip text={SECTION_TOOLTIPS["Neutral / Low Signal"]} />
           </div>
           <span className="pill neutral">{neutralArr.length} POSITIONS</span>
         </div>
-        <div className="section-body">
+        <div className="s-bd">
           {neutralArr.length > 0 ? (
             <FlowTable rows={neutralArr} lastColumn="Note" />
           ) : (
@@ -347,15 +347,15 @@ function FlowSections() {
       </div>
 
       <div className="section">
-        <div className="section-header">
-          <div className="section-title">
+        <div className="s-hd">
+          <div className="s-tt">
             <Bell size={14} />
             Watch Closely
             <InfoTooltip text={SECTION_TOOLTIPS["Watch Closely"]} />
           </div>
           <span className="pill undefined">{watchArr.length} POSITIONS</span>
         </div>
-        <div className="section-body">
+        <div className="s-bd">
           {watchArr.length > 0 ? (
             <FlowTable rows={watchArr} lastColumn="Note" />
           ) : (
@@ -381,15 +381,15 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
   if (!portfolio) {
     return (
       <div className="section">
-        <div className="section-header">
-          <div className="section-title">
+        <div className="s-hd">
+          <div className="s-tt">
             <Circle size={14} />
             Portfolio
             <InfoTooltip text={SECTION_TOOLTIPS["Defined Risk Positions"]} />
           </div>
           <span className="pill neutral">LOADING</span>
         </div>
-        <div className="section-body">
+        <div className="s-bd">
           <div className="alert-item">Waiting for portfolio data...</div>
         </div>
       </div>
@@ -404,15 +404,15 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
     <>
       {definedPositions.length > 0 && (
         <div className="section">
-          <div className="section-header">
-            <div className="section-title">
+          <div className="s-hd">
+            <div className="s-tt">
               <CheckCircle2 size={14} />
               Defined Risk Positions
               <InfoTooltip text={SECTION_TOOLTIPS["Defined Risk Positions"]} />
             </div>
             <span className="pill defined">{definedPositions.length} POSITIONS</span>
           </div>
-          <div className="section-body">
+          <div className="s-bd">
             <PositionTable positions={definedPositions} showStrike={true} showUnderlying={true} prices={prices} />
           </div>
         </div>
@@ -420,15 +420,15 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
 
       {undefinedPositions.length > 0 && (
         <div className="section">
-          <div className="section-header">
-            <div className="section-title">
+          <div className="s-hd">
+            <div className="s-tt">
               <TriangleAlert size={14} />
               Undefined Risk Positions
               <InfoTooltip text={SECTION_TOOLTIPS["Undefined Risk Positions"]} />
             </div>
             <span className="pill undefined">{undefinedPositions.length} POSITIONS</span>
           </div>
-          <div className="section-body">
+          <div className="s-bd">
             <PositionTable positions={undefinedPositions} showUnderlying={true} prices={prices} />
           </div>
         </div>
@@ -436,15 +436,15 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
 
       {equityPositions.length > 0 && (
         <div className="section">
-          <div className="section-header">
-            <div className="section-title">
+          <div className="s-hd">
+            <div className="s-tt">
               <Circle size={14} />
               Equity Positions
               <InfoTooltip text={SECTION_TOOLTIPS["Equity Positions"]} />
             </div>
             <span className="pill neutral">{equityPositions.length} POSITIONS</span>
           </div>
-          <div className="section-body">
+          <div className="s-bd">
             <PositionTable positions={equityPositions} showExpiry={false} prices={prices} />
           </div>
         </div>
@@ -497,8 +497,8 @@ function ScannerSections() {
   return (
     <>
       <div className="section">
-        <div className="section-header">
-          <div className="section-title">
+        <div className="s-hd">
+          <div className="s-tt">
             <Sparkles size={14} />
             Scanner Signals
             <InfoTooltip text={SECTION_TOOLTIPS["Scanner Signals"]} />
@@ -514,12 +514,12 @@ function ScannerSections() {
             </span>
           </div>
         </div>
-        {error && <div className="section-body"><div className="alert-item bearish">{error}</div></div>}
+        {error && <div className="s-bd"><div className="alert-item bearish">{error}</div></div>}
         {signals.length === 0 && !syncing && !error && (
-          <div className="section-body"><div className="alert-item">No scanner signals. Waiting for initial scan...</div></div>
+          <div className="s-bd"><div className="alert-item">No scanner signals. Waiting for initial scan...</div></div>
         )}
         {signals.length > 0 && (
-          <div className="section-body table-wrap">
+          <div className="s-bd table-wrap">
             <table>
               <thead>
                 <tr>
@@ -615,8 +615,8 @@ function DiscoverSections() {
   return (
     <>
       <div className="section">
-        <div className="section-header">
-          <div className="section-title">
+        <div className="s-hd">
+          <div className="s-tt">
             <Search size={14} />
             Discovery Candidates
             <InfoTooltip text={SECTION_TOOLTIPS["Discovery Candidates"]} />
@@ -632,12 +632,12 @@ function DiscoverSections() {
             </span>
           </div>
         </div>
-        {error && <div className="section-body"><div className="alert-item bearish">{error}</div></div>}
+        {error && <div className="s-bd"><div className="alert-item bearish">{error}</div></div>}
         {candidates.length === 0 && !syncing && !error && (
-          <div className="section-body"><div className="alert-item">No candidates found. Waiting for initial scan...</div></div>
+          <div className="s-bd"><div className="alert-item">No candidates found. Waiting for initial scan...</div></div>
         )}
         {candidates.length > 0 && (
-          <div className="section-body table-wrap">
+          <div className="s-bd table-wrap">
             <table>
               <thead>
                 <tr>
@@ -719,8 +719,8 @@ function JournalSections() {
   return (
     <>
       <div className="section">
-        <div className="section-header">
-          <div className="section-title">
+        <div className="s-hd">
+          <div className="s-tt">
             <Wrench size={14} />
             Trade Journal
             <InfoTooltip text={SECTION_TOOLTIPS["Trade Journal"]} />
@@ -744,14 +744,14 @@ function JournalSections() {
             <span className="pill defined">{trades.length} TRADES</span>
           </div>
         </div>
-        {error && <div className="section-body"><div className="alert-item bearish">{error}</div></div>}
-        {syncError && <div className="section-body"><div className="alert-item bearish">IB Sync: {syncError}</div></div>}
-        {loading && <div className="section-body p-6"><TableSkeleton rows={4} columns={6} /></div>}
+        {error && <div className="s-bd"><div className="alert-item bearish">{error}</div></div>}
+        {syncError && <div className="s-bd"><div className="alert-item bearish">IB Sync: {syncError}</div></div>}
+        {loading && <div className="s-bd p-6"><TableSkeleton rows={4} columns={6} /></div>}
         {!loading && trades.length === 0 && !error && (
-          <div className="section-body"><div className="alert-item">No trades in journal.</div></div>
+          <div className="s-bd"><div className="alert-item">No trades in journal.</div></div>
         )}
         {trades.length > 0 && (
-          <div className="section-body table-wrap">
+          <div className="s-bd table-wrap">
             <table>
               <thead>
                 <tr>
@@ -964,15 +964,15 @@ function OrdersSections({
   if (!orders) {
     return (
       <div className="section">
-        <div className="section-header">
-          <div className="section-title">
+        <div className="s-hd">
+          <div className="s-tt">
             <ClipboardList size={14} />
             Orders
             <InfoTooltip text={SECTION_TOOLTIPS["Open Orders"]} />
           </div>
           <span className="pill neutral">LOADING</span>
         </div>
-        <div className="section-body">
+        <div className="s-bd">
           <div className="alert-item">Waiting for orders data...</div>
         </div>
       </div>
@@ -1000,15 +1000,15 @@ function OrdersSections({
       />
 
       <div className="section">
-        <div className="section-header">
-          <div className="section-title">
+        <div className="s-hd">
+          <div className="s-tt">
             <ClipboardList size={14} />
             Open Orders
             <InfoTooltip text={SECTION_TOOLTIPS["Open Orders"]} />
           </div>
           <span className="pill defined">{orders.open_count} ORDERS</span>
         </div>
-        <div className="section-body">
+        <div className="s-bd">
           {orders.open_orders.length === 0 ? (
             <div className="alert-item">No open orders</div>
           ) : (
@@ -1094,15 +1094,15 @@ function OrdersSections({
       </div>
 
       <div className="section">
-        <div className="section-header">
-          <div className="section-title">
+        <div className="s-hd">
+          <div className="s-tt">
             <CheckCircle2 size={14} />
             Today&apos;s Executed Orders
             <InfoTooltip text={SECTION_TOOLTIPS["Today's Executed Orders"]} />
           </div>
           <span className="pill neutral">{execCount} {execCount === 1 ? "ENTRY" : "ENTRIES"}</span>
         </div>
-        <div className="section-body">
+        <div className="s-bd">
           {allExecutedRows.length === 0 ? (
             <div className="alert-item">No fills this session</div>
           ) : (
@@ -1225,8 +1225,8 @@ function HistoricalTradesSection() {
 
   return (
     <div className="section">
-      <div className="section-header">
-        <div className="section-title">
+      <div className="s-hd">
+        <div className="s-tt">
           <ClipboardList size={14} />
           Historical Trades (30 Days)
           <InfoTooltip text={SECTION_TOOLTIPS["Historical Trades (30 Days)"]} />
@@ -1247,7 +1247,7 @@ function HistoricalTradesSection() {
           </button>
         </div>
       </div>
-      <div className="section-body">
+      <div className="s-bd">
         {error && <div className="alert-item section-message bearish">{error}</div>}
         {loading && <div className="p-6"><TableSkeleton rows={5} columns={8} /></div>}
         {!loading && !hasData && !error && (

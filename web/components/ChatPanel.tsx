@@ -106,14 +106,14 @@ export default function ChatPanel({ activeSection }: ChatPanelProps) {
 
   return (
     <div className={`section chat-panel ${activeSection === "dashboard" ? "dashboard-chat-panel" : ""}`}>
-      <div className="section-header">
-        <div className="section-title">
+      <div className="s-hd">
+        <div className="s-tt">
           <Bot size={14} />
           Radon Chat
         </div>
         <span className="pill defined">LIVE CONVERSATION</span>
       </div>
-      <div className="section-body">
+      <div className="s-bd">
         <div className="chat-shell">
           <form suppressHydrationWarning className="chat-input-row" onSubmit={sendMessage}>
             <textarea

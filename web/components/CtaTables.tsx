@@ -51,7 +51,7 @@ function CtaSection({ sectionKey, rows }: { sectionKey: string; rows: CtaRow[] }
 
   return (
     <div className="cta-section">
-      <button className="cta-section-header" onClick={() => setOpen(!open)}>
+      <button className="cta-s-hd" onClick={() => setOpen(!open)}>
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         {SECTION_LABELS[sectionKey] ?? sectionKey.toUpperCase()}
         <span className="cta-section-count">{rows.length}</span>

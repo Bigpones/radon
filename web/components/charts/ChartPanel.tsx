@@ -43,7 +43,7 @@ export default function ChartPanel({
       data-chart-family={chartFamily}
       data-chart-renderer={chartRenderer}
     >
-      <div className="section-header chart-panel-header">
+      <div className="s-hd chart-panel-header">
         <div className="chart-panel-heading">
           <div
             className="chart-panel-kicker"
@@ -52,14 +52,14 @@ export default function ChartPanel({
           >
             <span>{chartFamily}</span>
           </div>
-          <div className="section-title chart-panel-title">
+          <div className="s-tt chart-panel-title">
             {icon ? <span className="chart-panel-icon" aria-hidden="true">{icon}</span> : null}
             <span>{title}</span>
           </div>
         </div>
         {badge ? <div className="chart-panel-badge">{badge}</div> : null}
       </div>
-      <div className={`section-body chart-panel-body ${bodyClassName ?? ""}`.trim()}>
+      <div className={`s-bd chart-panel-body ${bodyClassName ?? ""}`.trim()}>
         {legend.length > 0 ? <ChartLegend items={legend} className="chart-panel-legend" /> : null}
         <div className={`chart-panel-content ${contentClassName ?? ""}`.trim()}>{children}</div>
         {footer ? <div className="chart-panel-footer">{footer}</div> : null}

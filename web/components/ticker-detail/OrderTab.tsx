@@ -92,20 +92,20 @@ function ExistingOrderRow({
 
       <div className="existing-order-details">
         <div className="existing-order-detail">
-          <span className="pos-stat-label">TYPE</span>
-          <span className="pos-stat-value">{order.orderType}</span>
+          <span className="ps-l">TYPE</span>
+          <span className="ps-v">{order.orderType}</span>
         </div>
         <div className="existing-order-detail">
-          <span className="pos-stat-label">LIMIT</span>
-          <span className="pos-stat-value">{order.limitPrice != null ? fmtPrice(order.limitPrice) : "---"}</span>
+          <span className="ps-l">LIMIT</span>
+          <span className="ps-v">{order.limitPrice != null ? fmtPrice(order.limitPrice) : "---"}</span>
         </div>
         <div className="existing-order-detail">
-          <span className="pos-stat-label">TIF</span>
-          <span className="pos-stat-value">{order.tif}</span>
+          <span className="ps-l">TIF</span>
+          <span className="ps-v">{order.tif}</span>
         </div>
         <div className="existing-order-detail">
-          <span className="pos-stat-label">LAST</span>
-          <span className="pos-stat-value">{priceData?.last != null ? fmtPrice(priceData.last) : "---"}</span>
+          <span className="ps-l">LAST</span>
+          <span className="ps-v">{priceData?.last != null ? fmtPrice(priceData.last) : "---"}</span>
         </div>
       </div>
 

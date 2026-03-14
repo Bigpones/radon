@@ -182,14 +182,14 @@ export default function AttributionPanel() {
   if (loading && !data) {
     return (
       <div className="section" data-testid="attribution-panel">
-        <div className="section-header">
-          <div className="section-title">
+        <div className="s-hd">
+          <div className="s-tt">
             <BarChart3 size={14} />
             Attribution
           </div>
           <span className="pill neutral">LOADING</span>
         </div>
-        <div className="section-body performance-empty">
+        <div className="s-bd performance-empty">
           Computing attribution across strategies...
         </div>
       </div>
@@ -199,14 +199,14 @@ export default function AttributionPanel() {
   if (!data) {
     return (
       <div className="section" data-testid="attribution-panel">
-        <div className="section-header">
-          <div className="section-title">
+        <div className="s-hd">
+          <div className="s-tt">
             <BarChart3 size={14} />
             Attribution
           </div>
           <span className="pill undefined">UNAVAILABLE</span>
         </div>
-        <div className="section-body performance-empty">
+        <div className="s-bd performance-empty">
           {error ?? "Attribution data not available."}
         </div>
       </div>
@@ -220,14 +220,14 @@ export default function AttributionPanel() {
     <div data-testid="attribution-panel">
       {/* Strategy Attribution */}
       <div className="section">
-        <div className="section-header">
-          <div className="section-title">
+        <div className="s-hd">
+          <div className="s-tt">
             <BarChart3 size={14} />
             Strategy Attribution
           </div>
           <span className="pill defined">{data.closed_trades} CLOSED</span>
         </div>
-        <div className="section-body">
+        <div className="s-bd">
           <StrategyTable strategies={data.by_strategy} maxPnl={maxStrategyPnl} />
         </div>
       </div>
@@ -235,27 +235,27 @@ export default function AttributionPanel() {
       {/* Edge Quality + Risk Profile side by side */}
       <div className="performance-grid-2">
         <div className="section">
-          <div className="section-header">
-            <div className="section-title">
+          <div className="s-hd">
+            <div className="s-tt">
               <Crosshair size={14} />
               Edge Quality
             </div>
             <span className="pill neutral">BY SOURCE</span>
           </div>
-          <div className="section-body">
+          <div className="s-bd">
             <EdgeTable edges={data.by_edge} maxPnl={maxEdgePnl} />
           </div>
         </div>
 
         <div className="section">
-          <div className="section-header">
-            <div className="section-title">
+          <div className="s-hd">
+            <div className="s-tt">
               <Shield size={14} />
               Risk Profile
             </div>
             <span className="pill neutral">DEFINED VS UNDEFINED</span>
           </div>
-          <div className="section-body">
+          <div className="s-bd">
             <RiskTable risks={data.by_risk} />
           </div>
         </div>
@@ -263,14 +263,14 @@ export default function AttributionPanel() {
 
       {/* Ticker Leaderboard */}
       <div className="section">
-        <div className="section-header">
-          <div className="section-title">
+        <div className="s-hd">
+          <div className="s-tt">
             <Target size={14} />
             Ticker Attribution
           </div>
           <span className="pill neutral">{data.by_ticker.length} TICKERS</span>
         </div>
-        <div className="section-body">
+        <div className="s-bd">
           <TickerLeaderboard tickers={data.by_ticker} />
         </div>
       </div>
@@ -278,14 +278,14 @@ export default function AttributionPanel() {
       {/* Kelly Calibration */}
       {Object.keys(data.kelly_calibration).length > 0 && (
         <div className="section">
-          <div className="section-header">
-            <div className="section-title">
+          <div className="s-hd">
+            <div className="s-tt">
               <Target size={14} />
               Kelly Calibration
             </div>
             <span className="pill neutral">PREDICTED VS ACTUAL</span>
           </div>
-          <div className="section-body">
+          <div className="s-bd">
             <KellyCalibration data={data} />
           </div>
         </div>

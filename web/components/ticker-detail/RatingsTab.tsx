@@ -186,38 +186,38 @@ export default function RatingsTab({ ticker, active, currentPrice }: RatingsTabP
           <div className="ratings-targets-grid">
             {ptLow != null && (
               <div className="pos-stat">
-                <span className="pos-stat-label">Low</span>
-                <span className="pos-stat-value">{fmtPrice(ptLow)}</span>
+                <span className="ps-l">Low</span>
+                <span className="ps-v">{fmtPrice(ptLow)}</span>
               </div>
             )}
             {ptMedian != null && (
               <div className="pos-stat">
-                <span className="pos-stat-label">Median</span>
-                <span className="pos-stat-value">{fmtPrice(ptMedian)}</span>
+                <span className="ps-l">Median</span>
+                <span className="ps-v">{fmtPrice(ptMedian)}</span>
               </div>
             )}
             {ptMean != null && (
               <div className="pos-stat">
-                <span className="pos-stat-label">Mean</span>
-                <span className="pos-stat-value">{fmtPrice(ptMean)}</span>
+                <span className="ps-l">Mean</span>
+                <span className="ps-v">{fmtPrice(ptMean)}</span>
               </div>
             )}
             {ptHigh != null && (
               <div className="pos-stat">
-                <span className="pos-stat-label">High</span>
-                <span className="pos-stat-value">{fmtPrice(ptHigh)}</span>
+                <span className="ps-l">High</span>
+                <span className="ps-v">{fmtPrice(ptHigh)}</span>
               </div>
             )}
             {currentPrice != null && (
               <div className="pos-stat">
-                <span className="pos-stat-label">Current</span>
-                <span className="pos-stat-value">{fmtPrice(currentPrice)}</span>
+                <span className="ps-l">Current</span>
+                <span className="ps-v">{fmtPrice(currentPrice)}</span>
               </div>
             )}
             {upsideDownside != null && (
               <div className="pos-stat">
-                <span className="pos-stat-label">vs Mean</span>
-                <span className={`pos-stat-value ${upsideDownside >= 0 ? "positive" : "negative"}`}>
+                <span className="ps-l">vs Mean</span>
+                <span className={`ps-v ${upsideDownside >= 0 ? "positive" : "negative"}`}>
                   {upsideDownside >= 0 ? "+" : ""}{upsideDownside.toFixed(1)}%
                 </span>
               </div>

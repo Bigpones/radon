@@ -176,8 +176,8 @@ export default function CompanyTab({ ticker, active, priceData, fundamentals }: 
           <div className="company-profile-grid">
             {profileItems.map((item) => (
               <div key={item.label} className="pos-stat">
-                <span className="pos-stat-label">{item.label}</span>
-                <span className="pos-stat-value">{item.value}</span>
+                <span className="ps-l">{item.label}</span>
+                <span className="ps-v">{item.value}</span>
               </div>
             ))}
           </div>
@@ -190,8 +190,8 @@ export default function CompanyTab({ ticker, active, priceData, fundamentals }: 
         <div className="company-stats-grid">
           {statItems.map((item) => (
             <div key={item.label} className="pos-stat">
-              <span className="pos-stat-label">{item.label}</span>
-              <span className="pos-stat-value">{item.value}</span>
+              <span className="ps-l">{item.label}</span>
+              <span className="ps-v">{item.value}</span>
             </div>
           ))}
         </div>

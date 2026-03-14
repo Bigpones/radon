@@ -361,8 +361,8 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
 
         return (
           <>
-            <div className="section-header" data-testid="regime-history-header">
-              <div className="section-title" data-testid="regime-history-title">
+            <div className="s-hd" data-testid="regime-history-header">
+              <div className="s-tt" data-testid="regime-history-title">
                 <span data-testid="regime-history-title-text">20-SESSION HISTORY</span>
                 <InfoTooltip
                   text={SECTION_TOOLTIPS["20-SESSION HISTORY"]}

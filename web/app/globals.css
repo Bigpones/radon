@@ -451,7 +451,7 @@ body {
 .bullish,
 .modify-delta.positive,
 .price-bar-value.positive,
-.pos-stat-value.positive,
+.ps-v.positive,
 .seasonality-cell-return.positive,
 .seasonality-table-badge.seasonality-favorable,
 .regime-history .text-positive { color: var(--positive); }
@@ -462,7 +462,7 @@ body {
 .bearish,
 .modify-delta.negative,
 .price-bar-value.negative,
-.pos-stat-value.negative,
+.ps-v.negative,
 .seasonality-cell-return.negative,
 .seasonality-table-badge.seasonality-unfavorable,
 .regime-history .text-negative,
@@ -475,7 +475,7 @@ body {
   margin-bottom: 20px;
 }
 
-.section-header {
+.s-hd {
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-dim);
   display: flex;
@@ -483,7 +483,7 @@ body {
   justify-content: space-between;
 }
 
-.section-title {
+.s-tt {
   font-family: var(--font-mono);
   font-size: 11px;
   text-transform: uppercase;
@@ -494,7 +494,7 @@ body {
   gap: 8px;
 }
 
-.section-body {
+.s-bd {
   padding: 0;
 }
 
@@ -997,7 +997,7 @@ td.last-price-cell {
 }
 
 .dashboard-chat-panel,
-.dashboard-chat-panel .section-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.dashboard-chat-panel .s-bd { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 
 .dashboard-chat-panel .chat-shell {
   flex: 1;
@@ -1778,11 +1778,11 @@ tr.leg-row td {
 
 .modify-market-label,
 .price-bar-label,
-.pos-stat-label { font-family: var(--font-mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+.ps-l { font-family: var(--font-mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
 
 .modify-market-value,
 .price-bar-value,
-.pos-stat-value { font-family: var(--font-mono); font-size: 12px; font-weight: 500; }
+.ps-v { font-family: var(--font-mono); font-size: 12px; font-weight: 500; }
 
 .modify-market-warning {
   font-family: var(--font-mono);
