@@ -865,7 +865,7 @@ def main():
             # Market data + PnL Single + account PnL all stream concurrently.
             # 2.7 seconds — accounts for the faster Phase 1 (accountValues is instant
             # vs accountSummary's ~200ms round-trip that used to provide implicit delay).
-            client.sleep(2.7)
+            client.sleep(2.5)
 
             # ── Phase 5: Read all results ──
             # Market prices
