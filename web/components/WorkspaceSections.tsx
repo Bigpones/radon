@@ -519,7 +519,7 @@ function ScannerSections() {
           <div className="s-bd"><div className="a-i">No scanner signals. Waiting for initial scan...</div></div>
         )}
         {signals.length > 0 && (
-          <div className="s-bd table-wrap">
+          <div className="s-bd tw">
             <table>
               <thead>
                 <tr>
@@ -637,7 +637,7 @@ function DiscoverSections() {
           <div className="s-bd"><div className="a-i">No candidates found. Waiting for initial scan...</div></div>
         )}
         {candidates.length > 0 && (
-          <div className="s-bd table-wrap">
+          <div className="s-bd tw">
             <table>
               <thead>
                 <tr>
@@ -751,7 +751,7 @@ function JournalSections() {
           <div className="s-bd"><div className="a-i">No trades in journal.</div></div>
         )}
         {trades.length > 0 && (
-          <div className="s-bd table-wrap">
+          <div className="s-bd tw">
             <table>
               <thead>
                 <tr>

@@ -52,7 +52,7 @@ function L1OrderBook({
         {/* Bid side */}
         <div style={{ textAlign: "center" }}>
           <div
-            className="fm t-s uppercase"
+            className="fm t-s uc"
             style={{ fontSize: "10px", marginBottom: "4px" }}
           >
             BID
@@ -74,7 +74,7 @@ function L1OrderBook({
         {/* Spread */}
         <div style={{ textAlign: "center" }}>
           <div
-            className="fm t-s uppercase"
+            className="fm t-s uc"
             style={{ fontSize: "10px", marginBottom: "4px" }}
           >
             SPREAD
@@ -96,7 +96,7 @@ function L1OrderBook({
         {/* Ask side */}
         <div style={{ textAlign: "center" }}>
           <div
-            className="fm t-s uppercase"
+            className="fm t-s uc"
             style={{ fontSize: "10px", marginBottom: "4px" }}
           >
             ASK

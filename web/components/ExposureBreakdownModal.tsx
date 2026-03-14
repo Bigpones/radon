@@ -174,8 +174,8 @@ function RowGroup({
             {leg.direction} {leg.contracts}x {leg.type}{leg.strike ? ` $${leg.strike}` : ""}
           </td>
           <td></td>
-          <td className="eb-mono ed164">{fmtLegDelta(leg.rawDelta)}</td>
-          <td className="eb-mono ed164">{fmtDelta(leg.legDelta)}</td>
+          <td className="em ed164">{fmtLegDelta(leg.rawDelta)}</td>
+          <td className="em ed164">{fmtDelta(leg.legDelta)}</td>
           <td></td>
         </tr>
       ))}

@@ -97,7 +97,7 @@ export default function CtaPage() {
       {/* ── Vol-Targeting Model Panel ─────────────────── */}
       <div data-testid="vol-targeting-model" style={{ padding: "16px", borderBottom: "1px solid var(--border)" }}>
         <div
-          className="fm tm uppercase fc"
+          className="fm tm uc fc"
           style={{
             gap: "6px",
             fontSize: "10px",
@@ -167,7 +167,7 @@ export default function CtaPage() {
       {/* ── MenthorQ CTA Positioning ──────────────────── */}
       <div className="wf">
         <div
-          className="fm tm uppercase"
+          className="fm tm uc"
           style={{
             fontSize: "10px",
             fontWeight: 700,

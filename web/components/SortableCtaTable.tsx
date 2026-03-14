@@ -111,7 +111,7 @@ export default function SortableCtaTable({ sectionKey, rows }: SortableCtaTableP
   return (
     <div data-testid="sortable-cta-table" className="wf">
       <div
-        className="fm tm uppercase"
+        className="fm tm uc"
         style={{
           fontSize: "10px",
           fontWeight: 700,

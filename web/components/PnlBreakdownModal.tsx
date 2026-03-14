@@ -71,10 +71,10 @@ export default function PnlBreakdownModal({
                 <td className="es163">{row.structure}</td>
                 <td className="em">{row.col1}</td>
                 <td className="em">{row.col2}</td>
-                <td className={`eb-mono ${row.pnl >= 0 ? "positive" : "negative"}`}>
+                <td className={`em ${row.pnl >= 0 ? "positive" : "negative"}`}>
                   {fmtSigned(row.pnl, 2)}
                 </td>
-                <td className={`eb-mono ${row.pnl >= 0 ? "positive" : "negative"}`}>
+                <td className={`em ${row.pnl >= 0 ? "positive" : "negative"}`}>
                   {row.pnlPct != null ? fmtPct(row.pnlPct) : "---"}
                 </td>
               </tr>
@@ -82,7 +82,7 @@ export default function PnlBreakdownModal({
             {/* Total row */}
             <tr className="pr170">
               <td colSpan={4} className="pl139">{totalLabel}</td>
-              <td className={`eb-mono ${total >= 0 ? "positive" : "negative"}`}>
+              <td className={`em ${total >= 0 ? "positive" : "negative"}`}>
                 {fmtSigned(total, 2)}
               </td>
               <td></td>

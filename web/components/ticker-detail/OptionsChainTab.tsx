@@ -244,7 +244,7 @@ function OrderBuilder({
     <div className="order-builder">
       <div className="oh59">
         <span
-          className="t-s uppercase"
+          className="t-s uc"
           style={{
             fontSize: "11px",
             letterSpacing: "0.05em",
@@ -646,7 +646,7 @@ export default function OptionsChainTab({
       {/* Expiry selector */}
       <div className="cb107">
         <label
-          className="fm t-s uppercase"
+          className="fm t-s uc"
           style={{
             fontSize: "10px",
             letterSpacing: "0.05em",

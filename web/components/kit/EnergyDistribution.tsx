@@ -25,7 +25,7 @@ export function EnergyDistribution({
         padding: 24,
       }}
     >
-      <div className="flex justify-between items-start" style={{ marginBottom: 24 }}>
+      <div className="flex jb ix" style={{ marginBottom: 24 }}>
         <div>
           <p
             style={{

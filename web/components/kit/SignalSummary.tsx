@@ -22,7 +22,7 @@ export function SignalSummary({
         padding: 24,
       }}
     >
-      <div className="flex justify-between items-start" style={{ marginBottom: 24 }}>
+      <div className="flex jb ix" style={{ marginBottom: 24 }}>
         <div>
           <p
             style={{
@@ -90,7 +90,7 @@ export function SignalSummary({
           { label: "engine", value: engine },
           { label: "basis", value: basis },
         ].map((row) => (
-          <div key={row.label} className="flex justify-between items-center">
+          <div key={row.label} className="flex jb ic">
             <span
               style={{
                 fontFamily: "var(--font-mono)",
