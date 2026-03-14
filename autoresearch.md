@@ -1,6 +1,6 @@
 # Autoresearch: Web Dashboard Bundle Size Optimization
 
-## Status: COMPLETE — 1124KB → 921KB (−18.1% raw), 281KB → 264KB gzip (−6.0%)
+## Status: COMPLETE — 1124KB → 920KB (−18.2% raw), 281KB → 264KB gzip (−6.0%)
 
 Remaining 921KB breakdown: 456KB framework (React+Next.js, untouchable), 336KB app code (265KB components+hooks, 39KB liveline charting, 32KB lucide icons), 129KB small chunks (router, manifests, Turbopack runtime). Further gains require removing features or major architecture changes.
 
@@ -67,7 +67,7 @@ Minimize client-side JavaScript bundle size for the Radon Terminal web dashboard
 
 ## What's Been Tried
 
-### Wins (1124KB → 921KB, −18.1% raw / 281KB → 264KB gzip, −6.0%)
+### Wins (1124KB → 920KB, −18.2% raw / 281KB → 264KB gzip, −6.0%)
 1. Replace react-markdown + remark-gfm with 7KB inline renderer: **−137KB** (biggest single win)
 2. d3 selective imports (`import * as d3` → d3-subpackages): **−16KB**
 3. Rewrite CriHistoryChart from imperative d3 DOM to React SVG: **−13KB** (removes d3-selection + d3-axis)
@@ -76,6 +76,9 @@ Minimize client-side JavaScript bundle size for the Radon Terminal web dashboard
 6. Replace d3-array with 1.5KB arrayUtils.ts: **0KB** (tree-shaking already handled)
 7. SWC removeConsole: **−1KB**
 8. Dep cleanup: removed @fontsource/ibm-plex-mono, @vercel/analytics, ib, d3 umbrella, moved ws/@sinclair/typebox to devDeps
+9. Strip data-testid from production build via SWC reactRemoveProperties: **−1KB**
+10. Remove 37 dead CSS rule blocks: **−3KB CSS**
+11. Consolidate 12 duplicate fmt* functions into shared lib/format.ts: **0KB** (minifier already deduped)
 
 ### Dead ends
 - Dynamic imports (ChatPanel, MetricCards, WorkspaceSections, PriceChart, ticker tabs): +4-13KB overhead from chunk wrappers. Turbopack ships all code regardless; splitting only adds wrapper cost.
@@ -84,7 +87,17 @@ Minimize client-side JavaScript bundle size for the Radon Terminal web dashboard
 - Removing dead packages: no bundle change (Turbopack tracks imports).
 - Replace d3-time-format with Intl.DateTimeFormat: 0KB (already tree-shaken to one function).
 
-### Current chunk breakdown (921KB)
+### Session 3 additions
+9. Remove 43 dead CSS rules (old chat, connection-banner, regime-cta, toast systems): **−3KB CSS**
+10. Remove dead code: store.ts (zustand dep), useIBStatus.ts: **0KB** (Turbopack already excluded)
+
+### Dead ends (session 3)
+- .browserslistrc modern browsers: polyfill chunk unchanged (+6KB app chunk from SWC output change)
+- experimental.optimizeCss: no effect
+- Replace lucide-react with inline SVG icons: +6KB — lucide's shared factory minifies better
+- Remove "use client" from pure-render components: all imported by client parents, no savings
+
+### Current chunk breakdown (920KB)
 | Component | Size | % | Actionable? |
 |-----------|------|---|-------------|
 | App code | 336KB | 37% | Only via feature removal |

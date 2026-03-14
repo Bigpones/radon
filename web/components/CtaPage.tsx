@@ -9,10 +9,7 @@ import SortableCtaTable from "./SortableCtaTable";
 
 /* ─── Helpers ────────────────────────────────────────── */
 
-function fmt(v: number | null | undefined, decimals = 2): string {
-  if (v == null || !Number.isFinite(v)) return "---";
-  return v.toFixed(decimals);
-}
+import { fmt } from "@/lib/format";
 
 function formatFetchedAt(iso: string | null | undefined): string {
   if (!iso) return "";

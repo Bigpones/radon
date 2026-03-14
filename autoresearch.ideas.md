@@ -1,29 +1,33 @@
 # Web Bundle Size — Ideas Backlog
 
-## Applied (1124KB → 921KB, −18.1%)
+## Applied (1124KB → 920KB raw / 281KB → 264KB gzip / 80KB → 71KB CSS)
 - Replace react-markdown + remark-gfm with lightweight inline renderer (−137KB raw)
 - d3 selective imports instead of `import * as d3` (−16KB raw)
-- Remove dead dependencies: @fontsource/ibm-plex-mono, @vercel/analytics, ib
-- SWC removeConsole in production (−1KB)
-- Replace d3-time-format with Intl.DateTimeFormat
-- Rewrite CriHistoryChart from imperative d3 DOM to declarative React SVG (−13KB, removes d3-selection + d3-axis)
-- Replace d3-array with 1.5KB arrayUtils.ts (extent, mean, bisectLeft)
-- Replace d3-shape with 2.6KB svgPath.ts (monotone cubic Hermite line generator) (−5KB)
-- Replace d3-scale with 3.9KB scales.ts (scaleLinear + scaleTime with ticks) (−31KB, removes d3-format + d3-interpolate + d3-time + d3-time-format + d3-color)
-- Move @sinclair/typebox to devDependencies
+- Rewrite CriHistoryChart from imperative d3 DOM to declarative React SVG (−13KB)
+- Replace d3-scale with 3.9KB scales.ts (−31KB, removes 6 transitive deps)
+- Replace d3-shape with 2.6KB svgPath.ts (−5KB)
+- Replace d3-array with 1.5KB arrayUtils.ts
+- SWC removeConsole + reactRemoveProperties
+- Remove dead dependencies: @fontsource/ibm-plex-mono, @vercel/analytics, ib, zustand
+- Move @sinclair/typebox, ws to devDependencies
+- Remove 45+ dead CSS rules (old chat, connection-banner, regime-cta, toast, fills systems)
+- Remove dead code: store.ts, useIBStatus.ts
+- Replace Tailwind with 22 inline utility classes + minimal CSS reset (−6KB CSS)
+- Remove dead keyframe animations (last-price-flash-up/down) and unused utilities
 
-## Explored and rejected
-- Dynamic import ChatPanel/MetricCards/WorkspaceSections: +13KB overhead from chunk wrappers
-- Dynamic import PriceChart only: +4KB overhead
-- Dynamic import all ticker-detail tabs: +11KB overhead
+## Explored and rejected (with reasons)
+- Dynamic imports (ChatPanel, MetricCards, WorkspaceSections, PriceChart, tabs): +4-13KB overhead
 - optimizePackageImports / modularizeImports: Turbopack already handles tree-shaking
-- reactStrictMode: false: no effect on production bundle
-- Remove dead packages: no bundle change (Turbopack tracks imports, not package.json)
+- .browserslistrc modern browsers: polyfill chunk unchanged, app chunk grew 6KB
+- experimental.optimizeCss: no effect
+- Replace lucide-react with inline SVG: +6KB — lucide's factory pattern minifies better
+- Remove "use client" from pure-render components: all imported by client parents
+- Removing dead exports from lib files: tree-shaking already excludes them
+- reactStrictMode: false: no effect
 
-## Remaining ideas (diminishing returns territory)
-- CSS audit: ~134 potentially unused selectors in globals.css (risky — many dynamic class names)
-- Deduplicate className string constants (minimal impact — gzip handles repetition)
-- Move WorkspaceSections into per-route components (requires architecture change)
-- Check if liveline (PriceChart) canvas code can be reduced via tree-shaking config
-- Remove dead lib modules: store.ts, useIBStatus.ts (already excluded by Turbopack)
-- Reduce sectionTooltips.ts verbose text (changes content, not a pure optimization)
+## Remaining (true floor — no actionable items)
+- 456KB framework (React + ReactDOM + Next.js): untouchable
+- 110KB core-js polyfills: shipped by framework, no config to remove
+- 332KB app code: proportional to 51 client components (charts, tables, order management)
+- 39KB liveline canvas charting: would require major rewrite to replace
+- 71KB CSS: all rules verified as used
