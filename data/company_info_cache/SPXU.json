@@ -1,10 +1,47 @@
 {
   "ticker": "SPXU",
   "profile_expires": null,
-  "stats_expires": "2026-03-10T16:48:30.686Z",
-  "uw_info": {},
-  "stock_state": {},
+  "stats_expires": "2026-03-14T19:02:06.520Z",
+  "uw_info": {
+    "symbol": "SPXU",
+    "logo": "https://storage.googleapis.com/uwassets/logos/SPXU.png",
+    "beta": "-2.8466",
+    "full_name": "PROSHARES ULTRAPRO SHORT S&P500",
+    "sector": null,
+    "has_options": true,
+    "marketcap_size": "micro",
+    "outstanding": "9384",
+    "uw_tags": [
+      "bearish"
+    ],
+    "issue_type": "ETF",
+    "marketcap": "53.9022",
+    "avg30_volume": "8407052.238095238095",
+    "next_earnings_date": null,
+    "announce_time": null,
+    "short_name": "PROSHARES ULTRAPRO SHORT S&P500",
+    "short_description": "",
+    "has_investment_arm": false,
+    "has_dividend": true,
+    "has_earnings_history": false
+  },
+  "stock_state": {
+    "close": "54.5",
+    "high": "54.96",
+    "low": "52.47",
+    "open": "53.24",
+    "volume": 7753949,
+    "market_time": "regular",
+    "tape_time": "2026-03-13T19:02:04Z",
+    "total_volume": 8140114,
+    "prev_close": "53.2206"
+  },
   "exa_profile": {},
-  "exa_stats": {},
-  "fetched_at": "2026-03-09T16:48:30.686Z"
+  "exa_stats": {
+    "pe_ratio": "—",
+    "avg_volume": "6.39M",
+    "week_52_high": 153,
+    "week_52_low": 46.65
+  },
+  "fetched_at": "2026-03-13T19:02:06.520Z"
 }

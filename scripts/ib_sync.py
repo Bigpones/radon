@@ -913,7 +913,7 @@ def main():
         # ── Phase 6: Read account PnL (should have arrived during the combined sleep) ──
         pnl_data = {}
         if pnl_obj:
-            # reqPnL subscription started in Phase 2 — has had 2.5s+ to arrive.
+            # reqPnL subscription started in Phase 2 — has had 2.7s+ to arrive.
             # No fallback sleep: if data isn't here by now, accept None for
             # account-level daily_pnl (per-position PnL is independent).
             daily = pnl_obj.dailyPnL
