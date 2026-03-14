@@ -317,20 +317,7 @@ body {
   gap: 12px;
 }
 
-.search-input {
-  width: 256px;
-  height: 28px;
-  background: var(--bg-base);
-  border: 1px solid var(--border-dim);
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  padding: 4px 12px 4px 32px;
-  outline: none;
-  transition: border-color 150ms ease-in-out;
-}
 
-.search-input::placeholder,
 .mc.neutral,
 .cm168.user .chat-role,
 .pagination .page-info,
@@ -342,7 +329,6 @@ body {
 .chain-last,
 .tm { color: var(--text-muted); }
 
-.search-input:focus,
 .ct152:focus,
 .oi:focus,
 .chain-expiry-select:focus { border-color: var(--border-focus); }
@@ -1042,13 +1028,6 @@ td.last-price-cell {
   margin-top: 4px;
 }
 
-.cm150-heading {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  margin: 0;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
 
 .cl75 {
   color: inherit;
@@ -1078,10 +1057,6 @@ td.last-price-cell {
   padding: 0 4px;
 }
 
-.cm150-fenced-code {
-  font-size: 11px;
-  line-height: 1.4;
-}
 
 .cb22 {
   margin: 0;
@@ -1661,7 +1636,6 @@ tr.leg-row td {
 .company-tab,
 .seasonality-tab { display: flex; flex-direction: column; gap: 16px; }
 
-.cods,
 .ms51,
 .pl155,
 .rt124,
