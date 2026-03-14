@@ -94,7 +94,7 @@ function AccountRow({
   return (
     <>
       <div className="section-label-mono">ACCOUNT</div>
-      <div className="metrics-grid">
+      <div className="mg">
         <MetricCard
           card={{ label: "Net Liquidation", value: fmtExact(acct.net_liquidation), change: "BANKROLL", tone: "neutral" }}
           onClick={onNetLiqClick}
@@ -134,7 +134,7 @@ function RiskRow({
   return (
     <>
       <div className="section-label-mono">RISK</div>
-      <div className="metrics-grid">
+      <div className="mg">
         <MetricCard
           card={{ label: "Buying Power", value: fmtExact(acct.buying_power), change: "AVAILABLE", tone: "neutral" }}
           onClick={onBuyingPowerClick}
@@ -169,7 +169,7 @@ function ExposureRow({
     <>
       <div className="section-label-mono">EXPOSURE</div>
       {exposure ? (
-        <div className="metrics-grid">
+        <div className="mg">
           <MetricCard
             card={{ label: "Net Long", value: fmt(exposure.netLong), change: "LONG BIASED", tone: "positive" }}
             onClick={() => onCardClick("netLong")}
@@ -188,7 +188,7 @@ function ExposureRow({
           />
         </div>
       ) : (
-        <div className="metrics-grid">
+        <div className="mg">
           {["Net Long", "Net Short", "Dollar Delta", "Net Exposure"].map((label) => (
             <div key={label} className="metric-card metric-card-loading">
               <div className="metric-label">{label}</div>
@@ -291,7 +291,7 @@ function LegacyLeverageRow({ portfolio, pnl, pnlPct }: { portfolio: PortfolioDat
   return (
     <>
       <div className="section-label-mono">NET LEVERAGE</div>
-      <div className="metrics-grid">
+      <div className="mg">
         {cards.map((c) => <MetricCard key={c.label} card={c} />)}
       </div>
     </>
@@ -321,7 +321,7 @@ export default function MetricCards({ portfolio, prices, realizedPnl, executedOr
     return (
       <>
         <div className="section-label-mono">ACCOUNT</div>
-        <div className="metrics-grid">
+        <div className="mg">
           {placeholders.map((label, i) => (
             <div key={i} className="metric-card metric-card-loading">
               <div className="metric-label">{label}</div>

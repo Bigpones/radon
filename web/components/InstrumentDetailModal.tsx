@@ -207,7 +207,7 @@ function LegOrderForm({
       <div className="o-f">
         <label className="o-l">Limit Price</label>
         <div className="mp-ir">
-          <span className="modify-price-prefix">$</span>
+          <span className="mp-p">$</span>
           <input
             className="modify-price-input"
             type="number"
@@ -218,7 +218,7 @@ function LegOrderForm({
             placeholder="0.00"
           />
         </div>
-        <div className="modify-quick-buttons">
+        <div className="mq-b">
           <button className="btn-quick" disabled={bid == null} onClick={() => { if (bid != null) { setLimitPrice(bid.toFixed(2)); setConfirmStep(false); } }}>
             BID{bid != null ? ` ${bid.toFixed(2)}` : ""}
           </button>
@@ -244,8 +244,8 @@ function LegOrderForm({
 
       <div className="order-submit">
         {confirmStep ? (
-          <div className="order-confirm-row">
-            <button className="btn-secondary" onClick={() => setConfirmStep(false)} disabled={loading}>Back</button>
+          <div className="oc-r">
+            <button className="bt-s" onClick={() => setConfirmStep(false)} disabled={loading}>Back</button>
             <button
               className={`btn-primary ${action === "SELL" ? "btn-danger" : ""}`}
               onClick={handlePlace}

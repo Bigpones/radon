@@ -114,7 +114,7 @@ function PerformanceChart({ data }: { data: PerformanceData }) {
                 x2={plotRight}
                 y1={tick.y}
                 y2={tick.y}
-                className={isBaseline ? "performance-axis-line" : "performance-grid-line"}
+                className={isBaseline ? "pa-l" : "performance-grid-line"}
               />
             );
           })}
@@ -124,11 +124,11 @@ function PerformanceChart({ data }: { data: PerformanceData }) {
               x2={plotLeft}
               y1={DEFAULT_PERFORMANCE_CHART_MARGINS.top}
               y2={plotBottom}
-              className="performance-axis-line"
+              className="pa-l"
             />
             {yAxisTicks.map((tick) => (
               <g key={`y-${tick.value}`} className="performance-axis-tick">
-                <line x1={plotLeft - 6} x2={plotLeft} y1={tick.y} y2={tick.y} className="performance-axis-line" />
+                <line x1={plotLeft - 6} x2={plotLeft} y1={tick.y} y2={tick.y} className="pa-l" />
                 <text
                   x={plotLeft - 12}
                   y={tick.y}
@@ -146,10 +146,10 @@ function PerformanceChart({ data }: { data: PerformanceData }) {
           <path d={benchmarkPath} className="performance-line performance-line-benchmark" />
           <path d={equityPath} className="performance-line performance-line-equity" />
           <g data-testid="performance-x-axis">
-            <line x1={plotLeft} x2={plotRight} y1={plotBottom} y2={plotBottom} className="performance-axis-line" />
+            <line x1={plotLeft} x2={plotRight} y1={plotBottom} y2={plotBottom} className="pa-l" />
             {xAxisTicks.map((tick, index) => (
               <g key={`x-${tick.index}`} className="performance-axis-tick">
-                <line x1={tick.x} x2={tick.x} y1={plotBottom} y2={plotBottom + 6} className="performance-axis-line" />
+                <line x1={tick.x} x2={tick.x} y1={plotBottom} y2={plotBottom + 6} className="pa-l" />
                 <text
                   x={tick.x}
                   y={plotBottom + 18}
@@ -381,13 +381,13 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
           <span className="pill defined">INSTITUTIONAL</span>
         </div>
         <div className="s-bd">
-          <div className="metrics-grid">
+          <div className="mg">
             {cardConfigs.slice(0, 4).map((card) => (
               <StatCard key={card.id} {...card} onClick={() => setActiveCardId(card.id)} />
             ))}
           </div>
 
-          <div className="metrics-grid">
+          <div className="mg">
             {cardConfigs.slice(4).map((card) => (
               <StatCard key={card.id} {...card} onClick={() => setActiveCardId(card.id)} />
             ))}

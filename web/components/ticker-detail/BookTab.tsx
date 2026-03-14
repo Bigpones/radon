@@ -52,7 +52,7 @@ function L1OrderBook({
         {/* Bid side */}
         <div style={{ textAlign: "center" }}>
           <div
-            className="font-mono text-secondary uppercase"
+            className="font-mono t-s uppercase"
             style={{ fontSize: "10px", marginBottom: "4px" }}
           >
             BID
@@ -64,7 +64,7 @@ function L1OrderBook({
             {bid != null ? fmtPrice(bid) : "---"}
           </div>
           <div
-            className="font-mono text-secondary"
+            className="font-mono t-s"
             style={{ fontSize: "11px", marginTop: "2px" }}
           >
             {bidSize != null ? bidSize : "---"}
@@ -74,7 +74,7 @@ function L1OrderBook({
         {/* Spread */}
         <div style={{ textAlign: "center" }}>
           <div
-            className="font-mono text-secondary uppercase"
+            className="font-mono t-s uppercase"
             style={{ fontSize: "10px", marginBottom: "4px" }}
           >
             SPREAD
@@ -86,7 +86,7 @@ function L1OrderBook({
             {spread != null ? spread.toFixed(2) : "---"}
           </div>
           <div
-            className="font-mono text-secondary"
+            className="font-mono t-s"
             style={{ fontSize: "10px", marginTop: "2px" }}
           >
             {last != null ? `LAST ${fmtPrice(last)}` : ""}
@@ -96,7 +96,7 @@ function L1OrderBook({
         {/* Ask side */}
         <div style={{ textAlign: "center" }}>
           <div
-            className="font-mono text-secondary uppercase"
+            className="font-mono t-s uppercase"
             style={{ fontSize: "10px", marginBottom: "4px" }}
           >
             ASK
@@ -108,7 +108,7 @@ function L1OrderBook({
             {ask != null ? fmtPrice(ask) : "---"}
           </div>
           <div
-            className="font-mono text-secondary"
+            className="font-mono t-s"
             style={{ fontSize: "11px", marginTop: "2px" }}
           >
             {askSize != null ? askSize : "---"}
@@ -201,7 +201,7 @@ function OpenOrdersList({ orders }: { orders: OpenOrder[] }) {
                 {o.action}
               </span>
               <span>{desc}</span>
-              <span className="text-secondary">
+              <span className="t-s">
                 {o.totalQuantity}x
               </span>
             </div>
@@ -209,7 +209,7 @@ function OpenOrdersList({ orders }: { orders: OpenOrder[] }) {
               <span>
                 {o.limitPrice != null ? fmtPrice(o.limitPrice) : "MKT"}
               </span>
-              <span className="text-secondary" style={{ fontSize: "10px" }}>
+              <span className="t-s" style={{ fontSize: "10px" }}>
                 {o.tif} / {o.status}
               </span>
             </div>
@@ -347,7 +347,7 @@ function StockOrderForm({
       <div className="o-f">
         <label className="o-l">Limit Price</label>
         <div className="mp-ir">
-          <span className="modify-price-prefix">$</span>
+          <span className="mp-p">$</span>
           <input
             className="modify-price-input"
             type="number"
@@ -361,7 +361,7 @@ function StockOrderForm({
             placeholder="0.00"
           />
         </div>
-        <div className="modify-quick-buttons">
+        <div className="mq-b">
           <button
             className="btn-quick"
             disabled={bid == null}
@@ -424,9 +424,9 @@ function StockOrderForm({
 
       <div className="order-submit">
         {confirmStep ? (
-          <div className="order-confirm-row">
+          <div className="oc-r">
             <button
-              className="btn-secondary"
+              className="bt-s"
               onClick={() => setConfirmStep(false)}
               disabled={loading}
             >

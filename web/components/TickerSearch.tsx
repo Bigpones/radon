@@ -412,7 +412,7 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
 
                 {/* Exchange */}
                 <span
-                  className="text-secondary"
+                  className="t-s"
                   style={{
                     fontFamily: "Inter, sans-serif",
                     fontSize: "11px",

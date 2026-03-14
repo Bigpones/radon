@@ -233,17 +233,17 @@ export default function RegimeRelationshipView({
     >
       <div className="regime-relationship-grid">
         <section
-          className="regime-relationship-panel regime-relationship-panel-wide"
+          className="rr-pa regime-relationship-panel-wide"
           data-testid="regime-spread-card"
         >
-          <div className="regime-relationship-panel-head">
+          <div className="rr-ph">
             <div>
               <div className="rp-t">CORRELATION RISK PREMIUM</div>
               <div className="rr-n">Spread = COR1M - RVOL</div>
             </div>
-            <div className="regime-relationship-summary">
+            <div className="rr-su">
               <div
-                className="regime-relationship-value"
+                className="rr-va"
                 data-testid="regime-current-spread"
                 style={{ color: spreadColor }}
               >
@@ -256,7 +256,7 @@ export default function RegimeRelationshipView({
           </div>
 
           <svg
-            className="regime-relationship-chart"
+            className="rr-ch"
             data-testid="regime-spread-chart"
             viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
             role="img"
@@ -270,7 +270,7 @@ export default function RegimeRelationshipView({
                     x2={innerWidth}
                     y1={spreadScale(tick)}
                     y2={spreadScale(tick)}
-                    className="regime-relationship-grid-line"
+                    className="rr-gl"
                   />
                   <text
                     x={-10}
@@ -288,7 +288,7 @@ export default function RegimeRelationshipView({
                 x2={innerWidth}
                 y1={spreadScale(0)}
                 y2={spreadScale(0)}
-                className="regime-relationship-baseline"
+                className="rr-bl"
               />
 
               {entries.map((entry, index) => {
@@ -342,15 +342,15 @@ export default function RegimeRelationshipView({
           </svg>
         </section>
 
-        <section className="regime-relationship-panel" data-testid="regime-quadrant-card">
-          <div className="regime-relationship-panel-head">
+        <section className="rr-pa" data-testid="regime-quadrant-card">
+          <div className="rr-ph">
             <div>
               <div className="rp-t">REGIME QUADRANTS</div>
               <div className="rr-n">RVOL on X, COR1M on Y</div>
             </div>
-            <div className="regime-relationship-summary">
+            <div className="rr-su">
               <div
-                className="regime-relationship-value regime-relationship-value-compact"
+                className="rr-va regime-relationship-value-compact"
                 data-testid="regime-current-quadrant"
                 style={{ color: quadrantColor }}
               >
@@ -363,7 +363,7 @@ export default function RegimeRelationshipView({
           </div>
 
           <svg
-            className="regime-relationship-chart"
+            className="rr-ch"
             data-testid="regime-quadrant-chart"
             viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
             role="img"
@@ -377,7 +377,7 @@ export default function RegimeRelationshipView({
                     x2={scatterXScale(tick)}
                     y1={0}
                     y2={innerHeight}
-                    className="regime-relationship-grid-line"
+                    className="rr-gl"
                   />
                   <text
                     x={scatterXScale(tick)}
@@ -396,7 +396,7 @@ export default function RegimeRelationshipView({
                     x2={innerWidth}
                     y1={scatterYScale(tick)}
                     y2={scatterYScale(tick)}
-                    className="regime-relationship-grid-line"
+                    className="rr-gl"
                   />
                   <text
                     x={-10}
@@ -414,20 +414,20 @@ export default function RegimeRelationshipView({
                 x2={scatterXScale(realizedMean)}
                 y1={0}
                 y2={innerHeight}
-                className="regime-relationship-baseline"
+                className="rr-bl"
               />
               <line
                 x1={0}
                 x2={innerWidth}
                 y1={scatterYScale(cor1mMean)}
                 y2={scatterYScale(cor1mMean)}
-                className="regime-relationship-baseline"
+                className="rr-bl"
               />
 
-              <text x={10} y={18} className="regime-relationship-quadrant-label">Fragile Calm</text>
-              <text x={innerWidth - 10} y={18} textAnchor="end" className="regime-relationship-quadrant-label">Systemic Panic</text>
-              <text x={10} y={innerHeight - 10} className="regime-relationship-quadrant-label">Goldilocks</text>
-              <text x={innerWidth - 10} y={innerHeight - 10} textAnchor="end" className="regime-relationship-quadrant-label">Stock Picker&apos;s</text>
+              <text x={10} y={18} className="rr-ql">Fragile Calm</text>
+              <text x={innerWidth - 10} y={18} textAnchor="end" className="rr-ql">Systemic Panic</text>
+              <text x={10} y={innerHeight - 10} className="rr-ql">Goldilocks</text>
+              <text x={innerWidth - 10} y={innerHeight - 10} textAnchor="end" className="rr-ql">Stock Picker&apos;s</text>
 
               {entries.map((entry, index) => {
                 const isLatest = index === entries.length - 1;
@@ -496,8 +496,8 @@ export default function RegimeRelationshipView({
           </div>
         </section>
 
-        <section className="regime-relationship-panel" data-testid="regime-zscore-card">
-          <div className="regime-relationship-panel-head">
+        <section className="rr-pa" data-testid="regime-zscore-card">
+          <div className="rr-ph">
             <div>
               <div className="rp-t">
                 NORMALIZED DIVERGENCE
@@ -510,9 +510,9 @@ export default function RegimeRelationshipView({
               </div>
               <div className="rr-n">20-session z-score overlay</div>
             </div>
-            <div className="regime-relationship-summary">
+            <div className="rr-su">
               <div
-                className="regime-relationship-value regime-relationship-value-compact"
+                className="rr-va regime-relationship-value-compact"
                 data-testid="regime-current-zgap"
                 style={{ color: spreadStateColor(summary.zScoreBias) }}
               >
@@ -532,7 +532,7 @@ export default function RegimeRelationshipView({
           >
             <svg
               ref={zScoreSvgRef}
-              className="regime-relationship-chart"
+              className="rr-ch"
               data-testid="regime-zscore-chart"
               viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
               role="img"
@@ -546,7 +546,7 @@ export default function RegimeRelationshipView({
                       x2={innerWidth}
                       y1={zScale(tick)}
                       y2={zScale(tick)}
-                      className="regime-relationship-grid-line"
+                      className="rr-gl"
                     />
                     <text
                       x={-10}
@@ -564,7 +564,7 @@ export default function RegimeRelationshipView({
                   x2={innerWidth}
                   y1={zScale(0)}
                   y2={zScale(0)}
-                  className="regime-relationship-baseline"
+                  className="rr-bl"
                 />
 
                 <path d={zRvolLine ?? ""} className="regime-relationship-line regime-relationship-line-rvol" />

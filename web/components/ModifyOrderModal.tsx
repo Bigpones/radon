@@ -160,7 +160,7 @@ export default function ModifyOrderModal({ order, loading, prices, portfolio, on
             New Limit Price
           </label>
           <div className="mp-ir">
-            <span className="modify-price-prefix">$</span>
+            <span className="mp-p">$</span>
             <input
               id="modify-price-input"
               className="modify-price-input"
@@ -174,7 +174,7 @@ export default function ModifyOrderModal({ order, loading, prices, portfolio, on
           </div>
 
           {/* Quick-set buttons */}
-          <div className="modify-quick-buttons">
+          <div className="mq-b">
             <button
               className="btn-quick"
               disabled={!hasPriceData || bid == null}
@@ -219,7 +219,7 @@ export default function ModifyOrderModal({ order, loading, prices, portfolio, on
 
         {/* Actions */}
         <div className="modify-actions">
-          <button className="btn-secondary" onClick={onClose} disabled={loading}>
+          <button className="bt-s" onClick={onClose} disabled={loading}>
             Cancel
           </button>
           <button className="btn-primary" onClick={() => canSubmit && onConfirm(parsedNew, outsideRth || undefined)} disabled={!canSubmit}>

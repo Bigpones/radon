@@ -244,7 +244,7 @@ function OrderBuilder({
     <div className="order-builder">
       <div className="order-builder-header">
         <span
-          className="text-secondary uppercase"
+          className="t-s uppercase"
           style={{
             fontSize: "11px",
             letterSpacing: "0.05em",
@@ -253,7 +253,7 @@ function OrderBuilder({
           ORDER BUILDER {structure ? `— ${structure}` : ""}
         </span>
         <button
-          className="btn-secondary"
+          className="bt-s"
           onClick={() => {
             onClearLegs();
             setConfirmStep(false);
@@ -294,10 +294,10 @@ function OrderBuilder({
                 <span className="font-mono" style={{ fontSize: "12px" }}>
                   {leg.quantity}x ${leg.strike} {leg.right === "C" ? "Call" : "Put"}
                 </span>
-                <span className="font-mono text-secondary" style={{ fontSize: "11px" }}>
+                <span className="font-mono t-s" style={{ fontSize: "11px" }}>
                   {formatExpiry(leg.expiry)}
                 </span>
-                <span className="font-mono text-secondary" style={{ fontSize: "11px", marginLeft: "auto" }}>
+                <span className="font-mono t-s" style={{ fontSize: "11px", marginLeft: "auto" }}>
                   {mid != null ? fmtPrice(mid) : "---"}
                 </span>
               </div>
@@ -342,7 +342,7 @@ function OrderBuilder({
 
       {/* Net price */}
       <div className="order-builder-net">
-        <span className="font-mono text-secondary" style={{ fontSize: "11px" }}>
+        <span className="font-mono t-s" style={{ fontSize: "11px" }}>
           NET {isDebit ? "DEBIT" : "CREDIT"}
         </span>
         <span
@@ -355,7 +355,7 @@ function OrderBuilder({
         >
           {netPrice != null ? fmtPrice(Math.abs(netPrice)) : "---"}
         </span>
-        <span className="font-mono text-secondary" style={{ fontSize: "10px" }}>
+        <span className="font-mono t-s" style={{ fontSize: "10px" }}>
           {netPrice != null ? `(${fmtPrice(Math.abs(netPrice) * 100)} notional)` : ""}
         </span>
       </div>
@@ -385,9 +385,9 @@ function OrderBuilder({
       {/* Submit */}
       <div className="order-submit" style={{ marginTop: "8px" }}>
         {confirmStep ? (
-          <div className="order-confirm-row">
+          <div className="oc-r">
             <button
-              className="btn-secondary"
+              className="bt-s"
               onClick={() => setConfirmStep(false)}
               disabled={loading}
             >
@@ -624,7 +624,7 @@ export default function OptionsChainTab({
   if (loadingExpiries) {
     return (
       <div style={{ padding: "24px 0", textAlign: "center" }}>
-        <span className="font-mono text-secondary" style={{ fontSize: "12px" }}>
+        <span className="font-mono t-s" style={{ fontSize: "12px" }}>
           Loading expirations...
         </span>
       </div>
@@ -646,7 +646,7 @@ export default function OptionsChainTab({
       {/* Expiry selector */}
       <div className="chain-expiry-bar">
         <label
-          className="font-mono text-secondary uppercase"
+          className="font-mono t-s uppercase"
           style={{
             fontSize: "10px",
             letterSpacing: "0.05em",
@@ -668,7 +668,7 @@ export default function OptionsChainTab({
             </option>
           ))}
         </select>
-        <span className="font-mono text-secondary" style={{ fontSize: "11px" }}>
+        <span className="font-mono t-s" style={{ fontSize: "11px" }}>
           {currentPrice != null ? `Underlying: ${fmtPrice(currentPrice)}` : ""}
         </span>
         <div className="flex-center" style={{ marginLeft: "auto", gap: "8px" }}>
@@ -683,7 +683,7 @@ export default function OptionsChainTab({
               </button>
             ))}
           </div>
-          <label className="font-mono text-secondary" style={{ fontSize: "10px" }}>
+          <label className="font-mono t-s" style={{ fontSize: "10px" }}>
             STRIKES
           </label>
           <select
@@ -703,7 +703,7 @@ export default function OptionsChainTab({
       {/* Chain grid */}
       {loadingStrikes ? (
         <div style={{ padding: "24px 0", textAlign: "center" }}>
-          <span className="font-mono text-secondary" style={{ fontSize: "12px" }}>
+          <span className="font-mono t-s" style={{ fontSize: "12px" }}>
             Loading chain...
           </span>
         </div>

@@ -91,19 +91,19 @@ function ExistingOrderRow({
       </div>
 
       <div className="existing-order-details">
-        <div className="existing-order-detail">
+        <div className="eo-d">
           <span className="ps-l">TYPE</span>
           <span className="ps-v">{order.orderType}</span>
         </div>
-        <div className="existing-order-detail">
+        <div className="eo-d">
           <span className="ps-l">LIMIT</span>
           <span className="ps-v">{order.limitPrice != null ? fmtPrice(order.limitPrice) : "---"}</span>
         </div>
-        <div className="existing-order-detail">
+        <div className="eo-d">
           <span className="ps-l">TIF</span>
           <span className="ps-v">{order.tif}</span>
         </div>
-        <div className="existing-order-detail">
+        <div className="eo-d">
           <span className="ps-l">LAST</span>
           <span className="ps-v">{priceData?.last != null ? fmtPrice(priceData.last) : "---"}</span>
         </div>
@@ -299,7 +299,7 @@ function NewOrderForm({
       <div className="o-f">
         <label className="o-l">Limit Price</label>
         <div className="mp-ir">
-          <span className="modify-price-prefix">$</span>
+          <span className="mp-p">$</span>
           <input
             className="modify-price-input"
             type="number"
@@ -310,7 +310,7 @@ function NewOrderForm({
             placeholder="0.00"
           />
         </div>
-        <div className="modify-quick-buttons">
+        <div className="mq-b">
           <button className="btn-quick" disabled={bid == null} onClick={() => { if (bid != null) { setLimitPrice(bid.toFixed(2)); setConfirmStep(false); } }}>BID</button>
           <button className="btn-quick" disabled={mid == null} onClick={() => { if (mid != null) { setLimitPrice(mid.toFixed(2)); setConfirmStep(false); } }}>MID</button>
           <button className="btn-quick" disabled={ask == null} onClick={() => { if (ask != null) { setLimitPrice(ask.toFixed(2)); setConfirmStep(false); } }}>ASK</button>
@@ -330,8 +330,8 @@ function NewOrderForm({
 
       <div className="order-submit">
         {confirmStep ? (
-          <div className="order-confirm-row">
-            <button className="btn-secondary" onClick={() => setConfirmStep(false)} disabled={loading}>Back</button>
+          <div className="oc-r">
+            <button className="bt-s" onClick={() => setConfirmStep(false)} disabled={loading}>Back</button>
             <button
               className={`btn-primary ${action === "SELL" ? "btn-danger" : ""}`}
               onClick={handlePlace}
@@ -528,7 +528,7 @@ function ComboOrderForm({
       <div className="o-f">
         <label className="o-l">Net Limit Price</label>
         <div className="mp-ir">
-          <span className="modify-price-prefix">$</span>
+          <span className="mp-p">$</span>
           <input
             className="modify-price-input"
             type="number"
@@ -539,7 +539,7 @@ function ComboOrderForm({
             placeholder="0.00"
           />
         </div>
-        <div className="modify-quick-buttons">
+        <div className="mq-b">
           <button className="btn-quick" disabled={netPrices.bid == null} onClick={() => { if (netPrices.bid != null) { setLimitPrice(netPrices.bid.toFixed(2)); setConfirmStep(false); } }}>
             BID{netPrices.bid != null ? ` ${netPrices.bid.toFixed(2)}` : ""}
           </button>
@@ -567,8 +567,8 @@ function ComboOrderForm({
       {/* Submit / Confirm */}
       <div className="order-submit">
         {confirmStep ? (
-          <div className="order-confirm-row">
-            <button className="btn-secondary" onClick={() => setConfirmStep(false)} disabled={loading}>Back</button>
+          <div className="oc-r">
+            <button className="bt-s" onClick={() => setConfirmStep(false)} disabled={loading}>Back</button>
             <button
               className={`btn-primary ${action === "SELL" ? "btn-danger" : ""}`}
               onClick={handlePlace}

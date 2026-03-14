@@ -20,11 +20,11 @@ export default function CancelOrderDialog({ order, loading, onConfirm, onClose }
     <Modal open={!!order} onClose={onClose} title="Cancel Order">
       <div className="cancel-dialog">
         <div className="cancel-order-details">
-          <div className="cancel-detail-row">
+          <div className="cd-r">
             <span className="cancel-label">Symbol</span>
             <span className="cancel-value"><strong>{order.symbol}</strong></span>
           </div>
-          <div className="cancel-detail-row">
+          <div className="cd-r">
             <span className="cancel-label">Action</span>
             <span className="cancel-value">
               <span className={`pill ${order.action === "BUY" ? "accum" : "distrib"}`}>
@@ -32,21 +32,21 @@ export default function CancelOrderDialog({ order, loading, onConfirm, onClose }
               </span>
             </span>
           </div>
-          <div className="cancel-detail-row">
+          <div className="cd-r">
             <span className="cancel-label">Type</span>
             <span className="cancel-value">{order.orderType}</span>
           </div>
-          <div className="cancel-detail-row">
+          <div className="cd-r">
             <span className="cancel-label">Quantity</span>
             <span className="cancel-value">{order.totalQuantity}</span>
           </div>
           {order.limitPrice != null && (
-            <div className="cancel-detail-row">
+            <div className="cd-r">
               <span className="cancel-label">Limit Price</span>
               <span className="cancel-value">{fmtPrice(order.limitPrice)}</span>
             </div>
           )}
-          <div className="cancel-detail-row">
+          <div className="cd-r">
             <span className="cancel-label">Status</span>
             <span className="cancel-value">{order.status}</span>
           </div>
@@ -59,7 +59,7 @@ export default function CancelOrderDialog({ order, loading, onConfirm, onClose }
         )}
 
         <div className="cancel-actions">
-          <button className="btn-secondary" onClick={onClose} disabled={loading}>
+          <button className="bt-s" onClick={onClose} disabled={loading}>
             Keep Order
           </button>
           <button className="btn-danger" onClick={onConfirm} disabled={loading}>

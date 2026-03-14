@@ -36,7 +36,7 @@ function PnlBar({ value, max }: { value: number; max: number }) {
 function StrategyTable({ strategies, maxPnl }: { strategies: StrategyAttribution[]; maxPnl: number }) {
   return (
     <div className="attribution-table" data-testid="attribution-strategy-table">
-      <div className="attribution-table-header">
+      <div className="at-h">
         <span>Strategy</span>
         <span>Trades</span>
         <span>Win Rate</span>
@@ -44,7 +44,7 @@ function StrategyTable({ strategies, maxPnl }: { strategies: StrategyAttribution
         <span />
       </div>
       {strategies.map((s) => (
-        <div key={s.strategy_id} className="attribution-table-row">
+        <div key={s.strategy_id} className="at-r">
           <span className="attribution-strategy-name">{s.strategy_name}</span>
           <span className="mono">{s.closed_count}/{s.trade_count}</span>
           <span className="mono">{fmtPct(s.win_rate)}</span>
@@ -69,7 +69,7 @@ function EdgeTable({ edges, maxPnl }: { edges: EdgeAttribution[]; maxPnl: number
   };
   return (
     <div className="attribution-table" data-testid="attribution-edge-table">
-      <div className="attribution-table-header">
+      <div className="at-h">
         <span>Edge Type</span>
         <span>Trades</span>
         <span>Win Rate</span>
@@ -77,7 +77,7 @@ function EdgeTable({ edges, maxPnl }: { edges: EdgeAttribution[]; maxPnl: number
         <span />
       </div>
       {edges.map((e) => (
-        <div key={e.edge_type} className="attribution-table-row">
+        <div key={e.edge_type} className="at-r">
           <span>{edgeLabels[e.edge_type] ?? e.edge_type}</span>
           <span className="mono">{e.closed_count}/{e.trade_count}</span>
           <span className="mono">{fmtPct(e.win_rate)}</span>
@@ -98,14 +98,14 @@ function RiskTable({ risks }: { risks: RiskAttribution[] }) {
   };
   return (
     <div className="attribution-table" data-testid="attribution-risk-table">
-      <div className="attribution-table-header">
+      <div className="at-h">
         <span>Risk Profile</span>
         <span>Trades</span>
         <span>Win Rate</span>
         <span>P&L</span>
       </div>
       {risks.map((r) => (
-        <div key={r.risk_type} className="attribution-table-row">
+        <div key={r.risk_type} className="at-r">
           <span>{riskLabels[r.risk_type] ?? r.risk_type}</span>
           <span className="mono">{r.closed_count}/{r.trade_count}</span>
           <span className="mono">{fmtPct(r.win_rate)}</span>
@@ -154,7 +154,7 @@ function KellyCalibration({ data }: { data: AttributionData }) {
 
   return (
     <div className="attribution-table" data-testid="attribution-kelly-table">
-      <div className="attribution-table-header">
+      <div className="at-h">
         <span>Strategy</span>
         <span>Expected WR</span>
         <span>Actual WR</span>
@@ -162,7 +162,7 @@ function KellyCalibration({ data }: { data: AttributionData }) {
         <span>Samples</span>
       </div>
       {entries.map(([sid, cal]) => (
-        <div key={sid} className="attribution-table-row">
+        <div key={sid} className="at-r">
           <span>{strategyNames[sid] ?? sid}</span>
           <span className="mono">{fmtPct(cal.expected_win_rate)}</span>
           <span className="mono">{fmtPct(cal.actual_win_rate)}</span>

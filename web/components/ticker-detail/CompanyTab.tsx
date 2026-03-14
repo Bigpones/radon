@@ -147,7 +147,7 @@ export default function CompanyTab({ ticker, active, priceData, fundamentals }: 
       {/* About section */}
       <div className="company-about">
         <div className="company-about-header">
-          <span className="ratings-targets-title">
+          <span className="rt-t">
             About {ticker}
           </span>
           {(sector || issueType) && (
@@ -186,7 +186,7 @@ export default function CompanyTab({ ticker, active, priceData, fundamentals }: 
 
       {/* Key Statistics */}
       <div className="company-stats">
-        <div className="ratings-targets-title">Key Statistics</div>
+        <div className="rt-t">Key Statistics</div>
         <div className="company-stats-grid">
           {statItems.map((item) => (
             <div key={item.label} className="pos-stat">

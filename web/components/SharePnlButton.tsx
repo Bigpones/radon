@@ -152,7 +152,7 @@ export default function SharePnlButton({ data, size = 13 }: SharePnlButtonProps)
               {copying ? "Generating..." : "Copy & Tweet"}
             </button>
             <button
-              className="btn-secondary share-pnl-action"
+              className="bt-s share-pnl-action"
               onClick={handleCopy}
               disabled={copying || (!showDollar && !showPct)}
             >

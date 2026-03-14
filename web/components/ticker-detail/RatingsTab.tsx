@@ -182,7 +182,7 @@ export default function RatingsTab({ ticker, active, currentPrice }: RatingsTabP
       {/* Price targets */}
       {hasPriceTargets && (
         <div className="ratings-targets">
-          <div className="ratings-targets-title">Price Targets</div>
+          <div className="rt-t">Price Targets</div>
           <div className="ratings-targets-grid">
             {ptLow != null && (
               <div className="pos-stat">
@@ -229,7 +229,7 @@ export default function RatingsTab({ ticker, active, currentPrice }: RatingsTabP
       {/* Upgrade/downgrade history */}
       {changes.length > 0 && (
         <div className="ratings-changes">
-          <div className="ratings-targets-title">Recent Analyst Actions</div>
+          <div className="rt-t">Recent Analyst Actions</div>
           <table className="pos-legs-table">
             <thead>
               <tr>
