@@ -244,12 +244,11 @@ function OrderBuilder({
     <div className="order-builder">
       <div className="order-builder-header">
         <span
+          className="text-secondary"
           style={{
-            fontFamily: "var(--font-mono)",
             fontSize: "11px",
             textTransform: "uppercase",
             letterSpacing: "0.05em",
-            color: "var(--text-secondary)",
           }}
         >
           ORDER BUILDER {structure ? `— ${structure}` : ""}
@@ -293,13 +292,13 @@ function OrderBuilder({
                 >
                   {leg.action}
                 </button>
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px" }}>
+                <span className="font-mono" style={{ fontSize: "12px" }}>
                   {leg.quantity}x ${leg.strike} {leg.right === "C" ? "Call" : "Put"}
                 </span>
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-secondary)" }}>
+                <span className="font-mono text-secondary" style={{ fontSize: "11px" }}>
                   {formatExpiry(leg.expiry)}
                 </span>
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-secondary)", marginLeft: "auto" }}>
+                <span className="font-mono text-secondary" style={{ fontSize: "11px", marginLeft: "auto" }}>
                   {mid != null ? fmtPrice(mid) : "---"}
                 </span>
               </div>
@@ -331,7 +330,6 @@ function OrderBuilder({
                     cursor: "pointer",
                     fontSize: "14px",
                     padding: "0 4px",
-                    fontFamily: "var(--font-mono)",
                   }}
                   title="Remove leg"
                 >
@@ -345,12 +343,12 @@ function OrderBuilder({
 
       {/* Net price */}
       <div className="order-builder-net">
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-secondary)" }}>
+        <span className="font-mono text-secondary" style={{ fontSize: "11px" }}>
           NET {isDebit ? "DEBIT" : "CREDIT"}
         </span>
         <span
+          className="font-mono"
           style={{
-            fontFamily: "var(--font-mono)",
             fontSize: "14px",
             fontWeight: 600,
             color: isDebit ? "var(--fault)" : "var(--signal-core)",
@@ -358,7 +356,7 @@ function OrderBuilder({
         >
           {netPrice != null ? fmtPrice(Math.abs(netPrice)) : "---"}
         </span>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-secondary)" }}>
+        <span className="font-mono text-secondary" style={{ fontSize: "10px" }}>
           {netPrice != null ? `(${fmtPrice(Math.abs(netPrice) * 100)} notional)` : ""}
         </span>
       </div>
@@ -628,7 +626,7 @@ export default function OptionsChainTab({
   if (loadingExpiries) {
     return (
       <div style={{ padding: "24px 0", textAlign: "center" }}>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-secondary)" }}>
+        <span className="font-mono text-secondary" style={{ fontSize: "12px" }}>
           Loading expirations...
         </span>
       </div>
@@ -638,7 +636,7 @@ export default function OptionsChainTab({
   if (error && expirations.length === 0) {
     return (
       <div style={{ padding: "24px 0", textAlign: "center" }}>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--fault)" }}>
+        <span className="font-mono" style={{ fontSize: "12px", color: "var(--fault)" }}>
           {error}
         </span>
       </div>
@@ -650,12 +648,11 @@ export default function OptionsChainTab({
       {/* Expiry selector */}
       <div className="chain-expiry-bar">
         <label
+          className="font-mono text-secondary"
           style={{
-            fontFamily: "var(--font-mono)",
             fontSize: "10px",
             textTransform: "uppercase",
             letterSpacing: "0.05em",
-            color: "var(--text-secondary)",
           }}
         >
           EXPIRY
@@ -674,7 +671,7 @@ export default function OptionsChainTab({
             </option>
           ))}
         </select>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-secondary)" }}>
+        <span className="font-mono text-secondary" style={{ fontSize: "11px" }}>
           {currentPrice != null ? `Underlying: ${fmtPrice(currentPrice)}` : ""}
         </span>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "8px" }}>
@@ -689,7 +686,7 @@ export default function OptionsChainTab({
               </button>
             ))}
           </div>
-          <label style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-secondary)" }}>
+          <label className="font-mono text-secondary" style={{ fontSize: "10px" }}>
             STRIKES
           </label>
           <select
@@ -709,7 +706,7 @@ export default function OptionsChainTab({
       {/* Chain grid */}
       {loadingStrikes ? (
         <div style={{ padding: "24px 0", textAlign: "center" }}>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-secondary)" }}>
+          <span className="font-mono text-secondary" style={{ fontSize: "12px" }}>
             Loading chain...
           </span>
         </div>

@@ -111,12 +111,11 @@ export default function SortableCtaTable({ sectionKey, rows }: SortableCtaTableP
   return (
     <div data-testid="sortable-cta-table" style={{ width: "100%" }}>
       <div
+        className="font-mono text-muted"
         style={{
-          fontFamily: "var(--font-mono, monospace)",
           fontSize: "10px",
           fontWeight: 700,
           letterSpacing: "0.10em",
-          color: "var(--text-muted)",
           padding: "8px 12px 4px",
           textTransform: "uppercase",
         }}
