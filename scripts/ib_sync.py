@@ -904,10 +904,9 @@ def main():
         # ── Phase 6: Read account PnL (should have arrived during the combined sleep) ──
         pnl_data = {}
         if pnl_obj:
-            # Data usually arrives within the combined sleep above.
-            # Brief 0.3s fallback if not yet available (vs 1s before).
-            if not _valid_pnl(getattr(pnl_obj, 'dailyPnL', None)):
-                client.sleep(0.3)
+            # reqPnL subscription started in Phase 2 — has had 2.7s+ to arrive.
+            # No fallback sleep: if data isn't here by now, accept None for
+            # account-level daily_pnl (per-position PnL is independent).
             daily = pnl_obj.dailyPnL
             unrealized = pnl_obj.unrealizedPnL
             realized = pnl_obj.realizedPnL
