@@ -9,6 +9,7 @@ import ExposureBreakdownModal, { type ExposureMetric } from "./ExposureBreakdown
 import FillsModal from "./FillsModal";
 import PnlBreakdownModal, { type PnlBreakdownRow } from "./PnlBreakdownModal";
 import AccountMetricModal from "./AccountMetricModal";
+import { fmtUsd, fmtUsdExact, fmtSignedUsd, toneClass } from "@/lib/format";
 
 type MetricCardsProps = {
   portfolio: PortfolioData | null;
@@ -18,21 +19,12 @@ type MetricCardsProps = {
   section?: string;
 };
 
-const fmt = (n: number) =>
-  n >= 1_000_000
-    ? `$${(n / 1_000_000).toFixed(2)}M`
-    : `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-
-const fmtSigned = (n: number) =>
-  `${n >= 0 ? "+" : ""}${fmt(Math.abs(n))}`;
-
-const fmtExact = (n: number) =>
-  `$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
+const fmt = fmtUsd;
+const fmtSigned = (n: number) => fmtSignedUsd(n);
+const fmtExact = fmtUsdExact;
 const fmtSignedExact = (n: number) =>
   `${n >= 0 ? "+" : "-"}${fmtExact(n)}`;
-
-const tone = (n: number) => (n > 0 ? "positive" as const : n < 0 ? "negative" as const : "neutral" as const);
+const tone = toneClass;
 
 function resolveMarketValue(pos: PortfolioData["positions"][number]): number | null {
   if (pos.market_value != null) return pos.market_value;
