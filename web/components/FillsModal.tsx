@@ -59,8 +59,8 @@ export default function FillsModal({ open, fills, totalRealizedPnl, netLiquidati
               <tbody>
                 {fills.map((fill) => (
                   <tr key={fill.execId} className={fill.realizedPNL != null ? (fill.realizedPNL >= 0 ? "fills-row-positive" : "fills-row-negative") : ""}>
-                    <td className="mono">{fmtTime(fill.time)}</td>
-                    <td className="mono">{fill.symbol}</td>
+                    <td className="mn">{fmtTime(fill.time)}</td>
+                    <td className="mn">{fill.symbol}</td>
                     <td className={`mono fills-side fills-side-${fill.side.toLowerCase()}`}>{fill.side}</td>
                     <td className="mono tr">{fill.quantity}</td>
                     <td className="mono tr">{fmtPrice(fill.avgPrice)}</td>

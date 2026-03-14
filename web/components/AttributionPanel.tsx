@@ -46,8 +46,8 @@ function StrategyTable({ strategies, maxPnl }: { strategies: StrategyAttribution
       {strategies.map((s) => (
         <div key={s.strategy_id} className="at-r">
           <span className="asn">{s.strategy_name}</span>
-          <span className="mono">{s.closed_count}/{s.trade_count}</span>
-          <span className="mono">{fmtPct(s.win_rate)}</span>
+          <span className="mn">{s.closed_count}/{s.trade_count}</span>
+          <span className="mn">{fmtPct(s.win_rate)}</span>
           <span className={`mono ${toneClass(s.realized_pnl)}`}>{fmtUsd(s.realized_pnl)}</span>
           <PnlBar value={s.realized_pnl} max={maxPnl} />
         </div>
@@ -79,8 +79,8 @@ function EdgeTable({ edges, maxPnl }: { edges: EdgeAttribution[]; maxPnl: number
       {edges.map((e) => (
         <div key={e.edge_type} className="at-r">
           <span>{edgeLabels[e.edge_type] ?? e.edge_type}</span>
-          <span className="mono">{e.closed_count}/{e.trade_count}</span>
-          <span className="mono">{fmtPct(e.win_rate)}</span>
+          <span className="mn">{e.closed_count}/{e.trade_count}</span>
+          <span className="mn">{fmtPct(e.win_rate)}</span>
           <span className={`mono ${toneClass(e.realized_pnl)}`}>{fmtUsd(e.realized_pnl)}</span>
           <PnlBar value={e.realized_pnl} max={maxPnl} />
         </div>
@@ -107,8 +107,8 @@ function RiskTable({ risks }: { risks: RiskAttribution[] }) {
       {risks.map((r) => (
         <div key={r.risk_type} className="at-r">
           <span>{riskLabels[r.risk_type] ?? r.risk_type}</span>
-          <span className="mono">{r.closed_count}/{r.trade_count}</span>
-          <span className="mono">{fmtPct(r.win_rate)}</span>
+          <span className="mn">{r.closed_count}/{r.trade_count}</span>
+          <span className="mn">{fmtPct(r.win_rate)}</span>
           <span className={`mono ${toneClass(r.realized_pnl)}`}>{fmtUsd(r.realized_pnl)}</span>
         </div>
       ))}
@@ -125,7 +125,7 @@ function TickerLeaderboard({ tickers }: { tickers: TickerAttributionEntry[] }) {
         <div className="amh positive">Top Performers</div>
         {top.map((t) => (
           <div key={`top-${t.ticker}`} className="atr">
-            <span className="mono">{t.ticker}</span>
+            <span className="mn">{t.ticker}</span>
             <span className={`mono ${toneClass(t.realized_pnl)}`}>{fmtUsd(t.realized_pnl)}</span>
           </div>
         ))}
@@ -134,7 +134,7 @@ function TickerLeaderboard({ tickers }: { tickers: TickerAttributionEntry[] }) {
         <div className="amh negative">Bottom Performers</div>
         {bottom.map((t) => (
           <div key={`bot-${t.ticker}`} className="atr">
-            <span className="mono">{t.ticker}</span>
+            <span className="mn">{t.ticker}</span>
             <span className={`mono ${toneClass(t.realized_pnl)}`}>{fmtUsd(t.realized_pnl)}</span>
           </div>
         ))}
@@ -164,12 +164,12 @@ function KellyCalibration({ data }: { data: AttributionData }) {
       {entries.map(([sid, cal]) => (
         <div key={sid} className="at-r">
           <span>{strategyNames[sid] ?? sid}</span>
-          <span className="mono">{fmtPct(cal.expected_win_rate)}</span>
-          <span className="mono">{fmtPct(cal.actual_win_rate)}</span>
+          <span className="mn">{fmtPct(cal.expected_win_rate)}</span>
+          <span className="mn">{fmtPct(cal.actual_win_rate)}</span>
           <span className={`mono ${cal.accuracy !== null && cal.accuracy >= 0.7 ? "positive" : cal.accuracy !== null && cal.accuracy < 0.3 ? "negative" : ""}`}>
             {fmtPct(cal.accuracy)}
           </span>
-          <span className="mono">{cal.sample_size}</span>
+          <span className="mn">{cal.sample_size}</span>
         </div>
       ))}
     </div>
@@ -181,7 +181,7 @@ export default function AttributionPanel() {
 
   if (loading && !data) {
     return (
-      <div className="section" data-testid="attribution-panel">
+      <div className="sx" data-testid="attribution-panel">
         <div className="s-hd">
           <div className="s-tt">
             <BarChart3 size={14} />
@@ -198,7 +198,7 @@ export default function AttributionPanel() {
 
   if (!data) {
     return (
-      <div className="section" data-testid="attribution-panel">
+      <div className="sx" data-testid="attribution-panel">
         <div className="s-hd">
           <div className="s-tt">
             <BarChart3 size={14} />
@@ -219,7 +219,7 @@ export default function AttributionPanel() {
   return (
     <div data-testid="attribution-panel">
       {/* Strategy Attribution */}
-      <div className="section">
+      <div className="sx">
         <div className="s-hd">
           <div className="s-tt">
             <BarChart3 size={14} />
@@ -234,7 +234,7 @@ export default function AttributionPanel() {
 
       {/* Edge Quality + Risk Profile side by side */}
       <div className="pg-2">
-        <div className="section">
+        <div className="sx">
           <div className="s-hd">
             <div className="s-tt">
               <Crosshair size={14} />
@@ -247,7 +247,7 @@ export default function AttributionPanel() {
           </div>
         </div>
 
-        <div className="section">
+        <div className="sx">
           <div className="s-hd">
             <div className="s-tt">
               <Shield size={14} />
@@ -262,7 +262,7 @@ export default function AttributionPanel() {
       </div>
 
       {/* Ticker Leaderboard */}
-      <div className="section">
+      <div className="sx">
         <div className="s-hd">
           <div className="s-tt">
             <Target size={14} />
@@ -277,7 +277,7 @@ export default function AttributionPanel() {
 
       {/* Kelly Calibration */}
       {Object.keys(data.kelly_calibration).length > 0 && (
-        <div className="section">
+        <div className="sx">
           <div className="s-hd">
             <div className="s-tt">
               <Target size={14} />

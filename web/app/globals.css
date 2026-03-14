@@ -449,7 +449,7 @@ body {
 .csb.csb-error .ct105,
 .amh.negative { color: var(--negative); }
 
-.section {
+.sx {
   background: var(--bg-panel);
   border: 1px solid var(--border-dim);
   margin-bottom: 20px;

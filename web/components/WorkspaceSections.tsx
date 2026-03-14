@@ -262,7 +262,7 @@ function FlowSections() {
   return (
     <>
       {actionItems.length > 0 && (
-        <div className="section">
+        <div className="sx">
           <div className="alert-box">
             <div className="alert-title">
               <TriangleAlert size={14} />
@@ -278,12 +278,12 @@ function FlowSections() {
       )}
 
       {error && (
-        <div className="section">
+        <div className="sx">
           <div className="s-bd"><div className="a-i be">{error}</div></div>
         </div>
       )}
 
-      <div className="section">
+      <div className="sx">
         <div className="s-hd">
           <div className="s-tt">
             <CheckCircle2 size={14} />
@@ -310,7 +310,7 @@ function FlowSections() {
         </div>
       </div>
 
-      <div className="section">
+      <div className="sx">
         <div className="s-hd">
           <div className="s-tt">
             <TrendingDown size={14} />
@@ -328,7 +328,7 @@ function FlowSections() {
         </div>
       </div>
 
-      <div className="section">
+      <div className="sx">
         <div className="s-hd">
           <div className="s-tt">
             <Circle size={14} />
@@ -346,7 +346,7 @@ function FlowSections() {
         </div>
       </div>
 
-      <div className="section">
+      <div className="sx">
         <div className="s-hd">
           <div className="s-tt">
             <Bell size={14} />
@@ -364,7 +364,7 @@ function FlowSections() {
         </div>
       </div>
 
-      <div className="section">
+      <div className="sx">
         <div className="rm">
           {lastSync
             ? `Report Generated: ${new Date(lastSync).toLocaleString()} • Source: UW API • Dark Pool Lookback: 5 Trading Days • ${totalScanned} Positions Scanned`
@@ -380,7 +380,7 @@ function FlowSections() {
 function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | null; prices?: Record<string, PriceData> }) {
   if (!portfolio) {
     return (
-      <div className="section">
+      <div className="sx">
         <div className="s-hd">
           <div className="s-tt">
             <Circle size={14} />
@@ -403,7 +403,7 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
   return (
     <>
       {definedPositions.length > 0 && (
-        <div className="section">
+        <div className="sx">
           <div className="s-hd">
             <div className="s-tt">
               <CheckCircle2 size={14} />
@@ -419,7 +419,7 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
       )}
 
       {undefinedPositions.length > 0 && (
-        <div className="section">
+        <div className="sx">
           <div className="s-hd">
             <div className="s-tt">
               <TriangleAlert size={14} />
@@ -435,7 +435,7 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
       )}
 
       {equityPositions.length > 0 && (
-        <div className="section">
+        <div className="sx">
           <div className="s-hd">
             <div className="s-tt">
               <Circle size={14} />
@@ -450,7 +450,7 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
         </div>
       )}
 
-      <div className="section">
+      <div className="sx">
         <div className="rm">
           Last Sync: {new Date(portfolio.last_sync).toLocaleString()} • Source: IB Gateway (4001)
         </div>
@@ -496,7 +496,7 @@ function ScannerSections() {
 
   return (
     <>
-      <div className="section">
+      <div className="sx">
         <div className="s-hd">
           <div className="s-tt">
             <Sparkles size={14} />
@@ -553,7 +553,7 @@ function ScannerSections() {
       </div>
 
       {lastSync && (
-        <div className="section">
+        <div className="sx">
           <div className="rm">
             Last Scan: {new Date(lastSync).toLocaleString()} • {data?.tickers_scanned ?? 0} Tickers Scanned
           </div>
@@ -614,7 +614,7 @@ function DiscoverSections() {
 
   return (
     <>
-      <div className="section">
+      <div className="sx">
         <div className="s-hd">
           <div className="s-tt">
             <Search size={14} />
@@ -718,7 +718,7 @@ function JournalSections() {
 
   return (
     <>
-      <div className="section">
+      <div className="sx">
         <div className="s-hd">
           <div className="s-tt">
             <Wrench size={14} />
@@ -963,7 +963,7 @@ function OrdersSections({
 
   if (!orders) {
     return (
-      <div className="section">
+      <div className="sx">
         <div className="s-hd">
           <div className="s-tt">
             <ClipboardList size={14} />
@@ -999,7 +999,7 @@ function OrdersSections({
         onClose={() => setModifyTarget(null)}
       />
 
-      <div className="section">
+      <div className="sx">
         <div className="s-hd">
           <div className="s-tt">
             <ClipboardList size={14} />
@@ -1093,7 +1093,7 @@ function OrdersSections({
         </div>
       </div>
 
-      <div className="section">
+      <div className="sx">
         <div className="s-hd">
           <div className="s-tt">
             <CheckCircle2 size={14} />
@@ -1156,7 +1156,7 @@ function OrdersSections({
       </div>
 
       {orders.last_sync && (
-        <div className="section">
+        <div className="sx">
           <div className="rm">
             Last Sync: {new Date(orders.last_sync).toLocaleString()} • Source: IB Gateway (4001)
           </div>
@@ -1224,7 +1224,7 @@ function HistoricalTradesSection() {
   const hasData = data && (data.as_of || totalCount > 0);
 
   return (
-    <div className="section">
+    <div className="sx">
       <div className="s-hd">
         <div className="s-tt">
           <ClipboardList size={14} />

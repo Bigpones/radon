@@ -317,7 +317,7 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
 
   if (loading && !data) {
     return (
-      <div className="section">
+      <div className="sx">
         <div className="s-hd">
           <div className="s-tt">
             <Gauge size={14} />
@@ -334,7 +334,7 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
 
   if (!data) {
     return (
-      <div className="section">
+      <div className="sx">
         <div className="s-hd">
           <div className="s-tt">
             <ShieldAlert size={14} />
@@ -372,7 +372,7 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
         </div>
       </div>
 
-      <div className="section">
+      <div className="sx">
         <div className="s-hd">
           <div className="s-tt">
             <Gauge size={14} />
@@ -398,7 +398,7 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
       <PerformanceChart data={data} />
 
       <div className="pg-2">
-        <div className="section">
+        <div className="sx">
           <div className="s-hd">
             <div className="s-tt">
               <TrendingDown size={14} />
@@ -418,7 +418,7 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
           </div>
         </div>
 
-        <div className="section">
+        <div className="sx">
           <div className="s-hd">
             <div className="s-tt">
               <Sigma size={14} />
@@ -440,7 +440,7 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
       </div>
 
       <div className="pg-2">
-        <div className="section">
+        <div className="sx">
           <div className="s-hd">
             <div className="s-tt">
               <AlertTriangle size={14} />
@@ -468,7 +468,7 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
           </div>
         </div>
 
-        <div className="section">
+        <div className="sx">
           <div className="s-hd">
             <div className="s-tt">
               <AlertTriangle size={14} />
