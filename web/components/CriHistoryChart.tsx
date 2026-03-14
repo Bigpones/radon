@@ -4,7 +4,8 @@ import { useRef, useEffect, useState } from "react";
 import { select, pointer } from "d3-selection";
 import { scaleLinear, scaleTime, type ScaleLinear } from "d3-scale";
 import { line, curveMonotoneX } from "d3-shape";
-import { timeFormat } from "d3-time-format";
+// Lightweight date formatter replacing d3-time-format
+const shortDate = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 import { extent, bisector } from "d3-array";
 import { axisLeft, axisRight, axisBottom } from "d3-axis";
 import ChartPanel from "./charts/ChartPanel";
@@ -244,7 +245,7 @@ export default function CriHistoryChart({
     const tickCount = Math.max(2, Math.min(chartData.length, Math.floor(innerW / 50)));
     const xAxis = axisBottom(xScale)
       .ticks(tickCount)
-      .tickFormat((d) => timeFormat("%b %-d")(d as Date));
+      .tickFormat((d) => shortDate(d as Date));
 
     g.append("g")
       .attr("transform", `translate(0,${innerH})`)

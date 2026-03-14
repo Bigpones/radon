@@ -1,27 +1,23 @@
-# IB Sync Latency — Ideas Backlog
+# Web Bundle Size — Ideas Backlog
 
-## Status: EXHAUSTED — No actionable ideas remain.
-
-All paths with meaningful impact have been explored and either applied or rejected.
-The optimization is at the theoretical floor (~2.9s) bounded by IB's 2.5s data streaming requirement.
-
-## Applied (merged to main)
-- Batch PnL Single (−13.6s)
-- Overlap all sleeps (−4.5s)
-- Skip qualifyContracts (−1.5s)
-- accountValues() cache read (−0.3s)
-- Phase 6 elimination (−0.3s)
-- Sleep 2.7→2.5s (−0.2s)
-- Close price fallback (data quality, no timing impact)
+## Applied
+- Replace react-markdown + remark-gfm with lightweight inline renderer (−137KB)
+- d3 selective imports instead of `import * as d3` (−16KB)
+- Remove dead dependencies: @fontsource/ibm-plex-mono, @vercel/analytics, ib (0KB but cleaner)
+- SWC removeConsole in production (−1KB)
 
 ## Explored and rejected
-- Adaptive polling (0.1s/0.25s): iteration overhead exceeds savings
-- Snapshot market data: broken with delayed-frozen (type 4)
-- Move account summary after subs: event loop backlog regression
-- Import optimization: ib_insync 121ms, unavoidable
-- Post-IB processing: <3ms total, negligible
-- Skip cancel calls: <2ms total, negligible
-- Sleep <2.5s: overfits to degraded gateway, loses live data during market hours
+- Dynamic import ChatPanel/MetricCards/WorkspaceSections: +13KB overhead from code splitting wrapper
+- optimizePackageImports for lucide-react/d3-*: Turbopack already handles tree-shaking
+- modularizeImports for lucide-react: same — Turbopack already optimal
+- reactStrictMode: false: no effect on production bundle
+- Remove @fontsource/ibm-plex-mono, @vercel/analytics, ib packages: no bundle change (Turbopack tracks imports)
 
-## Not worth pursuing
-- Persistent connection pool: saves ~125ms connect, needs daemon architecture change — beyond scope
+## Remaining ideas
+- Replace d3-selection (DOM manipulation) with pure React SVG in charts — eliminates d3-selection, d3-axis
+- CSS audit: ~134 potentially unused selectors in globals.css (risky — dynamic class names)
+- Replace CriHistoryChart with Canvas API (no d3 needed, but major rewrite)
+- Move WorkspaceSections into per-route components with route-level code splitting
+- Check if server components can absorb more of the data processing (currently 51 "use client" components)
+- Replace d3-time-format with Intl.DateTimeFormat (built-in, no import needed)
+- Investigate if chart rendering can use a lighter library than d3 (e.g., uPlot at ~45KB vs d3 at ~100KB+)
