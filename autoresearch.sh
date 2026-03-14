@@ -1,30 +1,35 @@
 #!/bin/bash
 set -euo pipefail
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/web"
 
-# Run ib_sync with wall-clock timing via Python wrapper
-# Uses a random client ID (70-89) to avoid stale connection conflicts
-python3 -c "
-import time, subprocess, re, sys, random
+# Clean previous build
+rm -rf .next
 
-client_id = random.randint(70, 89)
-start = time.perf_counter()
-result = subprocess.run(
-    [sys.executable, 'scripts/ib_sync.py', '--sync', '--client-id', str(client_id)],
-    capture_output=True, text=True, timeout=120
-)
-elapsed = round(time.perf_counter() - start, 3)
+# Build
+npm run build 2>&1 > /tmp/next-build.log
+build_exit=$?
 
-output = result.stdout + result.stderr
-m = re.search(r'SUMMARY: (\d+) positions', output)
-positions = int(m.group(1)) if m else 0
+if [ $build_exit -ne 0 ]; then
+  cat /tmp/next-build.log >&2
+  exit $build_exit
+fi
 
-print(f'METRIC total_s={elapsed}')
-print(f'METRIC positions={positions}')
+# Measure client JS bundle size (KB)
+js_bytes=$(find .next/static -name "*.js" -exec cat {} + | wc -c | tr -d ' ')
+js_kb=$(( js_bytes / 1024 ))
 
-if result.returncode != 0:
-    print(output[-500:], file=sys.stderr)
-    print(f'EXIT_CODE={result.returncode}', file=sys.stderr)
-    sys.exit(result.returncode)
-"
+# Measure CSS size (KB)
+css_bytes=$(find .next/static -name "*.css" -exec cat {} + 2>/dev/null | wc -c | tr -d ' ')
+css_kb=$(( css_bytes / 1024 ))
+
+# Count chunks
+chunk_count=$(find .next/static -name "*.js" | wc -l | tr -d ' ')
+
+# Extract build time from log
+build_time=$(grep -o "Compiled successfully in [0-9.]*s" /tmp/next-build.log | grep -o "[0-9.]*" || echo "0")
+
+echo "METRIC bundle_kb=$js_kb"
+echo "METRIC css_kb=$css_kb"
+echo "METRIC chunk_count=$chunk_count"
+echo "METRIC build_s=$build_time"
