@@ -35,8 +35,6 @@ img, video { max-width: 100%; height: auto; }
   --text-primary: #e2e8f0;
   --text-secondary: #94a3b8;
   --text-muted: #475569;
-  --accent-bg: #05AD98;
-  --accent-text: #0a0f14;
   --scrollbar-track: #0a0f14;
   --scrollbar-thumb: #1e293b;
   --positive: #05AD98;
@@ -79,8 +77,6 @@ img, video { max-width: 100%; height: auto; }
   --text-primary: #000000;
   --text-secondary: #636363;
   --text-muted: #878787;
-  --accent-bg: #05AD98;
-  --accent-text: #FFFFFF;
   --scrollbar-track: #FFFFFF;
   --scrollbar-thumb: #BBBFBF;
   --positive: #048A7A;
@@ -4125,3 +4121,9 @@ tr {
 .border-gray-800 { border-color: #1f2937; }
 .bg-gray-800 { background-color: #1f2937; }
 .bg-gray-800\/50 { background-color: rgb(31 41 55 / 0.5); }
+.flex-col { flex-direction: column; }
+.flex-wrap { flex-wrap: wrap; }
+@media (min-width: 1024px) {
+  .lg\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lg\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

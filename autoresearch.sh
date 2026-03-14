@@ -4,7 +4,8 @@ set -euo pipefail
 cd "$(dirname "$0")/web"
 
 # Clean previous build
-rm -rf .next
+rm -rf .next 2>/dev/null || true
+sleep 0.5
 
 # Build
 npm run build 2>&1 > /tmp/next-build.log
