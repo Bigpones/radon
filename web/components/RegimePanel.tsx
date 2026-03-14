@@ -29,19 +29,12 @@ function levelColor(level: CriLevel): string {
   }
 }
 
-function fmt(v: number | null | undefined, decimals = 2): string {
-  if (v == null || !Number.isFinite(v)) return "---";
-  return v.toFixed(decimals);
-}
+import { fmt, fmtSigned } from "@/lib/format";
 
+/** Format already-computed percentage points (e.g. 5.2 → "+5.20%") */
 function fmtPct(v: number | null | undefined, decimals = 2): string {
   if (v == null || !Number.isFinite(v)) return "---";
   return `${v >= 0 ? "+" : ""}${v.toFixed(decimals)}%`;
-}
-
-function fmtSigned(v: number | null | undefined, decimals = 2): string {
-  if (v == null || !Number.isFinite(v)) return "---";
-  return `${v >= 0 ? "+" : ""}${v.toFixed(decimals)}`;
 }
 
 /* ─── Component Bar ──────────────────────────────────── */

@@ -28,9 +28,7 @@ const CHART_HEIGHT = 240;
 const MARGIN = { top: 16, right: 20, bottom: 32, left: 44 };
 const DATE_FORMATTER = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
 
-function fmtSigned(value: number, digits = 2): string {
-  return `${value >= 0 ? "+" : ""}${value.toFixed(digits)}`;
-}
+import { fmtSigned } from "@/lib/format";
 
 function formatDateLabel(value: string): string {
   const date = new Date(`${value}T00:00:00`);

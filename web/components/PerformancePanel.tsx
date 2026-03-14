@@ -8,41 +8,12 @@ import {
   DEFAULT_PERFORMANCE_CHART_WIDTH,
   buildPerformanceChartModel,
 } from "@/lib/performanceChart";
+import { fmtUsd, fmtUsdExact, fmtPct, fmtRatio, toneClass } from "@/lib/format";
 import { isPerformanceBehindPortfolioSync } from "@/lib/performanceFreshness";
 import type { PerformanceData, PerformanceSeriesPoint } from "@/lib/types";
 import { usePerformance } from "@/lib/usePerformance";
 import ChartPanel from "./charts/ChartPanel";
 import MetricDefinitionModal from "./MetricDefinitionModal";
-
-function fmtUsd(value: number): string {
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000) {
-    return `${value < 0 ? "-" : ""}$${(abs / 1_000_000).toFixed(2)}M`;
-  }
-  return `${value < 0 ? "-" : ""}$${abs.toLocaleString("en-US", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  })}`;
-}
-
-function fmtUsdExact(value: number): string {
-  return `${value < 0 ? "-" : ""}$${Math.abs(value).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
-
-function fmtPct(value: number, digits = 2): string {
-  return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(digits)}%`;
-}
-
-function fmtRatio(value: number): string {
-  return Number.isFinite(value) ? value.toFixed(2) : "---";
-}
-
-function toneClass(value: number): "positive" | "negative" | "neutral" {
-  return value > 0 ? "positive" : value < 0 ? "negative" : "neutral";
-}
 
 type PerformanceCardConfig = {
   id: string;
