@@ -269,7 +269,7 @@ function FlowSections() {
               ACTION ITEMS
             </div>
             {actionItems.map((item) => (
-              <div key={`${item.ticker}-${item.position}`} className="alert-item">
+              <div key={`${item.ticker}-${item.position}`} className="a-i">
                 <span className="alert-ticker">{item.ticker}</span> — {item.position}: {item.note}
               </div>
             ))}
@@ -279,7 +279,7 @@ function FlowSections() {
 
       {error && (
         <div className="section">
-          <div className="s-bd"><div className="alert-item bearish">{error}</div></div>
+          <div className="s-bd"><div className="a-i bearish">{error}</div></div>
         </div>
       )}
 
@@ -305,7 +305,7 @@ function FlowSections() {
           {supportsArr.length > 0 ? (
             <FlowTable rows={supportsArr} lastColumn="Signal" />
           ) : (
-            <div className="alert-item">{syncing ? "Scanning portfolio flow..." : "No supporting flow detected"}</div>
+            <div className="a-i">{syncing ? "Scanning portfolio flow..." : "No supporting flow detected"}</div>
           )}
         </div>
       </div>
@@ -323,7 +323,7 @@ function FlowSections() {
           {againstArr.length > 0 ? (
             <FlowTable rows={againstArr} lastColumn="Concern" />
           ) : (
-            <div className="alert-item">No contradicting flow detected</div>
+            <div className="a-i">No contradicting flow detected</div>
           )}
         </div>
       </div>
@@ -341,7 +341,7 @@ function FlowSections() {
           {neutralArr.length > 0 ? (
             <FlowTable rows={neutralArr} lastColumn="Note" />
           ) : (
-            <div className="alert-item">No neutral positions</div>
+            <div className="a-i">No neutral positions</div>
           )}
         </div>
       </div>
@@ -359,7 +359,7 @@ function FlowSections() {
           {watchArr.length > 0 ? (
             <FlowTable rows={watchArr} lastColumn="Note" />
           ) : (
-            <div className="alert-item">No watch items</div>
+            <div className="a-i">No watch items</div>
           )}
         </div>
       </div>
@@ -390,7 +390,7 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
           <span className="pill neutral">LOADING</span>
         </div>
         <div className="s-bd">
-          <div className="alert-item">Waiting for portfolio data...</div>
+          <div className="a-i">Waiting for portfolio data...</div>
         </div>
       </div>
     );
@@ -514,9 +514,9 @@ function ScannerSections() {
             </span>
           </div>
         </div>
-        {error && <div className="s-bd"><div className="alert-item bearish">{error}</div></div>}
+        {error && <div className="s-bd"><div className="a-i bearish">{error}</div></div>}
         {signals.length === 0 && !syncing && !error && (
-          <div className="s-bd"><div className="alert-item">No scanner signals. Waiting for initial scan...</div></div>
+          <div className="s-bd"><div className="a-i">No scanner signals. Waiting for initial scan...</div></div>
         )}
         {signals.length > 0 && (
           <div className="s-bd table-wrap">
@@ -632,9 +632,9 @@ function DiscoverSections() {
             </span>
           </div>
         </div>
-        {error && <div className="s-bd"><div className="alert-item bearish">{error}</div></div>}
+        {error && <div className="s-bd"><div className="a-i bearish">{error}</div></div>}
         {candidates.length === 0 && !syncing && !error && (
-          <div className="s-bd"><div className="alert-item">No candidates found. Waiting for initial scan...</div></div>
+          <div className="s-bd"><div className="a-i">No candidates found. Waiting for initial scan...</div></div>
         )}
         {candidates.length > 0 && (
           <div className="s-bd table-wrap">
@@ -744,11 +744,11 @@ function JournalSections() {
             <span className="pill defined">{trades.length} TRADES</span>
           </div>
         </div>
-        {error && <div className="s-bd"><div className="alert-item bearish">{error}</div></div>}
-        {syncError && <div className="s-bd"><div className="alert-item bearish">IB Sync: {syncError}</div></div>}
+        {error && <div className="s-bd"><div className="a-i bearish">{error}</div></div>}
+        {syncError && <div className="s-bd"><div className="a-i bearish">IB Sync: {syncError}</div></div>}
         {loading && <div className="s-bd p-6"><TableSkeleton rows={4} columns={6} /></div>}
         {!loading && trades.length === 0 && !error && (
-          <div className="s-bd"><div className="alert-item">No trades in journal.</div></div>
+          <div className="s-bd"><div className="a-i">No trades in journal.</div></div>
         )}
         {trades.length > 0 && (
           <div className="s-bd table-wrap">
@@ -882,8 +882,8 @@ function OrderPriceCell({ price }: { price: number | null }) {
   return (
     <td className={`right last-price-cell ${flashDirection ? `last-price-${flashDirection}` : ""}`}>
       {price != null ? fmtPrice(price) : "—"}
-      {direction === "up" && <ArrowUp size={11} className="price-trend-icon price-trend-up" aria-label="price up" />}
-      {direction === "down" && <ArrowDown size={11} className="price-trend-icon price-trend-down" aria-label="price down" />}
+      {direction === "up" && <ArrowUp size={11} className="pt-i price-trend-up" aria-label="price up" />}
+      {direction === "down" && <ArrowDown size={11} className="pt-i price-trend-down" aria-label="price down" />}
     </td>
   );
 }
@@ -973,7 +973,7 @@ function OrdersSections({
           <span className="pill neutral">LOADING</span>
         </div>
         <div className="s-bd">
-          <div className="alert-item">Waiting for orders data...</div>
+          <div className="a-i">Waiting for orders data...</div>
         </div>
       </div>
     );
@@ -1010,7 +1010,7 @@ function OrdersSections({
         </div>
         <div className="s-bd">
           {orders.open_orders.length === 0 ? (
-            <div className="alert-item">No open orders</div>
+            <div className="a-i">No open orders</div>
           ) : (
             <table>
               <thead>
@@ -1104,7 +1104,7 @@ function OrdersSections({
         </div>
         <div className="s-bd">
           {allExecutedRows.length === 0 ? (
-            <div className="alert-item">No fills this session</div>
+            <div className="a-i">No fills this session</div>
           ) : (
             <table>
               <thead>
@@ -1248,10 +1248,10 @@ function HistoricalTradesSection() {
         </div>
       </div>
       <div className="s-bd">
-        {error && <div className="alert-item section-message bearish">{error}</div>}
+        {error && <div className="a-i section-message bearish">{error}</div>}
         {loading && <div className="p-6"><TableSkeleton rows={5} columns={8} /></div>}
         {!loading && !hasData && !error && (
-          <div className="alert-item section-message">No historical trades. Click REFRESH to fetch from IB.</div>
+          <div className="a-i section-message">No historical trades. Click REFRESH to fetch from IB.</div>
         )}
         {!loading && pageRows.length > 0 && (
           <>

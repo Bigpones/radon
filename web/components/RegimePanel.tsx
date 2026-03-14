@@ -299,7 +299,7 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
       {/* ── Row 3+4: Components + Crash Trigger side by side ── */}
       <div className="regime-detail-grid">
         <div className="regime-components">
-          <div className="regime-panel-title">
+          <div className="rp-t">
             <Zap size={12} />
             CRI COMPONENTS
             <InfoTooltip text={SECTION_TOOLTIPS["CRI COMPONENTS"]} />
@@ -310,7 +310,7 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
           <ComponentBar label="MOMENTUM" score={cri.components.momentum} live={hasLiveSpy} />
         </div>
         <div className="regime-triggers">
-          <div className="regime-panel-title">
+          <div className="rp-t">
             <AlertTriangle size={12} />
             CRASH TRIGGER CONDITIONS
             <InfoTooltip text={SECTION_TOOLTIPS["CRASH TRIGGER CONDITIONS"]} />

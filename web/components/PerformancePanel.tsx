@@ -165,16 +165,16 @@ function PerformanceChart({ data }: { data: PerformanceData }) {
         </svg>
         <div className="performance-chart-meta">
           <div className="performance-meta-item">
-            <span className="performance-meta-label">Portfolio</span>
-            <span className="performance-meta-value">{fmtUsdExact(latestEquity)}</span>
+            <span className="pm-l">Portfolio</span>
+            <span className="pm-v">{fmtUsdExact(latestEquity)}</span>
           </div>
           <div className="performance-meta-item">
-            <span className="performance-meta-label">{data.benchmark} Rebased</span>
-            <span className="performance-meta-value">{fmtUsdExact(latestBenchmark)}</span>
+            <span className="pm-l">{data.benchmark} Rebased</span>
+            <span className="pm-v">{fmtUsdExact(latestBenchmark)}</span>
           </div>
           <div className="performance-meta-item">
-            <span className="performance-meta-label">Benchmark Return</span>
-            <span className={`performance-meta-value ${toneClass(data.benchmark_total_return)}`}>{fmtPct(data.benchmark_total_return)}</span>
+            <span className="pm-l">Benchmark Return</span>
+            <span className={`pm-v ${toneClass(data.benchmark_total_return)}`}>{fmtPct(data.benchmark_total_return)}</span>
           </div>
         </div>
     </ChartPanel>
@@ -450,20 +450,20 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
           </div>
           <div className="s-bd performance-meta-grid">
             <div className="performance-meta-item">
-              <span className="performance-meta-label">Curve Type</span>
-              <span className="performance-meta-value">{data.methodology.curve_type.replace(/_/g, " ")}</span>
+              <span className="pm-l">Curve Type</span>
+              <span className="pm-v">{data.methodology.curve_type.replace(/_/g, " ")}</span>
             </div>
             <div className="performance-meta-item">
-              <span className="performance-meta-label">Stock History</span>
-              <span className="performance-meta-value">{data.price_sources.stocks}</span>
+              <span className="pm-l">Stock History</span>
+              <span className="pm-v">{data.price_sources.stocks}</span>
             </div>
             <div className="performance-meta-item">
-              <span className="performance-meta-label">Option History</span>
-              <span className="performance-meta-value">{data.price_sources.options}</span>
+              <span className="pm-l">Option History</span>
+              <span className="pm-v">{data.price_sources.options}</span>
             </div>
             <div className="performance-meta-item">
-              <span className="performance-meta-label">Risk-Free Assumption</span>
-              <span className="performance-meta-value">{fmtPct(data.methodology.risk_free_rate)}</span>
+              <span className="pm-l">Risk-Free Assumption</span>
+              <span className="pm-v">{fmtPct(data.methodology.risk_free_rate)}</span>
             </div>
           </div>
         </div>

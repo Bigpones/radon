@@ -173,9 +173,9 @@ function LegOrderForm({
 
   return (
     <div className="order-form">
-      <div className="order-field">
-        <label className="order-label">Action</label>
-        <div className="order-action-buttons">
+      <div className="o-f">
+        <label className="o-l">Action</label>
+        <div className="o-ab">
           <button
             className={`order-action-btn ${action === "BUY" ? "order-action-active order-action-buy" : ""}`}
             onClick={() => { setAction("BUY"); setConfirmStep(false); }}
@@ -191,8 +191,8 @@ function LegOrderForm({
         </div>
       </div>
 
-      <div className="order-field">
-        <label className="order-label">Quantity</label>
+      <div className="o-f">
+        <label className="o-l">Quantity</label>
         <input
           className="order-input"
           type="number"
@@ -204,9 +204,9 @@ function LegOrderForm({
         />
       </div>
 
-      <div className="order-field">
-        <label className="order-label">Limit Price</label>
-        <div className="modify-price-input-row">
+      <div className="o-f">
+        <label className="o-l">Limit Price</label>
+        <div className="mp-ir">
           <span className="modify-price-prefix">$</span>
           <input
             className="modify-price-input"
@@ -231,9 +231,9 @@ function LegOrderForm({
         </div>
       </div>
 
-      <div className="order-field">
-        <label className="order-label">Time in Force</label>
-        <div className="order-action-buttons">
+      <div className="o-f">
+        <label className="o-l">Time in Force</label>
+        <div className="o-ab">
           <button className={`order-action-btn ${tif === "DAY" ? "order-action-active" : ""}`} onClick={() => setTif("DAY")}>DAY</button>
           <button className={`order-action-btn ${tif === "GTC" ? "order-action-active" : ""}`} onClick={() => setTif("GTC")}>GTC</button>
         </div>

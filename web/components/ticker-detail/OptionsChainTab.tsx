@@ -82,67 +82,67 @@ function StrikeRow({
       {/* Call side */}
       {showCalls && (
         <>
-          <td className="chain-cell chain-greek">{callDelta != null ? callDelta.toFixed(2) : ""}</td>
-          <td className="chain-cell chain-iv">{callIV != null ? (callIV * 100).toFixed(1) : ""}</td>
-          <td className="chain-cell chain-vol">{callVol != null ? callVol.toLocaleString() : ""}</td>
+          <td className="ch-c chain-greek">{callDelta != null ? callDelta.toFixed(2) : ""}</td>
+          <td className="ch-c chain-iv">{callIV != null ? (callIV * 100).toFixed(1) : ""}</td>
+          <td className="ch-c chain-vol">{callVol != null ? callVol.toLocaleString() : ""}</td>
           <td
-            className="chain-cell chain-bid chain-clickable"
+            className="ch-c chain-bid chain-clickable"
             onClick={() => onClickCall(strike, "SELL")}
             title="Sell call"
           >
             {callBid != null ? fmtPrice(callBid) : "---"}
           </td>
           <td
-            className="chain-cell chain-mid chain-clickable"
+            className="ch-c chain-mid chain-clickable"
             onClick={() => onClickCall(strike, "BUY")}
             title="Buy call"
           >
             {callMid != null ? fmtPrice(callMid) : "---"}
           </td>
           <td
-            className="chain-cell chain-ask chain-clickable"
+            className="ch-c chain-ask chain-clickable"
             onClick={() => onClickCall(strike, "BUY")}
             title="Buy call"
           >
             {callAsk != null ? fmtPrice(callAsk) : "---"}
           </td>
-          <td className="chain-cell chain-last">{callLast != null ? fmtPrice(callLast) : ""}</td>
+          <td className="ch-c chain-last">{callLast != null ? fmtPrice(callLast) : ""}</td>
         </>
       )}
 
       {/* Strike */}
-      <td className={`chain-cell chain-strike ${isAtm ? "chain-strike-atm" : ""}`}>
+      <td className={`ch-c chain-strike ${isAtm ? "chain-strike-atm" : ""}`}>
         {fmtPrice(strike)}
       </td>
 
       {/* Put side */}
       {showPuts && (
         <>
-          <td className="chain-cell chain-last">{putLast != null ? fmtPrice(putLast) : ""}</td>
+          <td className="ch-c chain-last">{putLast != null ? fmtPrice(putLast) : ""}</td>
           <td
-            className="chain-cell chain-bid chain-clickable"
+            className="ch-c chain-bid chain-clickable"
             onClick={() => onClickPut(strike, "SELL")}
             title="Sell put"
           >
             {putBid != null ? fmtPrice(putBid) : "---"}
           </td>
           <td
-            className="chain-cell chain-mid chain-clickable"
+            className="ch-c chain-mid chain-clickable"
             onClick={() => onClickPut(strike, "BUY")}
             title="Buy put"
           >
             {putMid != null ? fmtPrice(putMid) : "---"}
           </td>
           <td
-            className="chain-cell chain-ask chain-clickable"
+            className="ch-c chain-ask chain-clickable"
             onClick={() => onClickPut(strike, "BUY")}
             title="Buy put"
           >
             {putAsk != null ? fmtPrice(putAsk) : "---"}
           </td>
-          <td className="chain-cell chain-vol">{putVol != null ? putVol.toLocaleString() : ""}</td>
-          <td className="chain-cell chain-iv">{putIV != null ? (putIV * 100).toFixed(1) : ""}</td>
-          <td className="chain-cell chain-greek">{putDelta != null ? putDelta.toFixed(2) : ""}</td>
+          <td className="ch-c chain-vol">{putVol != null ? putVol.toLocaleString() : ""}</td>
+          <td className="ch-c chain-iv">{putIV != null ? (putIV * 100).toFixed(1) : ""}</td>
+          <td className="ch-c chain-greek">{putDelta != null ? putDelta.toFixed(2) : ""}</td>
         </>
       )}
     </tr>
@@ -361,9 +361,9 @@ function OrderBuilder({
       </div>
 
       {/* TIF */}
-      <div className="order-field" style={{ marginTop: "8px" }}>
-        <label className="order-label">Time in Force</label>
-        <div className="order-action-buttons">
+      <div className="o-f" style={{ marginTop: "8px" }}>
+        <label className="o-l">Time in Force</label>
+        <div className="o-ab">
           <button
             className={`order-action-btn ${tif === "DAY" ? "order-action-active" : ""}`}
             onClick={() => setTif("DAY")}

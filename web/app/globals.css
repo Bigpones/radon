@@ -513,7 +513,7 @@ body {
 .chart-panel-heading,
 .chat-markdown,
 .chat-content,
-.order-field,
+.o-f,
 .order-builder-legs { display: flex; flex-direction: column; gap: 6px; }
 
 .chart-panel-kicker {
@@ -682,7 +682,7 @@ td.last-price-cell {
   white-space: nowrap;
 }
 
-.price-trend-icon {
+.pt-i {
   display: inline-block;
   vertical-align: -0.1em;
   margin-left: 4px;
@@ -775,7 +775,7 @@ td.last-price-cell {
   gap: 8px;
 }
 
-.alert-item {
+.a-i {
   font-family: var(--font-mono);
   font-size: 12px;
   margin-bottom: 8px;
@@ -783,14 +783,14 @@ td.last-price-cell {
   position: relative;
 }
 
-.alert-item::before {
+.a-i::before {
   content: "›";
   position: absolute;
   left: 0;
   color: var(--text-muted);
 }
 
-.alert-item:last-child {
+.a-i:last-child {
   margin-bottom: 0;
 }
 
@@ -908,7 +908,7 @@ td.last-price-cell {
   background: var(--performance-chart-meta-bg);
 }
 
-.performance-meta-label {
+.pm-l {
   display: block;
   margin-bottom: 6px;
   font-family: var(--font-mono);
@@ -918,7 +918,7 @@ td.last-price-cell {
   color: var(--text-muted);
 }
 
-.performance-meta-value {
+.pm-v {
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.35;
@@ -1802,9 +1802,9 @@ tr.leg-row td {
 }
 
 .modify-price-label,
-.order-label { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+.o-l { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
 
-.modify-price-input-row {
+.mp-ir {
   display: flex;
   align-items: center;
   border: 1px solid var(--border-dim);
@@ -2088,7 +2088,7 @@ tr.leg-row td {
 .order-tab { padding: 0; }
 .order-form { display: flex; flex-direction: column; gap: 12px; }
 .order-input { width: 100%; background: var(--bg-base); border: 1px solid var(--border-dim); color: var(--text-primary); font-family: var(--font-mono); font-size: 14px; padding: 8px 10px; outline: none; transition: border-color 200ms ease-in-out; }
-.order-action-buttons { display: flex; gap: 6px; }
+.o-ab { display: flex; gap: 6px; }
 .order-action-btn { flex: 1; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; padding: 8px 0; border: 1px solid var(--border-dim); background: transparent; color: var(--text-muted); cursor: pointer; transition: all 150ms ease-in-out; }
 .order-action-btn:hover { color: var(--text-primary); border-color: var(--border-focus); }
 .order-action-active { color: var(--text-primary); border-color: var(--text-primary); }
@@ -2743,7 +2743,7 @@ tr {
 }
 
 /* Panel inner title (used inside regime-components and regime-triggers) */
-.regime-panel-title {
+.rp-t {
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 600;
@@ -3052,7 +3052,7 @@ tr {
   font-size: 17px;
 }
 
-.regime-relationship-note {
+.rr-n {
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-muted);
@@ -3103,10 +3103,10 @@ tr {
   stroke: rgba(217, 70, 168, 0.28);
 }
 
-.regime-relationship-axis-label,
+.rr-al,
 .regime-relationship-axis-title,
 
-.regime-relationship-axis-label {
+.rr-al {
   font-size: 10px;
   fill: var(--text-muted);
 }
@@ -3572,7 +3572,7 @@ tr {
   background: color-mix(in srgb, var(--signal-core) 14%, transparent);
 }
 
-.chain-cell {
+.ch-c {
   padding: 3px 6px;
   text-align: right;
   color: var(--text-primary);
