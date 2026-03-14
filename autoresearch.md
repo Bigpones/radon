@@ -53,9 +53,11 @@ Market data and PnL Single both need time for IB to stream data back. Currently 
 1. **Batch PnL Single requests** (23.3s → 9.7s, −58%): Bypass IBClient's `get_pnl_single()` which sleeps 0.5s per position. Call `ib.reqPnLSingle()` directly for all positions, then one combined sleep.
 2. **Overlap MktData + PnL + account PnL** (9.7s → 5.2s, −37%): Restructure main() so all subscriptions are requested concurrently, then ONE combined sleep replaces 3 sequential sleeps.
 3. **Reduce combined sleep to 2s** (5.2s → 5.2s, kept with conditional PnL poll): 2s main sleep + conditional 1s poll for account PnL if not arrived.
-4. **Skip qualifyContracts** (5.2s → 3.7s, −28%): Set `exchange='SMART'` manually. Contracts from `get_positions()` already have conId but lack exchange. Saves 1.1s round-trip.
+4. **Skip qualifyContracts** (5.2s → 3.7s, −28%): Set `exchange='SMART'` manually for ALL contracts (not just empty ones — stocks have AMEX/BATS which fail with reqMktData type 4). Saves 1.1s round-trip.
 5. **Request PnL BEFORE market data** (improves reliability): PnL Single takes slightly longer to arrive, so requesting first gives it more lead time.
 6. **Direct ib.reqMktData/cancelMktData** (minor cleanup): Skip subscription tracking in IBClient.get_quote.
+7. **accountValues() instead of accountSummary()** (3.26s → 3.19s, −2%): `ib.accountValues()` reads from ib_insync's internal cache (0ms) vs `ib.accountSummary()` which makes a blocking round-trip (200-700ms). Same data, same tags.
+8. **Reduce Phase 6 fallback** (pending validation): Account PnL fallback sleep reduced from 1.0s to 0.3s. First benchmark: 2.99s. Needs gateway up to validate reliability.
 
 ### Dead ends (discarded)
 - **1.5s combined sleep**: Lost 3 PnL + 2 market values. Too aggressive.
@@ -65,9 +67,14 @@ Market data and PnL Single both need time for IB to stream data back. Currently 
 - **2s sleep with completeness retry**: IB throttles rapid-fire connections, causing cascading failures on consecutive runs.
 - **2.25s sleep**: 4/5 runs perfect but 1 run lost 4 market values. Not reliable.
 - **Move account summary AFTER subscriptions**: Account summary takes 2.4s (vs 200ms) because IB event loop is clogged with incoming data. Must fetch account BEFORE starting subscriptions.
+- **Snapshot market data** (`snapshot=True` in reqMktData): Only 8/26 positions get prices with delayed-frozen data (type 4). Works during market hours with live data (~24/26 in 1.5s) but catastrophically fails after-hours. Not robust.
+- **Import optimization**: ib_insync import takes 121ms — unavoidable direct dependency.
+- **Post-IB processing**: collapse_positions <1ms, atomic_save ~1.4ms — negligible.
 
 ### Architecture insights
-- **2.5s is the minimum reliable sleep for 20+ positions** during market hours. Below this, delayed/frozen data for thin options may not arrive in time.
+- **2.7s is the minimum reliable sleep for 20+ positions** when using accountValues() (which eliminates the implicit ~200ms delay from accountSummary). Below this, delayed/frozen data for thin options may not arrive.
+- **Stock contracts need exchange='SMART'**: Stocks from `get_positions()` have exchange-specific values (AMEX, BATS, NASDAQ) that work for trading but fail with `reqMktData` type 4. Always set to SMART.
 - **IB event loop processing**: Calling any ib_insync method that polls for responses (like `accountSummary()`) when there's heavy incoming data causes massive slowdown. Always do blocking calls BEFORE starting streaming subscriptions.
-- **IB throttles rapid connections**: Running >5 connect/disconnect cycles in quick succession causes CLOSE_WAIT accumulation and eventual connection refusal. Add pauses between test runs.
+- **IB throttles rapid connections**: Running >5 connect/disconnect cycles in quick succession causes CLOSE_WAIT accumulation and eventual connection refusal. Need 10-15s cooldown between runs.
 - **Client ID conflicts**: Each connection needs a unique client ID. Stale connections hold IDs for 30-60s after disconnect.
+- **Snapshot mode + type 4 = broken**: The delayed-frozen data source does not reliably serve snapshot requests. Only streaming mode works consistently across market conditions.
