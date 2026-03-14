@@ -403,7 +403,7 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
                     fontFamily: "Inter, sans-serif",
                     fontSize: "10px",
                     fontWeight: 500,
-                    textTransform: "uppercase",
+                    textTransform: "uc",
                     letterSpacing: "0.5px",
                   }}
                 >

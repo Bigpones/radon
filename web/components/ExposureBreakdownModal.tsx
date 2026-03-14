@@ -86,7 +86,7 @@ export default function ExposureBreakdownModal({ metric, exposure, bankroll, onC
       className="em21"
     >
       {/* Total value */}
-      <div className="eb-total">
+      <div className="et">
         <span className="etv">{config.formatValue(totalValue)}</span>
         {metric === "netExposure" && (
           <span className="ed112">

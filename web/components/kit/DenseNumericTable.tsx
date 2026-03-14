@@ -28,7 +28,7 @@ const thStyle: React.CSSProperties = {
   fontFamily: "var(--font-mono)",
   fontSize: 10,
   letterSpacing: "0.1em",
-  textTransform: "uppercase",
+  textTransform: "uc",
   color: "var(--text-muted)",
   padding: "12px 16px",
   fontWeight: 500,
@@ -62,7 +62,7 @@ export function DenseNumericTable({ data = SAMPLE_DATA }: DenseNumericTableProps
               fontFamily: "var(--font-mono)",
               fontSize: 10,
               letterSpacing: "0.1em",
-              textTransform: "uppercase",
+              textTransform: "uc",
               color: "var(--text-muted)",
               marginBottom: 4,
             }}
@@ -84,7 +84,7 @@ export function DenseNumericTable({ data = SAMPLE_DATA }: DenseNumericTableProps
             fontFamily: "var(--font-mono)",
             fontSize: 10,
             letterSpacing: "0.1em",
-            textTransform: "uppercase",
+            textTransform: "uc",
             color: "var(--signal-core)",
           }}
         >

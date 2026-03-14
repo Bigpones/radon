@@ -23,7 +23,7 @@ export function CircularScan({ status = "Standby" }: CircularScanProps) {
               fontFamily: "var(--font-mono)",
               fontSize: 10,
               letterSpacing: "0.1em",
-              textTransform: "uppercase",
+              textTransform: "uc",
               color: "var(--text-muted)",
               marginBottom: 4,
             }}
@@ -45,7 +45,7 @@ export function CircularScan({ status = "Standby" }: CircularScanProps) {
             fontFamily: "var(--font-mono)",
             fontSize: 10,
             letterSpacing: "0.1em",
-            textTransform: "uppercase",
+            textTransform: "uc",
             color: isScanning ? "var(--signal-core)" : "var(--text-muted)",
           }}
         >

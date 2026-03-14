@@ -38,10 +38,10 @@ function LegsDisclosure({ position, prices }: { position: PortfolioPosition; pri
             <tr>
               <th>Direction</th>
               <th>Type</th>
-              <th className="right">Strike</th>
-              <th className="right">Qty</th>
-              <th className="right">Entry</th>
-              <th className="right">Market</th>
+              <th className="rg">Strike</th>
+              <th className="rg">Qty</th>
+              <th className="rg">Entry</th>
+              <th className="rg">Market</th>
             </tr>
           </thead>
           <tbody>
@@ -53,10 +53,10 @@ function LegsDisclosure({ position, prices }: { position: PortfolioPosition; pri
                 <tr key={i}>
                   <td>{leg.direction}</td>
                   <td>{leg.type}</td>
-                  <td className="right">{leg.strike != null ? `$${leg.strike}` : "---"}</td>
-                  <td className="right">{leg.contracts}</td>
-                  <td className="right">{fmtPrice(Math.abs(leg.avg_cost) / (leg.type === "Stock" ? 1 : 100))}</td>
-                  <td className="right">{legMkt != null ? fmtPrice(legMkt) : "---"}</td>
+                  <td className="rg">{leg.strike != null ? `$${leg.strike}` : "---"}</td>
+                  <td className="rg">{leg.contracts}</td>
+                  <td className="rg">{fmtPrice(Math.abs(leg.avg_cost) / (leg.type === "Stock" ? 1 : 100))}</td>
+                  <td className="rg">{legMkt != null ? fmtPrice(legMkt) : "---"}</td>
                 </tr>
               );
             })}

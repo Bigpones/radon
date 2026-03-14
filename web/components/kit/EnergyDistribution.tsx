@@ -32,7 +32,7 @@ export function EnergyDistribution({
               fontFamily: "var(--font-mono)",
               fontSize: 10,
               letterSpacing: "0.1em",
-              textTransform: "uppercase",
+              textTransform: "uc",
               color: "var(--text-muted)",
               marginBottom: 4,
             }}
@@ -54,7 +54,7 @@ export function EnergyDistribution({
             fontFamily: "var(--font-mono)",
             fontSize: 10,
             letterSpacing: "0.1em",
-            textTransform: "uppercase",
+            textTransform: "uc",
             color: "var(--signal-core)",
           }}
         >

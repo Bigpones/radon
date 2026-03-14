@@ -192,7 +192,7 @@ function ExposureRow({
           {["Net Long", "Net Short", "Dollar Delta", "Net Exposure"].map((label) => (
             <div key={label} className="metric-card mcl">
               <div className="ml">{label}</div>
-              <div className="metric-value">---</div>
+              <div className="mv">---</div>
               <div className="mc neutral">AWAITING PRICES</div>
             </div>
           ))}
@@ -257,7 +257,7 @@ function TodayPnlRow({
         <div className="mg3">
           <div className="metric-card">
             <div className="ml">Day Move</div>
-            <div className="metric-value">---</div>
+            <div className="mv">---</div>
             <div className="mc neutral">MARKET CLOSED</div>
           </div>
           <div className="metric-card metric-card-clickable" onClick={onRealizedClick}>
@@ -269,7 +269,7 @@ function TodayPnlRow({
           </div>
           <div className="metric-card">
             <div className="ml">Total</div>
-            <div className="metric-value">---</div>
+            <div className="mv">---</div>
             <div className="mc neutral">MARKET CLOSED</div>
           </div>
         </div>
@@ -325,7 +325,7 @@ export default function MetricCards({ portfolio, prices, realizedPnl, executedOr
           {placeholders.map((label, i) => (
             <div key={i} className="metric-card mcl">
               <div className="ml">{label}</div>
-              <div className="metric-value">$0,000</div>
+              <div className="mv">$0,000</div>
               <div className="mc neutral">AWAITING SYNC</div>
             </div>
           ))}

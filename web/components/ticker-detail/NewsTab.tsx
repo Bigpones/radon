@@ -59,11 +59,11 @@ export default function NewsTab({ ticker, active }: NewsTabProps) {
   }
 
   if (error) {
-    return <div className="tab-error">{error}</div>;
+    return <div className="te">{error}</div>;
   }
 
   if (fetched && news.length === 0) {
-    return <div className="tab-empty">No recent news for {ticker}</div>;
+    return <div className="ty">No recent news for {ticker}</div>;
   }
 
   return (

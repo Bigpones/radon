@@ -233,7 +233,7 @@ body {
   color: var(--text-muted);
 }
 
-.status-row {
+.sw {
   display: flex;
   justify-content: space-between;
   margin-bottom: 6px;
@@ -394,7 +394,7 @@ body {
 .ml,
 .eo-t { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin-bottom: 8px; }
 
-.metric-value {
+.mv {
   font-family: var(--font-mono);
   font-size: 24px;
   font-weight: 500;
@@ -404,7 +404,7 @@ body {
 }
 
 /* Skeleton shimmer for loading metric cards */
-.mcl .metric-value,
+.mcl .mv,
 .mcl .mc {
   background: linear-gradient(90deg, var(--bg-hover) 25%, var(--border-dim) 50%, var(--bg-hover) 75%);
   background-size: 200% 100%;
@@ -632,7 +632,7 @@ th {
   font-weight: 500;
 }
 
-th.right {
+th.rg {
   text-align: right;
 }
 
@@ -644,7 +644,7 @@ td {
   vertical-align: middle;
 }
 
-td.right {
+td.rg {
   text-align: right;
 }
 
@@ -1399,7 +1399,7 @@ tr.leg-row td {
   gap: 4px;
 }
 
-.sortable-th.right .sort-label {
+.sortable-th.rg .sort-label {
   justify-content: flex-end;
 }
 
@@ -1734,7 +1734,7 @@ tr.leg-row td {
   padding: 0 0 0 10px;
 }
 
-.modify-price-input {
+.mxi {
   flex: 1;
   background: transparent;
   border: none;
@@ -1745,12 +1745,12 @@ tr.leg-row td {
   outline: none;
 }
 
-.modify-price-input:focus {
+.mxi:focus {
   box-shadow: inset 0 0 0 1px var(--border-focus);
 }
 
-.modify-price-input::-webkit-inner-spin-button,
-.modify-price-input::-webkit-outer-spin-button,
+.mxi::-webkit-inner-spin-button,
+.mxi::-webkit-outer-spin-button,
 .oi::-webkit-inner-spin-button, .oi::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 
 .mq-b {
@@ -1986,8 +1986,8 @@ tr.leg-row td {
 .tl-t,
 .rc160,
 .ss { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
-.tab-error { font-family: var(--font-mono); font-size: 11px; color: var(--negative); padding: 16px 0; }
-.tab-empty { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); padding: 16px 0; }
+.te { font-family: var(--font-mono); font-size: 11px; color: var(--negative); padding: 16px 0; }
+.ty { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); padding: 16px 0; }
 
 /* Position tab */
 .pg48,
@@ -2086,7 +2086,7 @@ tr.leg-row td {
 }
 
 /* ── Table wrap for horizontal scroll ── */
-.table-wrap { overflow-x: auto; }
+.tw { overflow-x: auto; }
 
 /* ── Micro-interactions: Press feedback ── */
 
@@ -2217,7 +2217,7 @@ tr {
 .fills-modal .modal-content,
 .pnl-breakdown-modal .modal-content { width: 860px; max-width: 95vw; }
 
-.eb-total { margin-bottom: 12px; }
+.et { margin-bottom: 12px; }
 .etv {
   font-family: var(--font-mono);
   font-size: 28px;
@@ -3060,7 +3060,7 @@ tr {
 
 /* ─── CTA Tables (MenthorQ) ──────────────────────────── */
 
-.cta-empty {
+.ce {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
@@ -3108,7 +3108,7 @@ tr {
   letter-spacing: 0.04em;
 }
 
-.cta-empty code {
+.ce code {
   color: var(--text-primary);
   background: var(--bg-hover);
   padding: 2px 6px;
@@ -3505,21 +3505,20 @@ tr {
 }
 
 /* ── Utility classes (replacing Tailwind) ── */
-.uppercase { text-transform: uppercase; }
+.uc { text-transform: uppercase; }
 .fc { display: flex; align-items: center; }
-.w-full { width: 100%; }
+.wf { width: 100%; }
 .flex { display: flex; }
 .grid { display: grid; }
 .grid-cols-1 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
 .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .items-center { align-items: center; }
 .items-end { align-items: flex-end; }
-.items-start { align-items: flex-start; }
+.ix { align-items: flex-start; }
 .jb { justify-content: space-between; }
 .justify-center { justify-content: center; }
 .space-x-4 > * + * { margin-left: 1rem; }
 .space-y-3 > * + * { margin-top: 0.75rem; }
-.w-full { width: 100%; }
 .w-\[100px\] { width: 100px; }
 .h-4 { height: 1rem; }
 .h-6 { height: 1.5rem; }

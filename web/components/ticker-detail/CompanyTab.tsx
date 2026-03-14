@@ -77,10 +77,10 @@ export default function CompanyTab({ ticker, active, priceData, fundamentals }: 
     return <div className="tl"><div className="tl-t">Loading company info...</div></div>;
   }
   if (error) {
-    return <div className="tab-error">{error}</div>;
+    return <div className="te">{error}</div>;
   }
   if (!data) {
-    return <div className="tab-empty">No data for {ticker}</div>;
+    return <div className="ty">No data for {ticker}</div>;
   }
 
   const info = data.uw_info;

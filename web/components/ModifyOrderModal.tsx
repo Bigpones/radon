@@ -156,14 +156,14 @@ export default function ModifyOrderModal({ order, loading, prices, portfolio, on
 
         {/* Price input */}
         <div className="ms51">
-          <label className="ml74" htmlFor="modify-price-input">
+          <label className="ml74" htmlFor="mxi">
             New Limit Price
           </label>
           <div className="mp-ir">
             <span className="mp-p">$</span>
             <input
-              id="modify-price-input"
-              className="modify-price-input"
+              id="mxi"
+              className="mxi"
               type="number"
               step="0.01"
               min="0.01"

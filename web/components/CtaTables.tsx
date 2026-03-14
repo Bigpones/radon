@@ -137,7 +137,7 @@ export default function CtaTables() {
 
   if (loading) {
     return (
-      <div className="cta-empty">
+      <div className="ce">
         Loading CTA positioning data...
       </div>
     );
@@ -145,7 +145,7 @@ export default function CtaTables() {
 
   if (!data?.tables) {
     return (
-      <div className="cta-empty">
+      <div className="ce">
         No MenthorQ CTA data available. Run: <code>menthorq-cta</code>
       </div>
     );

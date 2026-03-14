@@ -40,18 +40,18 @@ export default function Sidebar({ activeSection, actionTone, ibConnected = true,
       </nav>
 
       <div className="sidebar-footer">
-        <div className="status-row">
+        <div className="sw">
           <span>IB Gateway</span>
           <span className="status-dot-wrap">
             <span className={`status-dot ${ibConnected ? "status-dot-live" : "status-dot-dead"}`} />
             {ibConnected ? "CONNECTED" : "OFFLINE"}
           </span>
         </div>
-        <div className="status-row">
+        <div className="sw">
           <span>Last Sync</span>
           <span>{syncTime}</span>
         </div>
-        <div className="status-row">
+        <div className="sw">
           <span>Port</span>
           <span>4001</span>
         </div>

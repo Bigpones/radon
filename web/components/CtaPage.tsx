@@ -165,7 +165,7 @@ export default function CtaPage() {
       </div>
 
       {/* ── MenthorQ CTA Positioning ──────────────────── */}
-      <div className="w-full">
+      <div className="wf">
         <div
           className="font-mono tm uppercase"
           style={{

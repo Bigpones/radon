@@ -526,11 +526,11 @@ function ScannerSections() {
                   <SortTh<ScannerSortKey> label="Ticker" sortKey="ticker" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
                   <SortTh<ScannerSortKey> label="Signal" sortKey="signal" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
                   <SortTh<ScannerSortKey> label="Direction" sortKey="direction" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
-                  <SortTh<ScannerSortKey> label="Score" sortKey="score" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
-                  <SortTh<ScannerSortKey> label="Strength" sortKey="strength" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
-                  <SortTh<ScannerSortKey> label="Buy Ratio" sortKey="buy_ratio" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
-                  <SortTh<ScannerSortKey> label="Sustained" sortKey="sustained_days" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
-                  <SortTh<ScannerSortKey> label="Prints" sortKey="num_prints" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<ScannerSortKey> label="Score" sortKey="score" className="rg" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<ScannerSortKey> label="Strength" sortKey="strength" className="rg" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<ScannerSortKey> label="Buy Ratio" sortKey="buy_ratio" className="rg" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<ScannerSortKey> label="Sustained" sortKey="sustained_days" className="rg" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<ScannerSortKey> label="Prints" sortKey="num_prints" className="rg" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
                 </tr>
               </thead>
               <tbody>
@@ -539,11 +539,11 @@ function ScannerSections() {
                     <td><TickerLink ticker={row.ticker} /></td>
                     <td><span className={signalClass(row.signal)}>{row.signal}</span></td>
                     <td><span className={`pill ${dirClass(row.direction)}`}>{row.direction}</span></td>
-                    <td className="right">{row.score.toFixed(1)}</td>
-                    <td className="right">{row.strength.toFixed(1)}</td>
-                    <td className="right">{row.buy_ratio != null ? `${(row.buy_ratio * 100).toFixed(1)}%` : "—"}</td>
-                    <td className="right">{row.sustained_days > 0 ? `${row.sustained_days}d` : "—"}</td>
-                    <td className="right">{row.num_prints.toLocaleString()}</td>
+                    <td className="rg">{row.score.toFixed(1)}</td>
+                    <td className="rg">{row.strength.toFixed(1)}</td>
+                    <td className="rg">{row.buy_ratio != null ? `${(row.buy_ratio * 100).toFixed(1)}%` : "—"}</td>
+                    <td className="rg">{row.sustained_days > 0 ? `${row.sustained_days}d` : "—"}</td>
+                    <td className="rg">{row.num_prints.toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>
@@ -642,14 +642,14 @@ function DiscoverSections() {
               <thead>
                 <tr>
                   <SortTh<DiscoverSortKey> label="Ticker" sortKey="ticker" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
-                  <SortTh<DiscoverSortKey> label="Score" sortKey="score" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<DiscoverSortKey> label="Score" sortKey="score" className="rg" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
                   <SortTh<DiscoverSortKey> label="DP Direction" sortKey="dp_direction" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
-                  <SortTh<DiscoverSortKey> label="DP Strength" sortKey="dp_strength" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
-                  <SortTh<DiscoverSortKey> label="Buy Ratio" sortKey="dp_buy_ratio" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<DiscoverSortKey> label="DP Strength" sortKey="dp_strength" className="rg" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<DiscoverSortKey> label="Buy Ratio" sortKey="dp_buy_ratio" className="rg" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
                   <SortTh<DiscoverSortKey> label="Options Bias" sortKey="options_bias" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
-                  <SortTh<DiscoverSortKey> label="Alerts" sortKey="alerts" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
-                  <SortTh<DiscoverSortKey> label="Premium" sortKey="total_premium" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
-                  <SortTh<DiscoverSortKey> label="Sweeps" sortKey="sweeps" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<DiscoverSortKey> label="Alerts" sortKey="alerts" className="rg" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<DiscoverSortKey> label="Premium" sortKey="total_premium" className="rg" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<DiscoverSortKey> label="Sweeps" sortKey="sweeps" className="rg" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
                   <SortTh<DiscoverSortKey> label="Sector" sortKey="sector" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
                 </tr>
               </thead>
@@ -657,16 +657,16 @@ function DiscoverSections() {
                 {sorted.map((c) => (
                   <tr key={c.ticker}>
                     <td><TickerLink ticker={c.ticker} /></td>
-                    <td className="right">
+                    <td className="rg">
                       <span className={scoreClass(c.score)}>{c.score.toFixed(1)}</span>
                     </td>
                     <td><span className={dpClass(c.dp_direction)}>{c.dp_direction}</span></td>
-                    <td className="right">{c.dp_strength.toFixed(1)}</td>
-                    <td className="right">{(c.dp_buy_ratio * 100).toFixed(1)}%</td>
+                    <td className="rg">{c.dp_strength.toFixed(1)}</td>
+                    <td className="rg">{(c.dp_buy_ratio * 100).toFixed(1)}%</td>
                     <td><span className={biasClass(c.options_bias)}>{c.options_bias}</span></td>
-                    <td className="right">{c.alerts}</td>
-                    <td className="right">{fmtPremium(c.total_premium)}</td>
-                    <td className="right">{c.sweeps}</td>
+                    <td className="rg">{c.alerts}</td>
+                    <td className="rg">{fmtPremium(c.total_premium)}</td>
+                    <td className="rg">{c.sweeps}</td>
                     <td className="cm">{c.sector || c.issue_type || "—"}</td>
                   </tr>
                 ))}
@@ -760,11 +760,11 @@ function JournalSections() {
                   <th>Ticker</th>
                   <th>Structure</th>
                   <th>Status</th>
-                  <th className="right">Qty</th>
-                  <th className="right">Entry Cost</th>
-                  <th className="right">Max Risk</th>
-                  <th className="right">Realized P&L</th>
-                  <th className="right">RoR</th>
+                  <th className="rg">Qty</th>
+                  <th className="rg">Entry Cost</th>
+                  <th className="rg">Max Risk</th>
+                  <th className="rg">Realized P&L</th>
+                  <th className="rg">RoR</th>
                   <th>Gates</th>
                   <th>Edge</th>
                 </tr>
@@ -780,11 +780,11 @@ function JournalSections() {
                       <td><TickerLink ticker={t.ticker} /></td>
                       <td>{t.structure}</td>
                       <td><span className={decisionClass(t.decision)}>{t.decision}</span></td>
-                      <td className="right">{qty ?? "—"}</td>
-                      <td className="right">{fmtJournalUsd(cost)}</td>
-                      <td className="right">{fmtJournalUsd(t.max_risk)}</td>
-                      <td className="right"><span className={pnlClass(t.realized_pnl)}>{fmtJournalUsd(t.realized_pnl)}</span></td>
-                      <td className="right">{t.return_on_risk != null ? `${(t.return_on_risk * 100).toFixed(1)}%` : "—"}</td>
+                      <td className="rg">{qty ?? "—"}</td>
+                      <td className="rg">{fmtJournalUsd(cost)}</td>
+                      <td className="rg">{fmtJournalUsd(t.max_risk)}</td>
+                      <td className="rg"><span className={pnlClass(t.realized_pnl)}>{fmtJournalUsd(t.realized_pnl)}</span></td>
+                      <td className="rg">{t.return_on_risk != null ? `${(t.return_on_risk * 100).toFixed(1)}%` : "—"}</td>
                       <td className="cm">{t.gates_passed?.join(", ") || t.gates_failed?.join(", ") || "—"}</td>
                       <td className="cm">{t.edge_analysis?.edge_type ?? "—"}</td>
                     </tr>
@@ -880,7 +880,7 @@ function makeOpenOrderExtract(prices?: Record<string, PriceData>, portfolio?: Po
 function OrderPriceCell({ price }: { price: number | null }) {
   const { direction, flashDirection } = usePriceDirection(price);
   return (
-    <td className={`right last-price-cell ${flashDirection ? `last-price-${flashDirection}` : ""}`}>
+    <td className={`rg last-price-cell ${flashDirection ? `last-price-${flashDirection}` : ""}`}>
       {price != null ? fmtPrice(price) : "—"}
       {direction === "up" && <ArrowUp size={11} className="pt-i ptu" aria-label="price up" />}
       {direction === "down" && <ArrowDown size={11} className="pt-i ptd" aria-label="price down" />}
@@ -1018,9 +1018,9 @@ function OrdersSections({
                   <SortTh<OpenOrderKey> label="Symbol" sortKey="symbol" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />
                   <SortTh<OpenOrderKey> label="Action" sortKey="action" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />
                   <SortTh<OpenOrderKey> label="Type" sortKey="orderType" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />
-                  <SortTh<OpenOrderKey> label="Quantity" sortKey="totalQuantity" className="right" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />
-                  <SortTh<OpenOrderKey> label="Limit Price" sortKey="limitPrice" className="right" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />
-                  <SortTh<OpenOrderKey> label="Last Price" sortKey="lastPrice" className="right" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />
+                  <SortTh<OpenOrderKey> label="Quantity" sortKey="totalQuantity" className="rg" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />
+                  <SortTh<OpenOrderKey> label="Limit Price" sortKey="limitPrice" className="rg" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />
+                  <SortTh<OpenOrderKey> label="Last Price" sortKey="lastPrice" className="rg" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />
                   <SortTh<OpenOrderKey> label="Status" sortKey="status" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />
                   <SortTh<OpenOrderKey> label="TIF" sortKey="tif" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />
                   <th className="actions-th">Actions</th>
@@ -1043,8 +1043,8 @@ function OrdersSections({
                         </span>
                       </td>
                       <td>{o.orderType}</td>
-                      <td className="right">{o.totalQuantity}</td>
-                      <td className="right">
+                      <td className="rg">{o.totalQuantity}</td>
+                      <td className="rg">
                         {isPendingModify ? (
                           <span className="sm">Modifying...</span>
                         ) : (
@@ -1111,10 +1111,10 @@ function OrdersSections({
                 <tr>
                   <SortTh<ExecOrderKey> label="Symbol" sortKey="symbol" activeKey={execSortWithCancelled.sort.key} direction={execSortWithCancelled.sort.direction} onToggle={execSortWithCancelled.toggle} />
                   <SortTh<ExecOrderKey> label="Action" sortKey="side" activeKey={execSortWithCancelled.sort.key} direction={execSortWithCancelled.sort.direction} onToggle={execSortWithCancelled.toggle} />
-                  <SortTh<ExecOrderKey> label="Quantity" sortKey="quantity" className="right" activeKey={execSortWithCancelled.sort.key} direction={execSortWithCancelled.sort.direction} onToggle={execSortWithCancelled.toggle} />
-                  <SortTh<ExecOrderKey> label="Avg Fill Price" sortKey="avgPrice" className="right" activeKey={execSortWithCancelled.sort.key} direction={execSortWithCancelled.sort.direction} onToggle={execSortWithCancelled.toggle} />
-                  <SortTh<ExecOrderKey> label="Commission" sortKey="commission" className="right" activeKey={execSortWithCancelled.sort.key} direction={execSortWithCancelled.sort.direction} onToggle={execSortWithCancelled.toggle} />
-                  <SortTh<ExecOrderKey> label="Realized P&L" sortKey="realizedPNL" className="right" activeKey={execSortWithCancelled.sort.key} direction={execSortWithCancelled.sort.direction} onToggle={execSortWithCancelled.toggle} />
+                  <SortTh<ExecOrderKey> label="Quantity" sortKey="quantity" className="rg" activeKey={execSortWithCancelled.sort.key} direction={execSortWithCancelled.sort.direction} onToggle={execSortWithCancelled.toggle} />
+                  <SortTh<ExecOrderKey> label="Avg Fill Price" sortKey="avgPrice" className="rg" activeKey={execSortWithCancelled.sort.key} direction={execSortWithCancelled.sort.direction} onToggle={execSortWithCancelled.toggle} />
+                  <SortTh<ExecOrderKey> label="Commission" sortKey="commission" className="rg" activeKey={execSortWithCancelled.sort.key} direction={execSortWithCancelled.sort.direction} onToggle={execSortWithCancelled.toggle} />
+                  <SortTh<ExecOrderKey> label="Realized P&L" sortKey="realizedPNL" className="rg" activeKey={execSortWithCancelled.sort.key} direction={execSortWithCancelled.sort.direction} onToggle={execSortWithCancelled.toggle} />
                   <SortTh<ExecOrderKey> label="Time" sortKey="time" activeKey={execSortWithCancelled.sort.key} direction={execSortWithCancelled.sort.direction} onToggle={execSortWithCancelled.toggle} />
                   <th style={{ width: "32px" }}></th>
                 </tr>
@@ -1134,10 +1134,10 @@ function OrdersSections({
                           {displaySide}
                         </span>
                       </td>
-                      <td className="right">{e.quantity}</td>
-                      <td className="right">{e.avgPrice != null ? fmtPrice(e.avgPrice) : "—"}</td>
-                      <td className="right">{e.commission != null ? fmtPrice(e.commission) : "—"}</td>
-                      <td className={`right ${e.realizedPNL != null ? (e.realizedPNL >= 0 ? "positive" : "negative") : ""}`}>
+                      <td className="rg">{e.quantity}</td>
+                      <td className="rg">{e.avgPrice != null ? fmtPrice(e.avgPrice) : "—"}</td>
+                      <td className="rg">{e.commission != null ? fmtPrice(e.commission) : "—"}</td>
+                      <td className={`rg ${e.realizedPNL != null ? (e.realizedPNL >= 0 ? "positive" : "negative") : ""}`}>
                         {e.realizedPNL != null ? `${e.realizedPNL >= 0 ? "+" : ""}${fmtPrice(e.realizedPNL)}` : "—"}
                       </td>
                       <td>{new Date(e.time).toLocaleTimeString()}</td>
@@ -1263,11 +1263,11 @@ function HistoricalTradesSection() {
                   <SortTh<BlotterSortKey> label="Description" sortKey="contract_desc" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
                   <SortTh<BlotterSortKey> label="Type" sortKey="sec_type" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
                   <SortTh<BlotterSortKey> label="Side" sortKey="status" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
-                  <SortTh<BlotterSortKey> label="Qty" sortKey="net_quantity" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
-                  <SortTh<BlotterSortKey> label="Commission" sortKey="total_commission" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
-                  <SortTh<BlotterSortKey> label="Realized P&L" sortKey="realized_pnl" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
-                  <SortTh<BlotterSortKey> label="Cost Basis" sortKey="cost_basis" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
-                  <SortTh<BlotterSortKey> label="Proceeds" sortKey="proceeds" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<BlotterSortKey> label="Qty" sortKey="net_quantity" className="rg" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<BlotterSortKey> label="Commission" sortKey="total_commission" className="rg" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<BlotterSortKey> label="Realized P&L" sortKey="realized_pnl" className="rg" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<BlotterSortKey> label="Cost Basis" sortKey="cost_basis" className="rg" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<BlotterSortKey> label="Proceeds" sortKey="proceeds" className="rg" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
                   <th style={{ width: "32px" }}></th>
                 </tr>
               </thead>
@@ -1283,13 +1283,13 @@ function HistoricalTradesSection() {
                         {t.is_closed ? "Closed" : "Open"}
                       </span>
                     </td>
-                    <td className="right">{t.net_quantity}</td>
-                    <td className="right">{fmtPrice(t.total_commission)}</td>
-                    <td className={`right ${t.realized_pnl >= 0 ? "positive" : "negative"}`}>
+                    <td className="rg">{t.net_quantity}</td>
+                    <td className="rg">{fmtPrice(t.total_commission)}</td>
+                    <td className={`rg ${t.realized_pnl >= 0 ? "positive" : "negative"}`}>
                       {t.realized_pnl >= 0 ? "+" : ""}{fmtPrice(t.realized_pnl)}
                     </td>
-                    <td className="right">{fmtPrice(t.cost_basis)}</td>
-                    <td className="right">{fmtPrice(t.proceeds)}</td>
+                    <td className="rg">{fmtPrice(t.cost_basis)}</td>
+                    <td className="rg">{fmtPrice(t.proceeds)}</td>
                     <td>
                       {t.is_closed && <SharePnlButton data={blotterShareData(t)} />}
                     </td>

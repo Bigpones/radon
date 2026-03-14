@@ -134,11 +134,11 @@ export default function SeasonalityTab({ ticker, active }: SeasonalityTabProps) 
   }
 
   if (error) {
-    return <div className="tab-error">{error}</div>;
+    return <div className="te">{error}</div>;
   }
 
   if (fetched && months.length === 0) {
-    return <div className="tab-empty">No seasonality data for {ticker}</div>;
+    return <div className="ty">No seasonality data for {ticker}</div>;
   }
 
   if (months.length === 0) return null;

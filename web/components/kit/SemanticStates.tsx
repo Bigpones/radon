@@ -33,7 +33,7 @@ function Metric({ value, label }: MetricProps) {
           fontFamily: "var(--font-mono)",
           fontSize: 10,
           letterSpacing: "0.1em",
-          textTransform: "uppercase",
+          textTransform: "uc",
           color: "var(--text-muted)",
         }}
       >
@@ -60,7 +60,7 @@ export function SemanticStates() {
               fontFamily: "var(--font-mono)",
               fontSize: 10,
               letterSpacing: "0.1em",
-              textTransform: "uppercase",
+              textTransform: "uc",
               color: "var(--text-muted)",
               marginBottom: 4,
             }}
@@ -87,7 +87,7 @@ export function SemanticStates() {
               fontFamily: "var(--font-mono)",
               fontSize: 10,
               letterSpacing: "0.1em",
-              textTransform: "uppercase",
+              textTransform: "uc",
               padding: "6px 12px",
               borderRadius: 999,
               background: `var(${state.bgVar})`,

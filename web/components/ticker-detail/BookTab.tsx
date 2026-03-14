@@ -37,7 +37,7 @@ function L1OrderBook({
   return (
     <div className="book-l1">
       <div
-        className="book-s-hd"
+        className="bh"
       >
         ORDER BOOK
       </div>
@@ -125,7 +125,7 @@ function PositionSummary({ position }: { position: PortfolioPosition }) {
   return (
     <div style={{ marginTop: "16px" }}>
       <div
-        className="book-s-hd"
+        className="bh"
       >
         POSITION
       </div>
@@ -171,7 +171,7 @@ function OpenOrdersList({ orders }: { orders: OpenOrder[] }) {
   return (
     <div style={{ marginTop: "16px" }}>
       <div
-        className="book-s-hd"
+        className="bh"
       >
         OPEN ORDERS ({orders.length})
       </div>
@@ -299,7 +299,7 @@ function StockOrderForm({
   return (
     <div className="of" style={{ marginTop: "16px" }}>
       <div
-        className="book-s-hd"
+        className="bh"
       >
         STOCK ORDER
       </div>
@@ -349,7 +349,7 @@ function StockOrderForm({
         <div className="mp-ir">
           <span className="mp-p">$</span>
           <input
-            className="modify-price-input"
+            className="mxi"
             type="number"
             step="0.01"
             min="0.01"

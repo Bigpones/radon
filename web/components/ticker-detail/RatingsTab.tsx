@@ -107,10 +107,10 @@ export default function RatingsTab({ ticker, active, currentPrice }: RatingsTabP
     return <div className="tl"><div className="tl-t">Loading ratings...</div></div>;
   }
   if (error) {
-    return <div className="tab-error">{error}</div>;
+    return <div className="te">{error}</div>;
   }
   if (!data) {
-    return <div className="tab-empty">No analyst data for {ticker}</div>;
+    return <div className="ty">No analyst data for {ticker}</div>;
   }
 
   // Normalize: handle both nested (UW) and flat (legacy) shapes
