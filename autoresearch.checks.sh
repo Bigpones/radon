@@ -3,17 +3,17 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-# Run vitest — only show failures (suppress success output)
-# 9 pre-existing failures are expected; we check no NEW ones appear
-result=$(npx vitest run --reporter=dot 2>&1 | tail -5)
-echo "$result"
+# Run vitest — allow non-zero exit (9 pre-existing failures)
+# Strip ANSI codes for reliable parsing
+output=$(npx vitest run --reporter=dot 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tail -10) || true
+echo "$output"
 
-# Extract failure count
-failed=$(echo "$result" | grep -o '[0-9]* failed' | head -1 | grep -o '[0-9]*' || echo "0")
+# Extract test file failure count from "N failed" on the "Test Files" line
+failed=$(echo "$output" | grep "Test Files" | grep -o '[0-9]* failed' | grep -o '[0-9]*' || echo "0")
 
-# 9 pre-existing failures are allowed
+# 9 pre-existing test FILE failures are allowed
 if [ "$failed" -gt 9 ]; then
-  echo "ERROR: $failed tests failed (max allowed: 9 pre-existing)"
+  echo "ERROR: $failed test files failed (max allowed: 9 pre-existing)"
   exit 1
 fi
 
