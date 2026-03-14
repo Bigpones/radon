@@ -62,5 +62,32 @@ Minimize client-side JavaScript bundle size for the Radon Terminal web dashboard
 - Component code splitting — large components that could be lazy-loaded
 
 ## What's Been Tried
-(Updated as experiments run)
+
+### Wins (1124KB → 921KB, −18.1% raw / 281KB → 264KB gzip, −6.0%)
+1. Replace react-markdown + remark-gfm with 7KB inline renderer: **−137KB** (biggest single win)
+2. d3 selective imports (`import * as d3` → d3-subpackages): **−16KB**
+3. Rewrite CriHistoryChart from imperative d3 DOM to React SVG: **−13KB** (removes d3-selection + d3-axis)
+4. Replace d3-scale with 3.9KB scales.ts: **−31KB** (removes 6 transitive deps)
+5. Replace d3-shape with 2.6KB svgPath.ts: **−5KB**
+6. Replace d3-array with 1.5KB arrayUtils.ts: **0KB** (tree-shaking already handled)
+7. SWC removeConsole: **−1KB**
+8. Dep cleanup: removed @fontsource/ibm-plex-mono, @vercel/analytics, ib, d3 umbrella, moved ws/@sinclair/typebox to devDeps
+
+### Dead ends
+- Dynamic imports (ChatPanel, MetricCards, WorkspaceSections, PriceChart, ticker tabs): +4-13KB overhead from chunk wrappers. Turbopack ships all code regardless; splitting only adds wrapper cost.
+- optimizePackageImports / modularizeImports: Turbopack already handles tree-shaking.
+- reactStrictMode: false: no effect on production.
+- Removing dead packages: no bundle change (Turbopack tracks imports).
+- Replace d3-time-format with Intl.DateTimeFormat: 0KB (already tree-shaken to one function).
+
+### Current chunk breakdown (921KB)
+| Component | Size | % | Actionable? |
+|-----------|------|---|-------------|
+| App code | 336KB | 37% | Only via feature removal |
+| Next.js | 220KB | 24% | Framework — untouchable |
+| React | 124KB | 13% | Framework — untouchable |
+| React DOM | 112KB | 12% | Framework — untouchable |
+| Other chunks | 129KB | 14% | Router, lucide, manifests |
+
+The 336KB app chunk contains ~39KB of liveline (canvas charting), ~32KB lucide icons, and ~265KB of actual Radon component/hook/utility code.
 
