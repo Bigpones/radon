@@ -485,12 +485,19 @@ def _normalize_market_price(raw_price) -> Optional[float]:
     return float(raw_price)
 
 
-def _resolve_market_price(market_price: Optional[float], bid: Optional[float], ask: Optional[float]) -> Tuple[Optional[float], bool]:
-    """Return a usable price and whether it was calculated from midpoint."""
+def _resolve_market_price(market_price: Optional[float], bid: Optional[float], ask: Optional[float], close: Optional[float] = None) -> Tuple[Optional[float], bool]:
+    """Return a usable price and whether it was calculated.
+
+    Fallback chain: marketPrice → midpoint(bid, ask) → close.
+    The close fallback handles degraded gateway states where live/delayed
+    data is unavailable but the previous session's close is still cached.
+    """
     if market_price is not None:
         return market_price, False
     if bid is not None and ask is not None:
         return round((bid + ask) / 2, 4), True
+    if close is not None:
+        return close, True
     return None, False
 
 
@@ -553,7 +560,8 @@ def fetch_market_prices(client: IBClient, positions: list) -> list:
         market_price = _normalize_market_price(ticker.marketPrice())
         bid = _normalize_market_price(ticker.bid)
         ask = _normalize_market_price(ticker.ask)
-        price, is_calculated = _resolve_market_price(market_price, bid, ask)
+        close = _normalize_market_price(ticker.close)
+        price, is_calculated = _resolve_market_price(market_price, bid, ask, close)
 
         if price is not None:
             multiplier = 100 if pos['secType'] == 'OPT' else 1
@@ -857,7 +865,7 @@ def main():
             # Market data + PnL Single + account PnL all stream concurrently.
             # 2.7 seconds — accounts for the faster Phase 1 (accountValues is instant
             # vs accountSummary's ~200ms round-trip that used to provide implicit delay).
-            client.sleep(2.7)
+            client.sleep(2.5)
 
             # ── Phase 5: Read all results ──
             # Market prices
@@ -865,7 +873,8 @@ def main():
                 market_price = _normalize_market_price(ticker.marketPrice())
                 bid = _normalize_market_price(ticker.bid)
                 ask = _normalize_market_price(ticker.ask)
-                price, is_calculated = _resolve_market_price(market_price, bid, ask)
+                close = _normalize_market_price(ticker.close)
+                price, is_calculated = _resolve_market_price(market_price, bid, ask, close)
 
                 if price is not None:
                     multiplier = 100 if pos['secType'] == 'OPT' else 1
@@ -904,10 +913,9 @@ def main():
         # ── Phase 6: Read account PnL (should have arrived during the combined sleep) ──
         pnl_data = {}
         if pnl_obj:
-            # Data usually arrives within the combined sleep above.
-            # Only poll briefly if not yet available.
-            if not _valid_pnl(getattr(pnl_obj, 'dailyPnL', None)):
-                client.sleep(1)
+            # reqPnL subscription started in Phase 2 — has had 2.5s+ to arrive.
+            # No fallback sleep: if data isn't here by now, accept None for
+            # account-level daily_pnl (per-position PnL is independent).
             daily = pnl_obj.dailyPnL
             unrealized = pnl_obj.unrealizedPnL
             realized = pnl_obj.realizedPnL
