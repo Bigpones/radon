@@ -9,7 +9,7 @@ import ExposureBreakdownModal, { type ExposureMetric } from "./ExposureBreakdown
 import FillsModal from "./FillsModal";
 import PnlBreakdownModal, { type PnlBreakdownRow } from "./PnlBreakdownModal";
 import AccountMetricModal from "./AccountMetricModal";
-import { fmtUsd, fmtUsdExact, fmtSignedUsd, fmtSignedUsdExact, fmtPrice, toneClass } from "@/lib/format";
+import { fmtUsd, fmtUsdExact, fmtSignedUsd, fmtPrice, toneClass } from "@/lib/format";
 
 type MetricCardsProps = {
   portfolio: PortfolioData | null;
@@ -68,9 +68,9 @@ type CardDef = { label: string; value: string; change: string; tone: "positive" 
 function MetricCard({ card, onClick }: { card: CardDef; onClick?: () => void }) {
   return (
     <div className={`metric-card${onClick ? " metric-card-clickable" : ""}`} onClick={onClick}>
-      <div className="metric-label">{card.label}</div>
+      <div className="ml">{card.label}</div>
       <div className={`metric-value ${card.tone !== "neutral" ? card.tone : ""}`}>{card.value}</div>
-      <div className={`metric-change ${card.tone}`}>{card.change}</div>
+      <div className={`mx ${card.tone}`}>{card.change}</div>
     </div>
   );
 }
@@ -94,7 +94,7 @@ function AccountRow({
   return (
     <>
       <div className="section-label-mono">ACCOUNT</div>
-      <div className="metrics-grid">
+      <div className="mg">
         <MetricCard
           card={{ label: "Net Liquidation", value: fmtExact(acct.net_liquidation), change: "BANKROLL", tone: "neutral" }}
           onClick={onNetLiqClick}
@@ -134,7 +134,7 @@ function RiskRow({
   return (
     <>
       <div className="section-label-mono">RISK</div>
-      <div className="metrics-grid">
+      <div className="mg">
         <MetricCard
           card={{ label: "Buying Power", value: fmtExact(acct.buying_power), change: "AVAILABLE", tone: "neutral" }}
           onClick={onBuyingPowerClick}
@@ -169,7 +169,7 @@ function ExposureRow({
     <>
       <div className="section-label-mono">EXPOSURE</div>
       {exposure ? (
-        <div className="metrics-grid">
+        <div className="mg">
           <MetricCard
             card={{ label: "Net Long", value: fmt(exposure.netLong), change: "LONG BIASED", tone: "positive" }}
             onClick={() => onCardClick("netLong")}
@@ -188,12 +188,12 @@ function ExposureRow({
           />
         </div>
       ) : (
-        <div className="metrics-grid">
+        <div className="mg">
           {["Net Long", "Net Short", "Dollar Delta", "Net Exposure"].map((label) => (
-            <div key={label} className="metric-card metric-card-loading">
-              <div className="metric-label">{label}</div>
-              <div className="metric-value">---</div>
-              <div className="metric-change neutral">AWAITING PRICES</div>
+            <div key={label} className="metric-card mcl">
+              <div className="ml">{label}</div>
+              <div className="mv">---</div>
+              <div className="mc neutral">AWAITING PRICES</div>
             </div>
           ))}
         </div>
@@ -233,7 +233,7 @@ function TodayPnlRow({
     <>
       <div className="section-label-mono">TODAY&apos;S P&amp;L</div>
       {hasDaily ? (
-        <div className="metrics-grid-3">
+        <div className="mg3">
           {/* Renamed: "Unrealized" → "Day Move" — intraday change from yesterday's close */}
           <MetricCard
             card={{
@@ -254,23 +254,23 @@ function TodayPnlRow({
           />
         </div>
       ) : (
-        <div className="metrics-grid-3">
+        <div className="mg3">
           <div className="metric-card">
-            <div className="metric-label">Day Move</div>
-            <div className="metric-value">---</div>
-            <div className="metric-change neutral">MARKET CLOSED</div>
+            <div className="ml">Day Move</div>
+            <div className="mv">---</div>
+            <div className="mc neutral">MARKET CLOSED</div>
           </div>
           <div className="metric-card metric-card-clickable" onClick={onRealizedClick}>
-            <div className="metric-label">Realized</div>
+            <div className="ml">Realized</div>
             <div className={`metric-value ${tone(realizedPnl ?? 0) !== "neutral" ? tone(realizedPnl ?? 0) : ""}`}>
               {fmtSigned(realizedPnl ?? 0)}
             </div>
-            <div className="metric-change neutral">TODAY&apos;S FILLS</div>
+            <div className="mc neutral">TODAY&apos;S FILLS</div>
           </div>
           <div className="metric-card">
-            <div className="metric-label">Total</div>
-            <div className="metric-value">---</div>
-            <div className="metric-change neutral">MARKET CLOSED</div>
+            <div className="ml">Total</div>
+            <div className="mv">---</div>
+            <div className="mc neutral">MARKET CLOSED</div>
           </div>
         </div>
       )}
@@ -291,7 +291,7 @@ function LegacyLeverageRow({ portfolio, pnl, pnlPct }: { portfolio: PortfolioDat
   return (
     <>
       <div className="section-label-mono">NET LEVERAGE</div>
-      <div className="metrics-grid">
+      <div className="mg">
         {cards.map((c) => <MetricCard key={c.label} card={c} />)}
       </div>
     </>
@@ -321,12 +321,12 @@ export default function MetricCards({ portfolio, prices, realizedPnl, executedOr
     return (
       <>
         <div className="section-label-mono">ACCOUNT</div>
-        <div className="metrics-grid">
+        <div className="mg">
           {placeholders.map((label, i) => (
-            <div key={i} className="metric-card metric-card-loading">
-              <div className="metric-label">{label}</div>
-              <div className="metric-value">$0,000</div>
-              <div className="metric-change neutral">AWAITING SYNC</div>
+            <div key={i} className="metric-card mcl">
+              <div className="ml">{label}</div>
+              <div className="mv">$0,000</div>
+              <div className="mc neutral">AWAITING SYNC</div>
             </div>
           ))}
         </div>

@@ -83,26 +83,26 @@ export default function ExposureBreakdownModal({ metric, exposure, bankroll, onC
       open
       onClose={() => { setExpandedId(null); onClose(); }}
       title={config.title}
-      className="exposure-breakdown-modal"
+      className="em21"
     >
       {/* Total value */}
-      <div className="eb-total">
-        <span className="eb-total-value">{config.formatValue(totalValue)}</span>
+      <div className="et">
+        <span className="etv">{config.formatValue(totalValue)}</span>
         {metric === "netExposure" && (
-          <span className="eb-total-detail">
+          <span className="ed112">
             {fmtUsd(exposure.netLong)} long - {fmtUsd(exposure.netShort)} short / {fmtUsd(bankroll)} bankroll
           </span>
         )}
       </div>
 
       {/* Formula */}
-      <div className="eb-formula">
+      <div className="ef">
         <code>{config.formula}</code>
       </div>
 
       {/* Per-position table */}
       {rows.length > 0 ? (
-        <table className="eb-table">
+        <table className="ej">
           <thead>
             <tr>
               <th>TICKER</th>
@@ -157,25 +157,25 @@ function RowGroup({
   return (
     <>
       <tr className="eb-row" onClick={hasLegs ? onToggle : undefined} style={hasLegs ? { cursor: "pointer" } : undefined}>
-        <td className="eb-ticker">
+        <td className="ek">
           {hasLegs && <span className="eb-expand">{isExpanded ? "\u25BC" : "\u25B6"}</span>}
           {row.ticker}
         </td>
-        <td className="eb-structure">{row.structure}</td>
-        <td className="eb-mono">{fmtSpot(row.spot)}</td>
-        <td className="eb-mono">{fmtDelta(row.delta)}</td>
-        <td className="eb-mono">{formatContribution(contribution)}</td>
+        <td className="es163">{row.structure}</td>
+        <td className="em">{fmtSpot(row.spot)}</td>
+        <td className="em">{fmtDelta(row.delta)}</td>
+        <td className="em">{formatContribution(contribution)}</td>
         <td><span className={`eb-source eb-source-${row.deltaSource}`}>{row.deltaSource.toUpperCase()}</span></td>
       </tr>
       {isExpanded && row.legs.map((leg, i) => (
         <tr key={i} className="eb-leg-row">
           <td></td>
-          <td className="eb-leg-detail">
+          <td className="ed148">
             {leg.direction} {leg.contracts}x {leg.type}{leg.strike ? ` $${leg.strike}` : ""}
           </td>
           <td></td>
-          <td className="eb-mono eb-leg-delta">{fmtLegDelta(leg.rawDelta)}</td>
-          <td className="eb-mono eb-leg-delta">{fmtDelta(leg.legDelta)}</td>
+          <td className="em ed164">{fmtLegDelta(leg.rawDelta)}</td>
+          <td className="em ed164">{fmtDelta(leg.legDelta)}</td>
           <td></td>
         </tr>
       ))}

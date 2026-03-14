@@ -23,7 +23,7 @@ function fmtPct(v: number): string {
   return _fmtPct(v, 2, true);
 }
 
-export function buildTweetText(
+function buildTweetText(
   description: string,
   pnl: number,
   pnlPct: number | null,
@@ -126,8 +126,8 @@ export default function SharePnlButton({ data, size = 13 }: SharePnlButtonProps)
 
       {open && (
         <div className="share-pnl-popover">
-          <div className="share-pnl-popover-title">Share Options</div>
-          <label className="share-pnl-checkbox">
+          <div className="st26">Share Options</div>
+          <label className="spc">
             <input
               type="checkbox"
               checked={showDollar}
@@ -135,7 +135,7 @@ export default function SharePnlButton({ data, size = 13 }: SharePnlButtonProps)
             />
             <span>P&amp;L $</span>
           </label>
-          <label className="share-pnl-checkbox">
+          <label className="spc">
             <input
               type="checkbox"
               checked={showPct}
@@ -143,16 +143,16 @@ export default function SharePnlButton({ data, size = 13 }: SharePnlButtonProps)
             />
             <span>P&amp;L %</span>
           </label>
-          <div className="share-pnl-popover-actions">
+          <div className="sa12">
             <button
-              className="btn-primary share-pnl-action"
+              className="bp spa"
               onClick={handleCopyAndTweet}
               disabled={copying || (!showDollar && !showPct)}
             >
               {copying ? "Generating..." : "Copy & Tweet"}
             </button>
             <button
-              className="btn-secondary share-pnl-action"
+              className="bt-s spa"
               onClick={handleCopy}
               disabled={copying || (!showDollar && !showPct)}
             >

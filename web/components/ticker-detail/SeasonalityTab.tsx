@@ -40,9 +40,9 @@ function rateMonth(winRate: number, _avgReturn: number): Rating {
 }
 
 function ratingClass(rating: Rating): string {
-  if (rating === "FAVORABLE") return "seasonality-favorable";
-  if (rating === "UNFAVORABLE") return "seasonality-unfavorable";
-  return "seasonality-neutral";
+  if (rating === "FAVORABLE") return "sfa";
+  if (rating === "UNFAVORABLE") return "suf";
+  return "sne";
 }
 
 function overallRating(months: MonthData[]): { rating: Rating; favorable: number; unfavorable: number } {
@@ -127,18 +127,18 @@ export default function SeasonalityTab({ ticker, active }: SeasonalityTabProps) 
 
   if (loading) {
     return (
-      <div className="tab-loading">
-        <div className="tab-loading-text">Loading seasonality...</div>
+      <div className="tl">
+        <div className="tl-t">Loading seasonality...</div>
       </div>
     );
   }
 
   if (error) {
-    return <div className="tab-error">{error}</div>;
+    return <div className="te">{error}</div>;
   }
 
   if (fetched && months.length === 0) {
-    return <div className="tab-empty">No seasonality data for {ticker}</div>;
+    return <div className="ty">No seasonality data for {ticker}</div>;
   }
 
   if (months.length === 0) return null;
@@ -148,20 +148,20 @@ export default function SeasonalityTab({ ticker, active }: SeasonalityTabProps) 
   const yearsAnalyzed = months[0]?.years ?? 0;
 
   return (
-    <div className="seasonality-tab">
+    <div className="stz">
       {/* Overall assessment header */}
-      <div className="seasonality-header">
-        <span className={`seasonality-rating-pill ${ratingClass(rating)}`}>
+      <div className="sh78">
+        <span className={`srp ${ratingClass(rating)}`}>
           {rating}
         </span>
-        <div className="seasonality-summary">
-          <span className="seasonality-stat">{favorable} favorable</span>
-          <span className="seasonality-stat">{unfavorable} unfavorable</span>
+        <div className="ss67">
+          <span className="ss">{favorable} favorable</span>
+          <span className="ss">{unfavorable} unfavorable</span>
           {yearsAnalyzed > 0 && (
-            <span className="seasonality-stat">{yearsAnalyzed}y history</span>
+            <span className="ss">{yearsAnalyzed}y history</span>
           )}
           {source && source !== "uw" && (
-            <span className="seasonality-source-badge">
+            <span className="sb24">
               {source === "equityclock" ? "EQUITYCLOCK" : "UW + EQUITYCLOCK"}
             </span>
           )}
@@ -169,7 +169,7 @@ export default function SeasonalityTab({ ticker, active }: SeasonalityTabProps) 
       </div>
 
       {/* Monthly grid */}
-      <div className="seasonality-grid">
+      <div className="sg106">
         {months.map((m) => {
           const hasData = m.years > 0;
           const monthRating = hasData ? rateMonth(m.positive_months_perc, m.avg_change) : "NEUTRAL" as Rating;
@@ -179,33 +179,33 @@ export default function SeasonalityTab({ ticker, active }: SeasonalityTabProps) 
           return (
             <div
               key={m.month}
-              className={`seasonality-cell ${isCurrent ? "seasonality-cell-current" : ""} ${!hasData ? "seasonality-cell-nodata" : ""}`}
+              className={`sce ${isCurrent ? "scc" : ""} ${!hasData ? "scn" : ""}`}
             >
-              <div className="seasonality-cell-month">
+              <div className="sm39">
                 {MONTH_LABELS[m.month - 1]}
-                {isCurrent && <span className="seasonality-now">NOW</span>}
+                {isCurrent && <span className="sn">NOW</span>}
               </div>
 
               {hasData ? (
                 <>
-                  <div className="seasonality-cell-bar-wrap">
+                  <div className="sw16">
                     <div
-                      className={`seasonality-cell-bar ${isPositive ? "seasonality-bar-positive" : "seasonality-bar-negative"}`}
+                      className={`scba ${isPositive ? "sbp" : "sbn"}`}
                       style={{ width: `${barWidth(m.avg_change)}%` }}
                     />
                   </div>
-                  <div className={`seasonality-cell-return ${isPositive ? "positive" : "negative"}`}>
+                  <div className={`scr ${isPositive ? "positive" : "negative"}`}>
                     {fmtPct(m.avg_change)}
                   </div>
-                  <div className="seasonality-cell-winrate">
+                  <div className="sw25">
                     {fmtWinRate(m.positive_months_perc)} win
                   </div>
-                  <div className={`seasonality-cell-badge ${ratingClass(monthRating)}`}>
+                  <div className={`scb ${ratingClass(monthRating)}`}>
                     {monthRating.charAt(0)}
                   </div>
                 </>
               ) : (
-                <div className="seasonality-cell-nodata-text">No data</div>
+                <div className="st9">No data</div>
               )}
             </div>
           );
@@ -213,9 +213,9 @@ export default function SeasonalityTab({ ticker, active }: SeasonalityTabProps) 
       </div>
 
       {/* Detail table */}
-      <div className="seasonality-detail">
-        <div className="seasonality-detail-title">Monthly Detail</div>
-        <table className="pos-legs-table">
+      <div className="sd79">
+        <div className="sdt">Monthly Detail</div>
+        <table className="plt">
           <thead>
             <tr>
               <th>Month</th>
@@ -233,10 +233,10 @@ export default function SeasonalityTab({ ticker, active }: SeasonalityTabProps) 
               const monthRating = hasData ? rateMonth(m.positive_months_perc, m.avg_change) : "NEUTRAL" as Rating;
               const isCurrent = m.month === currentMonth;
               return (
-                <tr key={m.month} className={`${isCurrent ? "seasonality-row-current" : ""} ${!hasData ? "seasonality-row-nodata" : ""}`}>
+                <tr key={m.month} className={`${isCurrent ? "srw" : ""} ${!hasData ? "srnd" : ""}`}>
                   <td>
                     {MONTH_FULL[m.month - 1]}
-                    {isCurrent && <span className="seasonality-now">NOW</span>}
+                    {isCurrent && <span className="sn">NOW</span>}
                   </td>
                   {hasData ? (
                     <>
@@ -245,10 +245,10 @@ export default function SeasonalityTab({ ticker, active }: SeasonalityTabProps) 
                       <td className="positive">{fmtPct(m.max_change)}</td>
                       <td className="negative">{fmtPct(m.min_change)}</td>
                       <td className={m.positive_months_perc > 0.6 ? "positive" : m.positive_months_perc < 0.5 ? "negative" : ""}>{fmtWinRate(m.positive_months_perc)}</td>
-                      <td><span className={`seasonality-table-badge ${ratingClass(monthRating)}`}>{monthRating}</span></td>
+                      <td><span className={`stb ${ratingClass(monthRating)}`}>{monthRating}</span></td>
                     </>
                   ) : (
-                    <td colSpan={6} className="text-muted" style={{ fontStyle: "italic" }}>No data</td>
+                    <td colSpan={6} className="tm" style={{ fontStyle: "italic" }}>No data</td>
                   )}
                 </tr>
               );
@@ -258,15 +258,15 @@ export default function SeasonalityTab({ ticker, active }: SeasonalityTabProps) 
       </div>
 
       {/* Legend */}
-      <div className="seasonality-legend">
-        <span className="seasonality-legend-item">
-          <span className="seasonality-legend-dot seasonality-favorable" /> FAVORABLE: win rate &gt;60%
+      <div className="sl80">
+        <span className="sl-i">
+          <span className="sl-d sfa" /> FAVORABLE: win rate &gt;60%
         </span>
-        <span className="seasonality-legend-item">
-          <span className="seasonality-legend-dot seasonality-neutral" /> NEUTRAL: 50-60% win rate
+        <span className="sl-i">
+          <span className="sl-d sne" /> NEUTRAL: 50-60% win rate
         </span>
-        <span className="seasonality-legend-item">
-          <span className="seasonality-legend-dot seasonality-unfavorable" /> UNFAVORABLE: win rate &lt;50%
+        <span className="sl-i">
+          <span className="sl-d suf" /> UNFAVORABLE: win rate &lt;50%
         </span>
       </div>
     </div>

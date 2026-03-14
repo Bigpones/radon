@@ -39,12 +39,12 @@ export default function PriceChart({ ticker, prices, priceKey, theme = "dark" }:
     <ChartPanel
       family="live-trace"
       title={chartKey === ticker ? "Live Price Trace" : "Live Position Trace"}
-      className="chart-panel-inline price-chart-panel"
+      className="cp-i price-chart-panel"
       bodyClassName="price-chart-panel-body"
       contentClassName="price-chart-panel-content"
       dataTestId="price-chart-panel"
     >
-      <div className="price-chart-container">
+      <div className="pc42">
         {isMid && (
           <div className="price-chart-mid-badge" aria-label="Chart values are mid price (bid+ask)/2">
             MIDPRICE

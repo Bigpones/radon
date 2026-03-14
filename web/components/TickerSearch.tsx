@@ -335,7 +335,7 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
           >
             {loading && results.length === 0 && (
               <div
-                className="text-muted"
+                className="tm"
                 style={{
                   padding: "12px 16px",
                   fontFamily: "Inter, sans-serif",
@@ -348,7 +348,7 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
 
             {!loading && results.length === 0 && (
               <div
-                className="text-muted"
+                className="tm"
                 style={{
                   padding: "12px 16px",
                   fontFamily: "Inter, sans-serif",
@@ -370,9 +370,8 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
                   handleSelect(r.symbol);
                 }}
                 onMouseEnter={() => setActiveIndex(i)}
+                className="fc"
                 style={{
-                  display: "flex",
-                  alignItems: "center",
                   gap: "12px",
                   padding: "8px 16px",
                   cursor: "pointer",
@@ -399,12 +398,12 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
 
                 {/* secType badge */}
                 <span
-                  className="text-muted"
+                  className="tm"
                   style={{
                     fontFamily: "Inter, sans-serif",
                     fontSize: "10px",
                     fontWeight: 500,
-                    textTransform: "uppercase",
+                    textTransform: "uc",
                     letterSpacing: "0.5px",
                   }}
                 >
@@ -413,7 +412,7 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
 
                 {/* Exchange */}
                 <span
-                  className="text-secondary"
+                  className="t-s"
                   style={{
                     fontFamily: "Inter, sans-serif",
                     fontSize: "11px",

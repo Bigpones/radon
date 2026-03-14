@@ -22,8 +22,8 @@ function PnlBar({ value, max }: { value: number; max: number }) {
   const isPositive = value >= 0;
   return (
     <div
-      className="attribution-pnl-bar"
-      data-testid="attribution-pnl-bar"
+      className="apb"
+      data-testid="apb"
     >
       <div
         className={`attribution-pnl-fill ${isPositive ? "positive" : "negative"}`}
@@ -35,8 +35,8 @@ function PnlBar({ value, max }: { value: number; max: number }) {
 
 function StrategyTable({ strategies, maxPnl }: { strategies: StrategyAttribution[]; maxPnl: number }) {
   return (
-    <div className="attribution-table" data-testid="attribution-strategy-table">
-      <div className="attribution-table-header">
+    <div className="att" data-testid="attribution-strategy-table">
+      <div className="at-h">
         <span>Strategy</span>
         <span>Trades</span>
         <span>Win Rate</span>
@@ -44,10 +44,10 @@ function StrategyTable({ strategies, maxPnl }: { strategies: StrategyAttribution
         <span />
       </div>
       {strategies.map((s) => (
-        <div key={s.strategy_id} className="attribution-table-row">
-          <span className="attribution-strategy-name">{s.strategy_name}</span>
-          <span className="mono">{s.closed_count}/{s.trade_count}</span>
-          <span className="mono">{fmtPct(s.win_rate)}</span>
+        <div key={s.strategy_id} className="at-r">
+          <span className="asn">{s.strategy_name}</span>
+          <span className="mn">{s.closed_count}/{s.trade_count}</span>
+          <span className="mn">{fmtPct(s.win_rate)}</span>
           <span className={`mono ${toneClass(s.realized_pnl)}`}>{fmtUsd(s.realized_pnl)}</span>
           <PnlBar value={s.realized_pnl} max={maxPnl} />
         </div>
@@ -68,8 +68,8 @@ function EdgeTable({ edges, maxPnl }: { edges: EdgeAttribution[]; maxPnl: number
     none: "No Edge",
   };
   return (
-    <div className="attribution-table" data-testid="attribution-edge-table">
-      <div className="attribution-table-header">
+    <div className="att" data-testid="attribution-edge-table">
+      <div className="at-h">
         <span>Edge Type</span>
         <span>Trades</span>
         <span>Win Rate</span>
@@ -77,10 +77,10 @@ function EdgeTable({ edges, maxPnl }: { edges: EdgeAttribution[]; maxPnl: number
         <span />
       </div>
       {edges.map((e) => (
-        <div key={e.edge_type} className="attribution-table-row">
+        <div key={e.edge_type} className="at-r">
           <span>{edgeLabels[e.edge_type] ?? e.edge_type}</span>
-          <span className="mono">{e.closed_count}/{e.trade_count}</span>
-          <span className="mono">{fmtPct(e.win_rate)}</span>
+          <span className="mn">{e.closed_count}/{e.trade_count}</span>
+          <span className="mn">{fmtPct(e.win_rate)}</span>
           <span className={`mono ${toneClass(e.realized_pnl)}`}>{fmtUsd(e.realized_pnl)}</span>
           <PnlBar value={e.realized_pnl} max={maxPnl} />
         </div>
@@ -97,18 +97,18 @@ function RiskTable({ risks }: { risks: RiskAttribution[] }) {
     unknown: "Unknown",
   };
   return (
-    <div className="attribution-table" data-testid="attribution-risk-table">
-      <div className="attribution-table-header">
+    <div className="att" data-testid="attribution-risk-table">
+      <div className="at-h">
         <span>Risk Profile</span>
         <span>Trades</span>
         <span>Win Rate</span>
         <span>P&L</span>
       </div>
       {risks.map((r) => (
-        <div key={r.risk_type} className="attribution-table-row">
+        <div key={r.risk_type} className="at-r">
           <span>{riskLabels[r.risk_type] ?? r.risk_type}</span>
-          <span className="mono">{r.closed_count}/{r.trade_count}</span>
-          <span className="mono">{fmtPct(r.win_rate)}</span>
+          <span className="mn">{r.closed_count}/{r.trade_count}</span>
+          <span className="mn">{fmtPct(r.win_rate)}</span>
           <span className={`mono ${toneClass(r.realized_pnl)}`}>{fmtUsd(r.realized_pnl)}</span>
         </div>
       ))}
@@ -120,21 +120,21 @@ function TickerLeaderboard({ tickers }: { tickers: TickerAttributionEntry[] }) {
   const top = tickers.slice(0, 5);
   const bottom = [...tickers].sort((a, b) => a.realized_pnl - b.realized_pnl).slice(0, 5);
   return (
-    <div className="performance-grid-2" data-testid="attribution-ticker-leaderboard">
+    <div className="pg-2" data-testid="attribution-ticker-leaderboard">
       <div>
-        <div className="attribution-mini-header positive">Top Performers</div>
+        <div className="amh positive">Top Performers</div>
         {top.map((t) => (
-          <div key={`top-${t.ticker}`} className="attribution-ticker-row">
-            <span className="mono">{t.ticker}</span>
+          <div key={`top-${t.ticker}`} className="atr">
+            <span className="mn">{t.ticker}</span>
             <span className={`mono ${toneClass(t.realized_pnl)}`}>{fmtUsd(t.realized_pnl)}</span>
           </div>
         ))}
       </div>
       <div>
-        <div className="attribution-mini-header negative">Bottom Performers</div>
+        <div className="amh negative">Bottom Performers</div>
         {bottom.map((t) => (
-          <div key={`bot-${t.ticker}`} className="attribution-ticker-row">
-            <span className="mono">{t.ticker}</span>
+          <div key={`bot-${t.ticker}`} className="atr">
+            <span className="mn">{t.ticker}</span>
             <span className={`mono ${toneClass(t.realized_pnl)}`}>{fmtUsd(t.realized_pnl)}</span>
           </div>
         ))}
@@ -153,8 +153,8 @@ function KellyCalibration({ data }: { data: AttributionData }) {
   }
 
   return (
-    <div className="attribution-table" data-testid="attribution-kelly-table">
-      <div className="attribution-table-header">
+    <div className="att" data-testid="attribution-kelly-table">
+      <div className="at-h">
         <span>Strategy</span>
         <span>Expected WR</span>
         <span>Actual WR</span>
@@ -162,14 +162,14 @@ function KellyCalibration({ data }: { data: AttributionData }) {
         <span>Samples</span>
       </div>
       {entries.map(([sid, cal]) => (
-        <div key={sid} className="attribution-table-row">
+        <div key={sid} className="at-r">
           <span>{strategyNames[sid] ?? sid}</span>
-          <span className="mono">{fmtPct(cal.expected_win_rate)}</span>
-          <span className="mono">{fmtPct(cal.actual_win_rate)}</span>
+          <span className="mn">{fmtPct(cal.expected_win_rate)}</span>
+          <span className="mn">{fmtPct(cal.actual_win_rate)}</span>
           <span className={`mono ${cal.accuracy !== null && cal.accuracy >= 0.7 ? "positive" : cal.accuracy !== null && cal.accuracy < 0.3 ? "negative" : ""}`}>
             {fmtPct(cal.accuracy)}
           </span>
-          <span className="mono">{cal.sample_size}</span>
+          <span className="mn">{cal.sample_size}</span>
         </div>
       ))}
     </div>
@@ -181,15 +181,15 @@ export default function AttributionPanel() {
 
   if (loading && !data) {
     return (
-      <div className="section" data-testid="attribution-panel">
-        <div className="section-header">
-          <div className="section-title">
+      <div className="sx" data-testid="attribution-panel">
+        <div className="s-hd">
+          <div className="s-tt">
             <BarChart3 size={14} />
             Attribution
           </div>
           <span className="pill neutral">LOADING</span>
         </div>
-        <div className="section-body performance-empty">
+        <div className="s-bd pe">
           Computing attribution across strategies...
         </div>
       </div>
@@ -198,15 +198,15 @@ export default function AttributionPanel() {
 
   if (!data) {
     return (
-      <div className="section" data-testid="attribution-panel">
-        <div className="section-header">
-          <div className="section-title">
+      <div className="sx" data-testid="attribution-panel">
+        <div className="s-hd">
+          <div className="s-tt">
             <BarChart3 size={14} />
             Attribution
           </div>
           <span className="pill undefined">UNAVAILABLE</span>
         </div>
-        <div className="section-body performance-empty">
+        <div className="s-bd pe">
           {error ?? "Attribution data not available."}
         </div>
       </div>
@@ -219,73 +219,73 @@ export default function AttributionPanel() {
   return (
     <div data-testid="attribution-panel">
       {/* Strategy Attribution */}
-      <div className="section">
-        <div className="section-header">
-          <div className="section-title">
+      <div className="sx">
+        <div className="s-hd">
+          <div className="s-tt">
             <BarChart3 size={14} />
             Strategy Attribution
           </div>
           <span className="pill defined">{data.closed_trades} CLOSED</span>
         </div>
-        <div className="section-body">
+        <div className="s-bd">
           <StrategyTable strategies={data.by_strategy} maxPnl={maxStrategyPnl} />
         </div>
       </div>
 
       {/* Edge Quality + Risk Profile side by side */}
-      <div className="performance-grid-2">
-        <div className="section">
-          <div className="section-header">
-            <div className="section-title">
+      <div className="pg-2">
+        <div className="sx">
+          <div className="s-hd">
+            <div className="s-tt">
               <Crosshair size={14} />
               Edge Quality
             </div>
             <span className="pill neutral">BY SOURCE</span>
           </div>
-          <div className="section-body">
+          <div className="s-bd">
             <EdgeTable edges={data.by_edge} maxPnl={maxEdgePnl} />
           </div>
         </div>
 
-        <div className="section">
-          <div className="section-header">
-            <div className="section-title">
+        <div className="sx">
+          <div className="s-hd">
+            <div className="s-tt">
               <Shield size={14} />
               Risk Profile
             </div>
             <span className="pill neutral">DEFINED VS UNDEFINED</span>
           </div>
-          <div className="section-body">
+          <div className="s-bd">
             <RiskTable risks={data.by_risk} />
           </div>
         </div>
       </div>
 
       {/* Ticker Leaderboard */}
-      <div className="section">
-        <div className="section-header">
-          <div className="section-title">
+      <div className="sx">
+        <div className="s-hd">
+          <div className="s-tt">
             <Target size={14} />
             Ticker Attribution
           </div>
           <span className="pill neutral">{data.by_ticker.length} TICKERS</span>
         </div>
-        <div className="section-body">
+        <div className="s-bd">
           <TickerLeaderboard tickers={data.by_ticker} />
         </div>
       </div>
 
       {/* Kelly Calibration */}
       {Object.keys(data.kelly_calibration).length > 0 && (
-        <div className="section">
-          <div className="section-header">
-            <div className="section-title">
+        <div className="sx">
+          <div className="s-hd">
+            <div className="s-tt">
               <Target size={14} />
               Kelly Calibration
             </div>
             <span className="pill neutral">PREDICTED VS ACTUAL</span>
           </div>
-          <div className="section-body">
+          <div className="s-bd">
             <KellyCalibration data={data} />
           </div>
         </div>

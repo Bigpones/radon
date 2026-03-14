@@ -189,17 +189,17 @@ export default function CriHistoryChart({
       family="analytical-time-series"
       title={title}
       legend={series.map((item) => ({ label: item.label, color: item.color }))}
-      className="chart-panel-inline"
+      className="cp-i"
       bodyClassName="cri-history-chart-panel"
       contentClassName="cri-history-chart-content"
       dataTestId="cri-history-chart"
     >
-      <div ref={containerRef} className="cri-history-chart-shell">
-        <div className="chart-surface cri-history-chart-surface">
+      <div ref={containerRef} className="cs28">
+        <div className="cs146 cs14">
           {showEmpty ? (
-            <div className="chart-empty-state cri-history-chart-empty">NO HISTORY AVAILABLE</div>
+            <div className="cs89 ce29">NO HISTORY AVAILABLE</div>
           ) : (
-            <svg ref={svgRef} width={width} height={HEIGHT} className="cri-history-chart-svg">
+            <svg ref={svgRef} width={width} height={HEIGHT} className="cs45">
               <g transform={`translate(${MARGIN.left},${MARGIN.top})`}>
                 {/* Grid lines */}
                 {yLeftTicks.map((t) => (
@@ -334,14 +334,14 @@ export default function CriHistoryChart({
 
         {tooltip.visible && tooltip.d && (
           <div className="chart-tooltip" style={{ ...tooltipSideStyle, top: tooltip.y - 10 }}>
-            <div className="chart-tooltip-date">{tooltip.d.date}</div>
+            <div className="ctd">{tooltip.d.date}</div>
             {series.map((s) => {
               const val = tooltip.d![s.key];
               const fmt = s.format ?? defaultFormat;
               return (
-                <div key={String(s.key)} className="chart-tooltip-row">
-                  <span className="chart-tooltip-label">{s.label}</span>
-                  <span className="chart-tooltip-value" style={{ color: s.color }}>
+                <div key={String(s.key)} className="ct-r">
+                  <span className="ct-l">{s.label}</span>
+                  <span className="ct-v" style={{ color: s.color }}>
                     {val != null && Number.isFinite(val as number) ? fmt(val as number) : "---"}
                   </span>
                 </div>

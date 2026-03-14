@@ -259,6 +259,7 @@ All portfolio state writes use `scripts/utils/atomic_io.py`:
 | `menthorq-screener [CATEGORY] [SLUG]` | Fetch MenthorQ screener data (6 categories, 45 sub-screeners). Categories: gamma (5), gamma_levels (5), open_interest (7), volatility (6), volume (6), qscore (16) |
 | `menthorq-forex` | Fetch MenthorQ forex gamma levels + blindspot data (14 pairs, 20+ fields per pair) |
 | `menthorq-summary [CATEGORY]` | Fetch MenthorQ summary tables (futures: 93 rows, cryptos: 16 rows) |
+| `menthorq-quin [PROMPT]` | QUIN AI screener — natural-language query across 97+ metrics. Preset prompts: `docs/menthorq-prompts.md` |
 
 ---
 

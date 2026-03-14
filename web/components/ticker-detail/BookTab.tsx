@@ -37,7 +37,7 @@ function L1OrderBook({
   return (
     <div className="book-l1">
       <div
-        className="book-section-header"
+        className="bh"
       >
         ORDER BOOK
       </div>
@@ -52,19 +52,19 @@ function L1OrderBook({
         {/* Bid side */}
         <div style={{ textAlign: "center" }}>
           <div
-            className="font-mono text-secondary uppercase"
+            className="fm t-s uc"
             style={{ fontSize: "10px", marginBottom: "4px" }}
           >
             BID
           </div>
           <div
-            className="positive font-mono"
+            className="positive fm"
             style={{ fontSize: "16px", fontWeight: 600 }}
           >
             {bid != null ? fmtPrice(bid) : "---"}
           </div>
           <div
-            className="font-mono text-secondary"
+            className="fm t-s"
             style={{ fontSize: "11px", marginTop: "2px" }}
           >
             {bidSize != null ? bidSize : "---"}
@@ -74,19 +74,19 @@ function L1OrderBook({
         {/* Spread */}
         <div style={{ textAlign: "center" }}>
           <div
-            className="font-mono text-secondary uppercase"
+            className="fm t-s uc"
             style={{ fontSize: "10px", marginBottom: "4px" }}
           >
             SPREAD
           </div>
           <div
-            className="font-mono"
+            className="fm"
             style={{ fontSize: "14px", color: "var(--text-primary, #e2e8f0)" }}
           >
             {spread != null ? spread.toFixed(2) : "---"}
           </div>
           <div
-            className="font-mono text-secondary"
+            className="fm t-s"
             style={{ fontSize: "10px", marginTop: "2px" }}
           >
             {last != null ? `LAST ${fmtPrice(last)}` : ""}
@@ -96,19 +96,19 @@ function L1OrderBook({
         {/* Ask side */}
         <div style={{ textAlign: "center" }}>
           <div
-            className="font-mono text-secondary uppercase"
+            className="fm t-s uc"
             style={{ fontSize: "10px", marginBottom: "4px" }}
           >
             ASK
           </div>
           <div
-            className="negative font-mono"
+            className="negative fm"
             style={{ fontSize: "16px", fontWeight: 600 }}
           >
             {ask != null ? fmtPrice(ask) : "---"}
           </div>
           <div
-            className="font-mono text-secondary"
+            className="fm t-s"
             style={{ fontSize: "11px", marginTop: "2px" }}
           >
             {askSize != null ? askSize : "---"}
@@ -125,24 +125,24 @@ function PositionSummary({ position }: { position: PortfolioPosition }) {
   return (
     <div style={{ marginTop: "16px" }}>
       <div
-        className="book-section-header"
+        className="bh"
       >
         POSITION
       </div>
-      <div className="instrument-summary-grid">
-        <div className="pos-stat">
-          <span className="pos-stat-label">DIRECTION</span>
-          <span className="pos-stat-value">
+      <div className="isg">
+        <div className="ps">
+          <span className="ps-l">DIRECTION</span>
+          <span className="ps-v">
             {position.direction} {position.contracts}x
           </span>
         </div>
-        <div className="pos-stat">
-          <span className="pos-stat-label">STRUCTURE</span>
-          <span className="pos-stat-value">{position.structure}</span>
+        <div className="ps">
+          <span className="ps-l">STRUCTURE</span>
+          <span className="ps-v">{position.structure}</span>
         </div>
-        <div className="pos-stat">
-          <span className="pos-stat-label">AVG COST</span>
-          <span className="pos-stat-value">
+        <div className="ps">
+          <span className="ps-l">AVG COST</span>
+          <span className="ps-v">
             {position.entry_cost != null
               ? fmtPrice(
                   Math.abs(position.entry_cost) /
@@ -152,9 +152,9 @@ function PositionSummary({ position }: { position: PortfolioPosition }) {
               : "---"}
           </span>
         </div>
-        <div className="pos-stat">
-          <span className="pos-stat-label">MKT VALUE</span>
-          <span className="pos-stat-value">
+        <div className="ps">
+          <span className="ps-l">MKT VALUE</span>
+          <span className="ps-v">
             {position.market_value != null
               ? fmtPrice(Math.abs(position.market_value))
               : "---"}
@@ -171,7 +171,7 @@ function OpenOrdersList({ orders }: { orders: OpenOrder[] }) {
   return (
     <div style={{ marginTop: "16px" }}>
       <div
-        className="book-section-header"
+        className="bh"
       >
         OPEN ORDERS ({orders.length})
       </div>
@@ -185,17 +185,15 @@ function OpenOrdersList({ orders }: { orders: OpenOrder[] }) {
         return (
           <div
             key={o.permId || o.orderId || i}
-            className="font-mono"
+            className="fm fc"
             style={{
-              display: "flex",
               justifyContent: "space-between",
-              alignItems: "center",
               padding: "6px 0",
               borderBottom: "1px solid var(--line-grid, #1e293b)",
               fontSize: "12px",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <div className="fc" style={{ gap: "8px" }}>
               <span
                 className={`pill ${o.action === "BUY" ? "accum" : "distrib"}`}
                 style={{ fontSize: "9px" }}
@@ -203,15 +201,15 @@ function OpenOrdersList({ orders }: { orders: OpenOrder[] }) {
                 {o.action}
               </span>
               <span>{desc}</span>
-              <span className="text-secondary">
+              <span className="t-s">
                 {o.totalQuantity}x
               </span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div className="fc" style={{ gap: "12px" }}>
               <span>
                 {o.limitPrice != null ? fmtPrice(o.limitPrice) : "MKT"}
               </span>
-              <span className="text-secondary" style={{ fontSize: "10px" }}>
+              <span className="t-s" style={{ fontSize: "10px" }}>
                 {o.tif} / {o.status}
               </span>
             </div>
@@ -299,18 +297,18 @@ function StockOrderForm({
   }, [confirmStep, ticker, action, parsedQty, parsedPrice, tif, position]);
 
   return (
-    <div className="order-form" style={{ marginTop: "16px" }}>
+    <div className="of" style={{ marginTop: "16px" }}>
       <div
-        className="book-section-header"
+        className="bh"
       >
         STOCK ORDER
       </div>
 
-      <div className="order-field">
-        <label className="order-label">Action</label>
-        <div className="order-action-buttons">
+      <div className="o-f">
+        <label className="o-l">Action</label>
+        <div className="o-ab">
           <button
-            className={`order-action-btn ${action === "BUY" ? "order-action-active order-action-buy" : ""}`}
+            className={action === "BUY" ? "oaa oby" : ""}
             onClick={() => {
               setAction("BUY");
               setConfirmStep(false);
@@ -319,7 +317,7 @@ function StockOrderForm({
             BUY
           </button>
           <button
-            className={`order-action-btn ${action === "SELL" ? "order-action-active order-action-sell" : ""}`}
+            className={action === "SELL" ? "oaa oas" : ""}
             onClick={() => {
               setAction("SELL");
               setConfirmStep(false);
@@ -330,10 +328,10 @@ function StockOrderForm({
         </div>
       </div>
 
-      <div className="order-field">
-        <label className="order-label">Quantity</label>
+      <div className="o-f">
+        <label className="o-l">Quantity</label>
         <input
-          className="order-input"
+          className="oi"
           type="number"
           min="1"
           step="1"
@@ -346,12 +344,12 @@ function StockOrderForm({
         />
       </div>
 
-      <div className="order-field">
-        <label className="order-label">Limit Price</label>
-        <div className="modify-price-input-row">
-          <span className="modify-price-prefix">$</span>
+      <div className="o-f">
+        <label className="o-l">Limit Price</label>
+        <div className="mp-ir">
+          <span className="mp-p">$</span>
           <input
-            className="modify-price-input"
+            className="mxi"
             type="number"
             step="0.01"
             min="0.01"
@@ -363,9 +361,9 @@ function StockOrderForm({
             placeholder="0.00"
           />
         </div>
-        <div className="modify-quick-buttons">
+        <div className="mq-b">
           <button
-            className="btn-quick"
+            className="bq"
             disabled={bid == null}
             onClick={() => {
               if (bid != null) {
@@ -377,7 +375,7 @@ function StockOrderForm({
             BID
           </button>
           <button
-            className="btn-quick"
+            className="bq"
             disabled={mid == null}
             onClick={() => {
               if (mid != null) {
@@ -389,7 +387,7 @@ function StockOrderForm({
             MID
           </button>
           <button
-            className="btn-quick"
+            className="bq"
             disabled={ask == null}
             onClick={() => {
               if (ask != null) {
@@ -403,17 +401,17 @@ function StockOrderForm({
         </div>
       </div>
 
-      <div className="order-field">
-        <label className="order-label">Time in Force</label>
-        <div className="order-action-buttons">
+      <div className="o-f">
+        <label className="o-l">Time in Force</label>
+        <div className="o-ab">
           <button
-            className={`order-action-btn ${tif === "DAY" ? "order-action-active" : ""}`}
+            className={tif === "DAY" ? "oaa" : ""}
             onClick={() => setTif("DAY")}
           >
             DAY
           </button>
           <button
-            className={`order-action-btn ${tif === "GTC" ? "order-action-active" : ""}`}
+            className={tif === "GTC" ? "oaa" : ""}
             onClick={() => setTif("GTC")}
           >
             GTC
@@ -424,18 +422,18 @@ function StockOrderForm({
       {error && <div className="order-error">{error}</div>}
       {success && <div className="order-success">{success}</div>}
 
-      <div className="order-submit">
+      <div className="os">
         {confirmStep ? (
-          <div className="order-confirm-row">
+          <div className="oc-r">
             <button
-              className="btn-secondary"
+              className="bt-s"
               onClick={() => setConfirmStep(false)}
               disabled={loading}
             >
               Back
             </button>
             <button
-              className={`btn-primary ${action === "SELL" ? "btn-danger" : ""}`}
+              className={`bp ${action === "SELL" ? "bd" : ""}`}
               onClick={handlePlace}
               disabled={!isValid || loading}
             >
@@ -446,7 +444,7 @@ function StockOrderForm({
           </div>
         ) : (
           <button
-            className="btn-primary w-full"
+            className="bp w-full"
             onClick={handlePlace}
             disabled={!isValid || loading}
           >

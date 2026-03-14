@@ -51,16 +51,16 @@ function ComponentBar({ label, score, live }: { label: string; score: number; li
   const barColor = score < 8 ? "var(--positive)" : score > 16 ? "var(--negative)" : "var(--warning)";
   const tooltip = COMPONENT_TOOLTIPS[label];
   return (
-    <div className="regime-component-bar">
-      <div className="regime-component-label">
+    <div className="rb55">
+      <div className="rl35">
         <span style={{ flex: 1 }}>{label}</span>
         {tooltip && <InfoTooltip text={tooltip} />}
         <LiveBadge live={live} />
       </div>
-      <div className="regime-bar-track">
-        <div className="regime-bar-fill" style={{ width: `${pct}%`, background: barColor }} />
+      <div className="rbt">
+        <div className="rbf" style={{ width: `${pct}%`, background: barColor }} />
       </div>
-      <div className="regime-component-score">{score.toFixed(1)}/25</div>
+      <div className="rs36">{score.toFixed(1)}/25</div>
     </div>
   );
 }
@@ -69,12 +69,12 @@ function ComponentBar({ label, score, live }: { label: string; score: number; li
 
 function TriggerRow({ label, met, value, live }: { label: string; met: boolean; value: string; live: boolean }) {
   return (
-    <div className="regime-trigger-row">
-      <div className="regime-trigger-icon">
+    <div className="rr76">
+      <div className="ri66">
         {met ? <Check size={14} color="var(--positive)" /> : <X size={14} color="var(--negative)" />}
       </div>
-      <div className="regime-trigger-label">{label}</div>
-      <div className="regime-trigger-value">{value}</div>
+      <div className="rl56">{label}</div>
+      <div className="rv57">{value}</div>
       <LiveBadge live={live} />
     </div>
   );
@@ -192,8 +192,8 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
 
   if (!data && !syncing) {
     return (
-      <div className="regime-panel">
-        <div className="regime-empty">
+      <div className="rp166">
+        <div className="re167">
           <Shield size={32} strokeWidth={1} />
           <p>No CRI data available. Click Sync Now to run a scan.</p>
         </div>
@@ -202,29 +202,29 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
   }
 
   return (
-    <div className="regime-panel">
+    <div className="rp166">
       {/* ── Row 1: CRI Score Hero ──────────────────── */}
       <div className="regime-hero">
-        <div className="regime-hero-score" style={{ color }}>
+        <div className="rs94" style={{ color }}>
           {cri.score.toFixed(0)}
-          <span className="regime-hero-max">/100</span>
+          <span className="rm116">/100</span>
         </div>
-        <div className="regime-hero-meta">
-          <span className="regime-level-badge" style={{ background: color, color: cri.level === "LOW" ? "#000" : "#fff" }}>
+        <div className="rm104">
+          <span className="rb77" style={{ background: color, color: cri.level === "LOW" ? "#000" : "#fff" }}>
             {cri.level}
           </span>
-          <span className="regime-live-dot" style={{ background: hasLive ? "var(--positive)" : "var(--text-muted)" }} />
-          <span className="regime-hero-label">{hasLive ? "LIVE" : "CACHED"}</span>
+          <span className="rd117" style={{ background: hasLive ? "var(--positive)" : "var(--text-muted)" }} />
+          <span className="rl95">{hasLive ? "LIVE" : "CACHED"}</span>
           {lastSync && (
             <span className="regime-hero-timestamp">
               Last scan: {new Date(lastSync).toLocaleTimeString()}
             </span>
           )}
         </div>
-        <div className="regime-hero-bar">
-          <div className="regime-hero-bar-fill" style={{ width: `${cri.score}%`, background: color }} />
+        <div className="rhb">
+          <div className="rhf" style={{ width: `${cri.score}%`, background: color }} />
         </div>
-        <div className="regime-hero-scale">
+        <div className="rs96">
           <span>LOW</span><span>ELEVATED</span><span>HIGH</span><span>CRITICAL</span>
         </div>
       </div>
@@ -233,10 +233,8 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
       {!marketOpen && (
         <div
           data-testid="market-closed-indicator"
-          className="font-mono"
+          className="fm fc"
           style={{
-            display: "flex",
-            alignItems: "center",
             gap: "8px",
             padding: "6px 12px",
             background: "rgba(245,166,35,0.12)",
@@ -301,7 +299,7 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
       {/* ── Row 3+4: Components + Crash Trigger side by side ── */}
       <div className="regime-detail-grid">
         <div className="regime-components">
-          <div className="regime-panel-title">
+          <div className="rp-t">
             <Zap size={12} />
             CRI COMPONENTS
             <InfoTooltip text={SECTION_TOOLTIPS["CRI COMPONENTS"]} />
@@ -312,7 +310,7 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
           <ComponentBar label="MOMENTUM" score={cri.components.momentum} live={hasLiveSpy} />
         </div>
         <div className="regime-triggers">
-          <div className="regime-panel-title">
+          <div className="rp-t">
             <AlertTriangle size={12} />
             CRASH TRIGGER CONDITIONS
             <InfoTooltip text={SECTION_TOOLTIPS["CRASH TRIGGER CONDITIONS"]} />
@@ -363,8 +361,8 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
 
         return (
           <>
-            <div className="section-header" data-testid="regime-history-header">
-              <div className="section-title" data-testid="regime-history-title">
+            <div className="s-hd" data-testid="regime-history-header">
+              <div className="s-tt" data-testid="regime-history-title">
                 <span data-testid="regime-history-title-text">20-SESSION HISTORY</span>
                 <InfoTooltip
                   text={SECTION_TOOLTIPS["20-SESSION HISTORY"]}

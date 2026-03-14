@@ -74,46 +74,46 @@ function ExistingOrderRow({
 
   return (
     <div className={`existing-order ${isPendingCancel ? "existing-order-cancelling" : isPendingModify ? "existing-order-modifying" : ""}`}>
-      <div className="existing-order-header">
-        <div className="existing-order-info">
+      <div className="eoh">
+        <div className="eoi">
           <span className={`pill ${order.action === "BUY" ? "accum" : "distrib"}`} style={{ fontSize: "9px" }}>
             {order.action}
           </span>
-          <span className="existing-order-desc">{desc}</span>
-          <span className="existing-order-qty">{order.totalQuantity}x</span>
+          <span className="ed69">{desc}</span>
+          <span className="eoq">{order.totalQuantity}x</span>
         </div>
-        <div className="existing-order-status">
-          {isPending && <Loader2 size={12} className="cancel-spinner" />}
-          <span className="existing-order-status-text">
+        <div className="eos">
+          {isPending && <Loader2 size={12} className="cs" />}
+          <span className="et11">
             {isPendingCancel ? "Cancelling..." : isPendingModify ? "Modifying..." : order.status}
           </span>
         </div>
       </div>
 
-      <div className="existing-order-details">
-        <div className="existing-order-detail">
-          <span className="pos-stat-label">TYPE</span>
-          <span className="pos-stat-value">{order.orderType}</span>
+      <div className="ed40">
+        <div className="eo-d">
+          <span className="ps-l">TYPE</span>
+          <span className="ps-v">{order.orderType}</span>
         </div>
-        <div className="existing-order-detail">
-          <span className="pos-stat-label">LIMIT</span>
-          <span className="pos-stat-value">{order.limitPrice != null ? fmtPrice(order.limitPrice) : "---"}</span>
+        <div className="eo-d">
+          <span className="ps-l">LIMIT</span>
+          <span className="ps-v">{order.limitPrice != null ? fmtPrice(order.limitPrice) : "---"}</span>
         </div>
-        <div className="existing-order-detail">
-          <span className="pos-stat-label">TIF</span>
-          <span className="pos-stat-value">{order.tif}</span>
+        <div className="eo-d">
+          <span className="ps-l">TIF</span>
+          <span className="ps-v">{order.tif}</span>
         </div>
-        <div className="existing-order-detail">
-          <span className="pos-stat-label">LAST</span>
-          <span className="pos-stat-value">{priceData?.last != null ? fmtPrice(priceData.last) : "---"}</span>
+        <div className="eo-d">
+          <span className="ps-l">LAST</span>
+          <span className="ps-v">{priceData?.last != null ? fmtPrice(priceData.last) : "---"}</span>
         </div>
       </div>
 
       {/* Action buttons */}
       {!isPending && (
-        <div className="existing-order-actions">
+        <div className="ea41">
           <button
-            className="btn-order-action btn-modify"
+            className="b-oa btn-modify"
             disabled={!canModify}
             title={canModify ? "Modify limit price" : "Only LMT orders can be modified"}
             onClick={() => onModify(order)}
@@ -121,7 +121,7 @@ function ExistingOrderRow({
             MODIFY
           </button>
           <button
-            className="btn-order-action btn-cancel"
+            className="b-oa btn-cancel"
             onClick={handleCancel}
             disabled={actionLoading}
           >
@@ -264,18 +264,18 @@ function NewOrderForm({
   }, [confirmStep, ticker, action, parsedQty, parsedPrice, tif, position, onOrderPlaced]);
 
   return (
-    <div className="order-form">
-      <div className="order-field">
-        <label className="order-label">Action</label>
-        <div className="order-action-buttons">
+    <div className="of">
+      <div className="o-f">
+        <label className="o-l">Action</label>
+        <div className="o-ab">
           <button
-            className={`order-action-btn ${action === "BUY" ? "order-action-active order-action-buy" : ""}`}
+            className={action === "BUY" ? "oaa oby" : ""}
             onClick={() => { setAction("BUY"); setConfirmStep(false); }}
           >
             BUY
           </button>
           <button
-            className={`order-action-btn ${action === "SELL" ? "order-action-active order-action-sell" : ""}`}
+            className={action === "SELL" ? "oaa oas" : ""}
             onClick={() => { setAction("SELL"); setConfirmStep(false); }}
           >
             SELL
@@ -283,10 +283,10 @@ function NewOrderForm({
         </div>
       </div>
 
-      <div className="order-field">
-        <label className="order-label">Quantity</label>
+      <div className="o-f">
+        <label className="o-l">Quantity</label>
         <input
-          className="order-input"
+          className="oi"
           type="number"
           min="1"
           step="1"
@@ -296,12 +296,12 @@ function NewOrderForm({
         />
       </div>
 
-      <div className="order-field">
-        <label className="order-label">Limit Price</label>
-        <div className="modify-price-input-row">
-          <span className="modify-price-prefix">$</span>
+      <div className="o-f">
+        <label className="o-l">Limit Price</label>
+        <div className="mp-ir">
+          <span className="mp-p">$</span>
           <input
-            className="modify-price-input"
+            className="mxi"
             type="number"
             step="0.01"
             min="0.01"
@@ -310,30 +310,30 @@ function NewOrderForm({
             placeholder="0.00"
           />
         </div>
-        <div className="modify-quick-buttons">
-          <button className="btn-quick" disabled={bid == null} onClick={() => { if (bid != null) { setLimitPrice(bid.toFixed(2)); setConfirmStep(false); } }}>BID</button>
-          <button className="btn-quick" disabled={mid == null} onClick={() => { if (mid != null) { setLimitPrice(mid.toFixed(2)); setConfirmStep(false); } }}>MID</button>
-          <button className="btn-quick" disabled={ask == null} onClick={() => { if (ask != null) { setLimitPrice(ask.toFixed(2)); setConfirmStep(false); } }}>ASK</button>
+        <div className="mq-b">
+          <button className="bq" disabled={bid == null} onClick={() => { if (bid != null) { setLimitPrice(bid.toFixed(2)); setConfirmStep(false); } }}>BID</button>
+          <button className="bq" disabled={mid == null} onClick={() => { if (mid != null) { setLimitPrice(mid.toFixed(2)); setConfirmStep(false); } }}>MID</button>
+          <button className="bq" disabled={ask == null} onClick={() => { if (ask != null) { setLimitPrice(ask.toFixed(2)); setConfirmStep(false); } }}>ASK</button>
         </div>
       </div>
 
-      <div className="order-field">
-        <label className="order-label">Time in Force</label>
-        <div className="order-action-buttons">
-          <button className={`order-action-btn ${tif === "DAY" ? "order-action-active" : ""}`} onClick={() => setTif("DAY")}>DAY</button>
-          <button className={`order-action-btn ${tif === "GTC" ? "order-action-active" : ""}`} onClick={() => setTif("GTC")}>GTC</button>
+      <div className="o-f">
+        <label className="o-l">Time in Force</label>
+        <div className="o-ab">
+          <button className={tif === "DAY" ? "oaa" : ""} onClick={() => setTif("DAY")}>DAY</button>
+          <button className={tif === "GTC" ? "oaa" : ""} onClick={() => setTif("GTC")}>GTC</button>
         </div>
       </div>
 
       {error && <div className="order-error">{error}</div>}
       {success && <div className="order-success">{success}</div>}
 
-      <div className="order-submit">
+      <div className="os">
         {confirmStep ? (
-          <div className="order-confirm-row">
-            <button className="btn-secondary" onClick={() => setConfirmStep(false)} disabled={loading}>Back</button>
+          <div className="oc-r">
+            <button className="bt-s" onClick={() => setConfirmStep(false)} disabled={loading}>Back</button>
             <button
-              className={`btn-primary ${action === "SELL" ? "btn-danger" : ""}`}
+              className={`bp ${action === "SELL" ? "bd" : ""}`}
               onClick={handlePlace}
               disabled={!isValid || loading}
             >
@@ -341,7 +341,7 @@ function NewOrderForm({
             </button>
           </div>
         ) : (
-          <button className="btn-primary w-full" onClick={handlePlace} disabled={!isValid || loading}>
+          <button className="bp w-full" onClick={handlePlace} disabled={!isValid || loading}>
             Place Order
           </button>
         )}
@@ -473,17 +473,17 @@ function ComboOrderForm({
   }, [confirmStep, ticker, action, parsedQty, parsedPrice, tif, legsWithActions, position.structure, onOrderPlaced]);
 
   return (
-    <div className="order-form">
+    <div className="of">
       {/* Leg summary (read-only) */}
-      <div className="order-field">
-        <label className="order-label">Legs</label>
-        <div className="combo-legs-summary">
+      <div className="o-f">
+        <label className="o-l">Legs</label>
+        <div className="cs82">
           {legsWithActions.map((leg, i) => (
-            <div key={i} className="combo-leg-row">
+            <div key={i} className="cr159">
               <span className={`pill ${leg.legAction === "SELL" ? "distrib" : "accum"}`} style={{ fontSize: "9px" }}>
                 {leg.legAction}
               </span>
-              <span className="combo-leg-desc">
+              <span className="cd143">
                 {leg.type} ${leg.strike}
               </span>
             </div>
@@ -492,17 +492,17 @@ function ComboOrderForm({
       </div>
 
       {/* Action toggle */}
-      <div className="order-field">
-        <label className="order-label">Action</label>
-        <div className="order-action-buttons">
+      <div className="o-f">
+        <label className="o-l">Action</label>
+        <div className="o-ab">
           <button
-            className={`order-action-btn ${action === "BUY" ? "order-action-active order-action-buy" : ""}`}
+            className={action === "BUY" ? "oaa oby" : ""}
             onClick={() => { setAction("BUY"); setConfirmStep(false); }}
           >
             BUY
           </button>
           <button
-            className={`order-action-btn ${action === "SELL" ? "order-action-active order-action-sell" : ""}`}
+            className={action === "SELL" ? "oaa oas" : ""}
             onClick={() => { setAction("SELL"); setConfirmStep(false); }}
           >
             SELL
@@ -511,10 +511,10 @@ function ComboOrderForm({
       </div>
 
       {/* Quantity */}
-      <div className="order-field">
-        <label className="order-label">Quantity</label>
+      <div className="o-f">
+        <label className="o-l">Quantity</label>
         <input
-          className="order-input"
+          className="oi"
           type="number"
           min="1"
           step="1"
@@ -525,12 +525,12 @@ function ComboOrderForm({
       </div>
 
       {/* Net Limit Price */}
-      <div className="order-field">
-        <label className="order-label">Net Limit Price</label>
-        <div className="modify-price-input-row">
-          <span className="modify-price-prefix">$</span>
+      <div className="o-f">
+        <label className="o-l">Net Limit Price</label>
+        <div className="mp-ir">
+          <span className="mp-p">$</span>
           <input
-            className="modify-price-input"
+            className="mxi"
             type="number"
             step="0.01"
             min="0.01"
@@ -539,25 +539,25 @@ function ComboOrderForm({
             placeholder="0.00"
           />
         </div>
-        <div className="modify-quick-buttons">
-          <button className="btn-quick" disabled={netPrices.bid == null} onClick={() => { if (netPrices.bid != null) { setLimitPrice(netPrices.bid.toFixed(2)); setConfirmStep(false); } }}>
+        <div className="mq-b">
+          <button className="bq" disabled={netPrices.bid == null} onClick={() => { if (netPrices.bid != null) { setLimitPrice(netPrices.bid.toFixed(2)); setConfirmStep(false); } }}>
             BID{netPrices.bid != null ? ` ${netPrices.bid.toFixed(2)}` : ""}
           </button>
-          <button className="btn-quick" disabled={netPrices.mid == null} onClick={() => { if (netPrices.mid != null) { setLimitPrice(netPrices.mid.toFixed(2)); setConfirmStep(false); } }}>
+          <button className="bq" disabled={netPrices.mid == null} onClick={() => { if (netPrices.mid != null) { setLimitPrice(netPrices.mid.toFixed(2)); setConfirmStep(false); } }}>
             MID{netPrices.mid != null ? ` ${netPrices.mid.toFixed(2)}` : ""}
           </button>
-          <button className="btn-quick" disabled={netPrices.ask == null} onClick={() => { if (netPrices.ask != null) { setLimitPrice(netPrices.ask.toFixed(2)); setConfirmStep(false); } }}>
+          <button className="bq" disabled={netPrices.ask == null} onClick={() => { if (netPrices.ask != null) { setLimitPrice(netPrices.ask.toFixed(2)); setConfirmStep(false); } }}>
             ASK{netPrices.ask != null ? ` ${netPrices.ask.toFixed(2)}` : ""}
           </button>
         </div>
       </div>
 
       {/* TIF */}
-      <div className="order-field">
-        <label className="order-label">Time in Force</label>
-        <div className="order-action-buttons">
-          <button className={`order-action-btn ${tif === "DAY" ? "order-action-active" : ""}`} onClick={() => setTif("DAY")}>DAY</button>
-          <button className={`order-action-btn ${tif === "GTC" ? "order-action-active" : ""}`} onClick={() => setTif("GTC")}>GTC</button>
+      <div className="o-f">
+        <label className="o-l">Time in Force</label>
+        <div className="o-ab">
+          <button className={tif === "DAY" ? "oaa" : ""} onClick={() => setTif("DAY")}>DAY</button>
+          <button className={tif === "GTC" ? "oaa" : ""} onClick={() => setTif("GTC")}>GTC</button>
         </div>
       </div>
 
@@ -565,12 +565,12 @@ function ComboOrderForm({
       {success && <div className="order-success">{success}</div>}
 
       {/* Submit / Confirm */}
-      <div className="order-submit">
+      <div className="os">
         {confirmStep ? (
-          <div className="order-confirm-row">
-            <button className="btn-secondary" onClick={() => setConfirmStep(false)} disabled={loading}>Back</button>
+          <div className="oc-r">
+            <button className="bt-s" onClick={() => setConfirmStep(false)} disabled={loading}>Back</button>
             <button
-              className={`btn-primary ${action === "SELL" ? "btn-danger" : ""}`}
+              className={`bp ${action === "SELL" ? "bd" : ""}`}
               onClick={handlePlace}
               disabled={!isValid || loading}
             >
@@ -578,7 +578,7 @@ function ComboOrderForm({
             </button>
           </div>
         ) : (
-          <button className="btn-primary w-full" onClick={handlePlace} disabled={!isValid || loading}>
+          <button className="bp w-full" onClick={handlePlace} disabled={!isValid || loading}>
             Place Combo Order
           </button>
         )}
@@ -618,8 +618,8 @@ export default function OrderTab({ ticker, position, portfolio, prices, openOrde
       <div className="order-tab">
         {/* Existing open orders for this ticker */}
         {openOrders.length > 0 && (
-          <div className="existing-orders-section">
-            <div className="existing-orders-title">Open Orders</div>
+          <div className="es31">
+            <div className="eo-t">Open Orders</div>
             {openOrders.map((o) => (
               <ExistingOrderRow key={o.permId || o.orderId} order={o} prices={prices} onModify={setModifyTarget} />
             ))}
@@ -629,7 +629,7 @@ export default function OrderTab({ ticker, position, portfolio, prices, openOrde
         {/* Combo order form for multi-leg positions */}
         {isCombo && (
           <div className={openOrders.length > 0 ? "new-order-section" : ""}>
-            {openOrders.length > 0 && <div className="existing-orders-title">Combo Order</div>}
+            {openOrders.length > 0 && <div className="eo-t">Combo Order</div>}
             <ComboOrderForm ticker={ticker} position={position!} prices={prices} />
           </div>
         )}
@@ -637,7 +637,7 @@ export default function OrderTab({ ticker, position, portfolio, prices, openOrde
         {/* Stock / single-leg order form */}
         {!isCombo && (
           <div className={openOrders.length > 0 ? "new-order-section" : ""}>
-            {openOrders.length > 0 && <div className="existing-orders-title">New Order</div>}
+            {openOrders.length > 0 && <div className="eo-t">New Order</div>}
             <NewOrderForm ticker={ticker} position={position} tickerPriceData={tickerPriceData} />
           </div>
         )}

@@ -86,10 +86,10 @@ export default function CtaPage() {
   }
 
   const statusBannerClass = syncState === "degraded" || error
-    ? "cta-status-banner cta-status-banner-error"
+    ? "csb csbe"
     : syncState === "syncing" || syncState === "running"
-      ? "cta-status-banner cta-status-banner-running"
-      : "cta-status-banner";
+      ? "csb csbr"
+      : "csb";
 
   return (
     <div data-testid="cta-page" style={{ width: "100%", display: "flex", flexDirection: "column", gap: "0" }}>
@@ -97,10 +97,8 @@ export default function CtaPage() {
       {/* ── Vol-Targeting Model Panel ─────────────────── */}
       <div data-testid="vol-targeting-model" style={{ padding: "16px", borderBottom: "1px solid var(--border)" }}>
         <div
-          className="font-mono text-muted uppercase"
+          className="fm tm uc fc"
           style={{
-            display: "flex",
-            alignItems: "center",
             gap: "6px",
             fontSize: "10px",
             fontWeight: 700,
@@ -113,14 +111,14 @@ export default function CtaPage() {
           <InfoTooltip text={SECTION_TOOLTIPS["VOL-TARGETING MODEL"]} />
         </div>
 
-        <div className="regime-cta-rows">
-          <div className="regime-cta-row">
+        <div className="rr118">
+          <div className="rcr">
             <span>Implied Exposure</span>
             <span className={exposurePct != null && exposurePct < 50 ? "text-negative" : ""}>
               {fmt(exposurePct, 1)}%
             </span>
           </div>
-          <div className="regime-cta-row">
+          <div className="rcr">
             <span>Forced Reduction</span>
             <span
               className={
@@ -132,7 +130,7 @@ export default function CtaPage() {
               {fmt(cta?.forced_reduction_pct, 1)}%
             </span>
           </div>
-          <div className="regime-cta-row">
+          <div className="rcr">
             <span>Est. CTA Selling</span>
             <span
               className={
@@ -145,11 +143,11 @@ export default function CtaPage() {
         </div>
 
         {exposurePct != null && (
-          <div className="regime-cta-gauge" style={{ marginTop: "12px" }}>
-            <div className="regime-cta-gauge-label">EXPOSURE</div>
-            <div className="regime-bar-track">
+          <div className="rcg" style={{ marginTop: "12px" }}>
+            <div className="rl37">EXPOSURE</div>
+            <div className="rbt">
               <div
-                className="regime-bar-fill"
+                className="rbf"
                 style={{
                   width: `${Math.min(exposurePct, 200) / 2}%`,
                   background:
@@ -157,7 +155,7 @@ export default function CtaPage() {
                 }}
               />
             </div>
-            <div className="regime-cta-gauge-scale">
+            <div className="rs38">
               <span>0%</span>
               <span>100%</span>
               <span>200%</span>
@@ -167,9 +165,9 @@ export default function CtaPage() {
       </div>
 
       {/* ── MenthorQ CTA Positioning ──────────────────── */}
-      <div className="w-full">
+      <div className="wf">
         <div
-          className="font-mono text-muted uppercase"
+          className="fm tm uc"
           style={{
             fontSize: "10px",
             fontWeight: 700,
@@ -184,7 +182,7 @@ export default function CtaPage() {
           MENTHORQ CTA POSITIONING — {ctaData?.date ?? "---"}{" "}
           <InfoTooltip text={SECTION_TOOLTIPS["MENTHORQ CTA POSITIONING"]} />
           {fetchLabel && (
-            <span className="text-muted" style={{ fontWeight: 400, fontSize: "9px", letterSpacing: "0.06em" }}>
+            <span className="tm" style={{ fontWeight: 400, fontSize: "9px", letterSpacing: "0.06em" }}>
               · FETCHED {fetchLabel}
             </span>
           )}
@@ -192,15 +190,15 @@ export default function CtaPage() {
 
         {!loading && ctaIsStale && (
           <div className={statusBannerClass} data-testid="cta-stale-banner" role="alert">
-            <div className="cta-status-title">CTA CACHE STALE</div>
-            <div className="cta-status-copy">{staleCopy}</div>
-            {syncDetail && <div className="cta-status-meta">{syncDetail}</div>}
+            <div className="ct105">CTA CACHE STALE</div>
+            <div className="cc119">{staleCopy}</div>
+            {syncDetail && <div className="cm120">{syncDetail}</div>}
           </div>
         )}
 
         {loading && (
           <div
-            className="cta-empty font-mono text-muted" style={{ padding: "24px 16px", fontSize: "11px" }}
+            className="cta-empty fm tm" style={{ padding: "24px 16px", fontSize: "11px" }}
           >
             Loading CTA positioning data...
           </div>
@@ -208,7 +206,7 @@ export default function CtaPage() {
 
         {!loading && !ctaData?.tables && (
           <div
-            className="cta-empty font-mono text-muted" style={{ padding: "24px 16px", fontSize: "11px" }}
+            className="cta-empty fm tm" style={{ padding: "24px 16px", fontSize: "11px" }}
           >
             No MenthorQ CTA data available. Run: <code>menthorq-cta</code>
           </div>
