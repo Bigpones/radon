@@ -34,7 +34,12 @@ else
   build_time=$(echo "$raw_time" | sed 's/s$//')
 fi
 
+# Measure gzipped JS size
+gz_bytes=$(find .next/static -name "*.js" -exec cat {} + | gzip -c | wc -c | tr -d ' ')
+gz_kb=$(( gz_bytes / 1024 ))
+
 echo "METRIC bundle_kb=$js_kb"
+echo "METRIC gzip_kb=$gz_kb"
 echo "METRIC css_kb=$css_kb"
 echo "METRIC chunk_count=$chunk_count"
 echo "METRIC build_s=$build_time"
