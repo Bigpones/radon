@@ -54,7 +54,7 @@ function CtaSection({ sectionKey, rows }: { sectionKey: string; rows: CtaRow[] }
       <button className="cta-s-hd" onClick={() => setOpen(!open)}>
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         {SECTION_LABELS[sectionKey] ?? sectionKey.toUpperCase()}
-        <span className="cta-section-count">{rows.length}</span>
+        <span className="cc90">{rows.length}</span>
       </button>
       {open && (
         <div className="ctw">
@@ -155,11 +155,11 @@ export default function CtaTables() {
   const fetchLabel = formatFetchedAt(data.fetched_at);
 
   return (
-    <div className="cta-container">
-      <div className="cta-date-label">
+    <div className="cc147">
+      <div className="cl129">
         MENTHORQ CTA POSITIONING — {data.date ?? "---"}
         {fetchLabel && (
-          <span className="cta-fetched-at"> · FETCHED {fetchLabel}</span>
+          <span className="ca130"> · FETCHED {fetchLabel}</span>
         )}
       </div>
       {order.map((key) => {

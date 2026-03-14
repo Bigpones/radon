@@ -146,14 +146,14 @@ export default function RatingsTab({ ticker, active, currentPrice }: RatingsTabP
   return (
     <div className="ratings-tab">
       {/* Recommendation + summary */}
-      <div className="ratings-header">
+      <div className="rh144">
         {rec && (
           <span className={`ratings-rec-pill ${gradePillClass(rec)}`}>
             {rec.toUpperCase()}
           </span>
         )}
-        <div className="ratings-summary">
-          {analystCount > 0 && <span className="ratings-count">{analystCount} analysts</span>}
+        <div className="rs123">
+          {analystCount > 0 && <span className="rc160">{analystCount} analysts</span>}
           {buyPct != null && <span className="ratings-pct bu">{buyPct}% buy</span>}
           {sellPct != null && sellPct > 0 && <span className="ratings-pct be">{sellPct}% sell</span>}
         </div>
@@ -161,15 +161,15 @@ export default function RatingsTab({ ticker, active, currentPrice }: RatingsTabP
 
       {/* Ratings distribution bar */}
       {total > 0 && (
-        <div className="ratings-bar-wrap">
+        <div className="rw108">
           <div className="ratings-bar">
-            {strongBuy > 0 && <div className="rb-s ratings-strong-buy" style={{ flex: strongBuy }}>{strongBuy}</div>}
+            {strongBuy > 0 && <div className="rb-s rb83" style={{ flex: strongBuy }}>{strongBuy}</div>}
             {buy > 0 && <div className="rb-s ratings-buy" style={{ flex: buy }}>{buy}</div>}
-            {hold > 0 && <div className="rb-s ratings-hold" style={{ flex: hold }}>{hold}</div>}
-            {sell > 0 && <div className="rb-s ratings-sell" style={{ flex: sell }}>{sell}</div>}
-            {strongSell > 0 && <div className="rb-s ratings-strong-sell" style={{ flex: strongSell }}>{strongSell}</div>}
+            {hold > 0 && <div className="rb-s rh173" style={{ flex: hold }}>{hold}</div>}
+            {sell > 0 && <div className="rb-s rs174" style={{ flex: sell }}>{sell}</div>}
+            {strongSell > 0 && <div className="rb-s rs70" style={{ flex: strongSell }}>{strongSell}</div>}
           </div>
-          <div className="ratings-bar-labels">
+          <div className="rl84">
             <span>Strong Buy</span>
             <span>Buy</span>
             <span>Hold</span>
@@ -181,9 +181,9 @@ export default function RatingsTab({ ticker, active, currentPrice }: RatingsTabP
 
       {/* Price targets */}
       {hasPriceTargets && (
-        <div className="ratings-targets">
+        <div className="rt124">
           <div className="rt-t">Price Targets</div>
-          <div className="ratings-targets-grid">
+          <div className="rg62">
             {ptLow != null && (
               <div className="ps">
                 <span className="ps-l">Low</span>
@@ -228,7 +228,7 @@ export default function RatingsTab({ ticker, active, currentPrice }: RatingsTabP
 
       {/* Upgrade/downgrade history */}
       {changes.length > 0 && (
-        <div className="ratings-changes">
+        <div className="rc125">
           <div className="rt-t">Recent Analyst Actions</div>
           <table className="plt">
             <thead>

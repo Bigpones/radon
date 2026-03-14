@@ -46,7 +46,7 @@ export default function Modal({ open, onClose, title, children, className }: Mod
   return createPortal(
     <div className={`modal-backdrop ${className ?? ""}`} onClick={handleBackdropClick}>
       <div className="modal-content" ref={contentRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId}>
-        <div className="modal-header">
+        <div className="mh165">
           <span className="modal-title" id={titleId}>{title}</span>
           <button className="modal-close" onClick={onClose} aria-label="Close">
             &times;

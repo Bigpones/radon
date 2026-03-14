@@ -145,24 +145,24 @@ export default function CompanyTab({ ticker, active, priceData, fundamentals }: 
   return (
     <div className="company-tab">
       {/* About section */}
-      <div className="company-about">
-        <div className="company-about-header">
+      <div className="ca157">
+        <div className="ch60">
           <span className="rt-t">
             About {ticker}
           </span>
           {(sector || issueType) && (
-            <span className="company-meta">
+            <span className="cm171">
               {sector}{sector && issueType ? " \u00B7 " : ""}{issueType}
             </span>
           )}
         </div>
-        {name && <div className="company-name">{name}</div>}
+        {name && <div className="cn172">{name}</div>}
         {description && (
           <div className={`company-description ${expanded ? "expanded" : ""}`}>
             <p>{description}</p>
             {description.length > 200 && (
               <button
-                className="company-show-more"
+                className="cm99"
                 onClick={() => setExpanded(!expanded)}
               >
                 {expanded ? "Show less" : "Show more"}
@@ -173,7 +173,7 @@ export default function CompanyTab({ ticker, active, priceData, fundamentals }: 
 
         {/* Profile grid */}
         {profileItems.length > 0 && (
-          <div className="company-profile-grid">
+          <div className="cg61">
             {profileItems.map((item) => (
               <div key={item.label} className="ps">
                 <span className="ps-l">{item.label}</span>
@@ -185,9 +185,9 @@ export default function CompanyTab({ ticker, active, priceData, fundamentals }: 
       </div>
 
       {/* Key Statistics */}
-      <div className="company-stats">
+      <div className="cs158">
         <div className="rt-t">Key Statistics</div>
-        <div className="company-stats-grid">
+        <div className="cg81">
           {statItems.map((item) => (
             <div key={item.label} className="ps">
               <span className="ps-l">{item.label}</span>

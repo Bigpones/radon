@@ -326,10 +326,10 @@ function PositionRow({ pos, showExpiry = true, showStrike = false, showUnderlyin
       <tr className={flashDirection ? `last-price-${flashDirection}` : undefined}>
         <td>
           {hasMultipleLegs ? (
-            <span className="ticker-with-chevron">
+            <span className="tc63">
               <TickerLink ticker={pos.ticker} positionId={pos.id} />
               <button
-                className="leg-toggle-btn"
+                className="lb128"
                 onClick={() => setLegsExpanded((v) => !v)}
                 aria-expanded={legsExpanded}
                 aria-label={`${legsExpanded ? "Collapse" : "Expand"} legs for ${pos.ticker}`}

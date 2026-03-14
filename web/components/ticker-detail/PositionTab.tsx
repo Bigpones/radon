@@ -23,14 +23,14 @@ function LegsDisclosure({ position, prices }: { position: PortfolioPosition; pri
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="position-legs">
+    <div className="pl155">
       <button
-        className="pos-legs-toggle"
+        className="pt122"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
       >
         {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-        <span className="pos-legs-title">Legs ({position.legs.length})</span>
+        <span className="pt141">Legs ({position.legs.length})</span>
       </button>
       {expanded && (
         <table className="plt">
@@ -98,7 +98,7 @@ export default function PositionTab({ position, prices }: PositionTabProps) {
 
   return (
     <div className="position-tab">
-      <div className="position-summary-grid">
+      <div className="pg48">
         <div className="ps">
           <span className="ps-l">Structure</span>
           <span className="ps-v">{position.structure}</span>

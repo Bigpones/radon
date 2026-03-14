@@ -43,26 +43,26 @@ export default function ChartPanel({
       data-chart-family={chartFamily}
       data-chart-renderer={chartRenderer}
     >
-      <div className="s-hd chart-panel-header">
-        <div className="chart-panel-heading">
+      <div className="s-hd ch85">
+        <div className="ch72">
           <div
-            className="chart-panel-kicker"
+            className="ck86"
             data-chart-family={chartFamily}
             data-chart-renderer={chartRenderer}
           >
             <span>{chartFamily}</span>
           </div>
-          <div className="s-tt chart-panel-title">
-            {icon ? <span className="chart-panel-icon" aria-hidden="true">{icon}</span> : null}
+          <div className="s-tt ct101">
+            {icon ? <span className="ci109" aria-hidden="true">{icon}</span> : null}
             <span>{title}</span>
           </div>
         </div>
-        {badge ? <div className="chart-panel-badge">{badge}</div> : null}
+        {badge ? <div className="cb102">{badge}</div> : null}
       </div>
       <div className={`s-bd chart-panel-body ${bodyClassName ?? ""}`.trim()}>
-        {legend.length > 0 ? <ChartLegend items={legend} className="chart-panel-legend" /> : null}
+        {legend.length > 0 ? <ChartLegend items={legend} className="cl87" /> : null}
         <div className={`chart-panel-content ${contentClassName ?? ""}`.trim()}>{children}</div>
-        {footer ? <div className="chart-panel-footer">{footer}</div> : null}
+        {footer ? <div className="cf88">{footer}</div> : null}
       </div>
     </div>
   );

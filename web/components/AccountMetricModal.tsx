@@ -14,7 +14,7 @@ export default function AccountMetricModal({ open, title, value, formula, onClos
   if (!open) return null;
 
   return (
-    <Modal open onClose={onClose} title={title} className="account-metric-modal">
+    <Modal open onClose={onClose} title={title} className="am53">
       <div className="eb-total">
         <span className="etv neutral">{value}</span>
       </div>

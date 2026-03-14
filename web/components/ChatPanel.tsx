@@ -115,13 +115,13 @@ export default function ChatPanel({ activeSection }: ChatPanelProps) {
       </div>
       <div className="s-bd">
         <div className="chat-shell">
-          <form suppressHydrationWarning className="chat-input-row" onSubmit={sendMessage}>
+          <form suppressHydrationWarning className="cr137" onSubmit={sendMessage}>
             <textarea
               suppressHydrationWarning
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Ask Pi for flow analysis, risk checks, action items..."
-              className="chat-textarea"
+              className="ct152"
               aria-label="Message Pi assistant"
               rows={6}
               onKeyDown={(event) => {
@@ -160,7 +160,7 @@ export default function ChatPanel({ activeSection }: ChatPanelProps) {
           {lastError ? <div className="chat-error">{lastError}</div> : null}
 
           {messages.length ? (
-            <div ref={messagesRef} className="chat-messages" aria-live="polite">
+            <div ref={messagesRef} className="cm153" aria-live="polite">
               {messages.map((message) => (
                 <div
                   key={message.id}
@@ -178,13 +178,13 @@ export default function ChatPanel({ activeSection }: ChatPanelProps) {
                 </div>
               ))}
               {isBusy ? (
-                <div className="chat-message assistant streaming">
+                <div className="cm168 assistant streaming">
                   <div className="chat-meta">
                     <span className="chat-role">Pi</span>
                     <span className="chat-time">processing...</span>
                   </div>
                   <div className="cmb">
-                    <div className="chat-content">
+                    <div className="cc169">
                       <div className="chat-line">Analyzing flow, structure, and risk context...</div>
                     </div>
                   </div>

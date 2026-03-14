@@ -83,13 +83,13 @@ export default function ExposureBreakdownModal({ metric, exposure, bankroll, onC
       open
       onClose={() => { setExpandedId(null); onClose(); }}
       title={config.title}
-      className="exposure-breakdown-modal"
+      className="em21"
     >
       {/* Total value */}
       <div className="eb-total">
         <span className="etv">{config.formatValue(totalValue)}</span>
         {metric === "netExposure" && (
-          <span className="eb-total-detail">
+          <span className="ed112">
             {fmtUsd(exposure.netLong)} long - {fmtUsd(exposure.netShort)} short / {fmtUsd(bankroll)} bankroll
           </span>
         )}
@@ -161,7 +161,7 @@ function RowGroup({
           {hasLegs && <span className="eb-expand">{isExpanded ? "\u25BC" : "\u25B6"}</span>}
           {row.ticker}
         </td>
-        <td className="eb-structure">{row.structure}</td>
+        <td className="es163">{row.structure}</td>
         <td className="eb-mono">{fmtSpot(row.spot)}</td>
         <td className="eb-mono">{fmtDelta(row.delta)}</td>
         <td className="eb-mono">{formatContribution(contribution)}</td>
@@ -170,12 +170,12 @@ function RowGroup({
       {isExpanded && row.legs.map((leg, i) => (
         <tr key={i} className="eb-leg-row">
           <td></td>
-          <td className="eb-leg-detail">
+          <td className="ed148">
             {leg.direction} {leg.contracts}x {leg.type}{leg.strike ? ` $${leg.strike}` : ""}
           </td>
           <td></td>
-          <td className="eb-mono eb-leg-delta">{fmtLegDelta(leg.rawDelta)}</td>
-          <td className="eb-mono eb-leg-delta">{fmtDelta(leg.legDelta)}</td>
+          <td className="eb-mono ed164">{fmtLegDelta(leg.rawDelta)}</td>
+          <td className="eb-mono ed164">{fmtDelta(leg.legDelta)}</td>
           <td></td>
         </tr>
       ))}

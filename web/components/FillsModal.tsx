@@ -30,9 +30,9 @@ export default function FillsModal({ open, fills, totalRealizedPnl, netLiquidati
   const hasFills = fills.length > 0;
 
   return (
-    <div className="fills-modal modal-backdrop" onClick={onClose}>
+    <div className="fills-modal mb135" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
+        <div className="mh165">
           <span className="modal-title">TODAY&apos;S FILLS</span>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
@@ -40,7 +40,7 @@ export default function FillsModal({ open, fills, totalRealizedPnl, netLiquidati
         {!hasFills ? (
           <div className="fills-empty">
             <p>No fills this session.</p>
-            <p className="fills-empty-sub">Realized P&L = $0.00</p>
+            <p className="fs113">Realized P&L = $0.00</p>
           </div>
         ) : (
           <>
@@ -73,8 +73,8 @@ export default function FillsModal({ open, fills, totalRealizedPnl, netLiquidati
               </tbody>
             </table>
 
-            <div className="fills-summary">
-              <div className="fills-summary-formula">
+            <div className="fs149">
+              <div className="ff47">
                 {fillsWithPnl.map((f, i) => (
                   <span key={f.execId}>
                     {i > 0 && <span className="fills-op">{f.realizedPNL! >= 0 ? " + " : " "}</span>}
@@ -86,12 +86,12 @@ export default function FillsModal({ open, fills, totalRealizedPnl, netLiquidati
                 ))}
                 {fillsWithPnl.length === 0 && <span className="fills-label">No closed positions this session</span>}
               </div>
-              <div className="fills-summary-total">
-                <span className="fills-total-label">REALIZED P&L</span>
+              <div className="ft64">
+                <span className="fl93">REALIZED P&L</span>
                 <span className={`fills-total-value ${totalRealizedPnl >= 0 ? "positive" : "negative"}`}>
                   {fmtPnl(totalRealizedPnl)}
                   {netLiquidation != null && netLiquidation > 0 && (
-                    <span className="fills-total-pct"> ({fmtPct(totalRealizedPnl / netLiquidation * 100)})</span>
+                    <span className="fp114"> ({fmtPct(totalRealizedPnl / netLiquidation * 100)})</span>
                   )}
                 </span>
               </div>

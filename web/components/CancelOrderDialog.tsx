@@ -18,8 +18,8 @@ export default function CancelOrderDialog({ order, loading, onConfirm, onClose }
 
   return (
     <Modal open={!!order} onClose={onClose} title="Cancel Order">
-      <div className="cancel-dialog">
-        <div className="cancel-order-details">
+      <div className="cd145">
+        <div className="cd50">
           <div className="cd-r">
             <span className="cl">Symbol</span>
             <span className="cv"><strong>{order.symbol}</strong></span>
@@ -53,12 +53,12 @@ export default function CancelOrderDialog({ order, loading, onConfirm, onClose }
         </div>
 
         {partiallyFilled && (
-          <div className="cancel-warning">
+          <div className="cw126">
             Partially filled ({order.filled} of {order.totalQuantity}). Only the remaining {order.remaining} will be cancelled.
           </div>
         )}
 
-        <div className="cancel-actions">
+        <div className="ca127">
           <button className="bt-s" onClick={onClose} disabled={loading}>
             Keep Order
           </button>

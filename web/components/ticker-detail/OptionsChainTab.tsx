@@ -242,7 +242,7 @@ function OrderBuilder({
 
   return (
     <div className="order-builder">
-      <div className="order-builder-header">
+      <div className="oh59">
         <span
           className="t-s uppercase"
           style={{
@@ -341,7 +341,7 @@ function OrderBuilder({
       </div>
 
       {/* Net price */}
-      <div className="order-builder-net">
+      <div className="on98">
         <span className="font-mono t-s" style={{ fontSize: "11px" }}>
           NET {isDebit ? "DEBIT" : "CREDIT"}
         </span>
@@ -644,7 +644,7 @@ export default function OptionsChainTab({
   return (
     <div className="chain-tab" style={{ padding: "8px 0" }}>
       {/* Expiry selector */}
-      <div className="chain-expiry-bar">
+      <div className="cb107">
         <label
           className="font-mono t-s uppercase"
           style={{
@@ -723,7 +723,7 @@ export default function OptionsChainTab({
                     <th className="chain-header">Last</th>
                   </>
                 )}
-                <th className="chain-header chain-header-strike">Strike</th>
+                <th className="chain-header cs68">Strike</th>
                 {sideFilter !== "calls" && (
                   <>
                     <th className="chain-header">Last</th>

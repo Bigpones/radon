@@ -134,7 +134,7 @@ export default function ModifyOrderModal({ order, loading, prices, portfolio, on
     <Modal open={!!order} onClose={onClose} title="Modify Order">
       <div className="modify-dialog">
         {/* Order info header */}
-        <div className="modify-order-info">
+        <div className="mi91">
           <strong>{order.symbol}</strong>
           <span className={`pill ${order.action === "BUY" ? "accum" : "distrib"}`}>
             {order.action}
@@ -148,15 +148,15 @@ export default function ModifyOrderModal({ order, loading, prices, portfolio, on
 
         {/* Stop price (read-only for STP LMT) */}
         {order.orderType === "STP LMT" && order.auxPrice != null && (
-          <div className="modify-stop-row">
+          <div className="mr110">
             <span className="modify-market-label">STOP PRICE</span>
             <span className="modify-market-value">{fmtPrice(order.auxPrice)}</span>
           </div>
         )}
 
         {/* Price input */}
-        <div className="modify-price-section">
-          <label className="modify-price-label" htmlFor="modify-price-input">
+        <div className="ms51">
+          <label className="ml74" htmlFor="modify-price-input">
             New Limit Price
           </label>
           <div className="mp-ir">
@@ -205,8 +205,8 @@ export default function ModifyOrderModal({ order, loading, prices, portfolio, on
               checked={outsideRth}
               onChange={(e) => setOutsideRth(e.target.checked)}
             />
-            <span className="modify-rth-label">FILL OUTSIDE RTH</span>
-            <span className="modify-rth-hint">Pre-market &amp; after hours</span>
+            <span className="ml103">FILL OUTSIDE RTH</span>
+            <span className="mh111">Pre-market &amp; after hours</span>
           </label>
 
           {/* Change indicator */}
@@ -218,7 +218,7 @@ export default function ModifyOrderModal({ order, loading, prices, portfolio, on
         </div>
 
         {/* Actions */}
-        <div className="modify-actions">
+        <div className="ma131">
           <button className="bt-s" onClick={onClose} disabled={loading}>
             Cancel
           </button>

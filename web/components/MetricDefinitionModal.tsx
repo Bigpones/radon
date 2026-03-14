@@ -15,7 +15,7 @@ export default function MetricDefinitionModal({ open, title, value, definition, 
   if (!open) return null;
 
   return (
-    <Modal open onClose={onClose} title={title} className="metric-definition-modal">
+    <Modal open onClose={onClose} title={title} className="mm30">
       <div className="eb-total">
         <span className="etv neutral">{value}</span>
       </div>

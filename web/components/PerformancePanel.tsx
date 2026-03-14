@@ -49,7 +49,7 @@ function StatCard({
   return (
     <button
       type="button"
-      className="metric-card metric-card-clickable performance-card-trigger"
+      className="metric-card metric-card-clickable pt18"
       data-testid={`performance-card-${id}`}
       aria-label={`${label} metric details`}
       data-definition={definition}
@@ -144,7 +144,7 @@ function PerformanceChart({ data }: { data: PerformanceData }) {
           </g>
           <path d={areaPath} fill="url(#performanceAreaGradient)" />
           <path d={benchmarkPath} className="performance-line performance-line-benchmark" />
-          <path d={equityPath} className="performance-line performance-line-equity" />
+          <path d={equityPath} className="performance-line pe27" />
           <g data-testid="performance-x-axis">
             <line x1={plotLeft} x2={plotRight} y1={plotBottom} y2={plotBottom} className="pa-l" />
             {xAxisTicks.map((tick, index) => (
@@ -354,17 +354,17 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
   return (
     <div className="performance-panel" data-testid="performance-panel">
       <div className="section ph">
-        <div className="s-bd performance-hero-body">
+        <div className="s-bd pb43">
           <div>
             <div className="section-label-mono">RECONSTRUCTED {data.period_label}</div>
-            <div className="performance-hero-value">
+            <div className="pv32">
               <span className={toneClass(summary.total_return)}>{fmtPct(summary.total_return)}</span>
             </div>
-            <div className="performance-hero-subtitle">
+            <div className="ps13">
               Ending equity {fmtUsdExact(summary.ending_equity)} • {data.benchmark} {fmtPct(data.benchmark_total_return)} • as of {data.as_of}
             </div>
           </div>
-          <div className="performance-hero-pills">
+          <div className="pp33">
             <span className="pill neutral">{data.trades_source === "ib_flex" ? "IB FLEX" : "CACHE"}</span>
             <span className="pill neutral">{summary.trading_days} DAYS</span>
             <span className={`pill ${summary.max_drawdown < -0.1 ? "undefined" : "defined"}`}>MAX DD {fmtPct(summary.max_drawdown)}</span>
@@ -448,7 +448,7 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
             </div>
             <span className="pill neutral">{data.methodology.return_basis.replace(/_/g, " ").toUpperCase()}</span>
           </div>
-          <div className="s-bd performance-meta-grid">
+          <div className="s-bd pg44">
             <div className="performance-meta-item">
               <span className="pm-l">Curve Type</span>
               <span className="pm-v">{data.methodology.curve_type.replace(/_/g, " ")}</span>

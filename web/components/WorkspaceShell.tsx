@@ -302,7 +302,7 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
           onToggleTheme={toggleTheme}
           theme={resolvedTheme}
         >
-          <div className="sync-controls">
+          <div className="sc151">
             <span className={`sync-status ${error ? "sync-error" : syncing ? "sync-active" : ""}`}>
               {syncLabel}
             </span>

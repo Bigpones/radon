@@ -204,10 +204,10 @@ function FlowSparkline({ ratios }: { ratios?: { date: string; buy_ratio: number 
   if (!ratios || ratios.length === 0) return <div className="sv">---</div>;
   const maxH = 28;
   return (
-    <div className="flow-sparkline">
+    <div className="fs132">
       {ratios.map((d, i) => {
         const r = d.buy_ratio;
-        if (r == null) return <div key={i} className="flow-spark-bar neutral" style={{ height: 2 }} />;
+        if (r == null) return <div key={i} className="fb133 neutral" style={{ height: 2 }} />;
         const cls = r >= 0.55 ? "accum" : r <= 0.45 ? "distrib" : "neutral";
         const h = Math.max(2, Math.round(r * maxH));
         return <div key={i} className={`flow-spark-bar ${cls}`} style={{ height: h }} title={`${d.date}: ${Math.round(r * 100)}%`} />;
@@ -270,7 +270,7 @@ function FlowSections() {
             </div>
             {actionItems.map((item) => (
               <div key={`${item.ticker}-${item.position}`} className="a-i">
-                <span className="alert-ticker">{item.ticker}</span> — {item.position}: {item.note}
+                <span className="at161">{item.ticker}</span> — {item.position}: {item.note}
               </div>
             ))}
           </div>
@@ -1054,7 +1054,7 @@ function OrdersSections({
                       <OrderPriceCell price={resolveOrderLastPrice(o, prices, portfolio)} />
                       <td>
                         {isPendingCancel ? (
-                          <span className="status-cancelling">Cancelling...</span>
+                          <span className="sc92">Cancelling...</span>
                         ) : isPendingModify ? (
                           <span className="sm">Modifying...</span>
                         ) : (
@@ -1062,9 +1062,9 @@ function OrdersSections({
                         )}
                       </td>
                       <td>{o.tif}</td>
-                      <td className="actions-cell">
+                      <td className="ac162">
                         {isPending ? (
-                          <span className="cancel-pending-label">PENDING</span>
+                          <span className="cl52">PENDING</span>
                         ) : (
                           <>
                             <button
@@ -1127,7 +1127,7 @@ function OrdersSections({
                     <tr key={`${e.execId}-${i}`} className={isCancelled ? "row-cancelled" : undefined}>
                       <td>
                         <TickerLink ticker={e.symbol} />
-                        {isCancelled && <XCircle size={12} className="cancelled-icon" />}
+                        {isCancelled && <XCircle size={12} className="ci134" />}
                       </td>
                       <td>
                         <span className={`pill ${isCancelled ? "cancelled" : displaySide === "BUY" ? "accum" : "distrib"}`}>

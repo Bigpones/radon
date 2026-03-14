@@ -68,7 +68,7 @@ export default function PnlBreakdownModal({
             {sorted.map((row) => (
               <tr key={row.id} className="eb-row">
                 <td className="eb-ticker">{row.ticker}</td>
-                <td className="eb-structure">{row.structure}</td>
+                <td className="es163">{row.structure}</td>
                 <td className="eb-mono">{row.col1}</td>
                 <td className="eb-mono">{row.col2}</td>
                 <td className={`eb-mono ${row.pnl >= 0 ? "positive" : "negative"}`}>
@@ -80,8 +80,8 @@ export default function PnlBreakdownModal({
               </tr>
             ))}
             {/* Total row */}
-            <tr className="pb-total-row">
-              <td colSpan={4} className="pb-total-label">{totalLabel}</td>
+            <tr className="pr170">
+              <td colSpan={4} className="pl139">{totalLabel}</td>
               <td className={`eb-mono ${total >= 0 ? "positive" : "negative"}`}>
                 {fmtSigned(total, 2)}
               </td>

@@ -218,7 +218,7 @@ export default function RegimeRelationshipView({
         </>
       }
       badge={
-        <div className="regime-relationship-meta">
+        <div className="rm19">
           <span className="rrc" style={{ color: spreadColor }}>
             {displaySpreadState(summary.spreadState)}
           </span>
@@ -231,9 +231,9 @@ export default function RegimeRelationshipView({
       contentClassName="regime-relationship-content"
       dataTestId="regime-relationship-view"
     >
-      <div className="regime-relationship-grid">
+      <div className="rg20">
         <section
-          className="rr-pa regime-relationship-panel-wide"
+          className="rr-pa rw4"
           data-testid="regime-spread-card"
         >
           <div className="rr-ph">
@@ -310,7 +310,7 @@ export default function RegimeRelationshipView({
                 );
               })}
 
-              <path d={spreadLine ?? ""} className="rr-li regime-relationship-line-spread" />
+              <path d={spreadLine ?? ""} className="rr-li rs2" />
 
               <circle
                 cx={xScale(entries.length - 1)}
@@ -467,7 +467,7 @@ export default function RegimeRelationshipView({
 
           <div className="regime-state-key" data-testid="regime-state-key">
             <div className="rp-t">STATE KEY</div>
-            <div className="regime-state-key-grid">
+            <div className="rg46">
               {QUADRANT_DISPLAY_ORDER.map((quadrant) => {
                 const slug = quadrantSlug(quadrant);
                 const isCurrent = summary.latestQuadrant === quadrant;
@@ -478,7 +478,7 @@ export default function RegimeRelationshipView({
                     data-testid={`regime-state-item-${slug}`}
                   >
                     <span
-                      className="regime-state-key-label"
+                      className="rl34"
                       style={{ color: quadrantTone(quadrant) }}
                     >
                       {quadrant.toUpperCase()}
@@ -525,7 +525,7 @@ export default function RegimeRelationshipView({
           </div>
 
           <div
-            className="regime-relationship-chart-shell"
+            className="rs3"
             data-testid="regime-zscore-chart-shell"
             onMouseMove={handleZScoreHover}
             onMouseLeave={() => setZScoreHover(null)}
@@ -567,8 +567,8 @@ export default function RegimeRelationshipView({
                   className="rr-bl"
                 />
 
-                <path d={zRvolLine ?? ""} className="rr-li regime-relationship-line-rvol" />
-                <path d={zCor1mLine ?? ""} className="rr-li regime-relationship-line-cor1m" />
+                <path d={zRvolLine ?? ""} className="rr-li rr7" />
+                <path d={zCor1mLine ?? ""} className="rr-li rc5" />
 
                 <circle
                   cx={xScale(entries.length - 1)}
@@ -590,7 +590,7 @@ export default function RegimeRelationshipView({
                       x2={xScale(zScoreHover.index)}
                       y1={0}
                       y2={innerHeight}
-                      className="regime-relationship-hover-line"
+                      className="rl6"
                     />
                     <circle
                       cx={xScale(zScoreHover.index)}
@@ -634,7 +634,7 @@ export default function RegimeRelationshipView({
                   height={innerHeight}
                   fill="transparent"
                   pointerEvents="all"
-                  className="regime-relationship-chart-overlay"
+                  className="ro0"
                   data-testid="regime-zscore-chart-overlay"
                   onMouseMove={handleZScoreHover}
                 />
@@ -643,7 +643,7 @@ export default function RegimeRelationshipView({
 
             {zScoreHover && (
               <div
-                className="chart-tooltip regime-relationship-chart-tooltip"
+                className="chart-tooltip rt1"
                 data-testid="regime-zscore-hover-tooltip"
                 style={{
                   top: `${zScoreTooltipTop}px`,

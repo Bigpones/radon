@@ -194,12 +194,12 @@ export default function CriHistoryChart({
       contentClassName="cri-history-chart-content"
       dataTestId="cri-history-chart"
     >
-      <div ref={containerRef} className="cri-history-chart-shell">
-        <div className="chart-surface cri-history-chart-surface">
+      <div ref={containerRef} className="cs28">
+        <div className="cs146 cs14">
           {showEmpty ? (
-            <div className="chart-empty-state cri-history-chart-empty">NO HISTORY AVAILABLE</div>
+            <div className="cs89 ce29">NO HISTORY AVAILABLE</div>
           ) : (
-            <svg ref={svgRef} width={width} height={HEIGHT} className="cri-history-chart-svg">
+            <svg ref={svgRef} width={width} height={HEIGHT} className="cs45">
               <g transform={`translate(${MARGIN.left},${MARGIN.top})`}>
                 {/* Grid lines */}
                 {yLeftTicks.map((t) => (

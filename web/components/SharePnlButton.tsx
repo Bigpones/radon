@@ -126,7 +126,7 @@ export default function SharePnlButton({ data, size = 13 }: SharePnlButtonProps)
 
       {open && (
         <div className="share-pnl-popover">
-          <div className="share-pnl-popover-title">Share Options</div>
+          <div className="st26">Share Options</div>
           <label className="spc">
             <input
               type="checkbox"
@@ -143,7 +143,7 @@ export default function SharePnlButton({ data, size = 13 }: SharePnlButtonProps)
             />
             <span>P&amp;L %</span>
           </label>
-          <div className="share-pnl-popover-actions">
+          <div className="sa12">
             <button
               className="bp spa"
               onClick={handleCopyAndTweet}

@@ -44,7 +44,7 @@ export default function PriceChart({ ticker, prices, priceKey, theme = "dark" }:
       contentClassName="price-chart-panel-content"
       dataTestId="price-chart-panel"
     >
-      <div className="price-chart-container">
+      <div className="pc42">
         {isMid && (
           <div className="price-chart-mid-badge" aria-label="Chart values are mid price (bid+ask)/2">
             MIDPRICE

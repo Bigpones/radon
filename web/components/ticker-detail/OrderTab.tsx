@@ -79,18 +79,18 @@ function ExistingOrderRow({
           <span className={`pill ${order.action === "BUY" ? "accum" : "distrib"}`} style={{ fontSize: "9px" }}>
             {order.action}
           </span>
-          <span className="existing-order-desc">{desc}</span>
+          <span className="ed69">{desc}</span>
           <span className="eoq">{order.totalQuantity}x</span>
         </div>
         <div className="eos">
           {isPending && <Loader2 size={12} className="cs" />}
-          <span className="existing-order-status-text">
+          <span className="et11">
             {isPendingCancel ? "Cancelling..." : isPendingModify ? "Modifying..." : order.status}
           </span>
         </div>
       </div>
 
-      <div className="existing-order-details">
+      <div className="ed40">
         <div className="eo-d">
           <span className="ps-l">TYPE</span>
           <span className="ps-v">{order.orderType}</span>
@@ -111,7 +111,7 @@ function ExistingOrderRow({
 
       {/* Action buttons */}
       {!isPending && (
-        <div className="existing-order-actions">
+        <div className="ea41">
           <button
             className="b-oa btn-modify"
             disabled={!canModify}
@@ -477,13 +477,13 @@ function ComboOrderForm({
       {/* Leg summary (read-only) */}
       <div className="o-f">
         <label className="o-l">Legs</label>
-        <div className="combo-legs-summary">
+        <div className="cs82">
           {legsWithActions.map((leg, i) => (
-            <div key={i} className="combo-leg-row">
+            <div key={i} className="cr159">
               <span className={`pill ${leg.legAction === "SELL" ? "distrib" : "accum"}`} style={{ fontSize: "9px" }}>
                 {leg.legAction}
               </span>
-              <span className="combo-leg-desc">
+              <span className="cd143">
                 {leg.type} ${leg.strike}
               </span>
             </div>
@@ -618,7 +618,7 @@ export default function OrderTab({ ticker, position, portfolio, prices, openOrde
       <div className="order-tab">
         {/* Existing open orders for this ticker */}
         {openOrders.length > 0 && (
-          <div className="existing-orders-section">
+          <div className="es31">
             <div className="eo-t">Open Orders</div>
             {openOrders.map((o) => (
               <ExistingOrderRow key={o.permId || o.orderId} order={o} prices={prices} onModify={setModifyTarget} />

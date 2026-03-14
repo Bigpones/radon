@@ -111,7 +111,7 @@ export default function CtaPage() {
           <InfoTooltip text={SECTION_TOOLTIPS["VOL-TARGETING MODEL"]} />
         </div>
 
-        <div className="regime-cta-rows">
+        <div className="rr118">
           <div className="rcr">
             <span>Implied Exposure</span>
             <span className={exposurePct != null && exposurePct < 50 ? "text-negative" : ""}>
@@ -144,7 +144,7 @@ export default function CtaPage() {
 
         {exposurePct != null && (
           <div className="rcg" style={{ marginTop: "12px" }}>
-            <div className="regime-cta-gauge-label">EXPOSURE</div>
+            <div className="rl37">EXPOSURE</div>
             <div className="rbt">
               <div
                 className="rbf"
@@ -155,7 +155,7 @@ export default function CtaPage() {
                 }}
               />
             </div>
-            <div className="regime-cta-gauge-scale">
+            <div className="rs38">
               <span>0%</span>
               <span>100%</span>
               <span>200%</span>
@@ -190,9 +190,9 @@ export default function CtaPage() {
 
         {!loading && ctaIsStale && (
           <div className={statusBannerClass} data-testid="cta-stale-banner" role="alert">
-            <div className="cta-status-title">CTA CACHE STALE</div>
-            <div className="cta-status-copy">{staleCopy}</div>
-            {syncDetail && <div className="cta-status-meta">{syncDetail}</div>}
+            <div className="ct105">CTA CACHE STALE</div>
+            <div className="cc119">{staleCopy}</div>
+            {syncDetail && <div className="cm120">{syncDetail}</div>}
           </div>
         )}
 

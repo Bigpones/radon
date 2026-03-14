@@ -16,7 +16,7 @@ export default function Sidebar({ activeSection, actionTone, ibConnected = true,
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-header">
+      <div className="sh138">
         <div className="logo-icon" />
         <span className="logo-text">Radon</span>
       </div>

@@ -77,13 +77,13 @@ export default function NewsTab({ ticker, active }: NewsTabProps) {
             {item.source && <span className="news-source">{item.source}</span>}
             {item.is_major && <span className="pill defined" style={{ fontSize: "8px", padding: "1px 4px" }}>MAJOR</span>}
           </div>
-          <div className="news-headline">
+          <div className="nh156">
             {item.headline}
             <a
               href={item.url || `https://www.google.com/search?q=${encodeURIComponent(item.headline)}&tbm=nws`}
               target="_blank"
               rel="noopener noreferrer"
-              className="news-open-link"
+              className="nl142"
               aria-label="Open article"
             >
               <ExternalLink size={12} />
