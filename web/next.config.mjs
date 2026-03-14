@@ -5,6 +5,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const config = {
   outputFileTracingRoot: resolve(__dirname, ".."),
+  compiler: {
+    removeConsole: { exclude: ["error", "warn"] },
+  },
   turbopack: {},
   webpack: (config) => {
     config.resolve.alias["@tools"] = resolve(__dirname, "..", "lib", "tools");
