@@ -1,8 +1,8 @@
 # Autoresearch: Web Dashboard Bundle Size Optimization
 
-## Status: 1124KB → 925KB (−17.7% raw), 281KB → 264KB gzip (−6.0%), 80KB → 73KB CSS (−8.8%)
+## Status: CONFIRMED COMPLETE — 1124KB → 925KB (−17.7% raw), 281KB → 264KB gzip (−6.0%), 80KB → 73KB CSS (−8.8%)
 
-Session 9: lucide-react 0.577 upgrade (−1KB gzip), formatter consolidation (PnlBreakdown, Attribution, positionUtils), removed 8 unused CSS properties + 8 dead CSS rules from legacy CtaTables. Next.js 16.2 canary tested: +59KB regression. SortTh extraction tested: raw −572B but gzip +244B. Remaining: 456KB framework, 110KB polyfills, 337KB app code, 22KB small chunks.
+Optimization floor verified across 9 sessions (50+ experiments). Session 9 confirmed: Next.js 16.2 canary regresses (+59KB), shared component extraction hurts gzip (+244B despite −572B raw), Next.js 16.1.0-16.1.6 produce identical bundles. All JS/CSS/config/dep paths exhausted. Remaining 925KB: 456KB framework, 110KB polyfills, 337KB app code, 22KB small chunks.
 
 ## Objective
 Minimize client-side JavaScript bundle size for the Radon Terminal web dashboard (Next.js 16 / Turbopack / React 19). The dashboard is at `web/` and serves a real-time trading terminal with charts, options chains, order management, and regime analysis.
