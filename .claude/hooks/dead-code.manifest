@@ -1,38 +1,12 @@
 scripts/clients/__pycache__	__pycache__ directory
 scripts/utils/__pycache__	__pycache__ directory
-scripts/trade_blotter/__pycache__	__pycache__ directory
 scripts/__pycache__	__pycache__ directory
-scripts/monitor_daemon/__pycache__	__pycache__ directory
-scripts/monitor_daemon/handlers/__pycache__	__pycache__ directory
 scripts/clients/__pycache__/__init__.cpython-39.pyc	compiled .pyc file
-scripts/clients/__pycache__/uw_client.cpython-39.pyc	compiled .pyc file
 scripts/clients/__pycache__/menthorq_client.cpython-39.pyc	compiled .pyc file
-scripts/clients/__pycache__/uw_client.cpython-314.pyc	compiled .pyc file
-scripts/clients/__pycache__/ib_client.cpython-314.pyc	compiled .pyc file
-scripts/clients/__pycache__/__init__.cpython-314.pyc	compiled .pyc file
-scripts/clients/__pycache__/menthorq_client.cpython-314.pyc	compiled .pyc file
 scripts/utils/__pycache__/__init__.cpython-39.pyc	compiled .pyc file
 scripts/utils/__pycache__/env_loader.cpython-39.pyc	compiled .pyc file
-scripts/utils/__pycache__/cta_sync_health.cpython-314.pyc	compiled .pyc file
 scripts/utils/__pycache__/atomic_io.cpython-39.pyc	compiled .pyc file
-scripts/utils/__pycache__/atomic_io.cpython-314.pyc	compiled .pyc file
 scripts/utils/__pycache__/cta_sync.cpython-39.pyc	compiled .pyc file
 scripts/utils/__pycache__/market_calendar.cpython-39.pyc	compiled .pyc file
-scripts/utils/__pycache__/launchd_calendar.cpython-314.pyc	compiled .pyc file
-scripts/utils/__pycache__/__init__.cpython-314.pyc	compiled .pyc file
-scripts/utils/__pycache__/env_loader.cpython-314.pyc	compiled .pyc file
 scripts/utils/__pycache__/cta_sync_health.cpython-39.pyc	compiled .pyc file
-scripts/utils/__pycache__/cta_sync.cpython-314.pyc	compiled .pyc file
-scripts/utils/__pycache__/market_calendar.cpython-314.pyc	compiled .pyc file
-scripts/trade_blotter/__pycache__/flex_query.cpython-314.pyc	compiled .pyc file
-scripts/trade_blotter/__pycache__/__init__.cpython-314.pyc	compiled .pyc file
-scripts/__pycache__/site_seo_audit.cpython-314.pyc	compiled .pyc file
-scripts/__pycache__/fetch_menthorq_cta.cpython-314.pyc	compiled .pyc file
-scripts/__pycache__/cta_sync_service.cpython-314.pyc	compiled .pyc file
 scripts/__pycache__/fetch_menthorq_cta.cpython-39.pyc	compiled .pyc file
-scripts/__pycache__/performance_explainer_report.cpython-314.pyc	compiled .pyc file
-scripts/monitor_daemon/__pycache__/__init__.cpython-314.pyc	compiled .pyc file
-scripts/monitor_daemon/__pycache__/daemon.cpython-314.pyc	compiled .pyc file
-scripts/monitor_daemon/handlers/__pycache__/fill_monitor.cpython-314.pyc	compiled .pyc file
-scripts/monitor_daemon/handlers/__pycache__/base.cpython-314.pyc	compiled .pyc file
-scripts/monitor_daemon/handlers/__pycache__/__init__.cpython-314.pyc	compiled .pyc file
