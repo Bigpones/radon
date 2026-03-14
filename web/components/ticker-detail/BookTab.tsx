@@ -446,10 +446,9 @@ function StockOrderForm({
           </div>
         ) : (
           <button
-            className="btn-primary"
+            className="btn-primary w-full"
             onClick={handlePlace}
             disabled={!isValid || loading}
-            style={{ width: "100%" }}
           >
             Place Order
           </button>

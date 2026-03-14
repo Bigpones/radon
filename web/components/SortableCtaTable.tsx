@@ -109,7 +109,7 @@ export default function SortableCtaTable({ sectionKey, rows }: SortableCtaTableP
   }
 
   return (
-    <div data-testid="sortable-cta-table" style={{ width: "100%" }}>
+    <div data-testid="sortable-cta-table" className="w-full">
       <div
         className="font-mono text-muted"
         style={{
@@ -137,8 +137,8 @@ export default function SortableCtaTable({ sectionKey, rows }: SortableCtaTableP
           {rows.length}
         </span>
       </div>
-      <div className="cta-table-wrap" style={{ width: "100%" }}>
-        <table className="cta-table" style={{ width: "100%" }}>
+      <div className="cta-table-wrap w-full">
+        <table className="cta-table w-full">
           <thead>
             <tr>
               <th className="cta-th-underlying">UNDERLYING</th>

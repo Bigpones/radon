@@ -404,10 +404,9 @@ function OrderBuilder({
           </div>
         ) : (
           <button
-            className="btn-primary"
+            className="btn-primary w-full"
             onClick={handlePlace}
             disabled={netPrice == null}
-            style={{ width: "100%" }}
           >
             Place {structure || "Order"}
           </button>
