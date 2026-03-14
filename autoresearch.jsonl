@@ -32,3 +32,4 @@
 {"run":19,"commit":"411a1aa","metric":921,"metrics":{"css_kb":80,"chunk_count":16,"build_s":1.9,"gzip_kb":264},"status":"keep","description":"Final measurement after all optimizations. Updated autoresearch.md with full history.","timestamp":1773504168031,"segment":0}
 {"run":20,"commit":"711fbba","metric":0,"metrics":{"css_kb":0,"chunk_count":0,"build_s":0,"gzip_kb":0},"status":"crash","description":"emotion: false breaks build — compiler tries to resolve @emotion/react/jsx-runtime. Reverted.","timestamp":1773504285161,"segment":0}
 {"run":21,"commit":"665275c","metric":921,"metrics":{"css_kb":80,"chunk_count":16,"build_s":2.4,"gzip_kb":264},"status":"keep","description":"Final verification run — 921KB stable. Optimization complete.","timestamp":1773504340679,"segment":0}
+{"type":"config","name":"Web bundle size optimization — session 3 (from 921KB)","metricName":"bundle_kb","metricUnit":"kb","bestDirection":"lower"}
