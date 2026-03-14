@@ -905,9 +905,9 @@ def main():
         pnl_data = {}
         if pnl_obj:
             # Data usually arrives within the combined sleep above.
-            # Only poll briefly if not yet available.
+            # Brief 0.3s fallback if not yet available (vs 1s before).
             if not _valid_pnl(getattr(pnl_obj, 'dailyPnL', None)):
-                client.sleep(1)
+                client.sleep(0.3)
             daily = pnl_obj.dailyPnL
             unrealized = pnl_obj.unrealizedPnL
             realized = pnl_obj.realizedPnL
