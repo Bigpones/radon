@@ -55,7 +55,7 @@ function SortTh<K extends string>({
           {active ? (
             direction === "asc" ? <ChevronUp size={10} /> : <ChevronDown size={10} />
           ) : (
-            <ChevronDown size={10} className="sort-icon-idle" />
+            <ChevronDown size={10} className="sii" />
           )}
         </span>
       </span>

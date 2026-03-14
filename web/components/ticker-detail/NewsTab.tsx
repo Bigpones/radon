@@ -92,7 +92,7 @@ export default function NewsTab({ ticker, active }: NewsTabProps) {
         </div>
       ))}
       {source && source !== "unusualwhales" && (
-        <div className="news-fallback-notice">via {source === "yahoo" ? "Yahoo Finance" : source}</div>
+        <div className="nfn">via {source === "yahoo" ? "Yahoo Finance" : source}</div>
       )}
     </div>
   );

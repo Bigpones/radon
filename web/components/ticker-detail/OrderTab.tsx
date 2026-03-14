@@ -83,7 +83,7 @@ function ExistingOrderRow({
           <span className="existing-order-qty">{order.totalQuantity}x</span>
         </div>
         <div className="existing-order-status">
-          {isPending && <Loader2 size={12} className="cancel-spinner" />}
+          {isPending && <Loader2 size={12} className="cs" />}
           <span className="existing-order-status-text">
             {isPendingCancel ? "Cancelling..." : isPendingModify ? "Modifying..." : order.status}
           </span>

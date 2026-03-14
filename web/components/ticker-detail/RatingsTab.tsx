@@ -266,7 +266,7 @@ export default function RatingsTab({ ticker, active, currentPrice }: RatingsTabP
 
       {/* Source indicator */}
       {data.source && (
-        <div className="news-fallback-notice">via {data.source === "uw" ? "Unusual Whales" : data.source}</div>
+        <div className="nfn">via {data.source === "uw" ? "Unusual Whales" : data.source}</div>
       )}
     </div>
   );

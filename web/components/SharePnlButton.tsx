@@ -127,7 +127,7 @@ export default function SharePnlButton({ data, size = 13 }: SharePnlButtonProps)
       {open && (
         <div className="share-pnl-popover">
           <div className="share-pnl-popover-title">Share Options</div>
-          <label className="share-pnl-checkbox">
+          <label className="spc">
             <input
               type="checkbox"
               checked={showDollar}
@@ -135,7 +135,7 @@ export default function SharePnlButton({ data, size = 13 }: SharePnlButtonProps)
             />
             <span>P&amp;L $</span>
           </label>
-          <label className="share-pnl-checkbox">
+          <label className="spc">
             <input
               type="checkbox"
               checked={showPct}
@@ -145,14 +145,14 @@ export default function SharePnlButton({ data, size = 13 }: SharePnlButtonProps)
           </label>
           <div className="share-pnl-popover-actions">
             <button
-              className="bp share-pnl-action"
+              className="bp spa"
               onClick={handleCopyAndTweet}
               disabled={copying || (!showDollar && !showPct)}
             >
               {copying ? "Generating..." : "Copy & Tweet"}
             </button>
             <button
-              className="bt-s share-pnl-action"
+              className="bt-s spa"
               onClick={handleCopy}
               disabled={copying || (!showDollar && !showPct)}
             >

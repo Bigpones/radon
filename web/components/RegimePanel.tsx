@@ -57,8 +57,8 @@ function ComponentBar({ label, score, live }: { label: string; score: number; li
         {tooltip && <InfoTooltip text={tooltip} />}
         <LiveBadge live={live} />
       </div>
-      <div className="regime-bar-track">
-        <div className="regime-bar-fill" style={{ width: `${pct}%`, background: barColor }} />
+      <div className="rbt">
+        <div className="rbf" style={{ width: `${pct}%`, background: barColor }} />
       </div>
       <div className="regime-component-score">{score.toFixed(1)}/25</div>
     </div>

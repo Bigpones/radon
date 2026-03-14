@@ -334,7 +334,7 @@ export default function CriHistoryChart({
 
         {tooltip.visible && tooltip.d && (
           <div className="chart-tooltip" style={{ ...tooltipSideStyle, top: tooltip.y - 10 }}>
-            <div className="chart-tooltip-date">{tooltip.d.date}</div>
+            <div className="ctd">{tooltip.d.date}</div>
             {series.map((s) => {
               const val = tooltip.d![s.key];
               const fmt = s.format ?? defaultFormat;

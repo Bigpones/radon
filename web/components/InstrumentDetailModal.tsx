@@ -54,7 +54,7 @@ export default function InstrumentDetailModal({ leg, ticker, expiry, prices, onC
     <Modal open={true} onClose={onClose} title={title} className="instrument-detail-modal">
       <div className="ticker-detail-content">
         {/* Position summary pill */}
-        <div className="instrument-summary-grid">
+        <div className="isg">
           <div className="ps">
             <span className="ps-l">DIRECTION</span>
             <span className="ps-v">{leg.direction} {leg.contracts}x</span>

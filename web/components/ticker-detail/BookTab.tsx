@@ -129,7 +129,7 @@ function PositionSummary({ position }: { position: PortfolioPosition }) {
       >
         POSITION
       </div>
-      <div className="instrument-summary-grid">
+      <div className="isg">
         <div className="ps">
           <span className="ps-l">DIRECTION</span>
           <span className="ps-v">

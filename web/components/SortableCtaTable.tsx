@@ -136,11 +136,11 @@ export default function SortableCtaTable({ sectionKey, rows }: SortableCtaTableP
           {rows.length}
         </span>
       </div>
-      <div className="cta-table-wrap w-full">
+      <div className="ctw w-full">
         <table className="cta-table w-full">
           <thead>
             <tr>
-              <th className="cta-th-underlying">UNDERLYING</th>
+              <th className="ctu">UNDERLYING</th>
               <th className="ctn" style={thStyle("position_today")} onClick={() => handleSort("position_today")}>
                 TODAY{indicator("position_today")}
               </th>
@@ -167,7 +167,7 @@ export default function SortableCtaTable({ sectionKey, rows }: SortableCtaTableP
           <tbody>
             {sorted.map((r) => (
               <tr key={r.underlying}>
-                <td className="cta-td-underlying">{r.underlying}</td>
+                <td className="cdu">{r.underlying}</td>
                 <td className="cdn" style={{ color: posColor(r.position_today) }}>
                   {fmt(r.position_today)}
                 </td>

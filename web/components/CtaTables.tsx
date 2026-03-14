@@ -57,11 +57,11 @@ function CtaSection({ sectionKey, rows }: { sectionKey: string; rows: CtaRow[] }
         <span className="cta-section-count">{rows.length}</span>
       </button>
       {open && (
-        <div className="cta-table-wrap">
+        <div className="ctw">
           <table className="cta-table">
             <thead>
               <tr>
-                <th className="cta-th-underlying">UNDERLYING</th>
+                <th className="ctu">UNDERLYING</th>
                 <th className="ctn">TODAY</th>
                 <th className="ctn">YDAY</th>
                 <th className="ctn">1M AGO</th>
@@ -74,7 +74,7 @@ function CtaSection({ sectionKey, rows }: { sectionKey: string; rows: CtaRow[] }
             <tbody>
               {rows.map((r) => (
                 <tr key={r.underlying}>
-                  <td className="cta-td-underlying">{r.underlying}</td>
+                  <td className="cdu">{r.underlying}</td>
                   <td className="cdn" style={{ color: posColor(r.position_today) }}>
                     {fmt(r.position_today)}
                   </td>

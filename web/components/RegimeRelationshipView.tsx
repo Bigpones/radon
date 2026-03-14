@@ -219,10 +219,10 @@ export default function RegimeRelationshipView({
       }
       badge={
         <div className="regime-relationship-meta">
-          <span className="regime-relationship-chip" style={{ color: spreadColor }}>
+          <span className="rrc" style={{ color: spreadColor }}>
             {displaySpreadState(summary.spreadState)}
           </span>
-          <span className="regime-relationship-chip" style={{ color: quadrantColor }}>
+          <span className="rrc" style={{ color: quadrantColor }}>
             {summary.latestQuadrant}
           </span>
         </div>
@@ -650,7 +650,7 @@ export default function RegimeRelationshipView({
                   ...zScoreTooltipSideStyle,
                 }}
               >
-                <div className="chart-tooltip-date" data-testid="regime-zscore-hover-date">
+                <div className="ctd" data-testid="regime-zscore-hover-date">
                   {formatDateLabel(zScoreHover.entry.date)}
                 </div>
                 <div className="ct-r">

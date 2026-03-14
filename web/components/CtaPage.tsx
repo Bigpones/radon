@@ -145,9 +145,9 @@ export default function CtaPage() {
         {exposurePct != null && (
           <div className="regime-cta-gauge" style={{ marginTop: "12px" }}>
             <div className="regime-cta-gauge-label">EXPOSURE</div>
-            <div className="regime-bar-track">
+            <div className="rbt">
               <div
-                className="regime-bar-fill"
+                className="rbf"
                 style={{
                   width: `${Math.min(exposurePct, 200) / 2}%`,
                   background:

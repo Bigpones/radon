@@ -183,7 +183,7 @@ export default function SeasonalityTab({ ticker, active }: SeasonalityTabProps) 
             >
               <div className="seasonality-cell-month">
                 {MONTH_LABELS[m.month - 1]}
-                {isCurrent && <span className="seasonality-now">NOW</span>}
+                {isCurrent && <span className="sn">NOW</span>}
               </div>
 
               {hasData ? (
@@ -236,7 +236,7 @@ export default function SeasonalityTab({ ticker, active }: SeasonalityTabProps) 
                 <tr key={m.month} className={`${isCurrent ? "seasonality-row-current" : ""} ${!hasData ? "seasonality-row-nodata" : ""}`}>
                   <td>
                     {MONTH_FULL[m.month - 1]}
-                    {isCurrent && <span className="seasonality-now">NOW</span>}
+                    {isCurrent && <span className="sn">NOW</span>}
                   </td>
                   {hasData ? (
                     <>

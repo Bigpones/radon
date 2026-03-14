@@ -172,7 +172,7 @@ export default function ChatPanel({ activeSection }: ChatPanelProps) {
                     <span className="chat-role">{message.role === "assistant" ? "Pi" : "You"}</span>
                     <span className="chat-time">{message.timestamp}</span>
                   </div>
-                  <div className="chat-message-body">
+                  <div className="cmb">
                     <MarkdownRenderer content={message.content} />
                   </div>
                 </div>
@@ -183,7 +183,7 @@ export default function ChatPanel({ activeSection }: ChatPanelProps) {
                     <span className="chat-role">Pi</span>
                     <span className="chat-time">processing...</span>
                   </div>
-                  <div className="chat-message-body">
+                  <div className="cmb">
                     <div className="chat-content">
                       <div className="chat-line">Analyzing flow, structure, and risk context...</div>
                     </div>

@@ -122,18 +122,18 @@ function TickerLeaderboard({ tickers }: { tickers: TickerAttributionEntry[] }) {
   return (
     <div className="pg-2" data-testid="attribution-ticker-leaderboard">
       <div>
-        <div className="attribution-mini-header positive">Top Performers</div>
+        <div className="amh positive">Top Performers</div>
         {top.map((t) => (
-          <div key={`top-${t.ticker}`} className="attribution-ticker-row">
+          <div key={`top-${t.ticker}`} className="atr">
             <span className="mono">{t.ticker}</span>
             <span className={`mono ${toneClass(t.realized_pnl)}`}>{fmtUsd(t.realized_pnl)}</span>
           </div>
         ))}
       </div>
       <div>
-        <div className="attribution-mini-header negative">Bottom Performers</div>
+        <div className="amh negative">Bottom Performers</div>
         {bottom.map((t) => (
-          <div key={`bot-${t.ticker}`} className="attribution-ticker-row">
+          <div key={`bot-${t.ticker}`} className="atr">
             <span className="mono">{t.ticker}</span>
             <span className={`mono ${toneClass(t.realized_pnl)}`}>{fmtUsd(t.realized_pnl)}</span>
           </div>

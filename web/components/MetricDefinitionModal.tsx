@@ -19,12 +19,12 @@ export default function MetricDefinitionModal({ open, title, value, definition, 
       <div className="eb-total">
         <span className="etv neutral">{value}</span>
       </div>
-      <div className="metric-definition-copy">
-        <span className="metric-definition-label">What It Is</span>
+      <div className="mdc">
+        <span className="mdl">What It Is</span>
         <p>{definition}</p>
       </div>
-      <div className="metric-definition-copy">
-        <span className="metric-definition-label">How It Is Calculated</span>
+      <div className="mdc">
+        <span className="mdl">How It Is Calculated</span>
       </div>
       <div className="ef">
         <code>{formula}</code>

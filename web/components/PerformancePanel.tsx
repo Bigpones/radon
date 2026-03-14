@@ -127,7 +127,7 @@ function PerformanceChart({ data }: { data: PerformanceData }) {
               className="pa-l"
             />
             {yAxisTicks.map((tick) => (
-              <g key={`y-${tick.value}`} className="performance-axis-tick">
+              <g key={`y-${tick.value}`} className="pat">
                 <line x1={plotLeft - 6} x2={plotLeft} y1={tick.y} y2={tick.y} className="pa-l" />
                 <text
                   x={plotLeft - 12}
@@ -148,7 +148,7 @@ function PerformanceChart({ data }: { data: PerformanceData }) {
           <g data-testid="performance-x-axis">
             <line x1={plotLeft} x2={plotRight} y1={plotBottom} y2={plotBottom} className="pa-l" />
             {xAxisTicks.map((tick, index) => (
-              <g key={`x-${tick.index}`} className="performance-axis-tick">
+              <g key={`x-${tick.index}`} className="pat">
                 <line x1={tick.x} x2={tick.x} y1={plotBottom} y2={plotBottom + 6} className="pa-l" />
                 <text
                   x={tick.x}
@@ -407,7 +407,7 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
             <span className="pill neutral">DAILY</span>
           </div>
           <div className="s-bd">
-            <div className="performance-metric-list">
+            <div className="pml">
               <div><span>VaR 95%</span><strong>{fmtPct(summary.var_95)}</strong></div>
               <div><span>CVaR 95%</span><strong>{fmtPct(summary.cvar_95)}</strong></div>
               <div><span>Tail Ratio</span><strong>{fmtRatio(summary.tail_ratio)}</strong></div>
@@ -427,7 +427,7 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
             <span className="pill neutral">{data.benchmark}</span>
           </div>
           <div className="s-bd">
-            <div className="performance-metric-list">
+            <div className="pml">
               <div><span>Hit Rate</span><strong>{fmtPct(summary.hit_rate)}</strong></div>
               <div><span>Upside Capture</span><strong>{fmtRatio(summary.upside_capture)}</strong></div>
               <div><span>Downside Capture</span><strong>{fmtRatio(summary.downside_capture)}</strong></div>

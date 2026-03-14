@@ -141,7 +141,7 @@ function SortTh<K extends string>({
           {active ? (
             direction === "asc" ? <ChevronUp size={10} /> : <ChevronDown size={10} />
           ) : (
-            <ChevronDown size={10} className="sort-icon-idle" />
+            <ChevronDown size={10} className="sii" />
           )}
         </span>
       </span>
@@ -201,7 +201,7 @@ const flowPosExtract = (item: FlowAnalysisPosition, key: FlowPosKey): string | n
 };
 
 function FlowSparkline({ ratios }: { ratios?: { date: string; buy_ratio: number | null }[] }) {
-  if (!ratios || ratios.length === 0) return <div className="strength-value">---</div>;
+  if (!ratios || ratios.length === 0) return <div className="sv">---</div>;
   const maxH = 28;
   return (
     <div className="flow-sparkline">
@@ -237,7 +237,7 @@ function FlowTable({ rows, lastColumn }: { rows: FlowAnalysisPosition[]; lastCol
             <td><span className={`pill ${item.flow_class}`}>{item.flow_label}</span></td>
             <td>
               <FlowSparkline ratios={item.daily_buy_ratios} />
-              <div className="strength-value">{item.strength}</div>
+              <div className="sv">{item.strength}</div>
             </td>
             <td>{item.note}</td>
           </tr>
@@ -1035,7 +1035,7 @@ function OrdersSections({
                     <tr key={`${o.orderId}-${i}`} className={isPendingCancel ? "row-pending-cancel" : isPendingModify ? "row-pending-modify" : undefined}>
                       <td>
                         <TickerLink ticker={o.symbol} />
-                        {isPending && <Loader2 size={12} className="cancel-spinner" />}
+                        {isPending && <Loader2 size={12} className="cs" />}
                       </td>
                       <td>
                         <span className={`pill ${o.action === "BUY" ? "accum" : "distrib"}`}>
@@ -1046,7 +1046,7 @@ function OrdersSections({
                       <td className="right">{o.totalQuantity}</td>
                       <td className="right">
                         {isPendingModify ? (
-                          <span className="status-modifying">Modifying...</span>
+                          <span className="sm">Modifying...</span>
                         ) : (
                           o.limitPrice != null ? fmtPrice(o.limitPrice) : "—"
                         )}
@@ -1056,7 +1056,7 @@ function OrdersSections({
                         {isPendingCancel ? (
                           <span className="status-cancelling">Cancelling...</span>
                         ) : isPendingModify ? (
-                          <span className="status-modifying">Modifying...</span>
+                          <span className="sm">Modifying...</span>
                         ) : (
                           o.status
                         )}
@@ -1248,10 +1248,10 @@ function HistoricalTradesSection() {
         </div>
       </div>
       <div className="s-bd">
-        {error && <div className="a-i section-message be">{error}</div>}
+        {error && <div className="a-i smg be">{error}</div>}
         {loading && <div className="p-6"><TableSkeleton rows={5} columns={8} /></div>}
         {!loading && !hasData && !error && (
-          <div className="a-i section-message">No historical trades. Click REFRESH to fetch from IB.</div>
+          <div className="a-i smg">No historical trades. Click REFRESH to fetch from IB.</div>
         )}
         {!loading && pageRows.length > 0 && (
           <>

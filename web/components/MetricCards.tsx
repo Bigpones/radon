@@ -190,7 +190,7 @@ function ExposureRow({
       ) : (
         <div className="mg">
           {["Net Long", "Net Short", "Dollar Delta", "Net Exposure"].map((label) => (
-            <div key={label} className="metric-card metric-card-loading">
+            <div key={label} className="metric-card mcl">
               <div className="ml">{label}</div>
               <div className="metric-value">---</div>
               <div className="mc neutral">AWAITING PRICES</div>
@@ -233,7 +233,7 @@ function TodayPnlRow({
     <>
       <div className="section-label-mono">TODAY&apos;S P&amp;L</div>
       {hasDaily ? (
-        <div className="metrics-grid-3">
+        <div className="mg3">
           {/* Renamed: "Unrealized" → "Day Move" — intraday change from yesterday's close */}
           <MetricCard
             card={{
@@ -254,7 +254,7 @@ function TodayPnlRow({
           />
         </div>
       ) : (
-        <div className="metrics-grid-3">
+        <div className="mg3">
           <div className="metric-card">
             <div className="ml">Day Move</div>
             <div className="metric-value">---</div>
@@ -323,7 +323,7 @@ export default function MetricCards({ portfolio, prices, realizedPnl, executedOr
         <div className="section-label-mono">ACCOUNT</div>
         <div className="mg">
           {placeholders.map((label, i) => (
-            <div key={i} className="metric-card metric-card-loading">
+            <div key={i} className="metric-card mcl">
               <div className="ml">{label}</div>
               <div className="metric-value">$0,000</div>
               <div className="mc neutral">AWAITING SYNC</div>

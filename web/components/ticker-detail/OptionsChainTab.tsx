@@ -718,7 +718,7 @@ export default function OptionsChainTab({
                     <th className="chain-header">IV</th>
                     <th className="chain-header">Vol</th>
                     <th className="chain-header">Bid</th>
-                    <th className="chain-header chain-header-mid">Mid</th>
+                    <th className="chain-header chm">Mid</th>
                     <th className="chain-header">Ask</th>
                     <th className="chain-header">Last</th>
                   </>
@@ -728,7 +728,7 @@ export default function OptionsChainTab({
                   <>
                     <th className="chain-header">Last</th>
                     <th className="chain-header">Bid</th>
-                    <th className="chain-header chain-header-mid">Mid</th>
+                    <th className="chain-header chm">Mid</th>
                     <th className="chain-header">Ask</th>
                     <th className="chain-header">Vol</th>
                     <th className="chain-header">IV</th>

@@ -40,11 +40,11 @@ function renderInline(text: string): (string | ReactNode)[] {
     } else if (match[3]) {
       // Italic *text*
       const em = match[3].slice(1, -1);
-      parts.push(<em key={match.index} className="chat-markdown-emphasis">{em}</em>);
+      parts.push(<em key={match.index} className="cme">{em}</em>);
     } else if (match[4]) {
       // Italic _text_
       const em = match[4].slice(1, -1);
-      parts.push(<em key={match.index} className="chat-markdown-emphasis">{em}</em>);
+      parts.push(<em key={match.index} className="cme">{em}</em>);
     } else if (match[5]) {
       // Link [text](url)
       parts.push(
@@ -169,7 +169,7 @@ export default function MarkdownRenderer({ content }: MarkdownRendererProps) {
       elements.push(
         <blockquote key={elements.length} className="chat-markdown-blockquote">
           {quoteLines.map((ql, qi) => (
-            <p key={qi} className="chat-markdown-p">{renderInline(ql)}</p>
+            <p key={qi} className="cmp">{renderInline(ql)}</p>
           ))}
         </blockquote>
       );
@@ -184,9 +184,9 @@ export default function MarkdownRenderer({ content }: MarkdownRendererProps) {
         i++;
       }
       elements.push(
-        <ul key={elements.length} className="chat-markdown-list chat-markdown-list-unordered">
+        <ul key={elements.length} className="cml chat-markdown-list-unordered">
           {items.map((item, ii) => (
-            <li key={ii} className="chat-markdown-list-item">{renderInline(item)}</li>
+            <li key={ii} className="cli">{renderInline(item)}</li>
           ))}
         </ul>
       );
@@ -201,9 +201,9 @@ export default function MarkdownRenderer({ content }: MarkdownRendererProps) {
         i++;
       }
       elements.push(
-        <ol key={elements.length} className="chat-markdown-list chat-markdown-list-ordered">
+        <ol key={elements.length} className="cml chat-markdown-list-ordered">
           {items.map((item, ii) => (
-            <li key={ii} className="chat-markdown-list-item">{renderInline(item)}</li>
+            <li key={ii} className="cli">{renderInline(item)}</li>
           ))}
         </ol>
       );
@@ -218,7 +218,7 @@ export default function MarkdownRenderer({ content }: MarkdownRendererProps) {
 
     // Paragraph (default)
     elements.push(
-      <p key={elements.length} className="chat-markdown-p">{renderInline(line)}</p>
+      <p key={elements.length} className="cmp">{renderInline(line)}</p>
     );
     i++;
   }
