@@ -3,8 +3,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/web"
 
-# Clean previous build
-rm -rf .next
+# Clean previous build (retry to handle races)
+rm -rf .next 2>/dev/null || sleep 1 && rm -rf .next 2>/dev/null || true
 
 # Build
 npm run build 2>&1 > /tmp/next-build.log
