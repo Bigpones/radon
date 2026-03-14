@@ -1,8 +1,8 @@
 # Autoresearch: Web Dashboard Bundle Size Optimization
 
-## Status: CONFIRMED COMPLETE — 1124KB → 925KB (−17.7% raw), 281KB → 264KB gzip (−6.0%), 80KB → 73KB CSS (−8.8%)
+## Status: 1124KB → 913KB (−18.8% raw), 281KB → 264KB gzip (−6.0%), 80KB → 57KB CSS (−28.8%)
 
-Optimization floor verified across 9 sessions (50+ experiments). Session 9 confirmed: Next.js 16.2 canary regresses (+59KB), shared component extraction hurts gzip (+244B despite −572B raw), Next.js 16.1.0-16.1.6 produce identical bundles. All JS/CSS/config/dep paths exhausted. Remaining 925KB: 456KB framework, 110KB polyfills, 337KB app code, 22KB small chunks.
+Sessions 1-9: dependency replacement + config (1124→925KB). Sessions 11-12: CSS rule merging (−6KB CSS) + CSS class name shortening campaign (−12KB raw, −23KB CSS). 300+ class names shortened to 2-4 char abbreviations. All non-test-referenced classes optimized. Remaining 913KB: 456KB framework, 110KB polyfills, ~329KB app code, 18KB small chunks.
 
 ## Objective
 Minimize client-side JavaScript bundle size for the Radon Terminal web dashboard (Next.js 16 / Turbopack / React 19). The dashboard is at `web/` and serves a real-time trading terminal with charts, options chains, order management, and regime analysis.
@@ -97,14 +97,22 @@ Minimize client-side JavaScript bundle size for the Radon Terminal web dashboard
 - Replace lucide-react with inline SVG icons: +6KB — lucide's shared factory minifies better
 - Remove "use client" from pure-render components: all imported by client parents, no savings
 
-### Current chunk breakdown (920KB)
+### Current chunk breakdown (913KB)
 | Component | Size | % | Actionable? |
 |-----------|------|---|-------------|
-| App code | 336KB | 37% | Only via feature removal |
-| Next.js | 220KB | 24% | Framework — untouchable |
-| React | 124KB | 13% | Framework — untouchable |
-| React DOM | 112KB | 12% | Framework — untouchable |
-| Other chunks | 129KB | 14% | Router, lucide, manifests |
+| App code | 329KB | 36% | Class names minimized. Only via feature removal. |
+| Next.js | 225KB | 25% | Framework — untouchable |
+| React | 123KB | 13% | Framework — untouchable |
+| Core-js polyfills | 112KB | 12% | Pre-built copy from Next.js — untouchable |
+| Other chunks | 124KB | 14% | Router (31+33KB), lucide+kit (15KB), chartSystem+liveline (13KB), turbopack runtime (10KB), providers (5+5+9KB) |
 
-The 336KB app chunk contains ~39KB of liveline (canvas charting), ~32KB lucide icons, and ~265KB of actual Radon component/hook/utility code.
+The 329KB app chunk contains ~7KB tooltip text (sectionTooltips.ts keys are test-locked), ~39KB liveline, and ~283KB of minified Radon components/hooks/utilities.
+
+### Session 11-12: CSS class name shortening campaign
+Renamed 300+ CSS class names from human-readable (e.g., `section-header`, `regime-relationship-quadrant-label`) to 2-4 char abbreviations (e.g., `s-hd`, `rr-ql`). Key findings:
+- **2-char names optimal for gzip**: shorter than gzip backreference pointers (3+ bytes)
+- **4-char names with 5+ uses**: save raw but hurt gzip (net neutral or slightly worse)
+- **Orphan cleanup required**: mass CSS sed-replace leaves dead rules — must scan + remove
+- **Test-referenced classes untouchable**: ~2.8KB of class name chars remain in test assertions
+- CSS selector merging: Turbopack doesn't auto-merge identical rule declarations — manual grouping saved 6KB CSS
 
