@@ -15,8 +15,6 @@ img, svg, video, canvas, audio, iframe, embed, object { display: block; vertical
 img, video { max-width: 100%; height: auto; }
 [hidden] { display: none; }
 
-
-
 :root {
   --sidebar-width: 220px;
   --header-height: 48px;
@@ -392,7 +390,6 @@ body {
   margin-bottom: 20px;
 }
 
-
 .metrics-grid-3 {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -679,8 +676,6 @@ tr:last-child td {
   border-bottom: none;
 }
 
-
-
 /* Price cells with trend arrows: flex keeps value + arrow on one line, right-aligned.
    Any td using .last-price-cell MUST place the arrow icon after the value text. */
 td.last-price-cell {
@@ -693,8 +688,6 @@ td.last-price-cell {
   margin-left: 4px;
   flex-shrink: 0;
 }
-
-
 
 .pill {
   display: inline-block;
@@ -728,8 +721,6 @@ td.last-price-cell {
   border-color: var(--info);
   color: var(--info);
 }
-
-
 
 .strength-value {
   font-size: 10px;
@@ -868,9 +859,6 @@ td.last-price-cell {
   gap: 14px;
 }
 
-
-
-
 .performance-chart {
   width: 100%;
   height: auto;
@@ -995,7 +983,6 @@ td.last-price-cell {
   color: var(--text-secondary);
 }
 
-
 .chat-shell {
   padding: 16px;
   display: flex;
@@ -1101,10 +1088,6 @@ td.last-price-cell {
   letter-spacing: 0.06em;
 }
 
-
-
-
-
 .chat-markdown-link {
   color: inherit;
   text-decoration: underline;
@@ -1173,13 +1156,6 @@ td.last-price-cell {
   line-height: 1.45;
   white-space: pre-wrap;
 }
-
-
-
-
-
-
-
 
 .chat-empty {
   color: var(--text-muted);
@@ -1311,7 +1287,6 @@ td.last-price-cell {
     grid-template-columns: repeat(2, 1fr);
   }
 
-
   .metrics-grid-3 {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -1339,7 +1314,6 @@ td.last-price-cell {
   .metrics-grid {
     grid-template-columns: 1fr;
   }
-
 
   .metrics-grid-3 {
     grid-template-columns: 1fr;
@@ -1545,9 +1519,6 @@ tr.leg-row td {
   background: var(--banner-positive);
 }
 
-
-
-
 @keyframes banner-slide-down {
   from {
     max-height: 0;
@@ -1591,9 +1562,6 @@ tr.leg-row td {
   animation: toast-in 200ms ease-out;
   max-width: 380px;
 }
-
-
-
 
 .toast-message {
   flex: 1;
@@ -2963,16 +2931,12 @@ tr {
   margin-top: 2px;
 }
 
-
-
 /* History Table */
 .regime-history {
   background: var(--bg-panel);
   border: 1px solid var(--border-dim);
   overflow-x: auto;
 }
-
-
 
 .regime-history th {
   font-size: 10px;
@@ -3248,9 +3212,6 @@ tr {
 
 /* ─── CTA Tables (MenthorQ) ──────────────────────────── */
 
-
-
-
 .cta-empty {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -3304,11 +3265,6 @@ tr {
   background: var(--bg-hover);
   padding: 2px 6px;
 }
-
-
-
-
-
 
 .cta-table-wrap {
   overflow-x: auto;
