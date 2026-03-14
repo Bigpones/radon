@@ -62,7 +62,7 @@ export default function CancelOrderDialog({ order, loading, onConfirm, onClose }
           <button className="bt-s" onClick={onClose} disabled={loading}>
             Keep Order
           </button>
-          <button className="btn-danger" onClick={onConfirm} disabled={loading}>
+          <button className="bd" onClick={onConfirm} disabled={loading}>
             {loading ? "Cancelling..." : "Cancel Order"}
           </button>
         </div>

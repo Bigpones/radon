@@ -42,14 +42,14 @@ function SortTh<K extends string>({
   const ariaSort = active ? (direction === "asc" ? "ascending" : "descending") : undefined;
   return (
     <th
-      className={`sortable-th ${className ?? ""} ${active ? "sort-active" : ""}`}
+      className={`sth ${className ?? ""} ${active ? "sa" : ""}`}
       onClick={() => onToggle(sortKey)}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(sortKey); } }}
       tabIndex={0}
       role="columnheader"
       aria-sort={ariaSort}
     >
-      <span className="sort-label">
+      <span className="so">
         {label}
         <span className="sort-icon">
           {active ? (

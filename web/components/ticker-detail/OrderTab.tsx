@@ -269,13 +269,13 @@ function NewOrderForm({
         <label className="o-l">Action</label>
         <div className="o-ab">
           <button
-            className={`order-action-btn ${action === "BUY" ? "oaa oby" : ""}`}
+            className={`${action === "BUY" ? "oaa oby" : ""}`}
             onClick={() => { setAction("BUY"); setConfirmStep(false); }}
           >
             BUY
           </button>
           <button
-            className={`order-action-btn ${action === "SELL" ? "oaa oas" : ""}`}
+            className={`${action === "SELL" ? "oaa oas" : ""}`}
             onClick={() => { setAction("SELL"); setConfirmStep(false); }}
           >
             SELL
@@ -320,8 +320,8 @@ function NewOrderForm({
       <div className="o-f">
         <label className="o-l">Time in Force</label>
         <div className="o-ab">
-          <button className={`order-action-btn ${tif === "DAY" ? "oaa" : ""}`} onClick={() => setTif("DAY")}>DAY</button>
-          <button className={`order-action-btn ${tif === "GTC" ? "oaa" : ""}`} onClick={() => setTif("GTC")}>GTC</button>
+          <button className={`${tif === "DAY" ? "oaa" : ""}`} onClick={() => setTif("DAY")}>DAY</button>
+          <button className={`${tif === "GTC" ? "oaa" : ""}`} onClick={() => setTif("GTC")}>GTC</button>
         </div>
       </div>
 
@@ -333,7 +333,7 @@ function NewOrderForm({
           <div className="oc-r">
             <button className="bt-s" onClick={() => setConfirmStep(false)} disabled={loading}>Back</button>
             <button
-              className={`btn-primary ${action === "SELL" ? "btn-danger" : ""}`}
+              className={`bp ${action === "SELL" ? "bd" : ""}`}
               onClick={handlePlace}
               disabled={!isValid || loading}
             >
@@ -496,13 +496,13 @@ function ComboOrderForm({
         <label className="o-l">Action</label>
         <div className="o-ab">
           <button
-            className={`order-action-btn ${action === "BUY" ? "oaa oby" : ""}`}
+            className={`${action === "BUY" ? "oaa oby" : ""}`}
             onClick={() => { setAction("BUY"); setConfirmStep(false); }}
           >
             BUY
           </button>
           <button
-            className={`order-action-btn ${action === "SELL" ? "oaa oas" : ""}`}
+            className={`${action === "SELL" ? "oaa oas" : ""}`}
             onClick={() => { setAction("SELL"); setConfirmStep(false); }}
           >
             SELL
@@ -556,8 +556,8 @@ function ComboOrderForm({
       <div className="o-f">
         <label className="o-l">Time in Force</label>
         <div className="o-ab">
-          <button className={`order-action-btn ${tif === "DAY" ? "oaa" : ""}`} onClick={() => setTif("DAY")}>DAY</button>
-          <button className={`order-action-btn ${tif === "GTC" ? "oaa" : ""}`} onClick={() => setTif("GTC")}>GTC</button>
+          <button className={`${tif === "DAY" ? "oaa" : ""}`} onClick={() => setTif("DAY")}>DAY</button>
+          <button className={`${tif === "GTC" ? "oaa" : ""}`} onClick={() => setTif("GTC")}>GTC</button>
         </div>
       </div>
 
@@ -570,7 +570,7 @@ function ComboOrderForm({
           <div className="oc-r">
             <button className="bt-s" onClick={() => setConfirmStep(false)} disabled={loading}>Back</button>
             <button
-              className={`btn-primary ${action === "SELL" ? "btn-danger" : ""}`}
+              className={`bp ${action === "SELL" ? "bd" : ""}`}
               onClick={handlePlace}
               disabled={!isValid || loading}
             >

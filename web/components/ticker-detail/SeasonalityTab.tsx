@@ -179,7 +179,7 @@ export default function SeasonalityTab({ ticker, active }: SeasonalityTabProps) 
           return (
             <div
               key={m.month}
-              className={`seasonality-cell ${isCurrent ? "seasonality-cell-current" : ""} ${!hasData ? "scn" : ""}`}
+              className={`sce ${isCurrent ? "scc" : ""} ${!hasData ? "scn" : ""}`}
             >
               <div className="sm39">
                 {MONTH_LABELS[m.month - 1]}
@@ -190,11 +190,11 @@ export default function SeasonalityTab({ ticker, active }: SeasonalityTabProps) 
                 <>
                   <div className="sw16">
                     <div
-                      className={`seasonality-cell-bar ${isPositive ? "seasonality-bar-positive" : "seasonality-bar-negative"}`}
+                      className={`scba ${isPositive ? "sbp" : "sbn"}`}
                       style={{ width: `${barWidth(m.avg_change)}%` }}
                     />
                   </div>
-                  <div className={`seasonality-cell-return ${isPositive ? "positive" : "negative"}`}>
+                  <div className={`scr ${isPositive ? "positive" : "negative"}`}>
                     {fmtPct(m.avg_change)}
                   </div>
                   <div className="sw25">
@@ -233,7 +233,7 @@ export default function SeasonalityTab({ ticker, active }: SeasonalityTabProps) 
               const monthRating = hasData ? rateMonth(m.positive_months_perc, m.avg_change) : "NEUTRAL" as Rating;
               const isCurrent = m.month === currentMonth;
               return (
-                <tr key={m.month} className={`${isCurrent ? "seasonality-row-current" : ""} ${!hasData ? "seasonality-row-nodata" : ""}`}>
+                <tr key={m.month} className={`${isCurrent ? "srw" : ""} ${!hasData ? "srnd" : ""}`}>
                   <td>
                     {MONTH_FULL[m.month - 1]}
                     {isCurrent && <span className="sn">NOW</span>}

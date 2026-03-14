@@ -307,7 +307,7 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
               {syncLabel}
             </span>
             <button
-              className="sync-button"
+              className="sb"
               onClick={syncNow}
               disabled={syncing}
               title={`Sync ${syncTarget} from IB Gateway`}

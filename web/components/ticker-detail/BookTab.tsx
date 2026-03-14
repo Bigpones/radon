@@ -308,7 +308,7 @@ function StockOrderForm({
         <label className="o-l">Action</label>
         <div className="o-ab">
           <button
-            className={`order-action-btn ${action === "BUY" ? "oaa oby" : ""}`}
+            className={`${action === "BUY" ? "oaa oby" : ""}`}
             onClick={() => {
               setAction("BUY");
               setConfirmStep(false);
@@ -317,7 +317,7 @@ function StockOrderForm({
             BUY
           </button>
           <button
-            className={`order-action-btn ${action === "SELL" ? "oaa oas" : ""}`}
+            className={`${action === "SELL" ? "oaa oas" : ""}`}
             onClick={() => {
               setAction("SELL");
               setConfirmStep(false);
@@ -405,13 +405,13 @@ function StockOrderForm({
         <label className="o-l">Time in Force</label>
         <div className="o-ab">
           <button
-            className={`order-action-btn ${tif === "DAY" ? "oaa" : ""}`}
+            className={`${tif === "DAY" ? "oaa" : ""}`}
             onClick={() => setTif("DAY")}
           >
             DAY
           </button>
           <button
-            className={`order-action-btn ${tif === "GTC" ? "oaa" : ""}`}
+            className={`${tif === "GTC" ? "oaa" : ""}`}
             onClick={() => setTif("GTC")}
           >
             GTC
@@ -433,7 +433,7 @@ function StockOrderForm({
               Back
             </button>
             <button
-              className={`btn-primary ${action === "SELL" ? "btn-danger" : ""}`}
+              className={`bp ${action === "SELL" ? "bd" : ""}`}
               onClick={handlePlace}
               disabled={!isValid || loading}
             >

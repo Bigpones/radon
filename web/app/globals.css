@@ -302,8 +302,8 @@ body {
 .cm168.user,
 .lb128:hover,
 .pt122:hover,
-.sortable-th:hover,
-.sortable-th.sort-active,
+.sth:hover,
+.sth.sa,
 .toast-close:hover,
 .modal-close:hover,
 .ticker-tab:hover,
@@ -349,7 +349,7 @@ body {
 
 .theme-toggle:hover,
 .ft97:hover,
-.sync-button:hover,
+.sb:hover,
 .bq:hover:not(:disabled) { background: var(--bg-hover); border-color: var(--border-focus); }
 
 .content {
@@ -723,11 +723,11 @@ td.last-price-cell {
 }
 
 .fb133.accum,
-.seasonality-bar-positive,
+.sbp,
 .sl-d.sfa { background: var(--positive); }
 
 .fb133.distrib,
-.seasonality-bar-negative,
+.sbn,
 .sl-d.suf { background: var(--negative); }
 
 .fb133.neutral {
@@ -1269,7 +1269,7 @@ td.last-price-cell {
   color: var(--warning);
 }
 
-.sync-button {
+.sb {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1286,10 +1286,10 @@ td.last-price-cell {
   transition: all 150ms ease-in-out;
 }
 
-.sync-button:disabled,
+.sb:disabled,
 .btn-sync:disabled,
 .bt-s:disabled,
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+.bd:disabled { opacity: 0.5; cursor: not-allowed; }
 
 @keyframes spin {
   from { transform: rotate(0deg); }
@@ -1387,19 +1387,19 @@ tr.leg-row td {
   padding-bottom: 2px;
 }
 
-.sortable-th {
+.sth {
   cursor: pointer;
   user-select: none;
   transition: color 150ms ease-in-out;
 }
 
-.sort-label {
+.so {
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
 
-.sortable-th.rg .sort-label {
+.sth.rg .so {
   justify-content: flex-end;
 }
 
@@ -1414,7 +1414,7 @@ tr.leg-row td {
   transition: opacity 150ms ease-in-out;
 }
 
-.sortable-th:hover .sii {
+.sth:hover .sii {
   opacity: 0.4;
 }
 
@@ -1856,7 +1856,7 @@ tr.leg-row td {
   cursor: not-allowed;
 }
 
-.btn-danger {
+.bd {
   font-family: var(--font-mono);
   font-size: 11px;
   text-transform: uppercase;
@@ -1869,7 +1869,7 @@ tr.leg-row td {
   transition: all 150ms ease-in-out;
 }
 
-.btn-danger:hover:not(:disabled) {
+.bd:hover:not(:disabled) {
   opacity: 0.85;
 }
 
@@ -2090,10 +2090,10 @@ tr.leg-row td {
 
 /* ── Micro-interactions: Press feedback ── */
 
-.sync-button:active:not(:disabled),
+.sb:active:not(:disabled),
 .bp:active:not(:disabled),
 .bt-s:active:not(:disabled),
-.btn-danger:active:not(:disabled),
+.bd:active:not(:disabled),
 .b-oa:active:not(:disabled),
 .bq:active:not(:disabled),
 .pill-chip:active,
@@ -2151,7 +2151,7 @@ tr {
 .scb.sne { color: var(--text-muted); background: rgba(117, 117, 117, 0.1); }
 
 /* Detail table */
-.seasonality-row-current { background: rgba(139, 92, 246, 0.05); }
+.srw { background: rgba(139, 92, 246, 0.05); }
 .stb { font-family: var(--font-mono); font-size: 9px; font-weight: 500; padding: 2px 6px; letter-spacing: 0.03em; }
 
 /* Legend */
@@ -2160,7 +2160,7 @@ tr {
 .sl-d { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
 .sl-d.sne { background: var(--text-muted); }
 .scn { opacity: 0.4; }
-.seasonality-row-nodata { opacity: 0.5; }
+.srnd { opacity: 0.5; }
 
 /* ── Instrument Detail Modal ── */
 

@@ -70,7 +70,7 @@ function MetricCard({ card, onClick }: { card: CardDef; onClick?: () => void }) 
     <div className={`metric-card${onClick ? " metric-card-clickable" : ""}`} onClick={onClick}>
       <div className="ml">{card.label}</div>
       <div className={`metric-value ${card.tone !== "neutral" ? card.tone : ""}`}>{card.value}</div>
-      <div className={`metric-change ${card.tone}`}>{card.change}</div>
+      <div className={`mx ${card.tone}`}>{card.change}</div>
     </div>
   );
 }
