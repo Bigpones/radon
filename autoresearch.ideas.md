@@ -1,23 +1,29 @@
 # Web Bundle Size — Ideas Backlog
 
-## Applied
-- Replace react-markdown + remark-gfm with lightweight inline renderer (−137KB)
-- d3 selective imports instead of `import * as d3` (−16KB)
-- Remove dead dependencies: @fontsource/ibm-plex-mono, @vercel/analytics, ib (0KB but cleaner)
+## Applied (1124KB → 921KB, −18.1%)
+- Replace react-markdown + remark-gfm with lightweight inline renderer (−137KB raw)
+- d3 selective imports instead of `import * as d3` (−16KB raw)
+- Remove dead dependencies: @fontsource/ibm-plex-mono, @vercel/analytics, ib
 - SWC removeConsole in production (−1KB)
+- Replace d3-time-format with Intl.DateTimeFormat
+- Rewrite CriHistoryChart from imperative d3 DOM to declarative React SVG (−13KB, removes d3-selection + d3-axis)
+- Replace d3-array with 1.5KB arrayUtils.ts (extent, mean, bisectLeft)
+- Replace d3-shape with 2.6KB svgPath.ts (monotone cubic Hermite line generator) (−5KB)
+- Replace d3-scale with 3.9KB scales.ts (scaleLinear + scaleTime with ticks) (−31KB, removes d3-format + d3-interpolate + d3-time + d3-time-format + d3-color)
+- Move @sinclair/typebox to devDependencies
 
 ## Explored and rejected
-- Dynamic import ChatPanel/MetricCards/WorkspaceSections: +13KB overhead from code splitting wrapper
-- optimizePackageImports for lucide-react/d3-*: Turbopack already handles tree-shaking
-- modularizeImports for lucide-react: same — Turbopack already optimal
+- Dynamic import ChatPanel/MetricCards/WorkspaceSections: +13KB overhead from chunk wrappers
+- Dynamic import PriceChart only: +4KB overhead
+- Dynamic import all ticker-detail tabs: +11KB overhead
+- optimizePackageImports / modularizeImports: Turbopack already handles tree-shaking
 - reactStrictMode: false: no effect on production bundle
-- Remove @fontsource/ibm-plex-mono, @vercel/analytics, ib packages: no bundle change (Turbopack tracks imports)
+- Remove dead packages: no bundle change (Turbopack tracks imports, not package.json)
 
-## Remaining ideas
-- Replace d3-selection (DOM manipulation) with pure React SVG in charts — eliminates d3-selection, d3-axis
-- CSS audit: ~134 potentially unused selectors in globals.css (risky — dynamic class names)
-- Replace CriHistoryChart with Canvas API (no d3 needed, but major rewrite)
-- Move WorkspaceSections into per-route components with route-level code splitting
-- Check if server components can absorb more of the data processing (currently 51 "use client" components)
-- Replace d3-time-format with Intl.DateTimeFormat (built-in, no import needed)
-- Investigate if chart rendering can use a lighter library than d3 (e.g., uPlot at ~45KB vs d3 at ~100KB+)
+## Remaining ideas (diminishing returns territory)
+- CSS audit: ~134 potentially unused selectors in globals.css (risky — many dynamic class names)
+- Deduplicate className string constants (minimal impact — gzip handles repetition)
+- Move WorkspaceSections into per-route components (requires architecture change)
+- Check if liveline (PriceChart) canvas code can be reduced via tree-shaking config
+- Remove dead lib modules: store.ts, useIBStatus.ts (already excluded by Turbopack)
+- Reduce sectionTooltips.ts verbose text (changes content, not a pure optimization)
