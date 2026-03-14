@@ -176,21 +176,21 @@ export default function ModifyOrderModal({ order, loading, prices, portfolio, on
           {/* Quick-set buttons */}
           <div className="mq-b">
             <button
-              className="btn-quick"
+              className="bq"
               disabled={!hasPriceData || bid == null}
               onClick={() => bid != null && setNewPrice(bid.toFixed(2))}
             >
               BID
             </button>
             <button
-              className="btn-quick"
+              className="bq"
               disabled={!hasPriceData || mid == null}
               onClick={() => mid != null && setNewPrice(mid.toFixed(2))}
             >
               MID
             </button>
             <button
-              className="btn-quick"
+              className="bq"
               disabled={!hasPriceData || ask == null}
               onClick={() => ask != null && setNewPrice(ask.toFixed(2))}
             >
@@ -222,7 +222,7 @@ export default function ModifyOrderModal({ order, loading, prices, portfolio, on
           <button className="bt-s" onClick={onClose} disabled={loading}>
             Cancel
           </button>
-          <button className="btn-primary" onClick={() => canSubmit && onConfirm(parsedNew, outsideRth || undefined)} disabled={!canSubmit}>
+          <button className="bp" onClick={() => canSubmit && onConfirm(parsedNew, outsideRth || undefined)} disabled={!canSubmit}>
             {loading ? "Modifying..." : "Modify Order"}
           </button>
         </div>

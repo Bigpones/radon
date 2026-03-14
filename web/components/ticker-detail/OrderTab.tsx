@@ -311,9 +311,9 @@ function NewOrderForm({
           />
         </div>
         <div className="mq-b">
-          <button className="btn-quick" disabled={bid == null} onClick={() => { if (bid != null) { setLimitPrice(bid.toFixed(2)); setConfirmStep(false); } }}>BID</button>
-          <button className="btn-quick" disabled={mid == null} onClick={() => { if (mid != null) { setLimitPrice(mid.toFixed(2)); setConfirmStep(false); } }}>MID</button>
-          <button className="btn-quick" disabled={ask == null} onClick={() => { if (ask != null) { setLimitPrice(ask.toFixed(2)); setConfirmStep(false); } }}>ASK</button>
+          <button className="bq" disabled={bid == null} onClick={() => { if (bid != null) { setLimitPrice(bid.toFixed(2)); setConfirmStep(false); } }}>BID</button>
+          <button className="bq" disabled={mid == null} onClick={() => { if (mid != null) { setLimitPrice(mid.toFixed(2)); setConfirmStep(false); } }}>MID</button>
+          <button className="bq" disabled={ask == null} onClick={() => { if (ask != null) { setLimitPrice(ask.toFixed(2)); setConfirmStep(false); } }}>ASK</button>
         </div>
       </div>
 
@@ -341,7 +341,7 @@ function NewOrderForm({
             </button>
           </div>
         ) : (
-          <button className="btn-primary w-full" onClick={handlePlace} disabled={!isValid || loading}>
+          <button className="bp w-full" onClick={handlePlace} disabled={!isValid || loading}>
             Place Order
           </button>
         )}
@@ -540,13 +540,13 @@ function ComboOrderForm({
           />
         </div>
         <div className="mq-b">
-          <button className="btn-quick" disabled={netPrices.bid == null} onClick={() => { if (netPrices.bid != null) { setLimitPrice(netPrices.bid.toFixed(2)); setConfirmStep(false); } }}>
+          <button className="bq" disabled={netPrices.bid == null} onClick={() => { if (netPrices.bid != null) { setLimitPrice(netPrices.bid.toFixed(2)); setConfirmStep(false); } }}>
             BID{netPrices.bid != null ? ` ${netPrices.bid.toFixed(2)}` : ""}
           </button>
-          <button className="btn-quick" disabled={netPrices.mid == null} onClick={() => { if (netPrices.mid != null) { setLimitPrice(netPrices.mid.toFixed(2)); setConfirmStep(false); } }}>
+          <button className="bq" disabled={netPrices.mid == null} onClick={() => { if (netPrices.mid != null) { setLimitPrice(netPrices.mid.toFixed(2)); setConfirmStep(false); } }}>
             MID{netPrices.mid != null ? ` ${netPrices.mid.toFixed(2)}` : ""}
           </button>
-          <button className="btn-quick" disabled={netPrices.ask == null} onClick={() => { if (netPrices.ask != null) { setLimitPrice(netPrices.ask.toFixed(2)); setConfirmStep(false); } }}>
+          <button className="bq" disabled={netPrices.ask == null} onClick={() => { if (netPrices.ask != null) { setLimitPrice(netPrices.ask.toFixed(2)); setConfirmStep(false); } }}>
             ASK{netPrices.ask != null ? ` ${netPrices.ask.toFixed(2)}` : ""}
           </button>
         </div>
@@ -578,7 +578,7 @@ function ComboOrderForm({
             </button>
           </div>
         ) : (
-          <button className="btn-primary w-full" onClick={handlePlace} disabled={!isValid || loading}>
+          <button className="bp w-full" onClick={handlePlace} disabled={!isValid || loading}>
             Place Combo Order
           </button>
         )}

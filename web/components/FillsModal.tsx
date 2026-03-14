@@ -50,10 +50,10 @@ export default function FillsModal({ open, fills, totalRealizedPnl, netLiquidati
                   <th>TIME</th>
                   <th>SYMBOL</th>
                   <th>SIDE</th>
-                  <th className="text-right">QTY</th>
-                  <th className="text-right">PRICE</th>
-                  <th className="text-right">COMMISSION</th>
-                  <th className="text-right">REALIZED P&L</th>
+                  <th className="tr">QTY</th>
+                  <th className="tr">PRICE</th>
+                  <th className="tr">COMMISSION</th>
+                  <th className="tr">REALIZED P&L</th>
                 </tr>
               </thead>
               <tbody>
@@ -62,10 +62,10 @@ export default function FillsModal({ open, fills, totalRealizedPnl, netLiquidati
                     <td className="mono">{fmtTime(fill.time)}</td>
                     <td className="mono">{fill.symbol}</td>
                     <td className={`mono fills-side fills-side-${fill.side.toLowerCase()}`}>{fill.side}</td>
-                    <td className="mono text-right">{fill.quantity}</td>
-                    <td className="mono text-right">{fmtPrice(fill.avgPrice)}</td>
-                    <td className="mono text-right">{fill.commission != null ? fmtPnl(fill.commission) : "---"}</td>
-                    <td className={`mono text-right ${fill.realizedPNL != null ? (fill.realizedPNL >= 0 ? "positive" : "negative") : ""}`}>
+                    <td className="mono tr">{fill.quantity}</td>
+                    <td className="mono tr">{fmtPrice(fill.avgPrice)}</td>
+                    <td className="mono tr">{fill.commission != null ? fmtPnl(fill.commission) : "---"}</td>
+                    <td className={`mono tr ${fill.realizedPNL != null ? (fill.realizedPNL >= 0 ? "positive" : "negative") : ""}`}>
                       {fmtPnl(fill.realizedPNL)}
                     </td>
                   </tr>

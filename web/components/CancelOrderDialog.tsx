@@ -21,34 +21,34 @@ export default function CancelOrderDialog({ order, loading, onConfirm, onClose }
       <div className="cancel-dialog">
         <div className="cancel-order-details">
           <div className="cd-r">
-            <span className="cancel-label">Symbol</span>
-            <span className="cancel-value"><strong>{order.symbol}</strong></span>
+            <span className="cl">Symbol</span>
+            <span className="cv"><strong>{order.symbol}</strong></span>
           </div>
           <div className="cd-r">
-            <span className="cancel-label">Action</span>
-            <span className="cancel-value">
+            <span className="cl">Action</span>
+            <span className="cv">
               <span className={`pill ${order.action === "BUY" ? "accum" : "distrib"}`}>
                 {order.action}
               </span>
             </span>
           </div>
           <div className="cd-r">
-            <span className="cancel-label">Type</span>
-            <span className="cancel-value">{order.orderType}</span>
+            <span className="cl">Type</span>
+            <span className="cv">{order.orderType}</span>
           </div>
           <div className="cd-r">
-            <span className="cancel-label">Quantity</span>
-            <span className="cancel-value">{order.totalQuantity}</span>
+            <span className="cl">Quantity</span>
+            <span className="cv">{order.totalQuantity}</span>
           </div>
           {order.limitPrice != null && (
             <div className="cd-r">
-              <span className="cancel-label">Limit Price</span>
-              <span className="cancel-value">{fmtPrice(order.limitPrice)}</span>
+              <span className="cl">Limit Price</span>
+              <span className="cv">{fmtPrice(order.limitPrice)}</span>
             </div>
           )}
           <div className="cd-r">
-            <span className="cancel-label">Status</span>
-            <span className="cancel-value">{order.status}</span>
+            <span className="cl">Status</span>
+            <span className="cv">{order.status}</span>
           </div>
         </div>
 

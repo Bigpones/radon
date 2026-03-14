@@ -56,7 +56,7 @@ function StatCard({
       data-formula={formula}
       onClick={onClick}
     >
-      <div className="metric-label">{label}</div>
+      <div className="ml">{label}</div>
       <div className={`metric-value ${tone !== "neutral" ? tone : ""}`}>{value}</div>
       <div className={`metric-change ${tone}`}>{change}</div>
     </button>

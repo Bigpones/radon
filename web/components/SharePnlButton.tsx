@@ -145,7 +145,7 @@ export default function SharePnlButton({ data, size = 13 }: SharePnlButtonProps)
           </label>
           <div className="share-pnl-popover-actions">
             <button
-              className="btn-primary share-pnl-action"
+              className="bp share-pnl-action"
               onClick={handleCopyAndTweet}
               disabled={copying || (!showDollar && !showPct)}
             >

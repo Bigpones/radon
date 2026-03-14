@@ -335,7 +335,7 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
           >
             {loading && results.length === 0 && (
               <div
-                className="text-muted"
+                className="tm"
                 style={{
                   padding: "12px 16px",
                   fontFamily: "Inter, sans-serif",
@@ -348,7 +348,7 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
 
             {!loading && results.length === 0 && (
               <div
-                className="text-muted"
+                className="tm"
                 style={{
                   padding: "12px 16px",
                   fontFamily: "Inter, sans-serif",
@@ -370,7 +370,7 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
                   handleSelect(r.symbol);
                 }}
                 onMouseEnter={() => setActiveIndex(i)}
-                className="flex-center"
+                className="fc"
                 style={{
                   gap: "12px",
                   padding: "8px 16px",
@@ -398,7 +398,7 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
 
                 {/* secType badge */}
                 <span
-                  className="text-muted"
+                  className="tm"
                   style={{
                     fontFamily: "Inter, sans-serif",
                     fontSize: "10px",

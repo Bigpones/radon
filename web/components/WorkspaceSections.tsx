@@ -290,9 +290,9 @@ function FlowSections() {
             Flow Supports Position
             <InfoTooltip text={SECTION_TOOLTIPS["Flow Supports Position"]} />
           </div>
-          <div className="flex-center" style={{ gap: "0.75rem" }}>
+          <div className="fc" style={{ gap: "0.75rem" }}>
             {lastSync && (
-              <span className="report-meta" style={{ margin: 0 }}>
+              <span className="rm" style={{ margin: 0 }}>
                 {new Date(lastSync).toLocaleTimeString()}
               </span>
             )}
@@ -365,7 +365,7 @@ function FlowSections() {
       </div>
 
       <div className="section">
-        <div className="report-meta">
+        <div className="rm">
           {lastSync
             ? `Report Generated: ${new Date(lastSync).toLocaleString()} • Source: UW API • Dark Pool Lookback: 5 Trading Days • ${totalScanned} Positions Scanned`
             : "Awaiting initial flow analysis..."}
@@ -451,7 +451,7 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
       )}
 
       <div className="section">
-        <div className="report-meta">
+        <div className="rm">
           Last Sync: {new Date(portfolio.last_sync).toLocaleString()} • Source: IB Gateway (4001)
         </div>
       </div>
@@ -503,9 +503,9 @@ function ScannerSections() {
             Scanner Signals
             <InfoTooltip text={SECTION_TOOLTIPS["Scanner Signals"]} />
           </div>
-          <div className="flex-center" style={{ gap: "0.75rem" }}>
+          <div className="fc" style={{ gap: "0.75rem" }}>
             {lastSync && (
-              <span className="report-meta" style={{ margin: 0 }}>
+              <span className="rm" style={{ margin: 0 }}>
                 {new Date(lastSync).toLocaleTimeString()}
               </span>
             )}
@@ -554,7 +554,7 @@ function ScannerSections() {
 
       {lastSync && (
         <div className="section">
-          <div className="report-meta">
+          <div className="rm">
             Last Scan: {new Date(lastSync).toLocaleString()} • {data?.tickers_scanned ?? 0} Tickers Scanned
           </div>
         </div>
@@ -621,9 +621,9 @@ function DiscoverSections() {
             Discovery Candidates
             <InfoTooltip text={SECTION_TOOLTIPS["Discovery Candidates"]} />
           </div>
-          <div className="flex-center" style={{ gap: "0.75rem" }}>
+          <div className="fc" style={{ gap: "0.75rem" }}>
             {lastSync && (
-              <span className="report-meta" style={{ margin: 0 }}>
+              <span className="rm" style={{ margin: 0 }}>
                 {new Date(lastSync).toLocaleTimeString()}
               </span>
             )}
@@ -725,7 +725,7 @@ function JournalSections() {
             Trade Journal
             <InfoTooltip text={SECTION_TOOLTIPS["Trade Journal"]} />
           </div>
-          <div className="flex-center" style={{ gap: "8px" }}>
+          <div className="fc" style={{ gap: "8px" }}>
             <button
               className="btn-sync"
               onClick={handleSync}
@@ -1157,7 +1157,7 @@ function OrdersSections({
 
       {orders.last_sync && (
         <div className="section">
-          <div className="report-meta">
+          <div className="rm">
             Last Sync: {new Date(orders.last_sync).toLocaleString()} • Source: IB Gateway (4001)
           </div>
         </div>
@@ -1231,9 +1231,9 @@ function HistoricalTradesSection() {
           Historical Trades (30 Days)
           <InfoTooltip text={SECTION_TOOLTIPS["Historical Trades (30 Days)"]} />
         </div>
-        <div className="flex-center" style={{ gap: "0.75rem" }}>
+        <div className="fc" style={{ gap: "0.75rem" }}>
           {data?.as_of && (
-            <span className="report-meta" style={{ margin: 0, padding: 0, border: "none" }}>
+            <span className="rm" style={{ margin: 0, padding: 0, border: "none" }}>
               {new Date(data.as_of).toLocaleDateString()}
             </span>
           )}

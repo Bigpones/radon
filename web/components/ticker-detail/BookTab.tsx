@@ -185,7 +185,7 @@ function OpenOrdersList({ orders }: { orders: OpenOrder[] }) {
         return (
           <div
             key={o.permId || o.orderId || i}
-            className="font-mono flex-center"
+            className="font-mono fc"
             style={{
               justifyContent: "space-between",
               padding: "6px 0",
@@ -193,7 +193,7 @@ function OpenOrdersList({ orders }: { orders: OpenOrder[] }) {
               fontSize: "12px",
             }}
           >
-            <div className="flex-center" style={{ gap: "8px" }}>
+            <div className="fc" style={{ gap: "8px" }}>
               <span
                 className={`pill ${o.action === "BUY" ? "accum" : "distrib"}`}
                 style={{ fontSize: "9px" }}
@@ -205,7 +205,7 @@ function OpenOrdersList({ orders }: { orders: OpenOrder[] }) {
                 {o.totalQuantity}x
               </span>
             </div>
-            <div className="flex-center" style={{ gap: "12px" }}>
+            <div className="fc" style={{ gap: "12px" }}>
               <span>
                 {o.limitPrice != null ? fmtPrice(o.limitPrice) : "MKT"}
               </span>
@@ -363,7 +363,7 @@ function StockOrderForm({
         </div>
         <div className="mq-b">
           <button
-            className="btn-quick"
+            className="bq"
             disabled={bid == null}
             onClick={() => {
               if (bid != null) {
@@ -375,7 +375,7 @@ function StockOrderForm({
             BID
           </button>
           <button
-            className="btn-quick"
+            className="bq"
             disabled={mid == null}
             onClick={() => {
               if (mid != null) {
@@ -387,7 +387,7 @@ function StockOrderForm({
             MID
           </button>
           <button
-            className="btn-quick"
+            className="bq"
             disabled={ask == null}
             onClick={() => {
               if (ask != null) {
@@ -444,7 +444,7 @@ function StockOrderForm({
           </div>
         ) : (
           <button
-            className="btn-primary w-full"
+            className="bp w-full"
             onClick={handlePlace}
             disabled={!isValid || loading}
           >

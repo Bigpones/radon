@@ -68,7 +68,7 @@ type CardDef = { label: string; value: string; change: string; tone: "positive" 
 function MetricCard({ card, onClick }: { card: CardDef; onClick?: () => void }) {
   return (
     <div className={`metric-card${onClick ? " metric-card-clickable" : ""}`} onClick={onClick}>
-      <div className="metric-label">{card.label}</div>
+      <div className="ml">{card.label}</div>
       <div className={`metric-value ${card.tone !== "neutral" ? card.tone : ""}`}>{card.value}</div>
       <div className={`metric-change ${card.tone}`}>{card.change}</div>
     </div>
@@ -191,9 +191,9 @@ function ExposureRow({
         <div className="mg">
           {["Net Long", "Net Short", "Dollar Delta", "Net Exposure"].map((label) => (
             <div key={label} className="metric-card metric-card-loading">
-              <div className="metric-label">{label}</div>
+              <div className="ml">{label}</div>
               <div className="metric-value">---</div>
-              <div className="metric-change neutral">AWAITING PRICES</div>
+              <div className="mc neutral">AWAITING PRICES</div>
             </div>
           ))}
         </div>
@@ -256,21 +256,21 @@ function TodayPnlRow({
       ) : (
         <div className="metrics-grid-3">
           <div className="metric-card">
-            <div className="metric-label">Day Move</div>
+            <div className="ml">Day Move</div>
             <div className="metric-value">---</div>
-            <div className="metric-change neutral">MARKET CLOSED</div>
+            <div className="mc neutral">MARKET CLOSED</div>
           </div>
           <div className="metric-card metric-card-clickable" onClick={onRealizedClick}>
-            <div className="metric-label">Realized</div>
+            <div className="ml">Realized</div>
             <div className={`metric-value ${tone(realizedPnl ?? 0) !== "neutral" ? tone(realizedPnl ?? 0) : ""}`}>
               {fmtSigned(realizedPnl ?? 0)}
             </div>
-            <div className="metric-change neutral">TODAY&apos;S FILLS</div>
+            <div className="mc neutral">TODAY&apos;S FILLS</div>
           </div>
           <div className="metric-card">
-            <div className="metric-label">Total</div>
+            <div className="ml">Total</div>
             <div className="metric-value">---</div>
-            <div className="metric-change neutral">MARKET CLOSED</div>
+            <div className="mc neutral">MARKET CLOSED</div>
           </div>
         </div>
       )}
@@ -324,9 +324,9 @@ export default function MetricCards({ portfolio, prices, realizedPnl, executedOr
         <div className="mg">
           {placeholders.map((label, i) => (
             <div key={i} className="metric-card metric-card-loading">
-              <div className="metric-label">{label}</div>
+              <div className="ml">{label}</div>
               <div className="metric-value">$0,000</div>
-              <div className="metric-change neutral">AWAITING SYNC</div>
+              <div className="mc neutral">AWAITING SYNC</div>
             </div>
           ))}
         </div>

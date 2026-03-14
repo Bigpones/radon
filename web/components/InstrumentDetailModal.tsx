@@ -219,13 +219,13 @@ function LegOrderForm({
           />
         </div>
         <div className="mq-b">
-          <button className="btn-quick" disabled={bid == null} onClick={() => { if (bid != null) { setLimitPrice(bid.toFixed(2)); setConfirmStep(false); } }}>
+          <button className="bq" disabled={bid == null} onClick={() => { if (bid != null) { setLimitPrice(bid.toFixed(2)); setConfirmStep(false); } }}>
             BID{bid != null ? ` ${bid.toFixed(2)}` : ""}
           </button>
-          <button className="btn-quick" disabled={mid == null} onClick={() => { if (mid != null) { setLimitPrice(mid.toFixed(2)); setConfirmStep(false); } }}>
+          <button className="bq" disabled={mid == null} onClick={() => { if (mid != null) { setLimitPrice(mid.toFixed(2)); setConfirmStep(false); } }}>
             MID{mid != null ? ` ${mid.toFixed(2)}` : ""}
           </button>
-          <button className="btn-quick" disabled={ask == null} onClick={() => { if (ask != null) { setLimitPrice(ask.toFixed(2)); setConfirmStep(false); } }}>
+          <button className="bq" disabled={ask == null} onClick={() => { if (ask != null) { setLimitPrice(ask.toFixed(2)); setConfirmStep(false); } }}>
             ASK{ask != null ? ` ${ask.toFixed(2)}` : ""}
           </button>
         </div>
@@ -255,7 +255,7 @@ function LegOrderForm({
             </button>
           </div>
         ) : (
-          <button className="btn-primary w-full" onClick={handlePlace} disabled={!isValid || loading}>
+          <button className="bp w-full" onClick={handlePlace} disabled={!isValid || loading}>
             Place Order
           </button>
         )}

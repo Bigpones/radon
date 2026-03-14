@@ -62,41 +62,41 @@ function CtaSection({ sectionKey, rows }: { sectionKey: string; rows: CtaRow[] }
             <thead>
               <tr>
                 <th className="cta-th-underlying">UNDERLYING</th>
-                <th className="cta-th-num">TODAY</th>
-                <th className="cta-th-num">YDAY</th>
-                <th className="cta-th-num">1M AGO</th>
-                <th className="cta-th-num">1M %ILE</th>
-                <th className="cta-th-num">3M %ILE</th>
-                <th className="cta-th-num">1Y %ILE</th>
-                <th className="cta-th-num">3M Z</th>
+                <th className="ctn">TODAY</th>
+                <th className="ctn">YDAY</th>
+                <th className="ctn">1M AGO</th>
+                <th className="ctn">1M %ILE</th>
+                <th className="ctn">3M %ILE</th>
+                <th className="ctn">1Y %ILE</th>
+                <th className="ctn">3M Z</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.underlying}>
                   <td className="cta-td-underlying">{r.underlying}</td>
-                  <td className="cta-td-num" style={{ color: posColor(r.position_today) }}>
+                  <td className="cdn" style={{ color: posColor(r.position_today) }}>
                     {fmt(r.position_today)}
                   </td>
-                  <td className="cta-td-num" style={{ color: posColor(r.position_yesterday) }}>
+                  <td className="cdn" style={{ color: posColor(r.position_yesterday) }}>
                     {fmt(r.position_yesterday)}
                   </td>
-                  <td className="cta-td-num" style={{ color: posColor(r.position_1m_ago) }}>
+                  <td className="cdn" style={{ color: posColor(r.position_1m_ago) }}>
                     {fmt(r.position_1m_ago)}
                   </td>
-                  <td className="cta-td-num" style={{ background: pctileBg(r.percentile_1m) }}>
+                  <td className="cdn" style={{ background: pctileBg(r.percentile_1m) }}>
                     {r.percentile_1m}
                   </td>
-                  <td className="cta-td-num" style={{ background: pctileBg(r.percentile_3m) }}>
+                  <td className="cdn" style={{ background: pctileBg(r.percentile_3m) }}>
                     {r.percentile_3m}
                   </td>
-                  <td className="cta-td-num" style={{ background: pctileBg(r.percentile_1y) }}>
+                  <td className="cdn" style={{ background: pctileBg(r.percentile_1y) }}>
                     {typeof r.percentile_1y === "number" && r.percentile_1y > 100
                       ? fmt(r.percentile_1y)
                       : r.percentile_1y}
                   </td>
                   <td
-                    className="cta-td-num"
+                    className="cdn"
                     style={{ color: zColor(r.z_score_3m), opacity: zOpacity(r.z_score_3m) }}
                   >
                     {fmt(r.z_score_3m)}

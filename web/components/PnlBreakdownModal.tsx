@@ -58,10 +58,10 @@ export default function PnlBreakdownModal({
             <tr>
               <th>TICKER</th>
               <th>STRUCTURE</th>
-              <th className="text-right">{col1Header}</th>
-              <th className="text-right">{col2Header}</th>
-              <th className="text-right">P&L</th>
-              <th className="text-right">%</th>
+              <th className="tr">{col1Header}</th>
+              <th className="tr">{col2Header}</th>
+              <th className="tr">P&L</th>
+              <th className="tr">%</th>
             </tr>
           </thead>
           <tbody>
