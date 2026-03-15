@@ -42,17 +42,26 @@ export function createPriceData(symbol) {
   };
 }
 
+// Cash indexes report value via CLOSE tick, not LAST. Stocks should NOT
+// fall back to CLOSE — IB's close is the PREVIOUS session's close and can
+// be days stale on weekends, giving wildly inaccurate "underlying" prices.
+const CASH_INDEX_SYMBOLS = new Set(["VIX", "VVIX", "SPX", "NDX", "RUT", "DJX", "OVX", "MOVE"]);
+
 export function updateDerivedLast(data) {
   if (data.last == null && data.bid != null && data.ask != null) {
     const midpoint = (data.bid + data.ask) / 2;
     data.last = Number.isFinite(midpoint) ? Number(midpoint.toFixed(4)) : null;
     data.lastIsCalculated = true;
   }
-  // Cash indexes (e.g. VIX, VVIX) report their value via CLOSE tick, not LAST.
-  // If last is still null after bid/ask check, use close as the live value.
+  // Only fall back to close for cash indexes — their value IS the close tick.
+  // For stocks/options, leave last as null so the UI shows "---" rather than
+  // a stale previous-session close masquerading as a current price.
   if (data.last == null && data.close != null) {
-    data.last = data.close;
-    data.lastIsCalculated = true;
+    const baseSymbol = data.symbol.split("_")[0];
+    if (CASH_INDEX_SYMBOLS.has(baseSymbol)) {
+      data.last = data.close;
+      data.lastIsCalculated = true;
+    }
   }
 }
 

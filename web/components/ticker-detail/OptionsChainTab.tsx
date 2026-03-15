@@ -518,7 +518,8 @@ export default function OptionsChainTab({
   }, [ticker, selectedExpiry]);
 
   // Determine ATM strike
-  const currentPrice = tickerPriceData?.last ?? null;
+  const currentPrice = tickerPriceData?.last ?? tickerPriceData?.close ?? null;
+  const priceIsClose = tickerPriceData?.last == null && tickerPriceData?.close != null;
   const atmStrike = useMemo(() => {
     if (currentPrice == null) return null;
     return findAtmStrike(strikes, currentPrice);
@@ -675,7 +676,9 @@ export default function OptionsChainTab({
           ))}
         </select>
         <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-secondary)" }}>
-          {currentPrice != null ? `Underlying: ${fmtPrice(currentPrice)}` : ""}
+          {currentPrice != null
+            ? `${priceIsClose ? "Prev Close" : "Underlying"}: ${fmtPrice(currentPrice)}`
+            : ""}
         </span>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "8px" }}>
           <div className="chain-side-toggle">
