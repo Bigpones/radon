@@ -517,9 +517,34 @@ export default function OptionsChainTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticker, selectedExpiry]);
 
+  // Fetch actual previous close when WS last is unavailable (market closed).
+  // IB's close tick is the PREVIOUS session's close and can be 2+ days stale
+  // on weekends, so we fetch from UW/Yahoo via the previous-close API instead.
+  const [prevClose, setPrevClose] = useState<number | null>(null);
+  useEffect(() => {
+    if (tickerPriceData?.last != null) {
+      setPrevClose(null); // live price available, don't need prev close
+      return;
+    }
+    let cancelled = false;
+    fetch("/api/previous-close", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbols: [ticker] }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled && d.closes?.[ticker] != null) {
+          setPrevClose(d.closes[ticker]);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [ticker, tickerPriceData?.last]);
+
   // Determine ATM strike
-  const currentPrice = tickerPriceData?.last ?? tickerPriceData?.close ?? null;
-  const priceIsClose = tickerPriceData?.last == null && tickerPriceData?.close != null;
+  const currentPrice = tickerPriceData?.last ?? prevClose ?? null;
+  const priceIsClose = tickerPriceData?.last == null && prevClose != null;
   const atmStrike = useMemo(() => {
     if (currentPrice == null) return null;
     return findAtmStrike(strikes, currentPrice);
