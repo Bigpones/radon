@@ -40,7 +40,7 @@ export default function PnlBreakdownModal({
     <Modal open onClose={onClose} title={title} className={`pnl-breakdown-modal ${className}`}>
       {/* Total */}
       <div className="et">
-        <span className={`eb-total-value ${total >= 0 ? "positive" : "negative"}`}>
+        <span className={`etv ${total >= 0 ? "positive" : "negative"}`}>
           {fmtSigned(total, 2)}
         </span>
       </div>

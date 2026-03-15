@@ -38,7 +38,7 @@ export default function ChartPanel({
 
   return (
     <div
-      className={`section chart-panel ${className ?? ""}`.trim()}
+      className={`sx chart-panel ${className ?? ""}`.trim()}
       data-testid={dataTestId}
       data-chart-family={chartFamily}
       data-chart-renderer={chartRenderer}

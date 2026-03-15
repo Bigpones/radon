@@ -210,7 +210,7 @@ function FlowSparkline({ ratios }: { ratios?: { date: string; buy_ratio: number 
         if (r == null) return <div key={i} className="fb133 neutral" style={{ height: 2 }} />;
         const cls = r >= 0.55 ? "accum" : r <= 0.45 ? "distrib" : "neutral";
         const h = Math.max(2, Math.round(r * maxH));
-        return <div key={i} className={`flow-spark-bar ${cls}`} style={{ height: h }} title={`${d.date}: ${Math.round(r * 100)}%`} />;
+        return <div key={i} className={`fb133 ${cls}`} style={{ height: h }} title={`${d.date}: ${Math.round(r * 100)}%`} />;
       })}
     </div>
   );

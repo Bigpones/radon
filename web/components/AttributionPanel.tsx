@@ -26,7 +26,7 @@ function PnlBar({ value, max }: { value: number; max: number }) {
       data-testid="apb"
     >
       <div
-        className={`attribution-pnl-fill ${isPositive ? "positive" : "negative"}`}
+        className={`apf ${isPositive ? "positive" : "negative"}`}
         style={{ width: `${pct}%` }}
       />
     </div>
@@ -46,9 +46,9 @@ function StrategyTable({ strategies, maxPnl }: { strategies: StrategyAttribution
       {strategies.map((s) => (
         <div key={s.strategy_id} className="at-r">
           <span className="asn">{s.strategy_name}</span>
-          <span className="mn">{s.closed_count}/{s.trade_count}</span>
-          <span className="mn">{fmtPct(s.win_rate)}</span>
-          <span className={`mono ${toneClass(s.realized_pnl)}`}>{fmtUsd(s.realized_pnl)}</span>
+          <span className="fm">{s.closed_count}/{s.trade_count}</span>
+          <span className="fm">{fmtPct(s.win_rate)}</span>
+          <span className={`fm ${toneClass(s.realized_pnl)}`}>{fmtUsd(s.realized_pnl)}</span>
           <PnlBar value={s.realized_pnl} max={maxPnl} />
         </div>
       ))}
@@ -79,9 +79,9 @@ function EdgeTable({ edges, maxPnl }: { edges: EdgeAttribution[]; maxPnl: number
       {edges.map((e) => (
         <div key={e.edge_type} className="at-r">
           <span>{edgeLabels[e.edge_type] ?? e.edge_type}</span>
-          <span className="mn">{e.closed_count}/{e.trade_count}</span>
-          <span className="mn">{fmtPct(e.win_rate)}</span>
-          <span className={`mono ${toneClass(e.realized_pnl)}`}>{fmtUsd(e.realized_pnl)}</span>
+          <span className="fm">{e.closed_count}/{e.trade_count}</span>
+          <span className="fm">{fmtPct(e.win_rate)}</span>
+          <span className={`fm ${toneClass(e.realized_pnl)}`}>{fmtUsd(e.realized_pnl)}</span>
           <PnlBar value={e.realized_pnl} max={maxPnl} />
         </div>
       ))}
@@ -107,9 +107,9 @@ function RiskTable({ risks }: { risks: RiskAttribution[] }) {
       {risks.map((r) => (
         <div key={r.risk_type} className="at-r">
           <span>{riskLabels[r.risk_type] ?? r.risk_type}</span>
-          <span className="mn">{r.closed_count}/{r.trade_count}</span>
-          <span className="mn">{fmtPct(r.win_rate)}</span>
-          <span className={`mono ${toneClass(r.realized_pnl)}`}>{fmtUsd(r.realized_pnl)}</span>
+          <span className="fm">{r.closed_count}/{r.trade_count}</span>
+          <span className="fm">{fmtPct(r.win_rate)}</span>
+          <span className={`fm ${toneClass(r.realized_pnl)}`}>{fmtUsd(r.realized_pnl)}</span>
         </div>
       ))}
     </div>
@@ -125,8 +125,8 @@ function TickerLeaderboard({ tickers }: { tickers: TickerAttributionEntry[] }) {
         <div className="amh positive">Top Performers</div>
         {top.map((t) => (
           <div key={`top-${t.ticker}`} className="atr">
-            <span className="mn">{t.ticker}</span>
-            <span className={`mono ${toneClass(t.realized_pnl)}`}>{fmtUsd(t.realized_pnl)}</span>
+            <span className="fm">{t.ticker}</span>
+            <span className={`fm ${toneClass(t.realized_pnl)}`}>{fmtUsd(t.realized_pnl)}</span>
           </div>
         ))}
       </div>
@@ -134,8 +134,8 @@ function TickerLeaderboard({ tickers }: { tickers: TickerAttributionEntry[] }) {
         <div className="amh negative">Bottom Performers</div>
         {bottom.map((t) => (
           <div key={`bot-${t.ticker}`} className="atr">
-            <span className="mn">{t.ticker}</span>
-            <span className={`mono ${toneClass(t.realized_pnl)}`}>{fmtUsd(t.realized_pnl)}</span>
+            <span className="fm">{t.ticker}</span>
+            <span className={`fm ${toneClass(t.realized_pnl)}`}>{fmtUsd(t.realized_pnl)}</span>
           </div>
         ))}
       </div>
@@ -164,12 +164,12 @@ function KellyCalibration({ data }: { data: AttributionData }) {
       {entries.map(([sid, cal]) => (
         <div key={sid} className="at-r">
           <span>{strategyNames[sid] ?? sid}</span>
-          <span className="mn">{fmtPct(cal.expected_win_rate)}</span>
-          <span className="mn">{fmtPct(cal.actual_win_rate)}</span>
-          <span className={`mono ${cal.accuracy !== null && cal.accuracy >= 0.7 ? "positive" : cal.accuracy !== null && cal.accuracy < 0.3 ? "negative" : ""}`}>
+          <span className="fm">{fmtPct(cal.expected_win_rate)}</span>
+          <span className="fm">{fmtPct(cal.actual_win_rate)}</span>
+          <span className={`fm ${cal.accuracy !== null && cal.accuracy >= 0.7 ? "positive" : cal.accuracy !== null && cal.accuracy < 0.3 ? "negative" : ""}`}>
             {fmtPct(cal.accuracy)}
           </span>
-          <span className="mn">{cal.sample_size}</span>
+          <span className="fm">{cal.sample_size}</span>
         </div>
       ))}
     </div>

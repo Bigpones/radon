@@ -59,13 +59,13 @@ export default function FillsModal({ open, fills, totalRealizedPnl, netLiquidati
               <tbody>
                 {fills.map((fill) => (
                   <tr key={fill.execId} className={fill.realizedPNL != null ? (fill.realizedPNL >= 0 ? "fills-row-positive" : "fills-row-negative") : ""}>
-                    <td className="mn">{fmtTime(fill.time)}</td>
-                    <td className="mn">{fill.symbol}</td>
-                    <td className={`mono fills-side fills-side-${fill.side.toLowerCase()}`}>{fill.side}</td>
-                    <td className="mono tr">{fill.quantity}</td>
-                    <td className="mono tr">{fmtPrice(fill.avgPrice)}</td>
-                    <td className="mono tr">{fill.commission != null ? fmtPnl(fill.commission) : "---"}</td>
-                    <td className={`mono tr ${fill.realizedPNL != null ? (fill.realizedPNL >= 0 ? "positive" : "negative") : ""}`}>
+                    <td className="fm">{fmtTime(fill.time)}</td>
+                    <td className="fm">{fill.symbol}</td>
+                    <td className={`fm fills-side fills-side-${fill.side.toLowerCase()}`}>{fill.side}</td>
+                    <td className="fm tr">{fill.quantity}</td>
+                    <td className="fm tr">{fmtPrice(fill.avgPrice)}</td>
+                    <td className="fm tr">{fill.commission != null ? fmtPnl(fill.commission) : "---"}</td>
+                    <td className={`fm tr ${fill.realizedPNL != null ? (fill.realizedPNL >= 0 ? "positive" : "negative") : ""}`}>
                       {fmtPnl(fill.realizedPNL)}
                     </td>
                   </tr>

@@ -1,9 +1,10 @@
 # Status & Decision Log
 
 ## Last Updated
-2026-03-14T16:45:00-07:00
+2026-03-14T17:15:00-07:00
 
 ## Recent Commits
+- 2026-03-14 — **fix: Post-bundle-optimization audit — reconnect 27 missing CSS classes, remove 4 orphaned rules, add 4 brand variables.** E2E browser verification (9 pages, dark+light themes) confirmed no visual regressions. Fixed 14 component classNames pointing to pre-rename names (e.g., `mono`→`fm`, `metric-value`→`mv`, `modal-backdrop`→`mb135`). Restored 10 accidentally deleted CSS rules. Removed 3 dead className refs. Added `--signal-deep`, `--extreme`, `--neutral`, `--line-grid` to both theme blocks. Fixed `--line-grid` which was referenced in ~15 rules but never defined.
 - 2026-03-14 — **perf: Web bundle size optimization — 1124KB → 911KB raw (−19.0%), 281KB → 264KB gzip (−6.0%), 80KB → 56KB CSS (−30.0%).** 38 experiments across 4 sessions. CSS rule merging (−6KB CSS), class name shortening campaign (~300 classes renamed to 2-4 char abbreviations), orphan CSS removal, dead code cleanup, Google Fonts @import → `<link>`, template literal simplification. 30 commits squashed.
 - 2026-03-13 — **feat: Ticker detail page — modal → dedicated route refactor.** Ticker detail is now a first-class page at `/{TICKER}` (e.g., `/AAPL`) with bookmarkable tabs (`?tab=chain`), browser back/forward, case normalization (`/aapl` → `/AAPL`), and 404 for invalid paths. Extracted `TickerDetailContent` from modal, created `TickerWorkspace` (URL tab sync), shared `TickerLink`, `useTickerNav` hook. Simplified `TickerDetailContext` (URL-driven). 24 unit + 8 E2E tests.
 - 2026-03-13 09:31:00 -0700 — **fix: refresh `/api/performance` for the current ET session. The route now refreshes `portfolio.json` through `ibSync` before rebuilding when the cached snapshot still points at a prior ET session, and preserves the cached performance payload instead of rewriting from stale inputs if that portfolio refresh fails. Locked with Vitest route regressions.**

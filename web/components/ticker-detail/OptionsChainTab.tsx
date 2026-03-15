@@ -642,7 +642,7 @@ export default function OptionsChainTab({
   }
 
   return (
-    <div className="chain-tab" style={{ padding: "8px 0" }}>
+    <div style={{ padding: "8px 0" }}>
       {/* Expiry selector */}
       <div className="cb107">
         <label

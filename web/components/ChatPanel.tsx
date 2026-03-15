@@ -105,7 +105,7 @@ export default function ChatPanel({ activeSection }: ChatPanelProps) {
   };
 
   return (
-    <div className={`section chat-panel ${activeSection === "dashboard" ? "dashboard-chat-panel" : ""}`}>
+    <div className={`sx chat-panel ${activeSection === "dashboard" ? "dashboard-chat-panel" : ""}`}>
       <div className="s-hd">
         <div className="s-tt">
           <Bot size={14} />

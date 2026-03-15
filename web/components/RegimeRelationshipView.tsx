@@ -440,7 +440,7 @@ export default function RegimeRelationshipView({
                     fill={isLatest ? latestQuadrantColor : "var(--signal-core)"}
                     opacity={isLatest ? 1 : 0.18 + (index / entries.length) * 0.45}
                     stroke={isLatest ? latestQuadrantColor : "none"}
-                    className={isLatest ? "regime-relationship-marker" : undefined}
+                    className={isLatest ? "rr-m" : undefined}
                   />
                 );
               })}

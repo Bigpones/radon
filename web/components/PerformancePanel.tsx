@@ -57,8 +57,8 @@ function StatCard({
       onClick={onClick}
     >
       <div className="ml">{label}</div>
-      <div className={`metric-value ${tone !== "neutral" ? tone : ""}`}>{value}</div>
-      <div className={`mx ${tone}`}>{change}</div>
+      <div className={`mv ${tone !== "neutral" ? tone : ""}`}>{value}</div>
+      <div className={`mc ${tone}`}>{change}</div>
     </button>
   );
 }
@@ -127,7 +127,7 @@ function PerformanceChart({ data }: { data: PerformanceData }) {
               className="pa-l"
             />
             {yAxisTicks.map((tick) => (
-              <g key={`y-${tick.value}`} className="pat">
+              <g key={`y-${tick.value}`}>
                 <line x1={plotLeft - 6} x2={plotLeft} y1={tick.y} y2={tick.y} className="pa-l" />
                 <text
                   x={plotLeft - 12}
@@ -148,7 +148,7 @@ function PerformanceChart({ data }: { data: PerformanceData }) {
           <g data-testid="performance-x-axis">
             <line x1={plotLeft} x2={plotRight} y1={plotBottom} y2={plotBottom} className="pa-l" />
             {xAxisTicks.map((tick, index) => (
-              <g key={`x-${tick.index}`} className="pat">
+              <g key={`x-${tick.index}`}>
                 <line x1={tick.x} x2={tick.x} y1={plotBottom} y2={plotBottom + 6} className="pa-l" />
                 <text
                   x={tick.x}
@@ -353,7 +353,7 @@ export default function PerformancePanel({ portfolioLastSync = null }: { portfol
 
   return (
     <div className="performance-panel" data-testid="performance-panel">
-      <div className="section ph">
+      <div className="sx ph">
         <div className="s-bd pb43">
           <div>
             <div className="section-label-mono">RECONSTRUCTED {data.period_label}</div>

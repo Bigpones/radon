@@ -198,7 +198,7 @@ export default function CtaPage() {
 
         {loading && (
           <div
-            className="cta-empty fm tm" style={{ padding: "24px 16px", fontSize: "11px" }}
+            className="ce fm tm" style={{ padding: "24px 16px", fontSize: "11px" }}
           >
             Loading CTA positioning data...
           </div>
@@ -206,7 +206,7 @@ export default function CtaPage() {
 
         {!loading && !ctaData?.tables && (
           <div
-            className="cta-empty fm tm" style={{ padding: "24px 16px", fontSize: "11px" }}
+            className="ce fm tm" style={{ padding: "24px 16px", fontSize: "11px" }}
           >
             No MenthorQ CTA data available. Run: <code>menthorq-cta</code>
           </div>

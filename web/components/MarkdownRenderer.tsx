@@ -151,7 +151,7 @@ export default function MarkdownRenderer({ content }: MarkdownRendererProps) {
       const level = headingMatch[1].length as 1 | 2 | 3 | 4;
       const Tag = `h${level}` as const;
       elements.push(
-        <Tag key={elements.length} className={`chat-markdown-heading chat-markdown-heading-${level}`}>
+        <Tag key={elements.length} className="cmh">
           {renderInline(headingMatch[2])}
         </Tag>
       );

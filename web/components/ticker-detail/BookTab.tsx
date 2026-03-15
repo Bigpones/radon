@@ -35,7 +35,7 @@ function L1OrderBook({
   askSize: number | null;
 }) {
   return (
-    <div className="book-l1">
+    <div>
       <div
         className="bh"
       >
@@ -473,7 +473,7 @@ export default function BookTab({
   const last = priceData?.last ?? null;
 
   return (
-    <div className="book-tab" style={{ padding: "16px 0" }}>
+    <div style={{ padding: "16px 0" }}>
       <L1OrderBook
         bid={bid}
         ask={ask}

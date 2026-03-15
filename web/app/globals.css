@@ -43,8 +43,12 @@ img, video { max-width: 100%; height: auto; }
   --banner-positive: #05AD98;
   --signal-core: #05AD98;
   --signal-strong: #0FCFB5;
+  --signal-deep: #048A7A;
   --dislocation: #D946A8;
+  --extreme: #8B5CF6;
   --fault: #E85D6C;
+  --neutral: #94a3b8;
+  --line-grid: #1e293b;
   --chart-grid: rgba(148, 163, 184, 0.16);
   --chart-axis-muted: #94a3b8;
   --chart-surface: linear-gradient(180deg, rgba(15, 21, 25, 0.84) 0%, rgba(10, 15, 20, 0.95) 100%);
@@ -77,8 +81,12 @@ img, video { max-width: 100%; height: auto; }
   --banner-positive: #048A7A;
   --signal-core: #05AD98;
   --signal-strong: #048A7A;
+  --signal-deep: #037064;
   --dislocation: #C026A0;
+  --extreme: #7C3AED;
   --fault: #D4183D;
+  --neutral: #64748b;
+  --line-grid: #BBBFBF;
   --chart-grid: rgba(100, 116, 139, 0.22);
   --chart-axis-muted: #636363;
   --chart-surface: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(241, 245, 249, 0.98) 100%);
@@ -433,8 +441,7 @@ body {
 .price-bar-value.positive,
 .ps-v.positive,
 .scr.positive,
-.stb.sfa,
-.regime-history .text-positive { color: var(--positive); }
+.stb.sfa { color: var(--positive); }
 
 .mc.negative,
 .ptd,
@@ -445,7 +452,6 @@ body {
 .ps-v.negative,
 .scr.negative,
 .stb.suf,
-.regime-history .text-negative,
 .csb.csbe .ct105,
 .amh.negative { color: var(--negative); }
 
@@ -1260,7 +1266,6 @@ td.last-price-cell {
 
 .sc151,
 .rs123,
-.ratings-rec,
 .ss67 { display: flex; align-items: center; gap: 10px; }
 
 .sync-status,
@@ -1375,16 +1380,6 @@ td.negative, .negative {
   text-transform: uppercase;
   letter-spacing: 0.1em;
   transition: color 120ms;
-}
-
-tr.leg-row:hover {
-  background: transparent;
-}
-
-tr.leg-row td {
-  border-bottom: none;
-  padding-top: 2px;
-  padding-bottom: 2px;
 }
 
 .sth {
@@ -2026,7 +2021,6 @@ tr.leg-row td {
 .existing-order-modifying { border-color: var(--info); }
 .ed69 { font-weight: 500; }
 .eo-d { display: flex; flex-direction: column; gap: 2px; }
-.existing-order-modify { display: flex; flex-direction: column; gap: 10px; padding-top: 10px; border-top: 1px solid var(--border-dim); }
 .ea41 { display: flex; gap: 6px; justify-content: flex-end; }
 
 /* News tab */
@@ -2249,8 +2243,7 @@ tr {
 
 .ej,
 .cta-table,
-.fills-table,
-.regime-history table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 11px; }
+.fills-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 11px; }
 .ej th {
   text-align: left;
   font-size: 9px;
@@ -2814,34 +2807,6 @@ tr {
 
 
 
-/* History Table */
-.regime-history {
-  background: var(--bg-panel);
-  border: 1px solid var(--border-dim);
-  overflow-x: auto;
-}
-
-.regime-history th {
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border-dim);
-  text-align: left;
-}
-
-.regime-history th.tr { text-align: right; }
-
-.regime-history td {
-  padding: 6px 12px;
-  color: var(--text-primary);
-  border-bottom: 1px solid var(--border-dim);
-}
-
-.regime-history td.tr { text-align: right; }
-
 .regime-history-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2950,12 +2915,24 @@ tr {
 
 
 
-.regime-relationship-marker {
+.rr-m {
   stroke-width: 2;
 }
-
-
-
+.rr-m-spread {
+  fill: var(--signal-core);
+  stroke: rgba(5, 173, 152, 0.3);
+}
+.rr-m-rvol {
+  fill: var(--warning);
+  stroke: rgba(245, 166, 35, 0.28);
+}
+.rr-m-cor1m {
+  fill: var(--dislocation);
+  stroke: rgba(217, 70, 168, 0.28);
+}
+.rr-vc {
+  font-size: 17px;
+}
 
 .rr-al,
 .rr-at,
@@ -3501,6 +3478,50 @@ tr {
   padding: 8px 0;
   margin-top: 8px;
   border-top: 1px solid var(--line-grid);
+}
+
+/* ── Restored from rename mismatches ── */
+.bh {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+.cta-s-hd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 16px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.cta-s-hd:hover {
+  background: var(--bg-hover);
+}
+.scc { border-color: var(--info); box-shadow: 0 0 0 1px var(--info); }
+.scba { height: 100%; border-radius: 2px; transition: width 300ms ease; }
+.srp { font-family: var(--font-mono); font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 10px; border: 1px solid var(--border-dim); }
+.srp.sfa { color: var(--positive); border-color: var(--positive); }
+.srp.suf { color: var(--negative); border-color: var(--negative); }
+.srp.sne { color: var(--text-muted); border-color: var(--text-muted); }
+.apf { height: 100%; border-radius: 2px; transition: width 0.3s ease; }
+.apf.positive { background: var(--signal-core); }
+.apf.negative { background: var(--negative); }
+.cmh {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 /* ── Utility classes (replacing Tailwind) ── */

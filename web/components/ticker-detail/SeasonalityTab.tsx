@@ -179,7 +179,7 @@ export default function SeasonalityTab({ ticker, active }: SeasonalityTabProps) 
           return (
             <div
               key={m.month}
-              className={`sce ${isCurrent ? "scc" : ""} ${!hasData ? "scn" : ""}`}
+              className={`sc ${isCurrent ? "scc" : ""} ${!hasData ? "scn" : ""}`}
             >
               <div className="sm39">
                 {MONTH_LABELS[m.month - 1]}

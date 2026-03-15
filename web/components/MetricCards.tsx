@@ -69,8 +69,8 @@ function MetricCard({ card, onClick }: { card: CardDef; onClick?: () => void }) 
   return (
     <div className={`metric-card${onClick ? " metric-card-clickable" : ""}`} onClick={onClick}>
       <div className="ml">{card.label}</div>
-      <div className={`metric-value ${card.tone !== "neutral" ? card.tone : ""}`}>{card.value}</div>
-      <div className={`mx ${card.tone}`}>{card.change}</div>
+      <div className={`mv ${card.tone !== "neutral" ? card.tone : ""}`}>{card.value}</div>
+      <div className={`mc ${card.tone}`}>{card.change}</div>
     </div>
   );
 }
@@ -262,7 +262,7 @@ function TodayPnlRow({
           </div>
           <div className="metric-card metric-card-clickable" onClick={onRealizedClick}>
             <div className="ml">Realized</div>
-            <div className={`metric-value ${tone(realizedPnl ?? 0) !== "neutral" ? tone(realizedPnl ?? 0) : ""}`}>
+            <div className={`mv ${tone(realizedPnl ?? 0) !== "neutral" ? tone(realizedPnl ?? 0) : ""}`}>
               {fmtSigned(realizedPnl ?? 0)}
             </div>
             <div className="mc neutral">TODAY&apos;S FILLS</div>
