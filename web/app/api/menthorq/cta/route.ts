@@ -177,7 +177,7 @@ async function readLatestCta(): Promise<{
   try {
     const files = await readdir(CACHE_DIR);
     const ctaFiles = files
-      .filter((file) => file.startsWith("cta_") && file.endsWith(".json"))
+      .filter((file) => /^cta_\d{4}-\d{2}-\d{2}\.json$/.test(file))
       .sort();
 
     if (ctaFiles.length === 0) {

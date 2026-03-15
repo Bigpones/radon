@@ -5,11 +5,11 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import io
 import json
 import os
 import shutil
 import socket
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -19,7 +19,7 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from fetch_menthorq_cta import cache_path, fetch_menthorq_cta  # noqa: E402
+from fetch_menthorq_cta import cache_path  # noqa: E402
 from utils.cta_sync import latest_closed_trading_day  # noqa: E402
 from utils.cta_sync_health import (  # noqa: E402
     ARTIFACT_DIR,
@@ -182,21 +182,37 @@ def run_cta_sync(
                 attempt_artifact_dir = ARTIFACT_DIR / f"cta-sync-{run_id}" / f"attempt-{attempt_count:02d}"
                 attempt_artifact_dir.mkdir(parents=True, exist_ok=True)
 
-                stderr_buffer = io.StringIO()
-                stdout_buffer = io.StringIO()
-                with contextlib.redirect_stderr(stderr_buffer), contextlib.redirect_stdout(stdout_buffer):
-                    payload = fetch_menthorq_cta(
-                        date_str=target,
-                        force=force,
-                        artifact_dir=attempt_artifact_dir,
-                    )
-
-                captured_stdout = stdout_buffer.getvalue()
-                captured_stderr = stderr_buffer.getvalue()
-                if captured_stdout:
-                    print(captured_stdout, end="")
+                # Run fetch in a subprocess to guarantee asyncio isolation.
+                # Playwright sync API conflicts with stale event loops from
+                # previous attempts when retried in-process.
+                fetch_cmd = [
+                    sys.executable,
+                    str(SCRIPT_DIR / "fetch_menthorq_cta.py"),
+                    "--json",
+                    "--date", target,
+                ]
+                if force:
+                    fetch_cmd.append("--force")
+                fetch_result = subprocess.run(
+                    fetch_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                    cwd=str(SCRIPT_DIR.parent),
+                    env={**os.environ, "MENTHORQ_ARTIFACT_DIR": str(attempt_artifact_dir)},
+                )
+                captured_stdout = fetch_result.stdout
+                captured_stderr = fetch_result.stderr
                 if captured_stderr:
                     print(captured_stderr, end="", file=sys.stderr)
+
+                # Parse payload from JSON stdout
+                payload = None
+                if fetch_result.returncode == 0 and captured_stdout.strip():
+                    try:
+                        payload = json.loads(captured_stdout)
+                    except json.JSONDecodeError:
+                        pass
 
                 valid, reason = validate_cta_payload(payload, target)
                 artifact_payload = latest_artifacts(artifact_dir=attempt_artifact_dir)

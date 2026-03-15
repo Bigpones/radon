@@ -347,12 +347,15 @@ Examples:
     print(f"MENTHORQ CTA FETCH — {date_str}", file=sys.stderr)
     print(f"{'='*60}", file=sys.stderr)
 
+    artifact_dir = os.environ.get("MENTHORQ_ARTIFACT_DIR")
+
     t_start = time.time()
     result = fetch_menthorq_cta(
         date_str=date_str,
         force=args.force,
         headless=not args.no_headless,
         save_images=args.save_images,
+        artifact_dir=artifact_dir,
     )
     elapsed = time.time() - t_start
 
