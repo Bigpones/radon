@@ -1034,7 +1034,7 @@ function OrdersSections({
                   return (
                     <tr key={`${o.orderId}-${i}`} className={isPendingCancel ? "row-pending-cancel" : isPendingModify ? "row-pending-modify" : undefined}>
                       <td>
-                        <TickerLink ticker={o.symbol} />
+                        <TickerLink ticker={o.contract.symbol} />
                         {isPending && <Loader2 size={12} className="cancel-spinner" />}
                       </td>
                       <td>
@@ -1126,7 +1126,7 @@ function OrdersSections({
                   return (
                     <tr key={`${e.execId}-${i}`} className={isCancelled ? "row-cancelled" : undefined}>
                       <td>
-                        <TickerLink ticker={e.symbol} />
+                        <TickerLink ticker={e.contract.symbol} />
                         {isCancelled && <XCircle size={12} className="cancelled-icon" />}
                       </td>
                       <td>
