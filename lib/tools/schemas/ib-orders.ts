@@ -13,6 +13,16 @@ export type IBOrdersInput = Static<typeof IBOrdersInput>;
 
 // ── Output (matches data/orders.json shape) ───────────────────────────
 
+const OrderComboLeg = Type.Object({
+  conId: Type.Number(),
+  ratio: Type.Number(),
+  action: Type.String(),
+  symbol: Type.Optional(Type.String()),
+  strike: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  right: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  expiry: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
 const OrderContract = Type.Object({
   conId: Type.Union([Type.Number(), Type.Null()]),
   symbol: Type.String(),
@@ -20,6 +30,7 @@ const OrderContract = Type.Object({
   strike: Type.Union([Type.Number(), Type.Null()]),
   right: Type.Union([Type.String(), Type.Null()]),
   expiry: Type.Union([Type.String(), Type.Null()]),
+  comboLegs: Type.Optional(Type.Array(OrderComboLeg)),
 });
 
 const OpenOrder = Type.Object({

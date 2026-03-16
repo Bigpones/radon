@@ -84,14 +84,29 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
     const contracts: OptionContract[] = [];
     for (const o of orders?.open_orders ?? []) {
       const c = o.contract;
-      if (c.secType !== "OPT" || c.strike == null || !c.right || !c.expiry) continue;
-      const right = c.right === "C" || c.right === "P"
-        ? c.right
-        : c.right === "CALL" ? "C" : c.right === "PUT" ? "P" : null;
-      if (!right) continue;
-      const expiryClean = c.expiry.replace(/-/g, "");
-      if (expiryClean.length !== 8) continue;
-      contracts.push({ symbol: c.symbol.toUpperCase(), expiry: expiryClean, strike: c.strike, right });
+      // OPT: subscribe to the single option contract
+      if (c.secType === "OPT" && c.strike != null && c.right && c.expiry) {
+        const right = c.right === "C" || c.right === "P"
+          ? c.right
+          : c.right === "CALL" ? "C" : c.right === "PUT" ? "P" : null;
+        if (!right) continue;
+        const expiryClean = c.expiry.replace(/-/g, "");
+        if (expiryClean.length !== 8) continue;
+        contracts.push({ symbol: c.symbol.toUpperCase(), expiry: expiryClean, strike: c.strike, right });
+      }
+      // BAG: subscribe to each combo leg's option contract
+      if (c.secType === "BAG" && c.comboLegs) {
+        for (const cl of c.comboLegs) {
+          if (!cl.symbol || cl.strike == null || !cl.right || !cl.expiry) continue;
+          const right = cl.right === "C" || cl.right === "P"
+            ? cl.right
+            : cl.right === "CALL" ? "C" : cl.right === "PUT" ? "P" : null;
+          if (!right) continue;
+          const expiryClean = cl.expiry.replace(/-/g, "");
+          if (expiryClean.length !== 8) continue;
+          contracts.push({ symbol: cl.symbol.toUpperCase(), expiry: expiryClean, strike: cl.strike, right });
+        }
+      }
     }
     return contracts;
   }, [orders]);

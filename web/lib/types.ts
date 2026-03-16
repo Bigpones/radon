@@ -85,6 +85,16 @@ export type PortfolioPosition = {
   entry_date: string;
 };
 
+export type OrderComboLeg = {
+  conId: number;
+  ratio: number;
+  action: string;
+  symbol?: string;
+  strike?: number | null;
+  right?: string | null;
+  expiry?: string | null;
+};
+
 export type OrderContract = {
   conId: number | null;
   symbol: string;
@@ -92,6 +102,7 @@ export type OrderContract = {
   strike: number | null;
   right: string | null;
   expiry: string | null;
+  comboLegs?: OrderComboLeg[];
 };
 
 export type OpenOrder = {

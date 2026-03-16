@@ -64,13 +64,18 @@ def format_contract(contract) -> str:
         return f"{symbol} ({sec_type})"
 
 
-def serialize_contract(contract) -> dict:
-    """Serialize contract fields for JSON"""
+def serialize_contract(contract, resolved_legs: dict = None) -> dict:
+    """Serialize contract fields for JSON.
+
+    Args:
+        contract: IB contract object.
+        resolved_legs: Optional dict mapping conId -> qualified Contract for BAG legs.
+    """
     expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
     if len(expiry) == 8:
         expiry = f"{expiry[:4]}-{expiry[4:6]}-{expiry[6:8]}"
 
-    return {
+    result = {
         "conId": getattr(contract, "conId", None),
         "symbol": contract.symbol,
         "secType": contract.secType,
@@ -78,6 +83,30 @@ def serialize_contract(contract) -> dict:
         "right": getattr(contract, "right", None),
         "expiry": expiry or None,
     }
+
+    # Include resolved combo leg details for BAG orders
+    combo_legs = getattr(contract, "comboLegs", None)
+    if contract.secType == "BAG" and combo_legs and resolved_legs:
+        legs = []
+        for cl in combo_legs:
+            leg_data = {
+                "conId": cl.conId,
+                "ratio": cl.ratio,
+                "action": cl.action,
+            }
+            resolved = resolved_legs.get(cl.conId)
+            if resolved:
+                leg_expiry = getattr(resolved, "lastTradeDateOrContractMonth", "")
+                if len(leg_expiry) == 8:
+                    leg_expiry = f"{leg_expiry[:4]}-{leg_expiry[4:6]}-{leg_expiry[6:8]}"
+                leg_data["symbol"] = resolved.symbol
+                leg_data["strike"] = getattr(resolved, "strike", None)
+                leg_data["right"] = getattr(resolved, "right", None)
+                leg_data["expiry"] = leg_expiry or None
+            legs.append(leg_data)
+        result["comboLegs"] = legs
+
+    return result
 
 
 def safe_float(value) -> Optional[float]:
@@ -94,10 +123,37 @@ def safe_float(value) -> Optional[float]:
 
 
 def fetch_open_orders(client: IBClient) -> list:
-    """Fetch open orders from all clients"""
-    trades = client.get_open_orders()
-    orders = []
+    """Fetch open orders from all clients.
 
+    For BAG orders, resolves combo leg conIds to full contract details
+    (symbol, strike, right, expiry) so the frontend can subscribe to
+    real-time prices and compute BID/MID/ASK for spread modification.
+    """
+    trades = client.get_open_orders()
+
+    # Collect all unique combo leg conIds that need resolving
+    combo_con_ids: set = set()
+    for trade in trades:
+        contract = trade.contract
+        combo_legs = getattr(contract, "comboLegs", None)
+        if contract.secType == "BAG" and combo_legs:
+            for cl in combo_legs:
+                combo_con_ids.add(cl.conId)
+
+    # Batch-resolve combo leg contracts
+    resolved_legs: dict = {}
+    if combo_con_ids:
+        from ib_insync import Contract as IBContract
+        for con_id in combo_con_ids:
+            try:
+                c = IBContract(conId=con_id)
+                qualified = client.qualify_contracts(c)
+                if qualified:
+                    resolved_legs[con_id] = qualified[0]
+            except Exception:
+                pass  # Skip unresolvable legs — frontend falls back to portfolio
+
+    orders = []
     for trade in trades:
         contract = trade.contract
         order = trade.order
@@ -107,7 +163,7 @@ def fetch_open_orders(client: IBClient) -> list:
             "orderId": order.orderId,
             "permId": order.permId,
             "symbol": format_contract(contract),
-            "contract": serialize_contract(contract),
+            "contract": serialize_contract(contract, resolved_legs),
             "action": order.action,  # BUY or SELL
             "orderType": order.orderType,  # LMT, MKT, STP, etc.
             "totalQuantity": float(order.totalQuantity),

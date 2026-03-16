@@ -45,26 +45,68 @@ function resolveOrderPriceData(
     }
   }
 
-  // BAG: compute net bid/ask/mid from portfolio legs
-  if (c.secType === "BAG" && portfolio) {
-    const pos = portfolio.positions.find(
-      (p) => p.ticker === c.symbol && p.legs.length > 1,
-    );
-    if (!pos) return null;
-
+  // BAG: compute net bid/ask/mid from combo legs (order data or portfolio fallback)
+  if (c.secType === "BAG") {
     let netBid = 0;
     let netAsk = 0;
     let netLast = 0;
-    for (const leg of pos.legs) {
-      const key = legPriceKey(pos.ticker, pos.expiry, leg);
-      if (!key) return null;
-      const lp = prices[key];
-      if (!lp || lp.bid == null || lp.ask == null) return null;
-      const sign = leg.direction === "LONG" ? 1 : -1;
-      netBid += sign * lp.bid;
-      netAsk += sign * lp.ask;
-      netLast += sign * (lp.last ?? (lp.bid + lp.ask) / 2);
+    let resolved = false;
+
+    // Primary: use combo legs from the order itself (resolved during sync)
+    if (c.comboLegs?.length) {
+      let allAvailable = true;
+      for (const cl of c.comboLegs) {
+        if (!cl.symbol || cl.strike == null || !cl.right || !cl.expiry) {
+          allAvailable = false;
+          break;
+        }
+        const expiryClean = cl.expiry.replace(/-/g, "");
+        if (expiryClean.length !== 8) { allAvailable = false; break; }
+        const right = cl.right === "C" || cl.right === "P"
+          ? cl.right
+          : cl.right === "CALL" ? "C" : cl.right === "PUT" ? "P" : null;
+        if (!right) { allAvailable = false; break; }
+        const key = optionKey({
+          symbol: cl.symbol.toUpperCase(),
+          expiry: expiryClean,
+          strike: cl.strike,
+          right,
+        });
+        const lp = prices[key];
+        if (!lp || lp.bid == null || lp.ask == null) { allAvailable = false; break; }
+        const sign = cl.action === "BUY" ? 1 : -1;
+        netBid += sign * lp.bid;
+        netAsk += sign * lp.ask;
+        netLast += sign * (lp.last ?? (lp.bid + lp.ask) / 2);
+      }
+      resolved = allAvailable;
     }
+
+    // Fallback: use portfolio position legs
+    if (!resolved && portfolio) {
+      const pos = portfolio.positions.find(
+        (p) => p.ticker === c.symbol && p.legs.length > 1,
+      );
+      if (pos) {
+        netBid = 0;
+        netAsk = 0;
+        netLast = 0;
+        let allAvailable = true;
+        for (const leg of pos.legs) {
+          const key = legPriceKey(pos.ticker, pos.expiry, leg);
+          if (!key) { allAvailable = false; break; }
+          const lp = prices[key];
+          if (!lp || lp.bid == null || lp.ask == null) { allAvailable = false; break; }
+          const sign = leg.direction === "LONG" ? 1 : -1;
+          netBid += sign * lp.bid;
+          netAsk += sign * lp.ask;
+          netLast += sign * (lp.last ?? (lp.bid + lp.ask) / 2);
+        }
+        resolved = allAvailable;
+      }
+    }
+
+    if (!resolved) return null;
 
     // For debit spreads net natural bid < ask; ensure correct ordering
     const lo = Math.min(netBid, netAsk);
