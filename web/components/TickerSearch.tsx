@@ -381,53 +381,62 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
                   handleSelect(r.symbol);
                 }}
                 onMouseEnter={() => setActiveIndex(i)}
-                className="fc"
                 style={{
-                  gap: "12px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
                   padding: "8px 16px",
                   cursor: "pointer",
                   backgroundColor:
                     i === activeIndex ? "var(--bg-hover)" : "transparent",
                   transition: "background-color 100ms",
+                  borderBottom: "1px solid var(--line-grid)",
                 }}
               >
-                {/* Symbol */}
+                {/* Symbol — prominent */}
                 <span
                   style={{
                     fontFamily: "'IBM Plex Mono', monospace",
-                    fontSize: "13px",
+                    fontSize: "14px",
                     fontWeight: 600,
                     color:
                       i === activeIndex
                         ? "var(--signal-core)"
                         : "var(--text-primary)",
-                    minWidth: "64px",
+                    minWidth: "72px",
+                    letterSpacing: "0.3px",
                   }}
                 >
                   {r.symbol}
                 </span>
 
-                {/* secType badge */}
+                {/* secType capsule badge */}
                 <span
-                  className="tm"
                   style={{
-                    fontFamily: "Inter, sans-serif",
-                    fontSize: "10px",
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontSize: "9px",
                     fontWeight: 500,
-                    textTransform: "uc",
+                    textTransform: "uppercase",
                     letterSpacing: "0.5px",
+                    color: "var(--text-dim, var(--text-secondary))",
+                    backgroundColor: "var(--bg-panel-raised)",
+                    border: "1px solid var(--line-grid)",
+                    borderRadius: "999px",
+                    padding: "1px 7px",
+                    whiteSpace: "nowrap",
                   }}
                 >
                   {r.secType}
                 </span>
 
-                {/* Exchange */}
+                {/* Exchange — right-aligned, dimmer */}
                 <span
-                  className="t-s"
                   style={{
                     fontFamily: "Inter, sans-serif",
                     fontSize: "11px",
+                    color: "var(--text-dim, var(--text-secondary))",
                     marginLeft: "auto",
+                    opacity: 0.6,
                   }}
                 >
                   {r.primaryExchange}
