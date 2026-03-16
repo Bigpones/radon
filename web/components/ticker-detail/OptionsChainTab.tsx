@@ -167,6 +167,8 @@ function OrderBuilder({
   onClearLegs: () => void;
 }) {
   const [tif, setTif] = useState<"DAY" | "GTC">("DAY");
+  const [limitPrice, setLimitPrice] = useState("");
+  const [priceManuallySet, setPriceManuallySet] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -176,6 +178,43 @@ function OrderBuilder({
   const netPrice = computeNetPrice(legs, prices);
   const isDebit = netPrice != null && netPrice > 0;
   const totalQty = legs.length > 0 ? legs[0].quantity : 1;
+
+  // Compute net BID / ASK / MID from leg WS prices
+  const netPrices = useMemo(() => {
+    let netBid = 0;
+    let netAsk = 0;
+    let allAvailable = true;
+    for (const leg of legs) {
+      const key = optionKey({
+        symbol: ticker,
+        expiry: leg.expiry,
+        strike: leg.strike,
+        right: leg.right,
+      });
+      const pd = prices[key];
+      if (!pd || pd.bid == null || pd.ask == null) { allAvailable = false; break; }
+      if (leg.action === "SELL") {
+        netBid += pd.bid;
+        netAsk += pd.ask;
+      } else {
+        netBid -= pd.ask;
+        netAsk -= pd.bid;
+      }
+    }
+    if (!allAvailable) return { bid: null, ask: null, mid: null };
+    const mid = (netBid + netAsk) / 2;
+    return { bid: netBid, ask: netAsk, mid };
+  }, [legs, prices, ticker]);
+
+  // Auto-populate limit price to mid when prices first become available
+  useEffect(() => {
+    if (!priceManuallySet && netPrices.mid != null) {
+      setLimitPrice(Math.abs(netPrices.mid).toFixed(2));
+    }
+  }, [netPrices.mid, priceManuallySet]);
+
+  const parsedPrice = parseFloat(limitPrice);
+  const isValidPrice = !isNaN(parsedPrice) && parsedPrice > 0;
 
   const handlePlace = useCallback(async () => {
     if (!confirmStep) {
@@ -195,12 +234,12 @@ function OrderBuilder({
             symbol: ticker,
             action: isDebit ? "BUY" : "SELL",
             quantity: totalQty,
-            limitPrice: netPrice != null ? Math.abs(Math.round(netPrice * 100) / 100) : undefined,
+            limitPrice: parsedPrice,
             tif,
             legs: legs.map((l) => ({
               symbol: ticker,
               secType: "OPT",
-              expiry: formatExpiry(l.expiry),
+              expiry: l.expiry,
               strike: l.strike,
               right: l.right === "C" ? "CALL" : "PUT",
               action: l.action,
@@ -212,9 +251,9 @@ function OrderBuilder({
             symbol: ticker,
             action: legs[0].action,
             quantity: legs[0].quantity,
-            limitPrice: legs[0].limitPrice ?? (netPrice != null ? Math.abs(netPrice) : undefined),
+            limitPrice: parsedPrice,
             tif,
-            expiry: formatExpiry(legs[0].expiry),
+            expiry: legs[0].expiry,
             strike: legs[0].strike,
             right: legs[0].right === "C" ? "CALL" : "PUT",
           };
@@ -236,7 +275,7 @@ function OrderBuilder({
     } finally {
       setLoading(false);
     }
-  }, [confirmStep, ticker, legs, netPrice, isDebit, totalQty, tif, structure]);
+  }, [confirmStep, ticker, legs, parsedPrice, isDebit, totalQty, tif, structure]);
 
   if (legs.length === 0) return null;
 
@@ -259,6 +298,8 @@ function OrderBuilder({
           onClick={() => {
             onClearLegs();
             setConfirmStep(false);
+            setLimitPrice("");
+            setPriceManuallySet(false);
             setError(null);
             setSuccess(null);
           }}
@@ -343,24 +384,75 @@ function OrderBuilder({
         })}
       </div>
 
-      {/* Net price */}
+      {/* Limit Price */}
       <div className="order-builder-net">
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-secondary)" }}>
-          NET {isDebit ? "DEBIT" : "CREDIT"}
-        </span>
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "14px",
-            fontWeight: 600,
-            color: isDebit ? "var(--fault)" : "var(--signal-core)",
-          }}
-        >
-          {netPrice != null ? fmtPrice(Math.abs(netPrice)) : "---"}
-        </span>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-secondary)" }}>
-          {netPrice != null ? `(${fmtPrice(Math.abs(netPrice) * 100)} notional)` : ""}
-        </span>
+        <div className="order-field" style={{ margin: 0 }}>
+          <label className="order-label">
+            Limit Price — NET {isDebit ? "DEBIT" : "CREDIT"}
+          </label>
+          <div className="modify-price-input-row">
+            <span className="modify-price-prefix">$</span>
+            <input
+              className="modify-price-input"
+              type="number"
+              step="0.01"
+              min="0.01"
+              value={limitPrice}
+              onChange={(e) => {
+                setLimitPrice(e.target.value);
+                setPriceManuallySet(true);
+                setConfirmStep(false);
+              }}
+              placeholder="0.00"
+            />
+          </div>
+          <div className="modify-quick-buttons">
+            <button
+              className="btn-quick"
+              disabled={netPrices.bid == null}
+              onClick={() => {
+                if (netPrices.bid != null) {
+                  setLimitPrice(Math.abs(netPrices.bid).toFixed(2));
+                  setPriceManuallySet(true);
+                  setConfirmStep(false);
+                }
+              }}
+            >
+              BID{netPrices.bid != null ? ` ${Math.abs(netPrices.bid).toFixed(2)}` : ""}
+            </button>
+            <button
+              className="btn-quick"
+              disabled={netPrices.mid == null}
+              onClick={() => {
+                if (netPrices.mid != null) {
+                  setLimitPrice(Math.abs(netPrices.mid).toFixed(2));
+                  setPriceManuallySet(true);
+                  setConfirmStep(false);
+                }
+              }}
+            >
+              MID{netPrices.mid != null ? ` ${Math.abs(netPrices.mid).toFixed(2)}` : ""}
+            </button>
+            <button
+              className="btn-quick"
+              disabled={netPrices.ask == null}
+              onClick={() => {
+                if (netPrices.ask != null) {
+                  setLimitPrice(Math.abs(netPrices.ask).toFixed(2));
+                  setPriceManuallySet(true);
+                  setConfirmStep(false);
+                }
+              }}
+            >
+              ASK{netPrices.ask != null ? ` ${Math.abs(netPrices.ask).toFixed(2)}` : ""}
+            </button>
+          </div>
+          {isValidPrice && (
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-secondary)", marginTop: "4px" }}>
+              {fmtPrice(parsedPrice * totalQty * 100)} notional
+            </span>
+          )}
+        </div>
       </div>
 
       {/* TIF */}
@@ -399,16 +491,16 @@ function OrderBuilder({
             <button
               className={`btn-primary ${!isDebit ? "btn-danger" : ""}`}
               onClick={handlePlace}
-              disabled={loading}
+              disabled={!isValidPrice || loading}
             >
-              {loading ? "Placing..." : `Confirm: ${structure || "Option"}`}
+              {loading ? "Placing..." : `Confirm: ${structure || "Option"} @ ${fmtPrice(parsedPrice)}`}
             </button>
           </div>
         ) : (
           <button
             className="btn-primary"
             onClick={handlePlace}
-            disabled={netPrice == null}
+            disabled={!isValidPrice}
             style={{ width: "100%" }}
           >
             Place {structure || "Order"}
