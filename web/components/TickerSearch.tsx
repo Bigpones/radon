@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createReconnectStrategy, type ReconnectState } from "@/lib/reconnectStrategy";
 
 type SearchResult = {
   conId: number;
@@ -29,8 +30,7 @@ const WS_URL =
 
 const MAX_RESULTS = 10;
 const DEBOUNCE_MS = 200;
-const RECONNECT_BASE_MS = 1000;
-const RECONNECT_MAX_MS = 16000;
+const ALLOWED_SEC_TYPES = new Set(["STK", "IND", "FUT"]);
 
 const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
   function TickerSearch(
@@ -42,7 +42,9 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
-    const reconnectDelayRef = useRef(RECONNECT_BASE_MS);
+    const reconnectStrategyRef = useRef<ReconnectState>(
+      createReconnectStrategy({ maxMs: 16000, maxAttempts: 0 }),
+    );
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
       null,
     );
@@ -81,7 +83,7 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
             return;
           }
           setWsReady(true);
-          reconnectDelayRef.current = RECONNECT_BASE_MS;
+          reconnectStrategyRef.current.reset();
 
           // If a search was attempted while WS was down, fire it now
           if (pendingPatternRef.current) {
@@ -95,9 +97,15 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
           if (!mountedRef.current) return;
           try {
             const data = JSON.parse(event.data);
+            if (data.type === "ping") {
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ action: "pong" }));
+              }
+              return;
+            }
             if (data.type === "searchResults") {
               const filtered: SearchResult[] = (data.results ?? [])
-                .filter((r: SearchResult) => r.secType === "STK")
+                .filter((r: SearchResult) => ALLOWED_SEC_TYPES.has(r.secType))
                 .slice(0, MAX_RESULTS);
               setResults(filtered);
               setActiveIndex(-1);
@@ -113,12 +121,11 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
           setWsReady(false);
           wsRef.current = null;
           // Reconnect with exponential backoff
-          const delay = reconnectDelayRef.current;
-          reconnectDelayRef.current = Math.min(
-            delay * 2,
-            RECONNECT_MAX_MS,
-          );
-          reconnectTimerRef.current = setTimeout(connectWs, delay);
+          const strategy = reconnectStrategyRef.current;
+          if (strategy.canRetry()) {
+            const delay = strategy.nextDelay();
+            reconnectTimerRef.current = setTimeout(connectWs, delay);
+          }
         };
 
         ws.onerror = () => {
@@ -127,9 +134,11 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
         };
       } catch {
         // setTimeout fallback if constructor throws
-        const delay = reconnectDelayRef.current;
-        reconnectDelayRef.current = Math.min(delay * 2, RECONNECT_MAX_MS);
-        reconnectTimerRef.current = setTimeout(connectWs, delay);
+        const strategy = reconnectStrategyRef.current;
+        if (strategy.canRetry()) {
+          const delay = strategy.nextDelay();
+          reconnectTimerRef.current = setTimeout(connectWs, delay);
+        }
       }
     }, []);
 
@@ -335,11 +344,11 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
           >
             {loading && results.length === 0 && (
               <div
+                className="tm"
                 style={{
                   padding: "12px 16px",
                   fontFamily: "Inter, sans-serif",
                   fontSize: "12px",
-                  color: "var(--text-muted)",
                 }}
               >
                 Searching...
@@ -348,11 +357,11 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
 
             {!loading && results.length === 0 && (
               <div
+                className="tm"
                 style={{
                   padding: "12px 16px",
                   fontFamily: "Inter, sans-serif",
                   fontSize: "12px",
-                  color: "var(--text-muted)",
                 }}
               >
                 No results
@@ -370,9 +379,8 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
                   handleSelect(r.symbol);
                 }}
                 onMouseEnter={() => setActiveIndex(i)}
+                className="fc"
                 style={{
-                  display: "flex",
-                  alignItems: "center",
                   gap: "12px",
                   padding: "8px 16px",
                   cursor: "pointer",
@@ -399,12 +407,12 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
 
                 {/* secType badge */}
                 <span
+                  className="tm"
                   style={{
                     fontFamily: "Inter, sans-serif",
                     fontSize: "10px",
                     fontWeight: 500,
-                    color: "var(--text-muted)",
-                    textTransform: "uppercase",
+                    textTransform: "uc",
                     letterSpacing: "0.5px",
                   }}
                 >
@@ -413,10 +421,10 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
 
                 {/* Exchange */}
                 <span
+                  className="t-s"
                   style={{
                     fontFamily: "Inter, sans-serif",
                     fontSize: "11px",
-                    color: "var(--text-secondary)",
                     marginLeft: "auto",
                   }}
                 >

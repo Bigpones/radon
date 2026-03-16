@@ -20,12 +20,18 @@ import {
   updatePriceFromTickPrice,
   updatePriceFromTickSize,
 } from "./ib_tick_handler.js";
+import { LRUCache } from "./lib/lru-cache.js";
+import { RateLimiter } from "./lib/rate-limiter.js";
 
 const DEFAULT_WS_PORT = 8765;
 const DEFAULT_IB_HOST = "127.0.0.1";
 const DEFAULT_IB_PORT = 4001;
 const RECONNECT_MS = 5000;
 const SNAPSHOT_TIMEOUT_MS = 5000;
+
+/* ─── Keep-Alive Ping/Pong ─────────────────────────────────────────────── */
+const PING_INTERVAL_MS = 30_000;
+const PONG_TIMEOUT_MS = 65_000; // 30s * 2 + 5s grace
 
 function parseArgs(argv) {
   const args = {
@@ -203,7 +209,7 @@ const clientSymbols = new Map();
 const symbolStates = new Map();
 const requestIdToSymbol = new Map();
 const snapshotRequests = new Map();
-const fundamentalsStore = new Map(); // symbol → FundamentalsData
+const fundamentalsStore = new LRUCache(500); // symbol → FundamentalsData (LRU-capped)
 
 /* ─── Symbol Search Cache ─────────────────────────────────────────────── */
 const SEARCH_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
@@ -279,6 +285,14 @@ function applyCachedClose(data) {
 
 loadCloseCache();
 
+/* ─── Keep-Alive State ──────────────────────────────────────────────────── */
+const clientLastPong = new Map(); // client → timestamp (ms)
+let pingIntervalTimer = null;
+
+/* ─── Snapshot Rate Limiter ──────────────────────────────────────────────
+ * IB allows ~100 snapshot requests/sec. We cap at 50 to leave headroom. */
+const snapshotLimiter = new RateLimiter(50);
+
 let ibConnected = false;
 let shuttingDown = false;
 let reconnectTimer = null;
@@ -296,6 +310,8 @@ const BATCH_INTERVAL_MS = 100;
 
 // Per-client batch buffer: Map<client, Map<symbol, PriceData>>
 const clientBatchBuffers = new Map();
+const BATCH_THRESHOLD = 50; // Adaptive: flush early when any client has this many buffered symbols
+let lastFlushTime = 0;
 
 let batchFlushTimer = null;
 
@@ -306,9 +322,15 @@ function bufferPriceForClient(client, symbol, data) {
     clientBatchBuffers.set(client, buf);
   }
   buf.set(symbol, data);
+
+  // Adaptive flush: trigger early when buffer exceeds threshold and min interval elapsed
+  if (buf.size >= BATCH_THRESHOLD && Date.now() - lastFlushTime >= BATCH_INTERVAL_MS) {
+    flushBatches();
+  }
 }
 
 function flushBatches() {
+  lastFlushTime = Date.now();
   for (const [client, buf] of clientBatchBuffers) {
     if (buf.size === 0) continue;
     const updates = Object.fromEntries(buf);
@@ -506,6 +528,7 @@ function unsubscribeClientFromSymbol(client, symbol) {
 
 function disconnectClient(client) {
   removeBatchBuffer(client);
+  clientLastPong.delete(client);
   const clientSet = clientSymbols.get(client);
   if (!clientSet) {
     return;
@@ -573,7 +596,9 @@ async function handleSnapshotRequest(client, symbols) {
     requestIdToSymbol.set(requestId, symbol);
 
     try {
-      ib.reqMktData(requestId, contract, "233,165", true, false);
+      await snapshotLimiter.submit(() => {
+        ib.reqMktData(requestId, contract, "233,165", true, false);
+      });
     } catch (error) {
       clearSnapshot(requestId);
       try {
@@ -836,6 +861,10 @@ async function handleClientMessage(client, data) {
       sendMessage(client, { type: "pong" });
       return;
     }
+    case "pong": {
+      clientLastPong.set(client, Date.now());
+      return;
+    }
     case "search": {
       const pattern = typeof data.pattern === "string" ? data.pattern.trim() : "";
       if (!pattern || pattern.length < 1) {
@@ -927,6 +956,7 @@ function wireIBEvents() {
     // Type 4 cascades: Live → Delayed → Frozen → Delayed-Frozen
     ib.reqMarketDataType(4);
     cleanupSymbolStateForReconnect();
+    searchCache.clear(); // Invalidate stale search results from IB-down period
     restoreSubscriptions();
     broadcastStatus();
   });
@@ -1078,6 +1108,7 @@ wireIBEvents();
 
 wss.on("connection", (client) => {
   clients.add(client);
+  clientLastPong.set(client, Date.now());
   verbose(`WS client connected (total: ${clients.size})`);
   sendStatus(client);
 
@@ -1114,6 +1145,20 @@ wss.on("connection", (client) => {
 ib.connect();
 startBatchFlush();
 
+/* ─── Keep-Alive Ping Interval ─────────────────────────────────────────── */
+pingIntervalTimer = setInterval(() => {
+  const now = Date.now();
+  for (const client of clients) {
+    sendMessage(client, { type: "ping" });
+    const lastPong = clientLastPong.get(client);
+    if (lastPong !== undefined && now - lastPong > PONG_TIMEOUT_MS) {
+      console.log(`Closing unresponsive client (no pong for ${Math.round((now - lastPong) / 1000)}s)`);
+      clientLastPong.delete(client);
+      try { client.close(); } catch { /* ignore */ }
+    }
+  }
+}, PING_INTERVAL_MS);
+
 statusBroadcastTick = setInterval(() => {
   if (ibConnected) return;
   for (const client of clients) {
@@ -1131,6 +1176,11 @@ process.on("SIGINT", () => {
     clearInterval(statusBroadcastTick);
   }
   stopBatchFlush();
+  if (pingIntervalTimer) {
+    clearInterval(pingIntervalTimer);
+    pingIntervalTimer = null;
+  }
+  snapshotLimiter.clear();
   for (const client of clients) {
     try {
       client.close();

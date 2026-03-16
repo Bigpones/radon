@@ -71,6 +71,10 @@ export type WSErrorMessage = {
   message: string;
 };
 
+export type WSPingMessage = {
+  type: "ping";
+};
+
 export type WSPongMessage = {
   type: "pong";
 };
@@ -96,6 +100,7 @@ export type WSMessage =
   | WSSnapshotMessage
   | WSBatchMessage
   | WSErrorMessage
+  | WSPingMessage
   | WSPongMessage
   | WSStatusMessage;
 

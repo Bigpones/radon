@@ -12,6 +12,7 @@ import {
   contractsKey,
   optionKey,
 } from "./pricesProtocol";
+import { createReconnectStrategy, type ReconnectState } from "./reconnectStrategy";
 
 export type PriceUpdate = {
   symbol: string;
@@ -62,10 +63,8 @@ function wsLog(...args: unknown[]) {
   if (WS_DEBUG) console.debug("[usePrices]", ...args);
 }
 
-const RECONNECT_BASE_MS = 1000;
-const RECONNECT_MAX_MS = 30000;
-const RECONNECT_JITTER_MS = 500;
-const MAX_RECONNECT_ATTEMPTS = 10;
+const STALENESS_CHECK_INTERVAL_MS = 15_000;
+const STALENESS_THRESHOLD_MS = 60_000;
 
 /**
  * React hook for real-time price streaming from IB via WebSocket.
@@ -94,11 +93,16 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stalenessTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastMessageRef = useRef<number>(Date.now());
   const mountedRef = useRef(true);
 
   // Connection state machine (ref — not rendered)
   const connStateRef = useRef<ConnState>("idle");
   const socketGenRef = useRef(0);
+
+  // Reconnect strategy (shared utility)
+  const reconnectStrategyRef = useRef<ReconnectState>(createReconnectStrategy());
 
   // Desired subscription tracking (ref — not rendered)
   const desiredRef = useRef<{
@@ -107,7 +111,6 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
     indexes: IndexContract[];
   }>({ symbols: [], contracts: [], indexes: [] });
   const lastSentHashRef = useRef("");
-  const reconnectAttemptRef = useRef(0);
 
   // Callback refs (avoid stale closures in WS handlers)
   const onPriceUpdateRef = useRef(onPriceUpdate);
@@ -160,6 +163,13 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearStalenessTimer = useCallback(() => {
+    if (stalenessTimerRef.current) {
+      clearInterval(stalenessTimerRef.current);
+      stalenessTimerRef.current = null;
     }
   }, []);
 
@@ -295,7 +305,8 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
     ws.onopen = () => {
       if (gen !== socketGenRef.current || !mountedRef.current) return;
       connStateRef.current = "open";
-      reconnectAttemptRef.current = 0; // Reset backoff on success
+      reconnectStrategyRef.current.reset(); // Reset backoff on success
+      lastMessageRef.current = Date.now();
       setConnected(true);
       setError(null);
       onConnectionChangeRef.current?.(true);
@@ -303,10 +314,20 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
       lastSentHashRef.current = "";
       syncSubscriptions(ws);
       wsLog("open", { gen });
+
+      // Start staleness check
+      clearStalenessTimer();
+      stalenessTimerRef.current = setInterval(() => {
+        if (Date.now() - lastMessageRef.current > STALENESS_THRESHOLD_MS) {
+          wsLog("stale-connection", { silentMs: Date.now() - lastMessageRef.current });
+          ws.close();
+        }
+      }, STALENESS_CHECK_INTERVAL_MS);
     };
 
     ws.onmessage = (event) => {
       if (gen !== socketGenRef.current || !mountedRef.current) return;
+      lastMessageRef.current = Date.now();
       try {
         const message = JSON.parse(event.data as string) as WSMessage;
 
@@ -350,6 +371,11 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
           case "error":
             setError(message.message);
             break;
+          case "ping":
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ action: "pong" }));
+            }
+            break;
           case "pong":
           case "subscribed":
           case "unsubscribed":
@@ -365,6 +391,7 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
     ws.onclose = () => {
       if (gen !== socketGenRef.current || !mountedRef.current) return;
       connStateRef.current = "closed";
+      clearStalenessTimer();
       setConnected(false);
       setIbIssue(null);
       setIbStatusMessage(null);
@@ -383,24 +410,22 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
       wsLog("error", { gen });
       ws.close();
     };
-  }, [enabled, socketUrl, clearReconnectTimer, syncSubscriptions]);
+  }, [enabled, socketUrl, clearReconnectTimer, clearStalenessTimer, syncSubscriptions]);
 
   // Wire scheduleReconnect via ref to avoid circular dep
   const scheduleReconnect = useCallback(() => {
     if (!mountedRef.current || !enabled) return;
     const { symbols: syms, contracts: cts, indexes: idxs } = desiredRef.current;
     if (syms.length === 0 && cts.length === 0 && idxs.length === 0) return;
-    if (reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) {
+
+    const strategy = reconnectStrategyRef.current;
+    if (!strategy.canRetry()) {
       setError("Max reconnect attempts reached");
       return;
     }
 
-    const attempt = reconnectAttemptRef.current++;
-    const delay =
-      Math.min(RECONNECT_BASE_MS * Math.pow(2, attempt), RECONNECT_MAX_MS) +
-      Math.random() * RECONNECT_JITTER_MS;
-
-    wsLog("reconnect-scheduled", { attempt, delay: Math.round(delay) });
+    const delay = strategy.nextDelay();
+    wsLog("reconnect-scheduled", { attempt: strategy.attempt, delay: Math.round(delay) });
 
     clearReconnectTimer();
     reconnectTimeoutRef.current = setTimeout(() => {
@@ -417,7 +442,7 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
   const reconnect = useCallback(() => {
     // Force re-entry into idle so connect() isn't a no-op
     connStateRef.current = "idle";
-    reconnectAttemptRef.current = 0;
+    reconnectStrategyRef.current.reset();
     connect();
   }, [connect]);
 
@@ -497,6 +522,7 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
     } else {
       // Teardown
       clearReconnectTimer();
+      clearStalenessTimer();
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
@@ -510,6 +536,7 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
     return () => {
       mountedRef.current = false;
       clearReconnectTimer();
+      clearStalenessTimer();
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
@@ -517,7 +544,7 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
       connStateRef.current = "idle";
       lastSentHashRef.current = "";
     };
-  }, [enabled, hasSubscriptions, connect, clearReconnectTimer]);
+  }, [enabled, hasSubscriptions, connect, clearReconnectTimer, clearStalenessTimer]);
 
   // ---------------------------------------------------------------------------
   // Subscription sync effect — sends diffs over open connection
