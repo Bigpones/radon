@@ -206,6 +206,22 @@ describe("computeNetPrice", () => {
     expect(net).toBeCloseTo(5.5, 4);
   });
 
+  it("prefers manual per-leg limitPrice even when live quotes exist", () => {
+    const legs = [
+      makeLeg({
+        strike: 200,
+        right: "C",
+        action: "BUY",
+        limitPrice: 5.5,
+        priceManuallySet: true,
+      }),
+    ];
+    const net = computeNetPrice(legs, {
+      AAPL_20260417_200_C: makePriceData(10, 12),
+    });
+    expect(net).toBeCloseTo(5.5, 4);
+  });
+
   it("keeps BID <= ASK when both bid/ask should remain ordered after signed combination", () => {
     const legs = [
       makeLeg({ strike: 200, right: "C", action: "BUY" }),
@@ -232,6 +248,29 @@ describe("computeNetPrice", () => {
     expect(net.bid).toBeNull();
     expect(net.ask).toBeNull();
     expect(net.mid).toBeNull();
+  });
+
+  it("uses leg-level limitPrice when WS quote is missing", () => {
+    const legs = [
+      makeLeg({
+        strike: 200,
+        right: "C",
+        action: "BUY",
+        limitPrice: 5.2,
+        priceManuallySet: true,
+      }),
+      makeLeg({
+        strike: 190,
+        right: "P",
+        action: "SELL",
+        limitPrice: 2.8,
+        priceManuallySet: true,
+      }),
+    ];
+    const net = computeNetOptionQuote(legs, {}, "AAPL");
+    expect(net.bid).toBeCloseTo(2.4);
+    expect(net.ask).toBeCloseTo(2.4);
+    expect(net.mid).toBeCloseTo(2.4);
   });
 });
 

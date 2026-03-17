@@ -1003,6 +1003,39 @@ describe("POST /api/orders/place — silent IB rejection states", () => {
     expect(parsed.legs[1].strike).toBe(60);
     expect(parsed.legs[0].right).toBe("C");
   });
+
+  it("passes per-leg limit prices when provided", async () => {
+    mockRadonFetch
+      .mockResolvedValueOnce({
+        status: "ok",
+        orderId: 12345,
+        permId: 67890,
+        initialStatus: "Submitted",
+      })
+      .mockResolvedValueOnce({});
+
+    const payload = {
+      ...SPXU_COMBO_BODY,
+      legs: [
+        { ...SPXU_COMBO_BODY.legs[0], limitPrice: 1.75 },
+        { ...SPXU_COMBO_BODY.legs[1], limitPrice: 0.9 },
+      ],
+    };
+
+    const { POST } = await import("../app/api/orders/place/route");
+    await POST(
+      new Request("http://localhost/api/orders/place", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }),
+    );
+
+    const [, opts] = mockRadonFetch.mock.calls[0];
+    const parsed = JSON.parse(opts.body);
+    expect(parsed.legs[0]).toMatchObject({ limitPrice: 1.75 });
+    expect(parsed.legs[1]).toMatchObject({ limitPrice: 0.9 });
+  });
 });
 
 // =============================================================================

@@ -181,7 +181,7 @@ All `dev:verbose*` variants also include FastAPI.
 
 | File | Purpose |
 |------|---------|
-| `server.py` | FastAPI app — 17 endpoints, CORS, IB pool, health check, IB Gateway auto-restart |
+| `server.py` | FastAPI app — 19 endpoints, CORS, IB pool, health check, IB Gateway auto-restart. Includes `POST /performance/background` — fire-and-forget performance rebuild, 202 response, task registry deduplication (no duplicate builds) |
 | `ib_pool.py` | Role-based IB connection pool (sync/orders/data) with auto-reconnect |
 | `ib_gateway.py` | IB Gateway health check + auto-restart via IBC launchd service |
 | `subprocess.py` | Async subprocess helper (`run_script`, `run_module`) |
@@ -267,7 +267,25 @@ All portfolio state writes use `scripts/utils/atomic_io.py`:
 
 `scripts/utils/incremental_sync.py` — compares current `portfolio.json` positions against IB by `(ticker, expiry)` key + contract count. Skips full sync when nothing changed.
 
-**Tests**: 159 total (104 Python + 55 TypeScript) across `scripts/tests/test_{scanner_parallel,discover_parallel,atomic_io,kelly_vectorized,vectorized_greeks,batched_relay,ib_resilient,ib_error_handling,incremental_sync,client_id_allocation}.py`, `web/tests/batched-prices.test.ts`, `web/tests/use-prices-ws-stability.test.ts` (25 unit), `web/tests/share-pnl.test.ts` (24 unit), and `web/e2e/ws-connection-stability.spec.ts` (4 E2E).
+### Performance Page Speed Optimization
+
+`scripts/portfolio_performance.py` parallelizes price history fetches to reduce cold-path load time from 30-90s to 10-20s.
+
+**Two-phase fetch architecture:**
+- **Phase A** (main thread, sequential): IB stock history attempts + cache checks
+- **Phase B** (`ThreadPoolExecutor`): Failed-stock UW/Yahoo fallbacks + all option history fetches in parallel. Each worker creates its own `UWClient` instance (thread-safe).
+
+**Configurable workers:** `PERF_FETCH_WORKERS` env var (default 8, clamped 1-20). Invalid values fall back to default.
+
+**Disk cache** (`scripts/utils/price_cache.py`): Per-contract JSON files in `data/price_history_cache/{stocks,options}/` with SHA-256 filenames. Written via `atomic_save()`. TTL: 15 min during market hours, 24h after close. `prune_cache()` called once after all parallel writes complete (thread-safe).
+
+**FastAPI task registry:** `POST /performance` piggybacks on in-flight builds (no duplicate rebuilds). `POST /performance/background` returns 202 + `already_running` dedup. Single asyncio task — single-worker constraint documented.
+
+**Stale-while-revalidate (SWR):** Next.js `GET /api/performance` returns cached data immediately when stale + fires background rebuild via `POST /performance/background` (5s timeout, swallowed errors). Cold start (no cache) blocks on synchronous `POST /performance` (180s timeout).
+
+**Atomic cache writes:** `_write_cache()` in `server.py` uses temp file + `os.replace()` — no `_checksum` metadata (lightweight, separate from `atomic_save`).
+
+**Tests**: 211 total (160 Python + 51 TypeScript) across `scripts/tests/test_{scanner_parallel,discover_parallel,atomic_io,kelly_vectorized,vectorized_greeks,batched_relay,ib_resilient,ib_error_handling,incremental_sync,client_id_allocation,price_cache,portfolio_performance,performance_lock}.py`, `web/tests/batched-prices.test.ts`, `web/tests/use-prices-ws-stability.test.ts` (25 unit), `web/tests/share-pnl.test.ts` (24 unit), `web/tests/performance-route.test.ts` (9 unit), and `web/e2e/ws-connection-stability.spec.ts` (4 E2E).
 
 ---
 
@@ -321,7 +339,7 @@ All portfolio state writes use `scripts/utils/atomic_io.py`:
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/api/server.py` | **FastAPI server** — 17 endpoints on `localhost:8321`. Replaces `spawn()` calls from Next.js. IB pool, auto-restart, health check |
+| `scripts/api/server.py` | **FastAPI server** — 19 endpoints on `localhost:8321`. Replaces `spawn()` calls from Next.js. IB pool, auto-restart, health check |
 | `scripts/api/ib_pool.py` | **IB connection pool** — Role-based persistent connections (sync=0, orders=11, data=31) with auto-reconnect |
 | `scripts/api/ib_gateway.py` | **IB Gateway manager** — Health check, auto-restart via IBC launchd, port polling |
 | `scripts/api/subprocess.py` | **Async subprocess** — `run_script()`, `run_module()` with JSON extraction, timeout, error filtering |
@@ -354,6 +372,7 @@ All portfolio state writes use `scripts/utils/atomic_io.py`:
 | `scripts/utils/atomic_io.py` | Atomic JSON save/load with SHA-256 checksum verification |
 | `scripts/utils/vectorized_greeks.py` | NumPy vectorized portfolio delta/gamma engine |
 | `scripts/utils/incremental_sync.py` | Diff-based portfolio sync (skip full sync when positions unchanged) |
+| `scripts/utils/price_cache.py` | **Price history cache** — SHA-256 filenames, atomic writes, TTL (15min market / 24h close), thread-safe pruning |
 | `scripts/batched_relay.py` | Async WebSocket batch buffer (configurable flush interval, last-write-wins) |
 | `scripts/ib_realtime_server.js` | WS relay server — per-client batch buffers, 100ms flush, initial state immediate |
 | `scripts/clients/inspect_dashboard.py` | MenthorQ DOM inspector — finds chart containers, S3 image URLs per command |
@@ -376,6 +395,7 @@ All portfolio state writes use `scripts/utils/atomic_io.py`:
 | `data/menthorq_cache/cta_{DATE}.json` | Cached MenthorQ CTA positioning (daily, S3 image + Vision) |
 | `data/menthorq_cache/{command}_{DATE}.json` | Cached MenthorQ dashboard data (S3/screenshot + Vision) |
 | `data/cri_scheduled/cri-{TIMESTAMP}.json` | Scheduled CRI scan readings (intraday time-series) |
+| `data/price_history_cache/` | Cached stock + option price histories (stocks/ and options/ subdirs, auto-pruned at 500 files) |
 
 ---
 

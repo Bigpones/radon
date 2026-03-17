@@ -126,20 +126,52 @@ function groupExecutedOrders(fills: ExecutedOrder[]): PositionFillGroup[] {
   const cancelled = fills.filter((f) => f.side === "CANCELLED");
   const real = fills.filter((f) => f.side !== "CANCELLED");
   const groups = new Map<string, ExecutedOrder[]>();
+  const isClosingFill = (f: ExecutedOrder): boolean =>
+    f.contract.secType === "OPT" && f.realizedPNL != null && Math.abs(f.realizedPNL) > 0.01;
+
+  type MinuteBucket = {
+    opens: ExecutedOrder[];
+    closes: ExecutedOrder[];
+    bags: ExecutedOrder[];
+  };
+
+  const byMinute = new Map<string, MinuteBucket>();
   for (const fill of real) {
     const sym = fill.contract.symbol;
     const t = new Date(fill.time);
     const bucket = new Date(t.getFullYear(), t.getMonth(), t.getDate(), t.getHours(), t.getMinutes()).toISOString();
     const key = `${sym}_${bucket}`;
-    const existing = groups.get(key) ?? [];
-    existing.push(fill);
-    groups.set(key, existing);
+    if (!groups.has(key)) {
+      groups.set(key, []); // backward-compat for existing helper-only behavior
+    }
+
+    const bucketData = byMinute.get(key);
+    if (bucketData == null) {
+      byMinute.set(key, { opens: [], closes: [], bags: [] });
+    }
+
+    const bucketBucket = byMinute.get(key);
+    if (!bucketBucket) continue;
+
+    if (fill.contract.secType === "BAG") {
+      bucketBucket.bags.push(fill);
+    } else if (isClosingFill(fill)) {
+      bucketBucket.closes.push(fill);
+    } else {
+      bucketBucket.opens.push(fill);
+    }
   }
   const result: PositionFillGroup[] = [];
-  for (const [key, groupFills] of groups) {
+  const nextId = (() => {
+    let id = 0;
+    return () => {
+      id += 1;
+      return `group-${id}`;
+    };
+  })();
+
+  const makeGroup = (groupFills: ExecutedOrder[], isClosing: boolean): PositionFillGroup => {
     const optFills = groupFills.filter((f) => f.contract.secType !== "BAG");
-    const hasClosingPnL = optFills.some((f) => f.realizedPNL != null && Math.abs(f.realizedPNL) > 0.01);
-    const isClosing = hasClosingPnL;
     const sym = groupFills[0].contract.symbol;
     const bagFills = groupFills.filter((f) => f.contract.secType === "BAG");
     const totalQty = bagFills.length > 0
@@ -149,14 +181,73 @@ function groupExecutedOrders(fills: ExecutedOrder[]): PositionFillGroup[] {
       ? bagFills[0].avgPrice
       : null;
     const totalCommission = optFills.reduce((sum, f) => sum + (f.commission ?? 0), 0);
-    const totalPnL = isClosing
-      ? optFills.reduce((sum, f) => sum + (f.realizedPNL ?? 0), 0)
-      : null;
-    const earliestTime = groupFills.reduce((min, f) => f.time < min ? f.time : min, groupFills[0].time);
+    const totalPnL = isClosing ? optFills.reduce((sum, f) => sum + (f.realizedPNL ?? 0), 0) : null;
+    const latestTime = groupFills.reduce((maxTime, f) => {
+      const current = Date.parse(f.time);
+      const previous = Date.parse(maxTime);
+      if (Number.isNaN(current)) return maxTime;
+      if (Number.isNaN(previous)) return f.time;
+      return current > previous ? f.time : maxTime;
+    }, groupFills[0].time);
+
     result.push({
-      id: key, symbol: sym, description: `Test ${sym}`, isClosing, totalQuantity: totalQty,
-      netPrice, totalCommission, totalPnL, time: earliestTime, fills: groupFills,
+      id: nextId(),
+      symbol: sym,
+      description: `Test ${sym}`,
+      isClosing,
+      totalQuantity: totalQty,
+      netPrice,
+      totalCommission,
+      totalPnL,
+      time: latestTime,
+      fills: groupFills,
     });
+  };
+
+  for (const { opens, closes, bags } of byMinute.values()) {
+    const assignBagToBucket = (
+      bag: ExecutedOrder,
+      bucketSideFills: ExecutedOrder[],
+    ): boolean => {
+      if (bucketSideFills.length === 0) return closes.length === 0;
+      const bagTime = Date.parse(bag.time);
+      if (Number.isNaN(bagTime)) return bucketSideFills === closes;
+      let bestDist = Number.POSITIVE_INFINITY;
+      let nearClose = true;
+      for (const fill of bucketSideFills) {
+        const fillTime = Date.parse(fill.time);
+        if (Number.isNaN(fillTime)) continue;
+        const dist = Math.abs(fillTime - bagTime);
+        if (dist < bestDist) {
+          bestDist = dist;
+          nearClose = bucketSideFills === closes;
+        }
+      }
+      if (!Number.isFinite(bestDist)) return bucketSideFills === closes;
+      return nearClose;
+    };
+
+    const closeBuckets: ExecutedOrder[] = [];
+    const openBuckets: ExecutedOrder[] = [];
+
+    if (opens.length > 0 && closes.length > 0) {
+      for (const bag of bags) {
+        const goesToClose = assignBagToBucket(bag, closes);
+        if (goesToClose) closeBuckets.push(bag);
+        else openBuckets.push(bag);
+      }
+
+      if (closes.length > 0 || closeBuckets.length > 0) {
+        makeGroup([...closes, ...closeBuckets], true);
+      }
+      if (opens.length > 0 || openBuckets.length > 0) {
+        makeGroup([...opens, ...openBuckets], false);
+      }
+    } else if (closes.length > 0) {
+      makeGroup([...closes, ...bags], true);
+    } else if (opens.length > 0) {
+      makeGroup([...opens, ...bags], false);
+    }
   }
   for (const c of cancelled) {
     result.push({
@@ -165,7 +256,7 @@ function groupExecutedOrders(fills: ExecutedOrder[]): PositionFillGroup[] {
       totalPnL: null, time: c.time, fills: [c],
     });
   }
-  result.sort((a, b) => b.time.localeCompare(a.time));
+  result.sort((a, b) => Date.parse(b.time) - Date.parse(a.time));
   return result;
 }
 
@@ -408,6 +499,34 @@ describe("groupExecutedOrders", () => {
     expect(groupExecutedOrders([])).toEqual([]);
   });
 
+  it("sorts groups by latest fill timestamp, not lexical time", () => {
+    const fills: ExecutedOrder[] = [
+      makeBagFill({ time: "2026-03-17T10:00:00+02:00", avgPrice: 2.5, quantity: 1, side: "BOT", execId: "bag-early" }),
+      makeOptionFill({
+        time: "2026-03-17T10:00:00+02:00",
+        quantity: 1,
+        realizedPNL: 100,
+        side: "SLD",
+        contract: { conId: 2001, symbol: "AAOI", secType: "OPT", strike: 88, right: "C", expiry: "2026-03-27" },
+      }),
+      makeBagFill({ time: "2026-03-17T09:30:00+00:00", avgPrice: 2.6, quantity: 1, execId: "bag-late", symbol: "AAOI Spread" }),
+      makeOptionFill({
+        time: "2026-03-17T09:30:00+00:00",
+        quantity: 1,
+        realizedPNL: 200,
+        avgPrice: 3.2,
+        side: "SLD",
+        contract: { conId: 2002, symbol: "AAOI", secType: "OPT", strike: 89, right: "P", expiry: "2026-03-27" },
+        execId: "opt-late",
+      }),
+    ];
+
+    const groups = groupExecutedOrders(fills);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].time).toBe("2026-03-17T09:30:00+00:00");
+    expect(Date.parse(groups[0].time)).toBeGreaterThan(Date.parse(groups[1].time));
+  });
+
   it("sums quantity from BAG fills for total position size", () => {
     const fills: ExecutedOrder[] = [
       makeBagFill({ quantity: 5 }),
@@ -432,6 +551,38 @@ describe("groupExecutedOrders", () => {
     ];
     const groups = groupExecutedOrders(fills);
     expect(groups[0].totalCommission).toBeCloseTo(-2.50, 2);
+  });
+
+  it("keeps opening and closing fills in separate buckets when executed in same minute", () => {
+    const fills: ExecutedOrder[] = [
+      makeBagFill({ execId: "open-bag", quantity: 5, side: "BOT", avgPrice: 0.25, realizedPNL: null, time: "2026-03-17T15:40:00+00:00" }),
+      makeOptionFill({
+        execId: "open-opt",
+        quantity: 5,
+        side: "SLD",
+        realizedPNL: 0,
+        avgPrice: 6.72,
+        time: "2026-03-17T15:40:30+00:00",
+        contract: { conId: 888001, symbol: "AAOI", secType: "OPT", strike: 88, right: "P", expiry: "2026-03-27" },
+      }),
+      makeBagFill({ execId: "close-bag", side: "SLD", quantity: 5, avgPrice: 2.50, realizedPNL: 0, time: "2026-03-17T15:40:10+00:00" }),
+      makeOptionFill({
+        execId: "close-opt",
+        quantity: 5,
+        side: "BOT",
+        realizedPNL: 687,
+        avgPrice: 5.33,
+        time: "2026-03-17T15:40:40+00:00",
+        contract: { conId: 888002, symbol: "AAOI", secType: "OPT", strike: 89, right: "C", expiry: "2026-03-27" },
+      }),
+    ];
+
+    const groups = groupExecutedOrders(fills);
+    expect(groups).toHaveLength(2);
+    expect(groups.some((g) => g.isClosing)).toBe(true);
+    expect(groups.some((g) => !g.isClosing)).toBe(true);
+    expect(groups.find((g) => g.isClosing)?.time).toBe("2026-03-17T15:40:40+00:00");
+    expect(groups.find((g) => !g.isClosing)?.time).toBe("2026-03-17T15:40:30+00:00");
   });
 });
 

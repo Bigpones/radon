@@ -179,6 +179,7 @@ function OrderBuilder({
   const netPrice = computeNetPrice(legs, prices);
   const isDebit = netPrice != null && netPrice > 0;
   const totalQty = legs.length > 0 ? legs[0].quantity : 1;
+  const isCombo = legs.length > 1;
 
   // Compute net BID / ASK / MID from leg WS prices
   const netPrices = useMemo(() => {
@@ -223,6 +224,7 @@ function OrderBuilder({
               right: l.right === "C" ? "CALL" : "PUT",
               action: l.action,
               ratio: 1,
+              ...(l.limitPrice != null ? { limitPrice: l.limitPrice } : {}),
             })),
           }
         : {
@@ -299,6 +301,7 @@ function OrderBuilder({
           });
           const pd = prices[key];
           const mid = pd?.bid != null && pd?.ask != null ? (pd.bid + pd.ask) / 2 : null;
+          const legPrice = leg.priceManuallySet || mid == null ? leg.limitPrice : mid;
 
           return (
             <div key={leg.id} className="order-builder-leg">
@@ -339,6 +342,40 @@ function OrderBuilder({
                   }}
                   style={{ width: "48px", fontSize: "11px", padding: "2px 4px", textAlign: "center" }}
                 />
+                {isCombo && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "2px",
+                      flex: "0 0 auto",
+                    }}
+                  >
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: "9px", color: "var(--text-secondary)" }}>
+                      $
+                    </span>
+                    <input
+                      className="order-input"
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={legPrice == null ? "" : legPrice}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value);
+                        onUpdateLeg(
+                          leg.id,
+                          {
+                            limitPrice: Number.isFinite(v) ? v : null,
+                            priceManuallySet: true,
+                          },
+                        );
+                        setPriceManuallySet(true);
+                        setConfirmStep(false);
+                      }}
+                      style={{ width: "54px", fontSize: "11px", padding: "2px 4px", textAlign: "center" }}
+                    />
+                  </div>
+                )}
                 <button
                   onClick={() => {
                     onRemoveLeg(leg.id);
@@ -688,6 +725,7 @@ export default function OptionsChainTab({
           expiry: selectedExpiry,
           quantity: 1,
           limitPrice: mid,
+          priceManuallySet: false,
         },
       ]);
     },

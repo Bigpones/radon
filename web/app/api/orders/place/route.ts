@@ -11,6 +11,7 @@ type ComboLeg = {
   right: "C" | "P";
   action: "BUY" | "SELL";
   ratio: number;
+  limitPrice?: number;
 };
 
 type PlaceBody = {

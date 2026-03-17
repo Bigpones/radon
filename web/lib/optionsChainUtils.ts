@@ -11,6 +11,7 @@ export type OrderLeg = {
   expiry: string;
   quantity: number;
   limitPrice: number | null;
+  priceManuallySet?: boolean;
 };
 
 /* ─── Expiry formatting ─── */
@@ -88,7 +89,10 @@ export function computeNetPrice(legs: OrderLeg[], prices: Record<string, PriceDa
       right: leg.right,
     });
     const pd = prices[key];
-    const mid = pd?.bid != null && pd?.ask != null ? (pd.bid + pd.ask) / 2 : leg.limitPrice;
+    const useManualPrice = leg.priceManuallySet === true;
+    const mid = !useManualPrice && pd?.bid != null && pd?.ask != null
+      ? (pd.bid + pd.ask) / 2
+      : leg.limitPrice;
     if (mid == null) return null;
     const sign = leg.action === "BUY" ? 1 : -1;
     net += sign * mid * leg.quantity;
@@ -119,13 +123,20 @@ export function computeNetOptionQuote(
       right: leg.right,
     });
     const pd = prices[key];
-    if (!pd || pd.bid == null || pd.ask == null) {
+
+    // Prefer live combo quote when available unless user explicitly overrides
+    // leg-level price in the builder.
+    const quoteSource = pd && !leg.priceManuallySet;
+    const bid = quoteSource ? pd?.bid : leg.limitPrice;
+    const ask = quoteSource ? pd?.ask : leg.limitPrice;
+
+    if (bid == null || ask == null) {
       return { bid: null, ask: null, mid: null };
     }
 
     const sign = leg.action === "BUY" ? 1 : -1;
-    netBid += sign * pd.bid;
-    netAsk += sign * pd.ask;
+    netBid += sign * bid;
+    netAsk += sign * ask;
   }
 
   const absBid = Math.abs(netBid);

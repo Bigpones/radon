@@ -49,6 +49,14 @@ function isCacheBehindPortfolio(
   );
 }
 
+/**
+ * Fire-and-forget background rebuild trigger.
+ * 5s timeout, swallow all errors — caller already returned cached data.
+ */
+function triggerBackgroundRebuild(): void {
+  radonFetch("/performance/background", { method: "POST", timeout: 5_000 }).catch(() => {});
+}
+
 export async function GET(): Promise<Response> {
   const [stale, cachedPerformance, initialPortfolioSnapshot] = await Promise.all([
     isPerformanceStale(),
@@ -67,24 +75,31 @@ export async function GET(): Promise<Response> {
       });
       portfolioSnapshot = refreshed;
     } catch {
+      // Portfolio sync failed — if we have fresh-enough perf cache, return it
       if (cachedPerformance && !isCacheBehindPortfolio(cachedPerformance, portfolioSnapshot)) {
         return NextResponse.json(cachedPerformance);
       }
+      // Otherwise fall through to rebuild evaluation
     }
   }
 
-  const shouldSync = !cachedPerformance || stale || isCacheBehindPortfolio(cachedPerformance, portfolioSnapshot);
-  if (!shouldSync && cachedPerformance) {
+  const shouldRebuild = !cachedPerformance || stale || isCacheBehindPortfolio(cachedPerformance, portfolioSnapshot);
+
+  if (!shouldRebuild && cachedPerformance) {
     return NextResponse.json(cachedPerformance);
   }
 
+  // SWR: if we have stale cache, return it immediately + trigger background rebuild
+  if (cachedPerformance) {
+    triggerBackgroundRebuild();
+    return NextResponse.json(cachedPerformance);
+  }
+
+  // Cold start: no cache at all — must block on full rebuild
   try {
-    const data = await radonFetch("/performance", { method: "POST", timeout: 190_000 });
+    const data = await radonFetch("/performance", { method: "POST", timeout: 180_000 });
     return NextResponse.json(data);
   } catch (error) {
-    if (cachedPerformance) {
-      return NextResponse.json(cachedPerformance);
-    }
     const message = error instanceof Error ? error.message : "Failed to generate performance metrics";
     return NextResponse.json({ error: message }, { status: 502 });
   }

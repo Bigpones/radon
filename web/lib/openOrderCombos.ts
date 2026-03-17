@@ -1,4 +1,4 @@
-import type { OpenOrder } from "./types";
+import type { ExecutedOrder, OpenOrder, PortfolioPosition } from "./types";
 import { detectStructure, type OrderLeg } from "./optionsChainUtils";
 import type { PriceData } from "./pricesProtocol";
 import { optionKey } from "./pricesProtocol";
@@ -69,6 +69,146 @@ function normalizeExpiry(expiry: string | null): string | null {
   return `${clean.slice(0, 4)}-${clean.slice(4, 6)}-${clean.slice(6, 8)}`;
 }
 
+function findPortfolioLegDirection(
+  positions: readonly PortfolioPosition[] | undefined,
+  symbol: string,
+  expiry: string,
+  strike: number,
+  right: NormalizedRight,
+): "LONG" | "SHORT" | null {
+  if (!positions) return null;
+  const targetSymbol = symbol.toUpperCase();
+  const targetExpiry = expiry;
+  for (const position of positions) {
+    if (position.ticker.toUpperCase() !== targetSymbol) continue;
+    if (position.expiry !== targetExpiry) continue;
+    for (const leg of position.legs) {
+      if (leg.type !== (right === "C" ? "Call" : "Put")) continue;
+      if (leg.strike !== strike) continue;
+      if (leg.direction === "LONG" || leg.direction === "SHORT") return leg.direction;
+    }
+  }
+  return null;
+}
+
+function formatExecutedLegDirection(
+  side: string,
+  isClosing: boolean,
+): "Long" | "Short" | null {
+  if (side === "SLD" || side === "SELL") return isClosing ? "Long" : "Short";
+  if (side === "BOT" || side === "BUY") return isClosing ? "Short" : "Long";
+  return null;
+}
+
+function makeExecutedLegKey(order: ExecutedOrder): string {
+  if (order.contract.conId != null) return `${order.contract.conId}`;
+  const symbol = order.contract.symbol;
+  const right = order.contract.right ?? "";
+  const strike = order.contract.strike == null ? "" : order.contract.strike;
+  const expiry = order.contract.expiry ?? "";
+  return `${symbol}|${right}|${expiry}|${strike}`;
+}
+
+function inferExecutedLegDirectionFromFills(
+  fills: ExecutedOrder[],
+  isClosing: boolean,
+): "Long" | "Short" | null {
+  let latestDirection: "Long" | "Short" | null = null;
+  let latestTime = Number.NEGATIVE_INFINITY;
+
+  for (const fill of fills) {
+    const direction = formatExecutedLegDirection(fill.side, isClosing);
+    if (direction == null) continue;
+    const t = Date.parse(fill.time);
+    if (Number.isNaN(t)) {
+      if (latestDirection == null) {
+        latestDirection = direction;
+      }
+      continue;
+    }
+    if (t > latestTime) {
+      latestTime = t;
+      latestDirection = direction;
+    }
+  }
+
+  return latestDirection;
+}
+
+export function buildExecutedGroupDescription(
+  fills: ExecutedOrder[],
+  isClosing: boolean,
+  portfolioPositions?: readonly PortfolioPosition[],
+): string {
+  const first = fills[0];
+  if (!first) return "Unknown";
+
+  if (first.contract.secType !== "OPT") {
+    const side = first.side === "BOT"
+      ? (isClosing ? "Closed" : "Bought")
+      : (isClosing ? "Closed" : "Sold");
+    return `${side} ${first.contract.symbol}`;
+  }
+
+  const legs = fills.filter((fill) => fill.contract.secType === "OPT");
+  if (legs.length === 0) {
+    const side = first.side === "BOT"
+      ? (isClosing ? "Closed" : "Bought")
+      : (isClosing ? "Closed" : "Sold");
+    return `${side} ${first.contract.symbol}`;
+  }
+
+  const legGroups = new Map<string, ExecutedOrder[]>();
+  for (const leg of legs) {
+    const key = makeExecutedLegKey(leg);
+    const existing = legGroups.get(key) ?? [];
+    existing.push(leg);
+    legGroups.set(key, existing);
+  }
+
+  const parts: string[] = [];
+  for (const legGroup of legGroups.values()) {
+    const c = legGroup[0].contract;
+    const right = c.right === "C" || c.right === "CALL"
+      ? "Call"
+      : c.right === "P" || c.right === "PUT"
+        ? "Put"
+        : "Unknown";
+    const strike = c.strike != null ? `$${c.strike}` : "Unknown";
+
+    const explicitDir = inferExecutedLegDirectionFromFills(legGroup, isClosing);
+    const portfolioDir = c.right == null || c.expiry == null || c.strike == null
+      ? null
+      : findPortfolioLegDirection(
+          portfolioPositions,
+          c.symbol,
+          c.expiry,
+          c.strike,
+          c.right === "C" || c.right === "CALL" ? "C" : "P",
+      );
+
+    const direction = explicitDir
+      ? explicitDir
+      : portfolioDir
+        ? (portfolioDir === "LONG" ? "Long" : "Short")
+        : "Long";
+    parts.push(`${direction} ${strike} ${right}`);
+  }
+
+  if (parts.length === 2) {
+    parts.sort((a, b) => {
+      const aIsShort = a.startsWith("Short");
+      const bIsShort = b.startsWith("Short");
+      if (aIsShort === bIsShort) return 0;
+      return aIsShort ? -1 : 1;
+    });
+  }
+
+  const base = isClosing ? "Closed" : "Opened";
+  const structure = parts.length === 2 ? "Risk Reversal" : parts.length > 2 ? "Combo" : "";
+  return `${base} ${fills[0].contract.symbol} ${structure} (${parts.join(" / ")})`;
+}
+
 function makeComboLeg(order: OpenOrder, index: number): OptionLegCandidate | null {
   if (order.contract.secType !== "OPT") return null;
   const action = normalizeAction(order.action);
@@ -108,13 +248,10 @@ function isLikelyCombo(candidates: OptionLegCandidate[]): boolean {
   return true;
 }
 
-function buildComboStructureAndSummary(candidates: OptionLegCandidate[]): { structure: string; summary: string } {
-  const orderedLegs = [...candidates].sort((a, b) => {
-    if (a.action !== b.action) return a.action === "SELL" ? -1 : 1;
-    if (a.right !== b.right) return a.right === "P" ? -1 : 1;
-    return a.strike - b.strike;
-  });
-
+function buildComboStructureAndSummary(
+  candidates: OptionLegCandidate[],
+  portfolioPositions?: readonly PortfolioPosition[],
+): { structure: string; summary: string } {
   const legs: OrderLeg[] = candidates.map((leg) => ({
     id: `${leg.order.orderId}_${leg.index}`,
     action: leg.action,
@@ -127,17 +264,77 @@ function buildComboStructureAndSummary(candidates: OptionLegCandidate[]): { stru
 
   const structure = detectStructure(legs);
 
-  const parts = orderedLegs.map((leg) => {
-    const side = leg.action === "BUY" ? "Long" : "Short";
-    const right = leg.right === "C" ? "Call" : "Put";
-    return `${side} ${right} ${leg.strike}`;
-  });
+  let parts: string[];
+
+  if (structure === "Risk Reversal") {
+    const putLeg = candidates.find((leg) => leg.right === "P");
+    const callLeg = candidates.find((leg) => leg.right === "C");
+
+    if (putLeg && callLeg) {
+      const putDirection = findPortfolioLegDirection(
+        portfolioPositions,
+        putLeg.order.contract.symbol,
+        putLeg.expiry,
+        putLeg.strike,
+        "P",
+      );
+      const callDirection = findPortfolioLegDirection(
+        portfolioPositions,
+        callLeg.order.contract.symbol,
+        callLeg.expiry,
+        callLeg.strike,
+        "C",
+      );
+
+      if (putDirection && callDirection) {
+        const putSummary = `${putDirection === "LONG" ? "Long" : "Short"} Put ${putLeg.strike}`;
+        const callSummary = `${callDirection === "LONG" ? "Long" : "Short"} Call ${callLeg.strike}`;
+
+        parts = [putSummary, callSummary].sort((a, b) => {
+          const aIsShort = a.startsWith("Short");
+          const bIsShort = b.startsWith("Short");
+          if (aIsShort === bIsShort) return 0;
+          return aIsShort ? -1 : 1;
+        });
+      } else {
+        const isBearish = putLeg.strike > callLeg.strike;
+        const shortLeg = isBearish ? callLeg : putLeg;
+        const longLeg = isBearish ? putLeg : callLeg;
+
+        const shortLabel = `${shortLeg.right === "C" ? "Call" : "Put"}`;
+        const longLabel = `${longLeg.right === "C" ? "Call" : "Put"}`;
+        parts = [
+          `Short ${shortLabel} ${shortLeg.strike}`,
+          `Long ${longLabel} ${longLeg.strike}`,
+        ];
+      }
+    } else {
+      parts = [];
+    }
+  } else {
+    const orderedLegs = [...candidates].sort((a, b) => {
+      if (a.action !== b.action) return a.action === "SELL" ? -1 : 1;
+      if (a.right !== b.right) return a.right === "P" ? -1 : 1;
+      return a.strike - b.strike;
+    });
+
+    parts = orderedLegs.map((leg) => {
+      const side = leg.action === "BUY" ? "Long" : "Short";
+      const right = leg.right === "C" ? "Call" : "Put";
+      return `${side} ${right} ${leg.strike}`;
+    });
+  }
 
   return { structure, summary: `${structure} (${parts.join(" / ")})` };
 }
 
 export function resolveOpenOrderComboPrice(orders: OpenOrder[], prices?: Record<string, PriceData>): number | null {
   if (!prices) return null;
+  if (orders.length === 0) return null;
+
+  const nonZeroLegSizes = orders.map((order) => Math.abs(order.totalQuantity)).filter((q) => q > 0);
+  if (nonZeroLegSizes.length === 0) return null;
+  const baseQuantity = Math.min(...nonZeroLegSizes);
 
   let netLast = 0;
 
@@ -158,14 +355,19 @@ export function resolveOpenOrderComboPrice(orders: OpenOrder[], prices?: Record<
     if (quote == null) return null;
 
     const sign = order.action === "BUY" ? 1 : -1;
-    netLast += sign * quote;
+    const quantityScale = Math.abs(order.totalQuantity) / baseQuantity;
+    if (!Number.isFinite(quantityScale) || quantityScale <= 0) return null;
+    netLast += sign * quote * quantityScale;
   }
 
   if (!Number.isFinite(netLast)) return null;
   return Math.round(netLast * 100) / 100;
 }
 
-export function buildOpenOrderDisplayRows(orders: OpenOrder[]): OpenOrderDisplayRow[] {
+export function buildOpenOrderDisplayRows(
+  orders: OpenOrder[],
+  portfolioPositions?: readonly PortfolioPosition[],
+): OpenOrderDisplayRow[] {
   const grouped: Map<string, OptionLegCandidate[]> = new Map();
 
   orders.forEach((order, index) => {
@@ -186,7 +388,7 @@ export function buildOpenOrderDisplayRows(orders: OpenOrder[]): OpenOrderDisplay
       continue;
     }
 
-    const { structure, summary } = buildComboStructureAndSummary(candidates);
+    const { structure, summary } = buildComboStructureAndSummary(candidates, portfolioPositions);
     if (!structure) {
       continue;
     }

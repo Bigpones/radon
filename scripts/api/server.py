@@ -107,9 +107,20 @@ def _read_cache(path: Path) -> Optional[dict]:
 
 
 def _write_cache(path: Path, data: dict) -> None:
-    """Write JSON to cache file."""
+    """Write JSON to cache file atomically via temp file + os.replace()."""
+    import tempfile
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2))
+    fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp", prefix=".cache_")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp_path, str(path))
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def _atomic_save(path: str, data: dict) -> str:
@@ -349,14 +360,45 @@ async def blotter_sync():
     return result.data
 
 
-@app.post("/performance")
-async def performance_sync():
-    """Run portfolio performance metrics. 180s timeout."""
+# ---------------------------------------------------------------------------
+# Performance — task registry for deduplication (single-worker assumed)
+# ---------------------------------------------------------------------------
+_running_build: Optional[asyncio.Task] = None
+
+
+async def _do_performance_rebuild() -> dict:
+    """Run portfolio_performance.py and cache result."""
     result = await run_script("portfolio_performance.py", ["--json"], timeout=180)
     if not result.ok:
         raise HTTPException(status_code=502, detail=result.error)
     _write_cache(DATA_DIR / "performance.json", result.data)
     return result.data
+
+
+@app.post("/performance")
+async def performance_sync():
+    """Run portfolio performance metrics. 180s timeout.
+
+    If a build is already in-flight, piggybacks on it (returns same result).
+    """
+    global _running_build
+    if _running_build is not None and not _running_build.done():
+        return await _running_build
+    _running_build = asyncio.create_task(_do_performance_rebuild())
+    return await _running_build
+
+
+@app.post("/performance/background", status_code=202)
+async def performance_background():
+    """Fire-and-forget performance rebuild. Returns 202 immediately.
+
+    If a build is already in-flight, returns already_running (no duplicate).
+    """
+    global _running_build
+    if _running_build is not None and not _running_build.done():
+        return {"status": "already_running"}
+    _running_build = asyncio.create_task(_do_performance_rebuild())
+    return {"status": "accepted"}
 
 
 @app.get("/options/chain")

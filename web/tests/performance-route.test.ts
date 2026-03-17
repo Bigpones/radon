@@ -52,7 +52,7 @@ describe("/api/performance route", () => {
         expect(mockRadonFetch).not.toHaveBeenCalled();
       });
 
-  it("GET refreshes inline when cached performance lags the current portfolio snapshot", async () => {
+  it("GET returns stale cache + triggers background rebuild when cached performance lags the current portfolio snapshot (SWR)", async () => {
     mockStat.mockResolvedValue({ mtimeMs: Date.now() });
     mockReadFile.mockImplementation(async (path: string) => {
       if (path.includes("performance.json")) {
@@ -73,23 +73,19 @@ describe("/api/performance route", () => {
     });
     mockRadonFetch
       .mockResolvedValueOnce({
-        as_of: "2026-03-11",
         last_sync: "2026-03-11T13:37:14Z",
       })
-      .mockResolvedValueOnce({
-        as_of: "2026-03-11",
-        last_sync: "2026-03-11T13:37:14Z",
-        summary: { ending_equity: 1_313_112.03 },
-        series: [],
-      });
+      .mockResolvedValueOnce({ status: "accepted" });
 
     const { GET } = await import("../app/api/performance/route");
     const res = await GET();
     const body = await res.json();
 
+    // SWR: returns stale cache immediately
     expect(res.status).toBe(200);
-    expect(body.as_of).toBe("2026-03-11");
-    expect(body.summary.ending_equity).toBe(1_313_112.03);
+    expect(body.as_of).toBe("2026-03-10");
+    expect(body.summary.ending_equity).toBe(1_063_031.86);
+    // Should have called portfolio/sync + background trigger
     expect(mockRadonFetch).toHaveBeenCalledTimes(2);
     expect(mockRadonFetch).toHaveBeenNthCalledWith(
       1,
@@ -98,12 +94,12 @@ describe("/api/performance route", () => {
     );
     expect(mockRadonFetch).toHaveBeenNthCalledWith(
       2,
-      "/performance",
-      expect.objectContaining({ method: "POST" }),
+      "/performance/background",
+      expect.objectContaining({ method: "POST", timeout: 5_000 }),
     );
   });
 
-  it("GET refreshes the portfolio snapshot before rebuilding when cached performance is behind current ET session", async () => {
+  it("GET returns stale cache + triggers background rebuild when perf is behind current ET session (SWR)", async () => {
     mockStat.mockResolvedValue({ mtimeMs: Date.now() });
     mockReadFile.mockImplementation(async (path: string) => {
       if (path.includes("performance.json")) {
@@ -124,27 +120,28 @@ describe("/api/performance route", () => {
     });
     mockRadonFetch
       .mockResolvedValueOnce({
-        as_of: "2026-03-13",
         last_sync: "2026-03-13T20:02:06Z",
       })
-      .mockResolvedValueOnce({
-        as_of: "2026-03-13",
-        last_sync: "2026-03-13T20:02:06Z",
-        summary: { ending_equity: 1_250_902.19 },
-        series: [],
-      });
+      .mockResolvedValueOnce({ status: "accepted" });
 
     const { GET } = await import("../app/api/performance/route");
     const res = await GET();
     const body = await res.json();
 
+    // SWR: returns stale cache immediately
     expect(res.status).toBe(200);
-    expect(body.as_of).toBe("2026-03-13");
-    expect(body.summary.ending_equity).toBe(1_250_902.19);
+    expect(body.as_of).toBe("2026-03-12");
+    expect(body.summary.ending_equity).toBe(1_218_410.03);
+    // Portfolio sync + background trigger
     expect(mockRadonFetch).toHaveBeenNthCalledWith(
       1,
       "/portfolio/sync",
       expect.objectContaining({ method: "POST" }),
+    );
+    expect(mockRadonFetch).toHaveBeenNthCalledWith(
+      2,
+      "/performance/background",
+      expect.objectContaining({ method: "POST", timeout: 5_000 }),
     );
   });
 
@@ -196,5 +193,103 @@ describe("/api/performance route", () => {
     expect(body.summary.sharpe_ratio).toBe(1.84);
     expect(mockRadonFetch).toHaveBeenCalledOnce();
     expect(mockRadonFetch).toHaveBeenCalledWith("/performance", expect.objectContaining({ method: "POST" }));
+  });
+
+  // ---- SWR-specific tests ----
+
+  it("GET SWR: returns stale cache immediately and triggers background rebuild", async () => {
+    // Stale: mtime is 20 minutes ago
+    mockStat.mockResolvedValue({ mtimeMs: Date.now() - 20 * 60_000 });
+    mockReadFile.mockImplementation(async (path: string) => {
+      if (path.includes("performance.json")) {
+        return JSON.stringify({
+          as_of: "2026-03-13",
+          last_sync: "2026-03-13T12:00:00Z",
+          summary: { sharpe_ratio: 1.2 },
+          series: [],
+        });
+      }
+      if (path.includes("portfolio.json")) {
+        return JSON.stringify({
+          last_sync: "2026-03-13T12:00:00Z",
+        });
+      }
+      throw new Error(`unexpected read: ${path}`);
+    });
+    // Background trigger should fire-and-forget
+    mockRadonFetch.mockResolvedValue({ status: "accepted" });
+
+    const { GET } = await import("../app/api/performance/route");
+    const res = await GET();
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.summary.sharpe_ratio).toBe(1.2);
+    // Should call background endpoint, not the blocking one
+    expect(mockRadonFetch).toHaveBeenCalledWith(
+      "/performance/background",
+      expect.objectContaining({ method: "POST", timeout: 5_000 }),
+    );
+  });
+
+  it("GET cold start: blocks on rebuild when no cache exists", async () => {
+    mockStat.mockRejectedValue(new Error("ENOENT"));
+    mockReadFile.mockRejectedValue(new Error("ENOENT"));
+    mockRadonFetch.mockResolvedValue({
+      as_of: "2026-03-13",
+      last_sync: "2026-03-13T16:00:00Z",
+      summary: { total_return: 0.18 },
+      series: [],
+    });
+
+    const { GET } = await import("../app/api/performance/route");
+    const res = await GET();
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.summary.total_return).toBe(0.18);
+    expect(mockRadonFetch).toHaveBeenCalledWith(
+      "/performance",
+      expect.objectContaining({ method: "POST", timeout: 180_000 }),
+    );
+  });
+
+  it("GET cold start: returns 502 when rebuild fails and no cache", async () => {
+    mockStat.mockRejectedValue(new Error("ENOENT"));
+    mockReadFile.mockRejectedValue(new Error("ENOENT"));
+    mockRadonFetch.mockRejectedValue(new Error("FastAPI down"));
+
+    const { GET } = await import("../app/api/performance/route");
+    const res = await GET();
+    const body = await res.json();
+
+    expect(res.status).toBe(502);
+    expect(body.error).toContain("FastAPI down");
+  });
+
+  it("GET SWR: background trigger failure is swallowed — stale cache still returned", async () => {
+    mockStat.mockResolvedValue({ mtimeMs: Date.now() - 20 * 60_000 });
+    mockReadFile.mockImplementation(async (path: string) => {
+      if (path.includes("performance.json")) {
+        return JSON.stringify({
+          as_of: "2026-03-13",
+          last_sync: "2026-03-13T12:00:00Z",
+          summary: { ending_equity: 100_000 },
+          series: [],
+        });
+      }
+      if (path.includes("portfolio.json")) {
+        return JSON.stringify({ last_sync: "2026-03-13T12:00:00Z" });
+      }
+      throw new Error("not found");
+    });
+    mockRadonFetch.mockRejectedValue(new Error("timeout"));
+
+    const { GET } = await import("../app/api/performance/route");
+    const res = await GET();
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.summary.ending_equity).toBe(100_000);
   });
 });

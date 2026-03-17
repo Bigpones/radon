@@ -21,10 +21,11 @@ import math
 import os
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -35,7 +36,23 @@ from ib_insync import Stock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from clients.ib_client import IBClient  # noqa: E402
-from clients.uw_client import UWClient  # noqa: E402
+from clients.uw_client import UWClient, UWRateLimitError  # noqa: E402
+from utils.price_cache import (  # noqa: E402
+    STOCKS_DIR,
+    OPTIONS_DIR,
+    cache_key_stock,
+    cache_key_option,
+    read_cache,
+    write_cache,
+    prune_cache,
+    is_market_hours,
+    TTL_MARKET_HOURS,
+    TTL_AFTER_CLOSE,
+)
+
+_DEFAULT_WORKERS = 8
+_MIN_WORKERS = 1
+_MAX_WORKERS = 20
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -539,7 +556,209 @@ def compute_performance_metrics(equity: pd.Series, benchmark: pd.Series) -> Dict
     }
 
 
+def _get_worker_count() -> int:
+    """Read PERF_FETCH_WORKERS env var, clamped to [1, 20]. Default 8."""
+    raw = os.environ.get("PERF_FETCH_WORKERS", "")
+    try:
+        val = int(raw)
+        if val < _MIN_WORKERS or val > _MAX_WORKERS:
+            return _DEFAULT_WORKERS
+        return val
+    except (ValueError, TypeError):
+        return _DEFAULT_WORKERS
+
+
+def _fetch_stock_history_ib_only(
+    symbol: str, start: str, end: str, ib_client: IBClient
+) -> Tuple[str, Dict[str, float]]:
+    """IB-only stock fetch (main thread). Returns (symbol, history)."""
+    try:
+        bars = ib_client.get_historical_data(
+            Stock(symbol, "SMART", "USD"),
+            duration="1 Y",
+            bar_size="1 day",
+            what_to_show="TRADES",
+        )
+        parsed = {
+            str(bar.date)[:10]: float(bar.close)
+            for bar in bars
+            if start <= str(bar.date)[:10] <= end
+        }
+        if parsed:
+            return symbol, parsed
+    except Exception:
+        pass
+    return symbol, {}
+
+
+def _fetch_stock_history_fallback(
+    symbol: str, start: str, end: str
+) -> Tuple[str, Dict[str, float], str]:
+    """UW -> Yahoo fallback. Creates own UWClient. Thread-safe.
+
+    Returns (symbol, history, source).
+    """
+    # Check cache first
+    key = cache_key_stock(symbol, start, end)
+    cached = read_cache(STOCKS_DIR, key)
+    if cached:
+        return symbol, cached, "cache"
+
+    # Try UW
+    try:
+        uw = UWClient()
+        data = uw.get_stock_ohlc(symbol, candle_size="1d")
+        uw.close()
+        parsed: Dict[str, float] = {}
+        for bar in data.get("data", []):
+            dt = str(bar.get("date") or "")[:10]
+            close = safe_float(bar.get("close"), default=float("nan"))
+            if dt and math.isfinite(close) and start <= dt <= end:
+                parsed[dt] = close
+        if parsed:
+            ttl = TTL_MARKET_HOURS if is_market_hours() else TTL_AFTER_CLOSE
+            write_cache(STOCKS_DIR, key, parsed, source="uw", ttl=ttl)
+            return symbol, parsed, "uw"
+    except Exception:
+        pass
+
+    # Yahoo fallback
+    try:
+        parsed = {}
+        for dt, close in _fetch_yahoo_chart(symbol):
+            if start <= dt <= end:
+                parsed[dt] = close
+        if parsed:
+            ttl = TTL_MARKET_HOURS if is_market_hours() else TTL_AFTER_CLOSE
+            write_cache(STOCKS_DIR, key, parsed, source="yahoo", ttl=ttl)
+            return symbol, parsed, "yahoo"
+    except Exception:
+        pass
+
+    return symbol, {}, "none"
+
+
+def _fetch_option_history_safe(
+    option_id: str, start: str, end: str
+) -> Tuple[str, Dict[str, float], Optional[str]]:
+    """Thread-safe option fetch with own UWClient. Exception -> warning string.
+
+    Returns (option_id, history, warning_or_none).
+    """
+    # Check cache first
+    key = cache_key_option(option_id, start, end)
+    cached = read_cache(OPTIONS_DIR, key)
+    if cached:
+        return option_id, cached, None
+
+    try:
+        uw = UWClient()
+        data = uw.get_option_contract_historic(option_id)
+        uw.close()
+        parsed: Dict[str, float] = {}
+        for row in data.get("chains", []):
+            dt = str(row.get("date") or "")[:10]
+            if not dt or dt < start or dt > end:
+                continue
+            mark = select_option_mark(row)
+            if mark is not None:
+                parsed[dt] = mark
+        if parsed:
+            ttl = TTL_MARKET_HOURS if is_market_hours() else TTL_AFTER_CLOSE
+            write_cache(OPTIONS_DIR, key, parsed, source="uw", ttl=ttl)
+        return option_id, parsed, None
+    except UWRateLimitError:
+        return option_id, {}, f"Rate limited fetching {option_id} — skipped"
+    except Exception as exc:
+        return option_id, {}, f"Option history unavailable for {option_id}: {exc}"
+
+
+def _fetch_all_histories(
+    trades: List[TradeFill],
+    start: str,
+    end: str,
+    ib_client: Optional[IBClient],
+    warnings: List[str],
+) -> Tuple[Dict[str, Dict[str, float]], List[str]]:
+    """Orchestrator: IB pass (sequential) -> parallel fallback + options.
+
+    Returns (marks_by_contract, missing_contracts).
+    """
+    marks_by_contract: Dict[str, Dict[str, float]] = {}
+    missing_contracts: List[str] = []
+
+    stock_symbols = sorted({t.symbol for t in trades if t.security_type == "STK" and t.symbol})
+    option_ids = sorted({t.option_id for t in trades if t.security_type == "OPT" and t.option_id})
+
+    # Phase A: IB pass for stocks (main thread, sequential)
+    ib_successes: set = set()
+    if ib_client is not None:
+        for symbol in stock_symbols:
+            # Check cache first
+            key = cache_key_stock(symbol, start, end)
+            cached = read_cache(STOCKS_DIR, key)
+            if cached:
+                marks_by_contract[f"STK:{symbol}"] = cached
+                ib_successes.add(symbol)
+                continue
+
+            sym, history = _fetch_stock_history_ib_only(symbol, start, end, ib_client)
+            if history:
+                ttl = TTL_MARKET_HOURS if is_market_hours() else TTL_AFTER_CLOSE
+                write_cache(STOCKS_DIR, key, history, source="ib", ttl=ttl)
+                marks_by_contract[f"STK:{sym}"] = history
+                ib_successes.add(sym)
+
+    # Phase B: Parallel fallback for failed stocks + all options
+    failed_stocks = [s for s in stock_symbols if s not in ib_successes]
+    max_workers = _get_worker_count()
+    total_tasks = len(failed_stocks) + len(option_ids)
+
+    if total_tasks > 0:
+        with ThreadPoolExecutor(max_workers=min(max_workers, total_tasks)) as pool:
+            futures = {}
+
+            for symbol in failed_stocks:
+                fut = pool.submit(_fetch_stock_history_fallback, symbol, start, end)
+                futures[fut] = ("stock", symbol)
+
+            for oid in option_ids:
+                fut = pool.submit(_fetch_option_history_safe, oid, start, end)
+                futures[fut] = ("option", oid)
+
+            for future in as_completed(futures):
+                kind, contract_id = futures[future]
+                try:
+                    if kind == "stock":
+                        sym, history, _source = future.result()
+                        contract_key = f"STK:{sym}"
+                        if history:
+                            marks_by_contract[contract_key] = history
+                        else:
+                            missing_contracts.append(contract_key)
+                    else:
+                        oid, history, warning = future.result()
+                        if warning:
+                            warnings.append(warning)
+                        if history:
+                            marks_by_contract[oid] = history
+                        else:
+                            missing_contracts.append(oid)
+                except Exception as exc:
+                    warnings.append(f"Fetch failed for {contract_id}: {exc}")
+                    if kind == "stock":
+                        missing_contracts.append(f"STK:{contract_id}")
+                    else:
+                        missing_contracts.append(contract_id)
+
+        # Prune cache once after all writes complete
+        prune_cache(STOCKS_DIR)
+
+    return marks_by_contract, missing_contracts
+
+
 def build_payload(benchmark_symbol: str = "SPY") -> dict:
+    # 1. Load and validate trades
     portfolio = load_portfolio_snapshot()
     account = portfolio.get("account_summary") or {}
     current_net_liq = safe_float(account.get("net_liquidation"), default=safe_float(portfolio.get("bankroll")))
@@ -562,6 +781,7 @@ def build_payload(benchmark_symbol: str = "SPY") -> dict:
     end_date = last_sync[:10] if last_sync else datetime.now().strftime("%Y-%m-%d")
     start_date = f"{end_date[:4]}-01-01"
 
+    # 2. Connect IB only (UW created per-worker in thread pool)
     ib_client: Optional[IBClient] = None
     try:
         ib_client = IBClient()
@@ -570,62 +790,50 @@ def build_payload(benchmark_symbol: str = "SPY") -> dict:
         warnings.append(f"IB historical bars unavailable. Using fallbacks where needed: {exc}")
         ib_client = None
 
-    uw_client: Optional[UWClient] = None
-    try:
-        uw_client = UWClient()
-    except Exception as exc:
-        warnings.append(f"Unusual Whales unavailable for option history: {exc}")
-        uw_client = None
-
-    benchmark_history = fetch_stock_history(benchmark_symbol, start_date, end_date, ib_client, uw_client)
+    # 3. Benchmark (defines calendar) — must come first
+    benchmark_history = fetch_stock_history(benchmark_symbol, start_date, end_date, ib_client, None)
+    if not benchmark_history:
+        # Try cache / fallback for benchmark
+        _, benchmark_history, _ = _fetch_stock_history_fallback(benchmark_symbol, start_date, end_date)
     if not benchmark_history:
         raise RuntimeError(f"Could not fetch benchmark history for {benchmark_symbol}")
+    # Cache benchmark
+    bm_key = cache_key_stock(benchmark_symbol, start_date, end_date)
+    bm_cached = read_cache(STOCKS_DIR, bm_key)
+    if not bm_cached:
+        ttl = TTL_MARKET_HOURS if is_market_hours() else TTL_AFTER_CLOSE
+        write_cache(STOCKS_DIR, bm_key, benchmark_history, source="ib", ttl=ttl)
+
     calendar = sorted(benchmark_history.keys())
     benchmark_series = pd.Series({dt: benchmark_history[dt] for dt in calendar}, dtype=float)
 
-    marks_by_contract: Dict[str, Dict[str, float]] = {}
-    missing_contracts: List[str] = []
+    # 4. Parallel fetches (THE KEY CHANGE)
+    marks_by_contract, missing_contracts = _fetch_all_histories(
+        trades, start_date, end_date, ib_client, warnings
+    )
 
-    stock_symbols = sorted({trade.symbol for trade in trades if trade.security_type == "STK" and trade.symbol})
-    for symbol in stock_symbols:
-        history = fetch_stock_history(symbol, start_date, end_date, ib_client, uw_client)
-        contract_key = f"STK:{symbol}"
-        if history:
-            marks_by_contract[contract_key] = history
-        else:
-            missing_contracts.append(contract_key)
-
-    option_ids = sorted({trade.option_id for trade in trades if trade.security_type == "OPT" and trade.option_id})
-    for option_id in option_ids:
-        try:
-            history = fetch_option_history(option_id, start_date, end_date, uw_client)
-        except Exception as exc:
-            warnings.append(f"Option history unavailable for {option_id}: {exc}")
-            history = {}
-        if history:
-            marks_by_contract[option_id] = history
-        else:
-            missing_contracts.append(option_id)
-
+    # Disconnect IB
     if ib_client is not None:
         ib_client.disconnect()
-    if uw_client is not None:
-        uw_client.close()
 
     if missing_contracts:
         warnings.append(
             f"Missing historical marks for {len(missing_contracts)} contract(s). Those contracts are valued at zero where no price history is available."
         )
 
+    # 5. Reconstruct equity curve (unchanged)
     curve = reconstruct_equity_curve(
         trades=trades,
         calendar=calendar,
         marks_by_contract=marks_by_contract,
         final_equity=current_net_liq,
     )
+
+    # 6. Compute metrics (unchanged)
     metrics = compute_performance_metrics(curve["equity"], benchmark_series)
     benchmark_total_return = float((benchmark_series.iloc[-1] / benchmark_series.iloc[0]) - 1.0) if len(benchmark_series) > 1 else 0.0
 
+    # 7. Build response (public schema only)
     series = []
     bench_returns = benchmark_series.pct_change().fillna(0.0)
     for dt in calendar:

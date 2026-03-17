@@ -19,7 +19,7 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react";
-import type { BlotterTrade, DiscoverCandidate, ExecutedOrder, FlowAnalysisPosition, OpenOrder, OrdersData, PortfolioData, ScannerSignal, WorkspaceSection } from "@/lib/types";
+import type { BlotterTrade, DiscoverCandidate, ExecutedOrder, FlowAnalysisPosition, OpenOrder, OrdersData, PortfolioData, PortfolioPosition, ScannerSignal, WorkspaceSection } from "@/lib/types";
 import { useOrderActions } from "@/lib/OrderActionsContext";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { optionKey } from "@/lib/pricesProtocol";
@@ -33,6 +33,7 @@ import { fmtPrice, fmtUsd, legPriceKey } from "@/lib/positionUtils";
 import {
   buildOpenOrderDisplayRows,
   type OpenOrderDisplayRow,
+  buildExecutedGroupDescription,
   resolveOpenOrderComboPrice,
 } from "@/lib/openOrderCombos";
 import PositionTable from "./PositionTable";
@@ -165,95 +166,179 @@ type PositionFillGroup = {
   fills: ExecutedOrder[];
 };
 
-function deriveGroupDescription(fills: ExecutedOrder[], isClosing: boolean): string {
-  // Collect unique OPT legs (skip BAG envelope fills)
-  const legs = fills.filter((f) => f.contract.secType === "OPT");
-  if (legs.length === 0) {
-    // Stock or single-contract fills
-    const first = fills[0];
-    const side = first.side === "BOT" ? (isClosing ? "Closed" : "Bought") : (isClosing ? "Closed" : "Sold");
-    return `${side} ${first.contract.symbol}`;
-  }
-
-  // Dedupe legs by conId to get unique contracts
-  const uniqueLegs = new Map<number | null, ExecutedOrder>();
-  for (const l of legs) uniqueLegs.set(l.contract.conId, l);
-
-  const parts: string[] = [];
-  for (const leg of uniqueLegs.values()) {
-    const c = leg.contract;
-    const right = c.right === "C" || c.right === "CALL" ? "Call" : "Put";
-    const side = leg.side === "SLD" ? "Short" : "Long";
-    parts.push(`${side} $${c.strike} ${right}`);
-  }
-
-  const prefix = isClosing ? "Closed" : "Opened";
-  const structure = parts.length === 2 ? "Risk Reversal" : parts.length > 2 ? "Combo" : "";
-  return `${prefix} ${fills[0].contract.symbol} ${structure} (${parts.join(" / ")})`.trim();
+function deriveGroupDescription(
+  fills: ExecutedOrder[],
+  isClosing: boolean,
+  portfolioPositions?: readonly PortfolioPosition[],
+): string {
+  return buildExecutedGroupDescription(fills, isClosing, portfolioPositions);
 }
 
-function groupExecutedOrders(fills: ExecutedOrder[]): PositionFillGroup[] {
+function groupExecutedOrders(
+  fills: ExecutedOrder[],
+  portfolioPositions?: readonly PortfolioPosition[],
+): PositionFillGroup[] {
   if (fills.length === 0) return [];
 
   // Separate cancelled orders (keep as-is, ungrouped)
   const cancelled = fills.filter((f) => f.side === "CANCELLED");
   const real = fills.filter((f) => f.side !== "CANCELLED");
 
-  // Group by: underlying symbol + time bucket (60s window) + isClosing
-  const groups = new Map<string, ExecutedOrder[]>();
+  const isClosingFill = (fill: ExecutedOrder): boolean =>
+    fill.contract.secType === "OPT" && fill.realizedPNL != null && Math.abs(fill.realizedPNL) > 0.01;
+
+  type MinuteBucket = {
+    symbol: string;
+    opens: ExecutedOrder[];
+    closes: ExecutedOrder[];
+    bags: ExecutedOrder[];
+  };
+
+  const byMinute = new Map<string, MinuteBucket>();
   for (const fill of real) {
     const sym = fill.contract.symbol;
     const t = new Date(fill.time);
     // Round time to nearest minute for grouping
     const bucket = new Date(t.getFullYear(), t.getMonth(), t.getDate(), t.getHours(), t.getMinutes()).toISOString();
-    // Determine closing: OPT fills with non-zero PnL are closing
-    const isClosing = fill.contract.secType === "OPT" && fill.realizedPNL != null && Math.abs(fill.realizedPNL) > 0.01;
-    // For BAG fills, check if this time bucket has closing OPT fills
     const key = `${sym}_${bucket}`;
-    const existing = groups.get(key) ?? [];
-    existing.push(fill);
-    groups.set(key, existing);
+    const bucketData = byMinute.get(key);
+    if (bucketData == null) {
+      byMinute.set(key, {
+        symbol: sym,
+        opens: [],
+        closes: [],
+        bags: [],
+      });
+    }
+
+    const target = byMinute.get(key);
+    if (!target) continue;
+
+    if (fill.contract.secType === "BAG") {
+      target.bags.push(fill);
+    } else if (isClosingFill(fill)) {
+      target.closes.push(fill);
+    } else {
+      target.opens.push(fill);
+    }
   }
 
-  // Resolve each group: split into opening/closing if mixed
-  const result: PositionFillGroup[] = [];
-  for (const [key, groupFills] of groups) {
-    const optFills = groupFills.filter((f) => f.contract.secType !== "BAG");
-    const hasClosingPnL = optFills.some((f) => f.realizedPNL != null && Math.abs(f.realizedPNL) > 0.01);
-    const isClosing = hasClosingPnL;
-    const sym = groupFills[0].contract.symbol;
+  const assignBagToBucket = (
+    bag: ExecutedOrder,
+    bucketSideFills: ExecutedOrder[],
+    fallback: ExecutedOrder[],
+  ): ExecutedOrder[] => {
+    if (bucketSideFills.length === 0) return [...fallback];
+    const bagTime = Date.parse(bag.time);
+    const safeBagTime = Number.isNaN(bagTime) ? null : bagTime;
+    let bestSide: ExecutedOrder[] = [];
+    let bestDistance = Number.POSITIVE_INFINITY;
 
-    // Sum quantities from BAG fills (they represent the combo-level quantity)
+    for (const targetFill of bucketSideFills) {
+      const targetTime = Date.parse(targetFill.time);
+      if (Number.isNaN(targetTime) || safeBagTime == null) continue;
+      const delta = Math.abs(targetTime - safeBagTime);
+      if (delta < bestDistance) {
+        bestDistance = delta;
+        bestSide = [targetFill];
+      }
+    }
+
+    if (!Number.isFinite(bestDistance)) return [...fallback];
+    return bestSide;
+  };
+
+  const makeGroup = (
+    groupFills: ExecutedOrder[],
+    isClosing: boolean,
+  ): PositionFillGroup => {
+    const optFills = groupFills.filter((f) => f.contract.secType !== "BAG");
+    const sym = groupFills[0].contract.symbol;
     const bagFills = groupFills.filter((f) => f.contract.secType === "BAG");
     const totalQty = bagFills.length > 0
       ? bagFills.reduce((sum, f) => sum + f.quantity, 0)
       : optFills.reduce((sum, f) => sum + f.quantity, 0);
 
-    // Net price from BAG fills
     const netPrice = bagFills.length > 0 && bagFills[0].avgPrice != null
       ? bagFills[0].avgPrice
       : null;
 
-    // Sum commission + PnL from OPT fills (BAG commission is 0)
     const totalCommission = optFills.reduce((sum, f) => sum + (f.commission ?? 0), 0);
     const totalPnL = isClosing
       ? optFills.reduce((sum, f) => sum + (f.realizedPNL ?? 0), 0)
       : null;
 
-    const earliestTime = groupFills.reduce((min, f) => f.time < min ? f.time : min, groupFills[0].time);
+    const latestTime = groupFills.reduce((maxTime, f) => {
+      const current = Date.parse(f.time);
+      const previous = Date.parse(maxTime);
+      if (Number.isNaN(current)) return maxTime;
+      if (Number.isNaN(previous)) return f.time;
+      return current > previous ? f.time : maxTime;
+    }, groupFills[0].time);
 
-    result.push({
-      id: key,
+    return {
+      id: `${sym}_${Date.parse(groupFills[0].time).toString()}`,
       symbol: sym,
-      description: deriveGroupDescription(groupFills, isClosing),
+      description: deriveGroupDescription(groupFills, isClosing, portfolioPositions),
       isClosing,
       totalQuantity: totalQty,
       netPrice,
       totalCommission,
       totalPnL,
-      time: earliestTime,
+      time: latestTime,
       fills: groupFills,
-    });
+    };
+  };
+
+  const nextId = (() => {
+    let id = 0;
+    return () => {
+      id += 1;
+      return `position-group-${id}`;
+    };
+  })();
+
+  const result: PositionFillGroup[] = [];
+  for (const bucket of byMinute.values()) {
+    const { opens, closes, bags } = bucket;
+    if (opens.length > 0 && closes.length > 0) {
+      const closeBuckets: ExecutedOrder[] = [];
+      const openBuckets: ExecutedOrder[] = [];
+
+      for (const bag of bags) {
+        const closeDistances = assignBagToBucket(bag, closes, closes);
+        const openDistances = assignBagToBucket(bag, opens, opens);
+        if (closeDistances.length > 0 && openDistances.length > 0) {
+          // If both have valid distances, pick the nearer side.
+          const bagTime = Date.parse(bag.time);
+          const closeDist = closeDistances.map((f) => Math.abs(Date.parse(f.time) - bagTime))[0];
+          const openDist = openDistances.map((f) => Math.abs(Date.parse(f.time) - bagTime))[0];
+          if (closeDist <= openDist) closeBuckets.push(bag);
+          else openBuckets.push(bag);
+        } else if (closeDistances.length > 0) {
+          closeBuckets.push(bag);
+        } else {
+          openBuckets.push(bag);
+        }
+      }
+
+      const closeGroupFills = [...closes, ...closeBuckets];
+      const openGroupFills = [...opens, ...openBuckets];
+
+      if (closeGroupFills.length > 0) {
+        result.push({ ...makeGroup(closeGroupFills, true), id: `${nextId()}-close` });
+      }
+      if (openGroupFills.length > 0) {
+        result.push({ ...makeGroup(openGroupFills, false), id: `${nextId()}-open` });
+      }
+      continue;
+    }
+
+    if (closes.length > 0) {
+      result.push({ ...makeGroup([...closes, ...bags], true), id: `${nextId()}-close` });
+    } else if (opens.length > 0) {
+      result.push({ ...makeGroup([...opens, ...bags], false), id: `${nextId()}-open` });
+    }
   }
 
   // Add cancelled orders as individual groups
@@ -272,8 +357,15 @@ function groupExecutedOrders(fills: ExecutedOrder[]): PositionFillGroup[] {
     });
   }
 
-  // Sort by time descending
-  result.sort((a, b) => b.time.localeCompare(a.time));
+  // Sort by latest execution time descending
+  result.sort((a, b) => {
+    const bMs = Date.parse(b.time);
+    const aMs = Date.parse(a.time);
+    if (Number.isNaN(aMs) && Number.isNaN(bMs)) return 0;
+    if (Number.isNaN(aMs)) return 1;
+    if (Number.isNaN(bMs)) return -1;
+    return bMs - aMs;
+  });
   return result;
 }
 
@@ -1107,8 +1199,8 @@ function OrdersSections({
   const openOrderExtract = useMemo(() => makeOpenOrderExtract(prices, portfolio), [prices, portfolio]);
   const openOrderRows = useMemo(() => {
     if (!orders) return [];
-    return buildOpenOrderDisplayRows(orders.open_orders);
-  }, [orders]);
+    return buildOpenOrderDisplayRows(orders.open_orders, portfolio?.positions);
+  }, [orders, portfolio?.positions]);
   const openSort = useSort(openOrderRows, openOrderExtract);
 
   const [cancelTarget, setCancelTarget] = useState<OpenOrder | null>(null);
@@ -1169,8 +1261,8 @@ function OrdersSections({
 
   // Group fills into position-level rows
   const positionGroups = useMemo(
-    () => groupExecutedOrders(allExecutedRows),
-    [allExecutedRows],
+    () => groupExecutedOrders(allExecutedRows, portfolio?.positions),
+    [allExecutedRows, portfolio?.positions],
   );
 
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
