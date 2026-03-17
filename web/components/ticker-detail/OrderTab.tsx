@@ -404,18 +404,18 @@ function ComboOrderForm({
 
       // Effective execution after IB's reversal for SELL orders:
       const effectivelySelling = (action === "SELL") === (leg.direction === "LONG");
-      if (effectivelySelling) {
-        netBid += lp.bid;
-        netAsk += lp.ask;
-      } else {
-        netBid -= lp.ask;
-        netAsk -= lp.bid;
-      }
+      const sign = effectivelySelling ? 1 : -1;
+      netBid += sign * lp.bid;
+      netAsk += sign * lp.ask;
     }
 
     if (!allAvailable) return { bid: null, ask: null, mid: null };
-    const mid = (netBid + netAsk) / 2;
-    return { bid: netBid, ask: netAsk, mid };
+    const absBid = Math.abs(netBid);
+    const absAsk = Math.abs(netAsk);
+    const bid = Math.min(absBid, absAsk);
+    const ask = Math.max(absBid, absAsk);
+    const mid = (bid + ask) / 2;
+    return { bid, ask, mid };
   }, [position, prices, ticker, action]);
 
   const parsedQty = parseInt(quantity, 10);

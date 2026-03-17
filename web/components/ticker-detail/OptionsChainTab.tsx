@@ -193,23 +193,23 @@ function OrderBuilder({
       });
       const pd = prices[key];
       if (!pd || pd.bid == null || pd.ask == null) { allAvailable = false; break; }
-      if (leg.action === "SELL") {
-        netBid += pd.bid;
-        netAsk += pd.ask;
-      } else {
-        netBid -= pd.ask;
-        netAsk -= pd.bid;
-      }
+      const sign = leg.action === "BUY" ? 1 : -1;
+      netBid += sign * pd.bid;
+      netAsk += sign * pd.ask;
     }
     if (!allAvailable) return { bid: null, ask: null, mid: null };
-    const mid = (netBid + netAsk) / 2;
-    return { bid: netBid, ask: netAsk, mid };
+    const absBid = Math.abs(netBid);
+    const absAsk = Math.abs(netAsk);
+    const bid = Math.min(absBid, absAsk);
+    const ask = Math.max(absBid, absAsk);
+    const mid = (bid + ask) / 2;
+    return { bid, ask, mid };
   }, [legs, prices, ticker]);
 
   // Auto-populate limit price to mid when prices first become available
   useEffect(() => {
     if (!priceManuallySet && netPrices.mid != null) {
-      setLimitPrice(Math.abs(netPrices.mid).toFixed(2));
+      setLimitPrice(netPrices.mid.toFixed(2));
     }
   }, [netPrices.mid, priceManuallySet]);
 
@@ -412,39 +412,39 @@ function OrderBuilder({
               disabled={netPrices.bid == null}
               onClick={() => {
                 if (netPrices.bid != null) {
-                  setLimitPrice(Math.abs(netPrices.bid).toFixed(2));
+                  setLimitPrice(netPrices.bid.toFixed(2));
                   setPriceManuallySet(true);
                   setConfirmStep(false);
                 }
               }}
             >
-              BID{netPrices.bid != null ? ` ${Math.abs(netPrices.bid).toFixed(2)}` : ""}
+              BID{netPrices.bid != null ? ` ${netPrices.bid.toFixed(2)}` : ""}
             </button>
             <button
               className="btn-quick"
               disabled={netPrices.mid == null}
               onClick={() => {
                 if (netPrices.mid != null) {
-                  setLimitPrice(Math.abs(netPrices.mid).toFixed(2));
+                  setLimitPrice(netPrices.mid.toFixed(2));
                   setPriceManuallySet(true);
                   setConfirmStep(false);
                 }
               }}
             >
-              MID{netPrices.mid != null ? ` ${Math.abs(netPrices.mid).toFixed(2)}` : ""}
+              MID{netPrices.mid != null ? ` ${netPrices.mid.toFixed(2)}` : ""}
             </button>
             <button
               className="btn-quick"
               disabled={netPrices.ask == null}
               onClick={() => {
                 if (netPrices.ask != null) {
-                  setLimitPrice(Math.abs(netPrices.ask).toFixed(2));
+                  setLimitPrice(netPrices.ask.toFixed(2));
                   setPriceManuallySet(true);
                   setConfirmStep(false);
                 }
               }}
             >
-              ASK{netPrices.ask != null ? ` ${Math.abs(netPrices.ask).toFixed(2)}` : ""}
+              ASK{netPrices.ask != null ? ` ${netPrices.ask.toFixed(2)}` : ""}
             </button>
           </div>
           {isValidPrice && (
