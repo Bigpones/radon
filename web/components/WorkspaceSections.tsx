@@ -95,6 +95,31 @@ function execOrderShareData(e: ExecutedOrder): SharePnlData {
   };
 }
 
+/** Build share data for a position group (aggregated fills). */
+function positionGroupShareData(group: PositionFillGroup): SharePnlData {
+  // Compute P&L % from the OPT leg fills' notional value
+  let pnlPct: number | null = null;
+  if (group.totalPnL != null && group.isClosing) {
+    const optFills = group.fills.filter((f) => f.contract.secType === "OPT");
+    const totalNotional = optFills.reduce((sum, f) => {
+      const mult = f.contract.secType === "OPT" ? 100 : 1;
+      return sum + Math.abs((f.avgPrice ?? 0) * f.quantity * mult);
+    }, 0);
+    if (totalNotional > 0) {
+      pnlPct = (group.totalPnL / totalNotional) * 100;
+    }
+  }
+
+  return {
+    description: group.description,
+    pnl: group.totalPnL ?? 0,
+    pnlPct,
+    commission: group.totalCommission,
+    fillPrice: group.netPrice,
+    time: group.time ? new Date(group.time).toLocaleString() : "",
+  };
+}
+
 /* ─── Executed Orders: Position Grouping ───────────────────────────────────
  * Groups individual IB fills into position-level rows (opening / closing).
  * BAG fills are the combo order envelope; OPT fills are the individual legs.
@@ -1307,14 +1332,7 @@ function OrdersSections({
                         <td>{new Date(group.time).toLocaleTimeString()}</td>
                         <td>
                           {group.isClosing && group.totalPnL != null && (
-                            <SharePnlButton data={{
-                              description: group.description,
-                              pnl: group.totalPnL,
-                              pnlPct: null,
-                              commission: group.totalCommission,
-                              fillPrice: group.netPrice,
-                              time: new Date(group.time).toLocaleString(),
-                            }} />
+                            <SharePnlButton data={positionGroupShareData(group)} />
                           )}
                         </td>
                       </tr>

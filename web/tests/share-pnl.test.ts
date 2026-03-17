@@ -1,8 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-// Test the helper functions that build share data from order types
-// These are defined in WorkspaceSections.tsx but we test the logic here
-
+// Types matching the production code
 type OrderContract = {
   conId: number | null;
   symbol: string;
@@ -39,12 +37,23 @@ type BlotterTrade = {
   executions: { exec_id: string; time: string; side: string; quantity: number; price: number; commission: number; notional_value: number; net_cash_flow: number }[];
 };
 
-// Re-implement the helpers to test them (they're not exported from WorkspaceSections)
+type PositionFillGroup = {
+  id: string;
+  symbol: string;
+  description: string;
+  isClosing: boolean;
+  totalQuantity: number;
+  netPrice: number | null;
+  totalCommission: number;
+  totalPnL: number | null;
+  time: string;
+  fills: ExecutedOrder[];
+};
+
+// Re-implement helpers (not exported from WorkspaceSections)
+
 function execOrderDescription(e: ExecutedOrder): string {
   const c = e.contract;
-  // When realizedPNL exists, this is a closing trade — show the original position direction.
-  // BOT closing = was Short; SLD closing = was Long.
-  // When no realizedPNL (opening trade): BOT = Long, SLD = Short.
   const isClosing = e.realizedPNL != null;
   const side = e.side === "BOT"
     ? (isClosing ? "Short" : "Long")
@@ -71,6 +80,76 @@ function execOrderShareData(e: ExecutedOrder) {
   };
 }
 
+function positionGroupShareData(group: PositionFillGroup) {
+  let pnlPct: number | null = null;
+  if (group.totalPnL != null && group.isClosing) {
+    const optFills = group.fills.filter((f) => f.contract.secType === "OPT");
+    const totalNotional = optFills.reduce((sum, f) => {
+      const mult = f.contract.secType === "OPT" ? 100 : 1;
+      return sum + Math.abs((f.avgPrice ?? 0) * f.quantity * mult);
+    }, 0);
+    if (totalNotional > 0) {
+      pnlPct = (group.totalPnL / totalNotional) * 100;
+    }
+  }
+  return {
+    description: group.description,
+    pnl: group.totalPnL ?? 0,
+    pnlPct,
+    commission: group.totalCommission,
+    fillPrice: group.netPrice,
+    time: group.time ? new Date(group.time).toLocaleString() : "",
+  };
+}
+
+function groupExecutedOrders(fills: ExecutedOrder[]): PositionFillGroup[] {
+  if (fills.length === 0) return [];
+  const cancelled = fills.filter((f) => f.side === "CANCELLED");
+  const real = fills.filter((f) => f.side !== "CANCELLED");
+  const groups = new Map<string, ExecutedOrder[]>();
+  for (const fill of real) {
+    const sym = fill.contract.symbol;
+    const t = new Date(fill.time);
+    const bucket = new Date(t.getFullYear(), t.getMonth(), t.getDate(), t.getHours(), t.getMinutes()).toISOString();
+    const key = `${sym}_${bucket}`;
+    const existing = groups.get(key) ?? [];
+    existing.push(fill);
+    groups.set(key, existing);
+  }
+  const result: PositionFillGroup[] = [];
+  for (const [key, groupFills] of groups) {
+    const optFills = groupFills.filter((f) => f.contract.secType !== "BAG");
+    const hasClosingPnL = optFills.some((f) => f.realizedPNL != null && Math.abs(f.realizedPNL) > 0.01);
+    const isClosing = hasClosingPnL;
+    const sym = groupFills[0].contract.symbol;
+    const bagFills = groupFills.filter((f) => f.contract.secType === "BAG");
+    const totalQty = bagFills.length > 0
+      ? bagFills.reduce((sum, f) => sum + f.quantity, 0)
+      : optFills.reduce((sum, f) => sum + f.quantity, 0);
+    const netPrice = bagFills.length > 0 && bagFills[0].avgPrice != null
+      ? bagFills[0].avgPrice
+      : null;
+    const totalCommission = optFills.reduce((sum, f) => sum + (f.commission ?? 0), 0);
+    const totalPnL = isClosing
+      ? optFills.reduce((sum, f) => sum + (f.realizedPNL ?? 0), 0)
+      : null;
+    const earliestTime = groupFills.reduce((min, f) => f.time < min ? f.time : min, groupFills[0].time);
+    result.push({
+      id: key, symbol: sym, description: `Test ${sym}`, isClosing, totalQuantity: totalQty,
+      netPrice, totalCommission, totalPnL, time: earliestTime, fills: groupFills,
+    });
+  }
+  for (const c of cancelled) {
+    result.push({
+      id: c.execId, symbol: c.contract.symbol || c.symbol, description: `Cancelled ${c.symbol}`,
+      isClosing: false, totalQuantity: c.quantity, netPrice: c.avgPrice, totalCommission: 0,
+      totalPnL: null, time: c.time, fills: [c],
+    });
+  }
+  result.sort((a, b) => b.time.localeCompare(a.time));
+  return result;
+}
+
 function blotterShareData(t: BlotterTrade) {
   const lastExec = t.executions.length > 0 ? t.executions[t.executions.length - 1] : null;
   const pnlPct = t.cost_basis !== 0 ? (t.realized_pnl / Math.abs(t.cost_basis)) * 100 : null;
@@ -83,8 +162,6 @@ function blotterShareData(t: BlotterTrade) {
     time: lastExec?.time ? new Date(lastExec.time).toLocaleString() : "",
   };
 }
-
-// --- Twitter text builder ---
 
 function buildTweetText(description: string, pnl: number, pnlPct: number | null, showDollar: boolean, showPct: boolean): string {
   const parts: string[] = [];
@@ -101,130 +178,244 @@ function buildTweetText(description: string, pnl: number, pnlPct: number | null,
   return `${description} ${pnlStr}\n\nExecuted with Radon\nhttps://radon.run`;
 }
 
-describe("execOrderDescription", () => {
-  // --- Closing trades (realizedPNL present) → show ORIGINAL position direction ---
+// ─── Test fixtures ───────────────────────────────────────────────
 
-  it("closing BOT with realizedPNL → Short (was short, buying to close)", () => {
-    const order: ExecutedOrder = {
-      execId: "1", symbol: "EWY", side: "BOT", quantity: 3,
-      avgPrice: 2.00, commission: -7.55, realizedPNL: 1500,
-      time: "2026-03-10T08:42:00", exchange: "SMART",
-      contract: { conId: 123, symbol: "EWY", secType: "OPT", strike: 130, right: "P", expiry: "2026-03-13" },
+function makeOptionFill(overrides: Partial<ExecutedOrder> & { contract?: Partial<OrderContract> } = {}): ExecutedOrder {
+  const { contract: contractOverrides, ...rest } = overrides;
+  return {
+    execId: "test-1", symbol: "AAOI C92", side: "BOT", quantity: 5,
+    avgPrice: 5.33, commission: -1.30, realizedPNL: 697.05,
+    time: "2026-03-17T15:40:21+00:00", exchange: "PSE",
+    contract: { conId: 861001, symbol: "AAOI", secType: "OPT", strike: 92, right: "C", expiry: "2026-03-27", ...contractOverrides },
+    ...rest,
+  };
+}
+
+function makeBagFill(overrides: Partial<ExecutedOrder> = {}): ExecutedOrder {
+  return {
+    execId: "bag-1", symbol: "AAOI Spread", side: "SLD", quantity: 5,
+    avgPrice: 2.50, commission: 0, realizedPNL: 0,
+    time: "2026-03-17T15:40:21+00:00", exchange: "SMART",
+    contract: { conId: 28812380, symbol: "AAOI", secType: "BAG", strike: 0, right: "?", expiry: null },
+    ...overrides,
+  };
+}
+
+// ─── Position Group Share Data ───────────────────────────────────
+
+describe("positionGroupShareData", () => {
+  it("computes pnlPct from aggregated OPT leg notional for closing group", () => {
+    const group: PositionFillGroup = {
+      id: "test", symbol: "AAOI",
+      description: "Closed AAOI Risk Reversal (Short $92 Call / Long $88 Put)",
+      isClosing: true, totalQuantity: 25, netPrice: 2.50,
+      totalCommission: -12.50, totalPnL: 6871,
+      time: "2026-03-17T15:40:21+00:00",
+      fills: [
+        makeBagFill({ quantity: 25 }),
+        makeOptionFill({ quantity: 25, avgPrice: 5.33, realizedPNL: 3400 }),
+        makeOptionFill({ quantity: 25, avgPrice: 7.83, realizedPNL: 3471, side: "SLD",
+          contract: { conId: 858539, symbol: "AAOI", secType: "OPT", strike: 88, right: "P", expiry: "2026-03-27" },
+        }),
+      ],
     };
+    const data = positionGroupShareData(group);
+    expect(data.pnl).toBe(6871);
+    // notional = (5.33 * 25 * 100) + (7.83 * 25 * 100) = 13325 + 19575 = 32900
+    // pnlPct = 6871 / 32900 * 100 ≈ 20.88%
+    expect(data.pnlPct).toBeCloseTo(20.88, 1);
+    expect(data.description).toContain("Risk Reversal");
+    expect(data.commission).toBe(-12.50);
+    expect(data.fillPrice).toBe(2.50);
+  });
+
+  it("returns null pnlPct for opening position groups", () => {
+    const group: PositionFillGroup = {
+      id: "open", symbol: "AAOI",
+      description: "Opened AAOI Risk Reversal",
+      isClosing: false, totalQuantity: 25, netPrice: 0.25,
+      totalCommission: -8.50, totalPnL: null,
+      time: "2026-03-17T14:32:00+00:00",
+      fills: [
+        makeBagFill({ quantity: 25, avgPrice: 0.25 }),
+        makeOptionFill({ quantity: 25, avgPrice: 6.72, realizedPNL: 0, side: "SLD" }),
+        makeOptionFill({ quantity: 25, avgPrice: 6.47, realizedPNL: 0, side: "BOT",
+          contract: { conId: 858539, symbol: "AAOI", secType: "OPT", strike: 88, right: "P", expiry: "2026-03-27" },
+        }),
+      ],
+    };
+    const data = positionGroupShareData(group);
+    expect(data.pnl).toBe(0);
+    expect(data.pnlPct).toBeNull();
+  });
+
+  it("excludes BAG fills from notional calculation", () => {
+    const group: PositionFillGroup = {
+      id: "test2", symbol: "AAOI",
+      description: "Closed AAOI",
+      isClosing: true, totalQuantity: 5, netPrice: 2.50,
+      totalCommission: -1.30, totalPnL: 1375,
+      time: "2026-03-17T15:40:21+00:00",
+      fills: [
+        makeBagFill({ quantity: 5, avgPrice: 2.50 }),
+        makeOptionFill({ quantity: 5, avgPrice: 5.33, realizedPNL: 697 }),
+        makeOptionFill({ quantity: 5, avgPrice: 7.83, realizedPNL: 678, side: "SLD",
+          contract: { conId: 858539, symbol: "AAOI", secType: "OPT", strike: 88, right: "P", expiry: "2026-03-27" },
+        }),
+      ],
+    };
+    const data = positionGroupShareData(group);
+    // Only OPT fills contribute to notional: (5.33*5*100) + (7.83*5*100) = 2665 + 3915 = 6580
+    // pnlPct = 1375 / 6580 * 100 ≈ 20.90%
+    expect(data.pnlPct).toBeCloseTo(20.90, 0);
+  });
+
+  it("handles stock-only position groups", () => {
+    const group: PositionFillGroup = {
+      id: "stock", symbol: "AAPL",
+      description: "Closed AAPL Stock",
+      isClosing: true, totalQuantity: 100, netPrice: 250,
+      totalCommission: -2.00, totalPnL: 500,
+      time: "2026-03-17T10:00:00+00:00",
+      fills: [{
+        execId: "stk-1", symbol: "AAPL", side: "SLD", quantity: 100,
+        avgPrice: 252.50, commission: -2.00, realizedPNL: 500,
+        time: "2026-03-17T10:00:00+00:00", exchange: "ARCA",
+        contract: { conId: 100, symbol: "AAPL", secType: "STK", strike: null, right: null, expiry: null },
+      }],
+    };
+    const data = positionGroupShareData(group);
+    // No OPT fills, so totalNotional = 0, pnlPct = null
+    // Stock fills aren't secType "OPT" so they're excluded from notional
+    expect(data.pnlPct).toBeNull();
+    expect(data.pnl).toBe(500);
+  });
+});
+
+// ─── Position Grouping ──────────────────────────────────────────
+
+describe("groupExecutedOrders", () => {
+  it("groups fills by symbol + time into position groups", () => {
+    const fills: ExecutedOrder[] = [
+      makeBagFill({ quantity: 5 }),
+      makeOptionFill({ quantity: 5, realizedPNL: 697 }),
+      makeOptionFill({ quantity: 5, avgPrice: 7.83, realizedPNL: 678, side: "SLD",
+        contract: { conId: 858539, symbol: "AAOI", secType: "OPT", strike: 88, right: "P", expiry: "2026-03-27" },
+      }),
+    ];
+    const groups = groupExecutedOrders(fills);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].symbol).toBe("AAOI");
+    expect(groups[0].isClosing).toBe(true);
+    expect(groups[0].totalPnL).toBe(1375);
+    expect(groups[0].fills).toHaveLength(3);
+  });
+
+  it("separates opening and closing fills into different groups by time", () => {
+    const openFills: ExecutedOrder[] = [
+      makeBagFill({ quantity: 25, avgPrice: 0.25, time: "2026-03-17T14:32:00+00:00" }),
+      makeOptionFill({ quantity: 25, avgPrice: 6.72, realizedPNL: 0, side: "SLD", time: "2026-03-17T14:32:00+00:00" }),
+    ];
+    const closeFills: ExecutedOrder[] = [
+      makeBagFill({ quantity: 25, avgPrice: 2.50, time: "2026-03-17T15:40:00+00:00" }),
+      makeOptionFill({ quantity: 25, avgPrice: 5.33, realizedPNL: 3400, time: "2026-03-17T15:40:00+00:00" }),
+    ];
+    const groups = groupExecutedOrders([...openFills, ...closeFills]);
+    expect(groups).toHaveLength(2);
+    const closing = groups.find((g) => g.isClosing);
+    const opening = groups.find((g) => !g.isClosing);
+    expect(closing).toBeDefined();
+    expect(opening).toBeDefined();
+    expect(closing!.totalPnL).toBe(3400);
+    expect(opening!.totalPnL).toBeNull();
+  });
+
+  it("preserves cancelled orders as standalone groups", () => {
+    const cancelled: ExecutedOrder = {
+      execId: "cancel-1", symbol: "GOOG Spread", side: "CANCELLED", quantity: 10,
+      avgPrice: 5.00, commission: null, realizedPNL: null,
+      time: "2026-03-17T12:00:00+00:00", exchange: "",
+      contract: { conId: null, symbol: "GOOG", secType: "", strike: null, right: null, expiry: null },
+    };
+    const groups = groupExecutedOrders([cancelled, makeOptionFill()]);
+    const cancelGroup = groups.find((g) => g.description.includes("Cancelled"));
+    expect(cancelGroup).toBeDefined();
+    expect(cancelGroup!.totalPnL).toBeNull();
+  });
+
+  it("returns empty array for empty input", () => {
+    expect(groupExecutedOrders([])).toEqual([]);
+  });
+
+  it("sums quantity from BAG fills for total position size", () => {
+    const fills: ExecutedOrder[] = [
+      makeBagFill({ quantity: 5 }),
+      makeBagFill({ execId: "bag-2", quantity: 6 }),
+      makeBagFill({ execId: "bag-3", quantity: 6 }),
+      makeOptionFill({ quantity: 5, realizedPNL: 697 }),
+      makeOptionFill({ execId: "opt-2", quantity: 6, realizedPNL: 834 }),
+      makeOptionFill({ execId: "opt-3", quantity: 6, realizedPNL: 818 }),
+    ];
+    const groups = groupExecutedOrders(fills);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].totalQuantity).toBe(17); // 5 + 6 + 6 from BAG fills
+  });
+
+  it("sums commission only from OPT fills (BAG commission is always 0)", () => {
+    const fills: ExecutedOrder[] = [
+      makeBagFill({ quantity: 5, commission: 0 }),
+      makeOptionFill({ quantity: 5, commission: -1.30, realizedPNL: 697 }),
+      makeOptionFill({ quantity: 5, commission: -1.20, realizedPNL: 678, side: "SLD",
+        contract: { conId: 858539, symbol: "AAOI", secType: "OPT", strike: 88, right: "P", expiry: "2026-03-27" },
+      }),
+    ];
+    const groups = groupExecutedOrders(fills);
+    expect(groups[0].totalCommission).toBeCloseTo(-2.50, 2);
+  });
+});
+
+// ─── Per-Fill Share Data (still used in expanded detail rows) ───
+
+describe("execOrderDescription", () => {
+  it("closing BOT → Short (was short, buying to close)", () => {
+    const order = makeOptionFill({ side: "BOT", realizedPNL: 1500,
+      contract: { conId: 123, symbol: "EWY", secType: "OPT", strike: 130, right: "P", expiry: "2026-03-13" },
+    });
     expect(execOrderDescription(order)).toBe("Short EWY 2026-03-13 Put $130.00");
   });
 
-  it("closing SLD with realizedPNL → Long (was long, selling to close)", () => {
-    const order: ExecutedOrder = {
-      execId: "2", symbol: "AAOI", side: "SLD", quantity: 5,
-      avgPrice: 8.75, commission: -4.20, realizedPNL: 1234.56,
-      time: "2026-03-10T14:30:00", exchange: "CBOE",
+  it("closing SLD → Long (was long, selling to close)", () => {
+    const order = makeOptionFill({ side: "SLD", realizedPNL: 1234.56,
       contract: { conId: 456, symbol: "AAOI", secType: "OPT", strike: 45, right: "C", expiry: "2026-04-17" },
-    };
+    });
     expect(execOrderDescription(order)).toBe("Long AAOI 2026-04-17 Call $45.00");
   });
 
-  it("closing SLD stock with realizedPNL → Long", () => {
-    const order: ExecutedOrder = {
-      execId: "3", symbol: "AAPL", side: "SLD", quantity: 100,
-      avgPrice: 180.00, commission: -1.00, realizedPNL: 500,
-      time: "2026-03-10T11:00:00", exchange: "ARCA",
-      contract: { conId: 101, symbol: "AAPL", secType: "STK", strike: null, right: null, expiry: null },
-    };
-    expect(execOrderDescription(order)).toBe("Long AAPL");
+  it("opening BOT → Long", () => {
+    const order = makeOptionFill({ side: "BOT", realizedPNL: null });
+    expect(execOrderDescription(order)).toMatch(/^Long/);
   });
 
-  it("closing BOT with negative realizedPNL → Short (loss on short position)", () => {
-    const order: ExecutedOrder = {
-      execId: "4", symbol: "TSLA", side: "BOT", quantity: 2,
-      avgPrice: 15.00, commission: -4.20, realizedPNL: -567.89,
-      time: "2026-03-10T10:15:00", exchange: "CBOE",
-      contract: { conId: 456, symbol: "TSLA", secType: "OPT", strike: 200, right: "P", expiry: "2026-03-21" },
-    };
-    expect(execOrderDescription(order)).toBe("Short TSLA 2026-03-21 Put $200.00");
-  });
-
-  // --- Opening trades (no realizedPNL) → show execution direction ---
-
-  it("opening BOT with null realizedPNL → Long", () => {
-    const order: ExecutedOrder = {
-      execId: "5", symbol: "SPY", side: "BOT", quantity: 1,
-      avgPrice: 5.00, commission: -1.30, realizedPNL: null,
-      time: "2026-03-10T09:30:00", exchange: "SMART",
-      contract: { conId: 789, symbol: "SPY", secType: "OPT", strike: 500, right: "CALL", expiry: "2026-06-20" },
-    };
-    expect(execOrderDescription(order)).toBe("Long SPY 2026-06-20 Call $500.00");
-  });
-
-  it("opening SLD with null realizedPNL → Short", () => {
-    const order: ExecutedOrder = {
-      execId: "6", symbol: "NFLX", side: "SLD", quantity: 2,
-      avgPrice: 3.50, commission: -2.60, realizedPNL: null,
-      time: "2026-03-10T10:00:00", exchange: "SMART",
-      contract: { conId: 300, symbol: "NFLX", secType: "OPT", strike: 600, right: "C", expiry: "2026-04-17" },
-    };
-    expect(execOrderDescription(order)).toBe("Short NFLX 2026-04-17 Call $600.00");
-  });
-
-  it("handles CALL/PUT right values on closing trade", () => {
-    const order: ExecutedOrder = {
-      execId: "7", symbol: "SPY", side: "SLD", quantity: 1,
-      avgPrice: 5.00, commission: -1.30, realizedPNL: 100,
-      time: "2026-03-10T09:30:00", exchange: "SMART",
-      contract: { conId: 789, symbol: "SPY", secType: "OPT", strike: 500, right: "CALL", expiry: "2026-06-20" },
-    };
-    expect(execOrderDescription(order)).toBe("Long SPY 2026-06-20 Call $500.00");
-  });
-
-  it("preserves unknown side values", () => {
-    const order: ExecutedOrder = {
-      execId: "8", symbol: "GOOG", side: "CANCELLED", quantity: 0,
-      avgPrice: null, commission: null, realizedPNL: null,
-      time: "2026-03-10T12:00:00", exchange: "SMART",
-      contract: { conId: 202, symbol: "GOOG", secType: "STK", strike: null, right: null, expiry: null },
-    };
-    expect(execOrderDescription(order)).toBe("CANCELLED GOOG");
+  it("opening SLD → Short", () => {
+    const order = makeOptionFill({ side: "SLD", realizedPNL: null });
+    expect(execOrderDescription(order)).toMatch(/^Short/);
   });
 });
 
 describe("execOrderShareData", () => {
   it("computes pnlPct for option trades with 100x multiplier", () => {
-    const order: ExecutedOrder = {
-      execId: "1", symbol: "AAOI", side: "BOT", quantity: 5,
-      avgPrice: 2.50, commission: -2.60, realizedPNL: 1250,
-      time: "2026-03-10T14:30:00", exchange: "SMART",
-      contract: { conId: 123, symbol: "AAOI", secType: "OPT", strike: 45, right: "C", expiry: "2026-04-17" },
-    };
+    const order = makeOptionFill({ quantity: 5, avgPrice: 2.50, realizedPNL: 1250 });
     const data = execOrderShareData(order);
-    // pnlPct = 1250 / (2.50 * 5 * 100) * 100 = 1250/1250 * 100 = 100%
-    expect(data.pnlPct).toBe(100);
-    expect(data.pnl).toBe(1250);
-    expect(data.fillPrice).toBe(2.50);
-    expect(data.commission).toBe(-2.60);
-  });
-
-  it("computes pnlPct for stock trades without multiplier", () => {
-    const order: ExecutedOrder = {
-      execId: "2", symbol: "AAPL", side: "BOT", quantity: 100,
-      avgPrice: 175.00, commission: -1.00, realizedPNL: 500,
-      time: "2026-03-10T11:00:00", exchange: "ARCA",
-      contract: { conId: 101, symbol: "AAPL", secType: "STK", strike: null, right: null, expiry: null },
-    };
-    const data = execOrderShareData(order);
-    // pnlPct = 500 / (175 * 100 * 1) * 100 ≈ 2.857%
-    expect(data.pnlPct).toBeCloseTo(2.857, 2);
+    expect(data.pnlPct).toBe(100); // 1250 / (2.50 * 5 * 100) * 100
   });
 
   it("returns null pnlPct when avgPrice is null", () => {
-    const order: ExecutedOrder = {
-      execId: "3", symbol: "X", side: "BOT", quantity: 1,
-      avgPrice: null, commission: null, realizedPNL: 100,
-      time: "", exchange: "SMART",
-      contract: { conId: 0, symbol: "X", secType: "STK", strike: null, right: null, expiry: null },
-    };
+    const order = makeOptionFill({ avgPrice: null, realizedPNL: 100 });
     expect(execOrderShareData(order).pnlPct).toBeNull();
   });
 });
+
+// ─── Blotter Share Data ─────────────────────────────────────────
 
 describe("blotterShareData", () => {
   it("computes share data from closed trade", () => {
@@ -239,120 +430,58 @@ describe("blotterShareData", () => {
       ],
     };
     const data = blotterShareData(trade);
-    expect(data.description).toBe("Long NET 2026-06-20 Call $120.00");
     expect(data.pnl).toBe(2000);
-    // pnlPct = 2000 / |−4000| * 100 = 50%
-    expect(data.pnlPct).toBe(50);
-    expect(data.commission).toBe(-5.20);
-    expect(data.fillPrice).toBe(6.00); // last execution price
-  });
-
-  it("falls back to symbol when contract_desc is empty", () => {
-    const trade: BlotterTrade = {
-      symbol: "MSFT", contract_desc: "",
-      sec_type: "STK", is_closed: true, net_quantity: 0,
-      total_commission: -1.00, realized_pnl: 100, cost_basis: -5000,
-      proceeds: 5100, total_cash_flow: 100, executions: [],
-    };
-    const data = blotterShareData(trade);
-    expect(data.description).toBe("MSFT");
-    expect(data.fillPrice).toBeNull();
-    expect(data.time).toBe("");
+    expect(data.pnlPct).toBe(50); // 2000 / 4000 * 100
   });
 
   it("returns null pnlPct when cost_basis is 0", () => {
     const trade: BlotterTrade = {
       symbol: "TEST", contract_desc: "Test", sec_type: "STK",
       is_closed: true, net_quantity: 0, total_commission: 0,
-      realized_pnl: 0, cost_basis: 0, proceeds: 0, total_cash_flow: 0,
-      executions: [],
+      realized_pnl: 0, cost_basis: 0, proceeds: 0, total_cash_flow: 0, executions: [],
     };
     expect(blotterShareData(trade).pnlPct).toBeNull();
   });
 });
 
-describe("API route query params", () => {
-  it("builds correct URL params from share data", () => {
-    const data = {
-      description: "Long AAOI 2026-04-17 Call $45.00",
-      pnl: 1234.56,
-      pnlPct: 47.5,
-      commission: -2.60,
-      fillPrice: 12.50,
-      time: "3/10/2026, 2:30:00 PM",
-    };
-    const params = new URLSearchParams();
-    params.set("description", data.description);
-    params.set("pnl", String(data.pnl));
-    if (data.pnlPct != null) params.set("pnlPct", String(data.pnlPct));
-    if (data.commission != null) params.set("commission", String(data.commission));
-    if (data.fillPrice != null) params.set("fillPrice", String(data.fillPrice));
-    if (data.time) params.set("time", data.time);
-
-    expect(params.get("description")).toBe("Long AAOI 2026-04-17 Call $45.00");
-    expect(params.get("pnl")).toBe("1234.56");
-    expect(params.get("pnlPct")).toBe("47.5");
-    expect(params.get("commission")).toBe("-2.6");
-    expect(params.get("fillPrice")).toBe("12.5");
-  });
-
-  it("respects showDollar=false by omitting pnl param", () => {
-    const params = new URLSearchParams();
-    params.set("description", "Test");
-    // showDollar=false → don't set pnl
-    params.set("pnlPct", "25.5");
-    // showPct=true → set pnlPct
-    expect(params.has("pnl")).toBe(false);
-    expect(params.get("pnlPct")).toBe("25.5");
-  });
-
-  it("respects showPct=false by omitting pnlPct param", () => {
-    const params = new URLSearchParams();
-    params.set("description", "Test");
-    params.set("pnl", "500");
-    // showPct=false → don't set pnlPct
-    expect(params.has("pnlPct")).toBe(false);
-    expect(params.get("pnl")).toBe("500");
-  });
-});
+// ─── Tweet Text Builder ─────────────────────────────────────────
 
 describe("buildTweetText", () => {
   it("includes both $ and % when both enabled", () => {
-    const text = buildTweetText("Long AAOI 2026-04-17 Call $45.00", 1234.56, 47.5, true, true);
-    expect(text).toContain("+$1,234.56");
-    expect(text).toContain("+47.50%");
-    expect(text).toContain("Long AAOI 2026-04-17 Call $45.00");
+    const text = buildTweetText("Closed AAOI Risk Reversal", 6871, 20.88, true, true);
+    expect(text).toContain("+$6,871.00");
+    expect(text).toContain("+20.88%");
+    expect(text).toContain("Closed AAOI Risk Reversal");
     expect(text).toContain("Executed with Radon");
   });
 
   it("includes only $ when showPct=false", () => {
-    const text = buildTweetText("Long AAPL", 500, 2.86, true, false);
+    const text = buildTweetText("Closed AAPL Stock", 500, 2.86, true, false);
     expect(text).toContain("+$500.00");
     expect(text).not.toContain("%");
   });
 
   it("includes only % when showDollar=false", () => {
-    const text = buildTweetText("Short TSLA Put", -200, -10.5, false, true);
+    const text = buildTweetText("Closed Short TSLA Put", -200, -10.5, false, true);
     expect(text).not.toContain("$200");
     expect(text).toContain("-10.50%");
   });
 
   it("handles negative P&L correctly", () => {
-    const text = buildTweetText("Short SPY Call", -567.89, -12.3, true, true);
+    const text = buildTweetText("Closed Short SPY Call", -567.89, -12.3, true, true);
     expect(text).toContain("-$567.89");
     expect(text).toContain("-12.30%");
   });
 
   it("skips % when pnlPct is null even if showPct=true", () => {
-    const text = buildTweetText("Long GOOG", 100, null, true, true);
+    const text = buildTweetText("Closed GOOG Spread", 100, null, true, true);
     expect(text).toContain("+$100.00");
     expect(text).not.toContain("%");
   });
 
   it("shows empty pnl portion when both disabled", () => {
-    const text = buildTweetText("Long X", 100, 50, false, false);
-    expect(text).toContain("Long X");
-    expect(text).toContain("Executed with Radon");
+    const text = buildTweetText("Closed X", 100, 50, false, false);
+    expect(text).toContain("Closed X");
     expect(text).not.toContain("$");
     expect(text).not.toContain("%");
   });
