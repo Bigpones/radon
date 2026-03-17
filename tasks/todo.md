@@ -1,5 +1,29 @@
 # TODO
 
+## Session: Fix Signed Entry Basis For Closed Combo Share PnL (2026-03-17)
+
+### Goal
+Fix the `/orders` share-PnL card for closed combo positions so the entry price and return percentage use the exact signed opening cash flow of the matching legs, not an unrelated same-symbol combo BAG envelope. Closed risk reversals opened for a net credit must render a negative entry price and a percentage consistent with that signed basis.
+
+### Dependency Graph
+- T1 (Inspect the closed-combo share-PnL basis path and identify why a same-symbol BAG open can override the true opening leg cash flow) depends_on: []
+- T2 (Add a red regression at both the unit layer and `/orders` browser flow for a closed AAOI-style risk reversal with unrelated same-symbol BAG history) depends_on: [T1]
+- T3 (Implement leg-aware basis matching so the share card derives signed entry basis from the exact opening option legs before computing return percent) depends_on: [T2]
+- T4 (Run focused Vitest and Playwright verification, then record review notes and the prevention lesson) depends_on: [T3]
+
+### Checklist
+- [x] T1 Inspect the closed-combo share-PnL basis path and identify why a same-symbol BAG open can override the true opening leg cash flow
+- [x] T2 Add a red regression at both the unit layer and `/orders` browser flow for a closed AAOI-style risk reversal with unrelated same-symbol BAG history
+- [x] T3 Implement leg-aware basis matching so the share card derives signed entry basis from the exact opening option legs before computing return percent
+- [x] T4 Run focused Vitest and Playwright verification, then record review notes and the prevention lesson
+
+### Review
+- Root cause: [WorkspaceSections.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/WorkspaceSections.tsx) computed share-PnL basis for any closed combo by grabbing the first non-closing BAG group on the same symbol. When AAOI had an unrelated earlier combo open at `$0.25`, the share card borrowed that unsigned BAG envelope instead of reconstructing the actual `-$0.75` credit from the matching short-put and long-call opening fills.
+- Fixed the basis reconstruction in [WorkspaceSections.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/WorkspaceSections.tsx) by matching opening fills to the closing combo's exact option contracts and required quantities, ordering candidates by recency, and deriving signed net cash from the matched opening legs. That yields `entryPrice=-0.75`, `exitPrice=1.00`, and a return percentage based on the true `$1,875` credit basis instead of the unrelated `$625` BAG basis.
+- Locked the regression at the unit layer in [share-pnl-position-group.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/share-pnl-position-group.test.ts), which imports the production helper and proves an unrelated same-symbol BAG can no longer override the matching AAOI opening legs.
+- Locked the browser path in [share-pnl.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/share-pnl.spec.ts) by stubbing `/orders` data, clicking the real share button on `/orders`, and asserting the outgoing `/api/share/pnl` request now carries `entryPrice=-0.75`, `exitPrice=1`, and the corrected percentage.
+- Verification passed with `npx vitest run web/tests/share-pnl-position-group.test.ts` and `cd web && npx playwright test e2e/share-pnl.spec.ts --config playwright.no-server.config.ts --grep "signed risk-reversal entry basis"`.
+
 ## Session: Fix Missing Chain Quotes For Held Option Legs (2026-03-17)
 
 ### Goal
