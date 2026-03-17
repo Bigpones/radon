@@ -95,18 +95,40 @@ function execOrderShareData(e: ExecutedOrder): SharePnlData {
   };
 }
 
-/** Build share data for a position group (aggregated fills). */
-function positionGroupShareData(group: PositionFillGroup): SharePnlData {
-  // Compute P&L % from the OPT leg fills' notional value
+/** Build share data for a position group (aggregated fills).
+ *  For BAG/combo closing groups, uses the matching opening group's net combo
+ *  price as cost basis for accurate P&L % (e.g. risk reversal opened at $0.25
+ *  credit, closed at $2.50 = +900%, not the misleading ~21% from leg notionals).
+ */
+function positionGroupShareData(group: PositionFillGroup, allGroups?: PositionFillGroup[]): SharePnlData {
   let pnlPct: number | null = null;
   if (group.totalPnL != null && group.isClosing) {
-    const optFills = group.fills.filter((f) => f.contract.secType === "OPT");
-    const totalNotional = optFills.reduce((sum, f) => {
-      const mult = f.contract.secType === "OPT" ? 100 : 1;
-      return sum + Math.abs((f.avgPrice ?? 0) * f.quantity * mult);
-    }, 0);
-    if (totalNotional > 0) {
-      pnlPct = (group.totalPnL / totalNotional) * 100;
+    // For BAG/combo closing groups, try to find the matching opening group
+    // and use its net combo price as the cost basis for accurate P&L %
+    const hasBagFills = group.fills.some((f) => f.contract.secType === "BAG");
+    let entryNotional = 0;
+
+    if (hasBagFills && allGroups) {
+      const matchingOpen = allGroups.find(
+        (g) => !g.isClosing && g.symbol === group.symbol && g.netPrice != null && g.netPrice !== 0,
+      );
+      if (matchingOpen && matchingOpen.netPrice != null) {
+        entryNotional = Math.abs(matchingOpen.netPrice) * matchingOpen.totalQuantity * 100;
+      }
+    }
+
+    if (entryNotional > 0) {
+      pnlPct = (group.totalPnL / entryNotional) * 100;
+    } else {
+      // Fallback: use sum of closing OPT leg notionals
+      const optFills = group.fills.filter((f) => f.contract.secType === "OPT");
+      const totalNotional = optFills.reduce((sum, f) => {
+        const mult = f.contract.secType === "OPT" ? 100 : 1;
+        return sum + Math.abs((f.avgPrice ?? 0) * f.quantity * mult);
+      }, 0);
+      if (totalNotional > 0) {
+        pnlPct = (group.totalPnL / totalNotional) * 100;
+      }
     }
   }
 
@@ -1332,7 +1354,7 @@ function OrdersSections({
                         <td>{new Date(group.time).toLocaleTimeString()}</td>
                         <td>
                           {group.isClosing && group.totalPnL != null && (
-                            <SharePnlButton data={positionGroupShareData(group)} />
+                            <SharePnlButton data={positionGroupShareData(group, positionGroups)} />
                           )}
                         </td>
                       </tr>

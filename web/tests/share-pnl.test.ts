@@ -80,16 +80,35 @@ function execOrderShareData(e: ExecutedOrder) {
   };
 }
 
-function positionGroupShareData(group: PositionFillGroup) {
+function positionGroupShareData(group: PositionFillGroup, allGroups?: PositionFillGroup[]) {
   let pnlPct: number | null = null;
   if (group.totalPnL != null && group.isClosing) {
-    const optFills = group.fills.filter((f) => f.contract.secType === "OPT");
-    const totalNotional = optFills.reduce((sum, f) => {
-      const mult = f.contract.secType === "OPT" ? 100 : 1;
-      return sum + Math.abs((f.avgPrice ?? 0) * f.quantity * mult);
-    }, 0);
-    if (totalNotional > 0) {
-      pnlPct = (group.totalPnL / totalNotional) * 100;
+    // For BAG/combo closing groups, try to find the matching opening group
+    // and use its net combo price as the cost basis for accurate P&L %
+    const hasBagFills = group.fills.some((f) => f.contract.secType === "BAG");
+    let entryNotional = 0;
+
+    if (hasBagFills && allGroups) {
+      const matchingOpen = allGroups.find(
+        (g) => !g.isClosing && g.symbol === group.symbol && g.netPrice != null && g.netPrice !== 0,
+      );
+      if (matchingOpen && matchingOpen.netPrice != null) {
+        entryNotional = Math.abs(matchingOpen.netPrice) * matchingOpen.totalQuantity * 100;
+      }
+    }
+
+    if (entryNotional > 0) {
+      pnlPct = (group.totalPnL / entryNotional) * 100;
+    } else {
+      // Fallback: use sum of closing OPT leg notionals
+      const optFills = group.fills.filter((f) => f.contract.secType === "OPT");
+      const totalNotional = optFills.reduce((sum, f) => {
+        const mult = f.contract.secType === "OPT" ? 100 : 1;
+        return sum + Math.abs((f.avgPrice ?? 0) * f.quantity * mult);
+      }, 0);
+      if (totalNotional > 0) {
+        pnlPct = (group.totalPnL / totalNotional) * 100;
+      }
     }
   }
   return {
@@ -204,7 +223,43 @@ function makeBagFill(overrides: Partial<ExecutedOrder> = {}): ExecutedOrder {
 // ─── Position Group Share Data ───────────────────────────────────
 
 describe("positionGroupShareData", () => {
-  it("computes pnlPct from aggregated OPT leg notional for closing group", () => {
+  it("uses entry combo price for pnlPct when closing BAG group has matching open", () => {
+    const openGroup: PositionFillGroup = {
+      id: "open", symbol: "AAOI",
+      description: "Opened AAOI Risk Reversal",
+      isClosing: false, totalQuantity: 25, netPrice: 0.25,
+      totalCommission: -8.50, totalPnL: null,
+      time: "2026-03-17T14:32:00+00:00",
+      fills: [
+        makeBagFill({ quantity: 25, avgPrice: 0.25, time: "2026-03-17T14:32:00+00:00" }),
+      ],
+    };
+    const closeGroup: PositionFillGroup = {
+      id: "close", symbol: "AAOI",
+      description: "Closed AAOI Risk Reversal (Short $92 Call / Long $88 Put)",
+      isClosing: true, totalQuantity: 25, netPrice: 2.50,
+      totalCommission: -12.50, totalPnL: 6871,
+      time: "2026-03-17T15:40:21+00:00",
+      fills: [
+        makeBagFill({ quantity: 25 }),
+        makeOptionFill({ quantity: 25, avgPrice: 5.33, realizedPNL: 3400 }),
+        makeOptionFill({ quantity: 25, avgPrice: 7.83, realizedPNL: 3471, side: "SLD",
+          contract: { conId: 858539, symbol: "AAOI", secType: "OPT", strike: 88, right: "P", expiry: "2026-03-27" },
+        }),
+      ],
+    };
+    const allGroups = [openGroup, closeGroup];
+    const data = positionGroupShareData(closeGroup, allGroups);
+    expect(data.pnl).toBe(6871);
+    // Entry combo = $0.25 × 25 × 100 = $625
+    // pnlPct = 6871 / 625 * 100 ≈ 1099.36%
+    expect(data.pnlPct).toBeCloseTo(1099.36, 0);
+    expect(data.description).toContain("Risk Reversal");
+    expect(data.commission).toBe(-12.50);
+    expect(data.fillPrice).toBe(2.50);
+  });
+
+  it("falls back to leg notional when no matching open group exists", () => {
     const group: PositionFillGroup = {
       id: "test", symbol: "AAOI",
       description: "Closed AAOI Risk Reversal (Short $92 Call / Long $88 Put)",
@@ -219,14 +274,12 @@ describe("positionGroupShareData", () => {
         }),
       ],
     };
+    // No allGroups passed — falls back to leg notional
     const data = positionGroupShareData(group);
     expect(data.pnl).toBe(6871);
     // notional = (5.33 * 25 * 100) + (7.83 * 25 * 100) = 13325 + 19575 = 32900
     // pnlPct = 6871 / 32900 * 100 ≈ 20.88%
     expect(data.pnlPct).toBeCloseTo(20.88, 1);
-    expect(data.description).toContain("Risk Reversal");
-    expect(data.commission).toBe(-12.50);
-    expect(data.fillPrice).toBe(2.50);
   });
 
   it("returns null pnlPct for opening position groups", () => {

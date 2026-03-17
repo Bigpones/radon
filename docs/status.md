@@ -1,7 +1,7 @@
 # Status & Decision Log
 
 ## Last Updated
-2026-03-17T09:18:00-07:00
+2026-03-17T08:50:00-07:00
 
 ## Recent Commits
 - 2026-03-17 — **ui: Update share PnL defaults and card emphasis.** X/share card rendering now scales single-value hero text larger (`$` or `%` only) while default share toggle state is now `%` only for cleaner default image output.
@@ -69,13 +69,12 @@
 - ⚠️ *This section is a cache — verify against IB for current state*
 - **Today's Realized P&L**: +$6,513 (AAOI call sale)
 
-## Today's Trades (2026-03-12)
+## Today's Trades (2026-03-17)
 | Trade | Structure | P&L | Status |
 |-------|-----------|-----|--------|
-| OXY | Bear Put Spread P$55/P$50 Apr 17 (222 contracts) | — (open) | ✓ FILLED @ $0.98 |
-| AAOI | BTC 25x Mar 20 $130C @ $0.10 | +$14,025 | ✓ CLOSED (reconciled) |
-| AAOI | BTO 25x Mar 20 $105C @ $9.45 | — (open) | ✓ FILLED (reconciled) |
-| **Net Realized P&L Today** | | **+$14,025** | |
+| AAOI | Opened Risk Reversal Short $92C / Long $88P Mar 27 (25x) @ $0.25 cr | — | ✓ FILLED |
+| AAOI | Closed Risk Reversal Short $92C / Long $88P Mar 27 (25x) @ $2.50 cr | +$6,871 | ✓ CLOSED |
+| **Net Realized P&L Today** | | **+$6,871** | |
 
 ## Positions Requiring Attention
 
@@ -133,6 +132,8 @@
 | **37** | **03-12** | **AAOI** | **BTC 25x $130C Mar 20 @ $0.10** | **CLOSED** | **+$14,025** |
 | **38** | **03-12** | **AAOI** | **BTO 25x $105C Mar 20 @ $9.45** | **OPEN** | — |
 | **39** | **03-12** | **OXY** | **Bear Put Spread P$55/P$50 (Apr 17, 222x)** | **OPEN** | — |
+| **40** | **03-17** | **AAOI** | **Risk Reversal Short $92C/Long $88P (Mar 27, 25x)** | **CLOSED** | **+$6,871** |
+| **41** | **03-17** | **AAOI** | **Closed RR #40 (bought back $92C, sold $88P)** | **CLOSED** | **(see #40)** |
 
 ---
 
@@ -192,6 +193,16 @@
 ---
 
 ## Recent Evaluations
+
+### PLTR — 2026-03-17 ⛔ NO_TRADE
+- **Decision**: NO_TRADE
+- **Failing Gate**: EDGE (Milestone 4)
+- **📊 Data as of**: 2026-03-17 07:22 AM PT (LIVE)
+- **Reason**: Aggregate flow strength 40.2 below threshold (need >50). Only 1 sustained day. Recent strength 26.7 (need >70 for alternative). Alternating pattern: Mar 10/12 strong (80%+) then Mar 16 NEUTRAL breaks streak.
+- **Dark Pool**: 70.1% aggregate buy ratio, ACCUMULATION direction, but inconsistent intensity
+- **OI Changes**: $50.2M total (0 MASSIVE, 1 LARGE, 15 SIGNIFICANT)
+- **News**: Strong AI catalyst pipeline — Nvidia, GE Aerospace, LG CNS partnerships
+- **Action**: WATCH. Re-evaluate if 3+ consecutive days of accumulation (70%+) materialize.
 
 ### OXY — 2026-03-12 ✅ EXECUTED (Thesis Trade)
 - **Decision**: TRADE
