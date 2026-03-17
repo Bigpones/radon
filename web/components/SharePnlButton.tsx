@@ -28,6 +28,16 @@ function fmtPct(v: number): string {
   return `${sign}${v.toFixed(2)}%`;
 }
 
+/** Prefix the first bare ticker symbol in the description with $ (cashtag).
+ *  Matches the first word that looks like a ticker (1-5 uppercase letters)
+ *  appearing after a leading action word (Closed, Opened, Long, Short, Bought, Sold, Cancelled). */
+function cashtagTicker(desc: string): string {
+  return desc.replace(
+    /^(Closed|Opened|Long|Short|Bought|Sold|Cancelled)\s+([A-Z]{1,5})\b/,
+    "$1 $$$2",
+  );
+}
+
 export function buildTweetText(
   description: string,
   pnl: number,
@@ -39,7 +49,8 @@ export function buildTweetText(
   if (showDollar) parts.push(fmtDollar(pnl));
   if (showPct && pnlPct != null && Number.isFinite(pnlPct)) parts.push(fmtPct(pnlPct));
   const pnlStr = parts.join(" ");
-  return `${description} ${pnlStr}\n\nExecuted with Radon\nhttps://radon.run`;
+  const tagged = cashtagTicker(description);
+  return `💸 ${tagged} ${pnlStr}\n\nExecuted with Radon\n\nhttps://radon.run`;
 }
 
 export default function SharePnlButton({ data, size = 13 }: SharePnlButtonProps) {

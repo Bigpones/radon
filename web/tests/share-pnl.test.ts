@@ -182,6 +182,13 @@ function blotterShareData(t: BlotterTrade) {
   };
 }
 
+function cashtagTicker(desc: string): string {
+  return desc.replace(
+    /^(Closed|Opened|Long|Short|Bought|Sold|Cancelled)\s+([A-Z]{1,5})\b/,
+    "$1 $$$2",
+  );
+}
+
 function buildTweetText(description: string, pnl: number, pnlPct: number | null, showDollar: boolean, showPct: boolean): string {
   const parts: string[] = [];
   const sign = pnl >= 0 ? "+" : "-";
@@ -194,7 +201,8 @@ function buildTweetText(description: string, pnl: number, pnlPct: number | null,
     parts.push(`${pSign}${pnlPct.toFixed(2)}%`);
   }
   const pnlStr = parts.join(" ");
-  return `${description} ${pnlStr}\n\nExecuted with Radon\nhttps://radon.run`;
+  const tagged = cashtagTicker(description);
+  return `💸 ${tagged} ${pnlStr}\n\nExecuted with Radon\n\nhttps://radon.run`;
 }
 
 // ─── Test fixtures ───────────────────────────────────────────────
@@ -504,8 +512,26 @@ describe("buildTweetText", () => {
     const text = buildTweetText("Closed AAOI Risk Reversal", 6871, 20.88, true, true);
     expect(text).toContain("+$6,871.00");
     expect(text).toContain("+20.88%");
-    expect(text).toContain("Closed AAOI Risk Reversal");
+    expect(text).toContain("Closed $AAOI Risk Reversal");
     expect(text).toContain("Executed with Radon");
+  });
+
+  it("starts with 💸 emoji", () => {
+    const text = buildTweetText("Closed AAOI Risk Reversal", 6871, 20.88, true, true);
+    expect(text.startsWith("💸")).toBe(true);
+  });
+
+  it("prefixes ticker with $ cashtag", () => {
+    const text = buildTweetText("Closed AAOI Risk Reversal (Short $92 Call / Long $88 Put)", 6871, 694.06, false, true);
+    expect(text).toContain("Closed $AAOI Risk Reversal");
+    // Strike prices still use $ normally
+    expect(text).toContain("$92 Call");
+    expect(text).toContain("$88 Put");
+  });
+
+  it("adds blank line between 'Executed with Radon' and URL", () => {
+    const text = buildTweetText("Closed AAOI Risk Reversal", 6871, 20.88, false, true);
+    expect(text).toContain("Executed with Radon\n\nhttps://radon.run");
   });
 
   it("includes only $ when showPct=false", () => {
@@ -534,8 +560,63 @@ describe("buildTweetText", () => {
 
   it("shows empty pnl portion when both disabled", () => {
     const text = buildTweetText("Closed X", 100, 50, false, false);
-    expect(text).toContain("Closed X");
-    expect(text).not.toContain("$");
+    expect(text).toContain("Closed $X");
+    // Only the 💸 prefix and cashtag should be present, no dollar amounts or percentages
+    expect(text).not.toMatch(/\+\$/);
     expect(text).not.toContain("%");
+  });
+
+  it("handles single-char ticker", () => {
+    const text = buildTweetText("Long X 2026-04-17 Call $50.00", 500, 25.0, false, true);
+    expect(text).toContain("Long $X 2026-04-17 Call $50.00");
+  });
+
+  it("does not double-tag if ticker already has $", () => {
+    // If description already has $ before ticker, the regex won't match (no bare uppercase word)
+    const text = buildTweetText("Some custom description", 100, 10, false, true);
+    // No leading action word → no cashtag transformation
+    expect(text).toContain("Some custom description");
+  });
+});
+
+describe("cashtagTicker", () => {
+  it("tags ticker after Closed", () => {
+    expect(cashtagTicker("Closed AAOI Risk Reversal")).toBe("Closed $AAOI Risk Reversal");
+  });
+
+  it("tags ticker after Opened", () => {
+    expect(cashtagTicker("Opened GOOG Bull Call Spread")).toBe("Opened $GOOG Bull Call Spread");
+  });
+
+  it("tags ticker after Long", () => {
+    expect(cashtagTicker("Long AAPL 2026-04-17 Call $250.00")).toBe("Long $AAPL 2026-04-17 Call $250.00");
+  });
+
+  it("tags ticker after Short", () => {
+    expect(cashtagTicker("Short SPY 2026-03-21 Put $500.00")).toBe("Short $SPY 2026-03-21 Put $500.00");
+  });
+
+  it("tags ticker after Bought", () => {
+    expect(cashtagTicker("Bought MSFT")).toBe("Bought $MSFT");
+  });
+
+  it("tags ticker after Sold", () => {
+    expect(cashtagTicker("Sold TSLA")).toBe("Sold $TSLA");
+  });
+
+  it("tags ticker after Cancelled", () => {
+    expect(cashtagTicker("Cancelled NFLX")).toBe("Cancelled $NFLX");
+  });
+
+  it("does not tag if no leading action word", () => {
+    expect(cashtagTicker("AAOI Risk Reversal")).toBe("AAOI Risk Reversal");
+  });
+
+  it("does not tag lowercase words", () => {
+    expect(cashtagTicker("Closed test position")).toBe("Closed test position");
+  });
+
+  it("handles single-char tickers", () => {
+    expect(cashtagTicker("Long X 2026-04-17 Call $50.00")).toBe("Long $X 2026-04-17 Call $50.00");
   });
 });
