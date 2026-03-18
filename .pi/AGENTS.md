@@ -77,6 +77,32 @@
 
 **Preserve the sign throughout the entire display pipeline.** Never use `Math.abs()` or equivalent on option prices/values without explicit approval. Credits must display as negative, debits as positive. This applies to P&L cards, share images, order forms, and all price displays.
 
+## ⚠️ Combo Natural Market Bid/Ask — Mandatory
+
+**Always use cross-fields for natural market pricing. Never `sign * bid` and `sign * ask`.**
+
+```
+To BUY combo:  pay ASK on BUY legs, receive BID on SELL legs
+To SELL combo: receive BID on BUY legs, pay ASK on SELL legs
+```
+
+**Example (bull call spread: BUY $200C @ bid=4.50/ask=4.70, SELL $210C @ bid=2.00/ask=2.20):**
+- netAsk (cost to BUY) = 4.70 - 2.00 = 2.70
+- netBid (proceeds to SELL) = 4.50 - 2.20 = 2.30
+- mid = 2.50
+
+**WRONG (mid-mid bug):** `sign * bid` = 4.50 - 2.00 = 2.50, `sign * ask` = 4.70 - 2.20 = 2.50 → bid = ask = mid ❌
+
+**Implementations:** `computeNetOptionQuote()`, `ComboOrderForm.netPrices`, `resolveOrderPriceData()` for BAG.
+
+## ⚠️ Order Placement Input Validation
+
+`/api/orders/place` rejects before sending to IB:
+- Zero or negative `quantity` → 400
+- Zero or negative `limitPrice` → 400
+- Non-finite numbers (NaN, Infinity) → 400
+- Missing required fields → 400
+
 ---
 
 ## ⚠️ Data Fetching Priority (ALWAYS follow this order)

@@ -747,6 +747,7 @@ describe("POST /api/orders/modify — extended", () => {
   it("replaces combo orders via cancel then place when replacement payload provided", async () => {
     mockRadonFetch
       .mockResolvedValueOnce({ status: "ok", message: "Order cancelled" })
+      .mockResolvedValueOnce({ status: "ok", message: "Order cancelled" })
       .mockResolvedValueOnce({ status: "ok", message: "Replacement placed", orderId: 202, permId: 999 })
       .mockResolvedValueOnce({});
 
@@ -758,6 +759,10 @@ describe("POST /api/orders/modify — extended", () => {
         body: JSON.stringify({
           orderId: 77,
           permId: 653611587,
+          cancelOrders: [
+            { orderId: 77, permId: 653611587 },
+            { orderId: 78, permId: 653611588 },
+          ],
           replaceOrder: {
             type: "combo",
             symbol: "AAOI",
@@ -775,10 +780,19 @@ describe("POST /api/orders/modify — extended", () => {
     );
     expect(res.status).toBe(200);
 
-    expect(mockRadonFetch).toHaveBeenCalledTimes(3);
+    expect(mockRadonFetch).toHaveBeenCalledTimes(4);
     expect(mockRadonFetch.mock.calls[0][0]).toBe("/orders/cancel");
-    expect(mockRadonFetch.mock.calls[1][0]).toBe("/orders/place");
+    expect(JSON.parse(String(mockRadonFetch.mock.calls[0][1].body))).toMatchObject({
+      orderId: 77,
+      permId: 653611587,
+    });
+    expect(mockRadonFetch.mock.calls[1][0]).toBe("/orders/cancel");
     expect(JSON.parse(String(mockRadonFetch.mock.calls[1][1].body))).toMatchObject({
+      orderId: 78,
+      permId: 653611588,
+    });
+    expect(mockRadonFetch.mock.calls[2][0]).toBe("/orders/place");
+    expect(JSON.parse(String(mockRadonFetch.mock.calls[2][1].body))).toMatchObject({
       type: "combo",
       symbol: "AAOI",
       action: "SELL",

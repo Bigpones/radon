@@ -17,9 +17,15 @@ export type ReplaceComboOrder = {
   legs: ModifyComboLeg[];
 };
 
+export type ModifyCancelTarget = {
+  orderId?: number;
+  permId?: number;
+};
+
 export type ModifyOrderRequest = {
   newPrice?: number;
   newQuantity?: number;
   outsideRth?: boolean;
+  cancelOrders?: ModifyCancelTarget[];
   replaceOrder?: ReplaceComboOrder;
 };

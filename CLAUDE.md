@@ -419,6 +419,35 @@ Spread Mid = SUM(sign × (bid + ask) / 2) per leg
 
 Via `legPriceKey()` WS bid/ask. Never use underlying for spread orders. Impl: `resolveOrderLastPrice()`.
 
+### Combo Natural Market Bid/Ask
+
+**CRITICAL:** Always use cross-fields for natural market, never `sign * bid` and `sign * ask`.
+
+```
+To BUY combo:  pay ASK on BUY legs, receive BID on SELL legs
+To SELL combo: receive BID on BUY legs, pay ASK on SELL legs
+
+Example (bull call spread: BUY $200C, SELL $210C):
+  $200C: bid=4.50, ask=4.70
+  $210C: bid=2.00, ask=2.20
+  
+  netAsk (cost to open) = 4.70 - 2.00 = 2.70
+  netBid (proceeds to close) = 4.50 - 2.20 = 2.30
+  mid = 2.50
+
+WRONG (mid-mid):
+  netBid = sign*bid = 4.50 - 2.00 = 2.50
+  netAsk = sign*ask = 4.70 - 2.20 = 2.50
+  Result: bid = ask = mid = 2.50 ❌
+```
+
+**Implementations (all use correct algorithm):**
+- `computeNetOptionQuote()` in `optionsChainUtils.ts`
+- `ComboOrderForm.netPrices` in `OrderTab.tsx`
+- `resolveOrderPriceData()` for BAG in `ModifyOrderModal.tsx`
+
+Tests: `order-reliability.test.ts` ("ComboOrderForm net price calculation").
+
 ### Total P&L %
 
 ```

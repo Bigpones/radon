@@ -2265,3 +2265,21 @@ Dependency graph
 - Root cause: `/api/orders` carries the resting limit price, while IB live quotes arrive separately through the WebSocket price stream; `ModifyOrderModal` displayed only the raw streamed bid/ask and never overlaid the user’s resting order onto the shown book.
 - Fix: `web/lib/modifyOrderQuote.ts` now applies the resting order to the effective bid/ask model, and `ModifyOrderModal` uses that adjusted quote for telemetry and reference-price actions.
 - Verification: `npx vitest run web/tests/modify-order-quote.test.ts`; `cd web && npx playwright test e2e/modify-order-resting-limit.spec.ts e2e/modify-order-spread-telemetry.spec.ts --config playwright.no-server.config.ts`; Chrome CDP verification on a mocked `/orders` page confirmed a sell order at `$5.05` renders `ASK $5.05` when the raw streamed ask is `$5.10`.
+
+## 2026-03-18 — combo open-order modify flow
+
+Dependency graph
+- T1 trace combo row modify path (`depends_on: []`)
+- T2 add failing regressions (`depends_on: [T1]`)
+- T3 implement combo modify fix (`depends_on: [T2]`)
+- T4 verify tests and chrome-cdp (`depends_on: [T3]`)
+
+- [x] T1 Trace combo open-order data from backend/provider through frontend grouping to identify why combo rows cannot open modify
+- [x] T2 Add failing regressions for combo modify availability and payload wiring
+- [x] T3 Fix combo rows so modify opens the combo modify view with legs and quantity
+- [ ] T4 Verify focused tests and live browser behavior; record review and lessons
+
+### Review
+- Root cause: IB open orders for these combos arrive as separate OPT orders, not a single BAG. The frontend groups them into a synthetic combo row in `openOrderCombos.ts`, but `WorkspaceSections.tsx` hard-disabled `MODIFY` because the existing replace flow only knew how to cancel one order before placing a replacement combo.
+- Fix: grouped combo rows now synthesize a BAG-style modify target for `ModifyOrderModal`, and `/api/orders/modify` accepts `cancelOrders` so the replacement flow cancels every grouped leg order before placing the new combo.
+- Verification: `npx vitest run web/tests/open-order-combo-modify.test.ts web/tests/api-routes-extended.test.ts --testNamePattern "buildGroupedComboModifyTarget|replaces combo orders via cancel then place when replacement payload provided"`; `cd web && npx playwright test e2e/open-order-combo.spec.ts --config playwright.no-server.config.ts`; Chrome CDP mocked-browser verification confirmed the combo-row `MODIFY` button is enabled and opens a leg editor with quantity `10` and strikes `150` / `165`.

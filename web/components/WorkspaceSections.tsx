@@ -36,6 +36,7 @@ import {
   buildExecutedGroupDescription,
   resolveOpenOrderComboPrice,
 } from "@/lib/openOrderCombos";
+import { buildGroupedComboModifyTarget } from "@/lib/openOrderComboModify";
 import PositionTable from "./PositionTable";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import CancelOrderDialog from "./CancelOrderDialog";
@@ -1414,7 +1415,11 @@ function OrdersSections({
   const openSort = useSort(openOrderRows, openOrderExtract);
 
   const [cancelTarget, setCancelTarget] = useState<OpenOrder | null>(null);
-  const [modifyTarget, setModifyTarget] = useState<OpenOrder | null>(null);
+  const [modifyTarget, setModifyTarget] = useState<{
+    modalOrder: OpenOrder;
+    requestOrder: OpenOrder;
+    cancelOrders?: ModifyOrderRequest["cancelOrders"];
+  } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
   const handleCancel = useCallback(async () => {
@@ -1428,7 +1433,12 @@ function OrdersSections({
   const handleModify = useCallback(async (request: ModifyOrderRequest) => {
     if (!modifyTarget) return;
     setActionLoading(true);
-    await requestModify(modifyTarget, request);
+    await requestModify(
+      modifyTarget.requestOrder,
+      modifyTarget.cancelOrders?.length
+        ? { ...request, cancelOrders: modifyTarget.cancelOrders }
+        : request,
+    );
     setActionLoading(false);
     setModifyTarget(null);
   }, [modifyTarget, requestModify]);
@@ -1515,7 +1525,7 @@ function OrdersSections({
         onClose={() => setCancelTarget(null)}
       />
       <ModifyOrderModal
-        order={modifyTarget}
+        order={modifyTarget?.modalOrder ?? null}
         loading={actionLoading}
         prices={prices}
         portfolio={portfolio}
@@ -1553,6 +1563,8 @@ function OrdersSections({
               <tbody>
                 {openSort.sorted.map((o) => {
                   if (o.kind === "combo") {
+                    const comboCanModify = o.orders.every(canModify);
+                    const comboModifyTarget = buildGroupedComboModifyTarget(o);
                     const isPendingCancel = o.orders.some((order) => pendingCancels.has(order.permId));
                     const isPendingModify = o.orders.some((order) => pendingModifies.has(order.permId));
                     const isPending = isPendingCancel || isPendingModify;
@@ -1608,8 +1620,13 @@ function OrdersSections({
                             <>
                               <button
                                 className="btn-order-action btn-modify"
-                                disabled
-                                title="Modify not available for combined orders"
+                                disabled={!comboCanModify}
+                                title={comboCanModify ? "Modify combo order" : "Only LMT orders can be modified"}
+                                onClick={() => setModifyTarget({
+                                  modalOrder: comboModifyTarget.modalOrder,
+                                  requestOrder: o.orders[0],
+                                  cancelOrders: comboModifyTarget.cancelOrders,
+                                })}
                               >
                                 MODIFY
                               </button>
@@ -1688,7 +1705,10 @@ function OrdersSections({
                               className="btn-order-action btn-modify"
                               disabled={!canModify(o.order)}
                               title={canModify(o.order) ? "Modify limit price" : "Only LMT orders can be modified"}
-                              onClick={() => setModifyTarget(o.order)}
+                              onClick={() => setModifyTarget({
+                                modalOrder: o.order,
+                                requestOrder: o.order,
+                              })}
                             >
                               MODIFY
                             </button>
