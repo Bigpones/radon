@@ -4,6 +4,7 @@
 2026-03-18T16:00:00-07:00
 
 ## Recent Commits
+- 2026-03-18 — **feat: Unified order component system.** Created `web/lib/order/` with 8 reusable components (OrderPriceStrip, OrderLegPills, OrderPriceButtons, OrderActionToggle, OrderTifSelector, OrderQuantityInput, OrderPriceInput, OrderConfirmSummary), 2 hooks (useOrderPrices, useOrderValidation), shared types. Analysis doc identifies 5 placement locations, 3 viewing locations, 2 modification locations with feature gaps. 116 order tests.
 - 2026-03-18 — **ui: Order entry UX improvements.** Form now appears ABOVE open orders (visible without scrolling). Added spread price strip showing BID/MID/ASK/SPREAD at top of combo form. Replaced leg list with compact colored pills (+/− prefixes, green/red backgrounds). 53 order tests.
 - 2026-03-18 — **feat: Add input validation for order placement.** API now rejects zero/negative quantity and limitPrice before sending to IB. Prevents IB errors and provides clearer user feedback. 4 new validation tests.
 - 2026-03-18 — **fix: Natural market bid/ask in ALL combo order forms.** Extended fix to ComboOrderForm (OrderTab.tsx) and ModifyOrderModal BAG resolution. Same bug as computeNetOptionQuote — using sign * bid/ask produces mid-mid instead of true marketable spread. Now: BUY legs pay ASK/receive BID, SELL legs receive BID/pay ASK. **101 order tests** (93 passed, 8 skipped).
