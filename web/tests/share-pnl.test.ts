@@ -76,24 +76,47 @@ function execOrderShareData(e: ExecutedOrder) {
       : null,
     commission: e.commission,
     fillPrice: e.avgPrice,
+    entryPrice: null,
+    exitPrice: null,
     time: e.time ? new Date(e.time).toLocaleString() : "",
   };
 }
 
 function positionGroupShareData(group: PositionFillGroup, allGroups?: PositionFillGroup[]) {
   let pnlPct: number | null = null;
+  let entryPrice: number | null = null;
+
   if (group.totalPnL != null && group.isClosing) {
-    // For BAG/combo closing groups, try to find the matching opening group
-    // and use its net combo price as the cost basis for accurate P&L %
     const hasBagFills = group.fills.some((f) => f.contract.secType === "BAG");
     let entryNotional = 0;
 
     if (hasBagFills && allGroups) {
+      // Only match open groups that also have BAG fills (combo opens)
       const matchingOpen = allGroups.find(
-        (g) => !g.isClosing && g.symbol === group.symbol && g.netPrice != null && g.netPrice !== 0,
+        (g) => !g.isClosing && g.symbol === group.symbol && g.netPrice != null && g.netPrice !== 0
+          && g.fills.some((f) => f.contract.secType === "BAG"),
       );
       if (matchingOpen && matchingOpen.netPrice != null) {
         entryNotional = Math.abs(matchingOpen.netPrice) * matchingOpen.totalQuantity * 100;
+        entryPrice = matchingOpen.netPrice;
+      }
+
+      // Fallback: derive entry from individual OPT fills across all open groups
+      if (entryPrice == null) {
+        const openGroups = allGroups.filter((g) => !g.isClosing && g.symbol === group.symbol);
+        const openOptFills = openGroups.flatMap((g) => g.fills.filter((f) => f.contract.secType === "OPT"));
+        if (openOptFills.length > 0) {
+          let netCash = 0;
+          for (const f of openOptFills) {
+            const sign = f.side === "SLD" ? 1 : -1;
+            netCash += sign * (f.avgPrice ?? 0) * f.quantity;
+          }
+          const comboUnits = group.totalQuantity || 1;
+          entryPrice = -(netCash / comboUnits);
+          if (entryNotional === 0) {
+            entryNotional = Math.abs(netCash) * 100;
+          }
+        }
       }
     }
 
@@ -117,6 +140,8 @@ function positionGroupShareData(group: PositionFillGroup, allGroups?: PositionFi
     pnlPct,
     commission: group.totalCommission,
     fillPrice: group.netPrice,
+    entryPrice,
+    exitPrice: group.isClosing ? group.netPrice : null,
     time: group.time ? new Date(group.time).toLocaleString() : "",
   };
 }
@@ -263,12 +288,31 @@ function groupExecutedOrders(fills: ExecutedOrder[]): PositionFillGroup[] {
 function blotterShareData(t: BlotterTrade) {
   const lastExec = t.executions.length > 0 ? t.executions[t.executions.length - 1] : null;
   const pnlPct = t.cost_basis !== 0 ? (t.realized_pnl / Math.abs(t.cost_basis)) * 100 : null;
+  let entryPrice: number | null = null;
+  let exitPrice: number | null = null;
+  if (t.executions.length >= 2) {
+    const firstSide = t.executions[0].side;
+    const openExecs = t.executions.filter((e) => e.side === firstSide);
+    const closeExecs = t.executions.filter((e) => e.side !== firstSide);
+    if (openExecs.length > 0) {
+      const totalQty = openExecs.reduce((s, e) => s + e.quantity, 0);
+      const totalVal = openExecs.reduce((s, e) => s + e.price * e.quantity, 0);
+      entryPrice = totalQty > 0 ? totalVal / totalQty : null;
+    }
+    if (closeExecs.length > 0) {
+      const totalQty = closeExecs.reduce((s, e) => s + e.quantity, 0);
+      const totalVal = closeExecs.reduce((s, e) => s + e.price * e.quantity, 0);
+      exitPrice = totalQty > 0 ? totalVal / totalQty : null;
+    }
+  }
   return {
     description: t.contract_desc || t.symbol,
     pnl: t.realized_pnl,
     pnlPct,
     commission: t.total_commission,
     fillPrice: lastExec?.price ?? null,
+    entryPrice,
+    exitPrice,
     time: lastExec?.time ? new Date(lastExec.time).toLocaleString() : "",
   };
 }
@@ -356,6 +400,8 @@ describe("positionGroupShareData", () => {
     expect(data.description).toContain("Risk Reversal");
     expect(data.commission).toBe(-12.50);
     expect(data.fillPrice).toBe(2.50);
+    expect(data.entryPrice).toBe(0.25);
+    expect(data.exitPrice).toBe(2.50);
   });
 
   it("falls back to leg notional when no matching open group exists", () => {
@@ -441,6 +487,96 @@ describe("positionGroupShareData", () => {
     // Stock fills aren't secType "OPT" so they're excluded from notional
     expect(data.pnlPct).toBeNull();
     expect(data.pnl).toBe(500);
+  });
+
+  it("returns null entryPrice when no matching open group and no allGroups", () => {
+    const group: PositionFillGroup = {
+      id: "test", symbol: "AAOI",
+      description: "Closed AAOI",
+      isClosing: true, totalQuantity: 5, netPrice: 2.50,
+      totalCommission: -1.30, totalPnL: 1375,
+      time: "2026-03-17T15:40:21+00:00",
+      fills: [
+        makeBagFill({ quantity: 5, avgPrice: 2.50 }),
+        makeOptionFill({ quantity: 5, avgPrice: 5.33, realizedPNL: 697 }),
+      ],
+    };
+    const data = positionGroupShareData(group);
+    expect(data.entryPrice).toBeNull();
+    expect(data.exitPrice).toBe(2.50);
+  });
+
+  it("derives entry from individual OPT fills when open was not a BAG (credit = negative)", () => {
+    // Risk reversal: sold puts at $6.34, bought calls at $5.59 → net credit $0.75
+    const openCallGroup: PositionFillGroup = {
+      id: "open-call", symbol: "AAOI",
+      description: "Opened AAOI Long Call",
+      isClosing: false, totalQuantity: 25, netPrice: null,
+      totalCommission: -17.51, totalPnL: null,
+      time: "2026-03-17T14:14:16+00:00",
+      fills: [
+        makeOptionFill({ execId: "oc-1", quantity: 12, avgPrice: 5.59, realizedPNL: 0, side: "BOT",
+          contract: { conId: 861001, symbol: "AAOI", secType: "OPT", strike: 90, right: "C", expiry: "2026-03-27" },
+        }),
+        makeOptionFill({ execId: "oc-2", quantity: 13, avgPrice: 5.59, realizedPNL: 0, side: "BOT",
+          contract: { conId: 861001, symbol: "AAOI", secType: "OPT", strike: 90, right: "C", expiry: "2026-03-27" },
+        }),
+      ],
+    };
+    const openPutGroup: PositionFillGroup = {
+      id: "open-put", symbol: "AAOI",
+      description: "Opened AAOI Short Put",
+      isClosing: false, totalQuantity: 25, netPrice: null,
+      totalCommission: -17.53, totalPnL: null,
+      time: "2026-03-17T14:12:25+00:00",
+      fills: [
+        makeOptionFill({ execId: "op-1", quantity: 13, avgPrice: 6.34, realizedPNL: 0, side: "SLD",
+          contract: { conId: 858539, symbol: "AAOI", secType: "OPT", strike: 85, right: "P", expiry: "2026-03-27" },
+        }),
+        makeOptionFill({ execId: "op-2", quantity: 12, avgPrice: 6.34, realizedPNL: 0, side: "SLD",
+          contract: { conId: 858539, symbol: "AAOI", secType: "OPT", strike: 85, right: "P", expiry: "2026-03-27" },
+        }),
+      ],
+    };
+    const closeGroup: PositionFillGroup = {
+      id: "close", symbol: "AAOI",
+      description: "Closed AAOI Risk Reversal (Short $85 Put / Long $90 Call)",
+      isClosing: true, totalQuantity: 25, netPrice: 1.00,
+      totalCommission: -2.06, totalPnL: 4371,
+      time: "2026-03-17T15:16:13+00:00",
+      fills: [
+        makeBagFill({ quantity: 25, avgPrice: 1.00 }),
+        makeOptionFill({ quantity: 25, avgPrice: 5.33, realizedPNL: 2200, side: "SLD",
+          contract: { conId: 861001, symbol: "AAOI", secType: "OPT", strike: 90, right: "C", expiry: "2026-03-27" },
+        }),
+        makeOptionFill({ quantity: 25, avgPrice: 7.83, realizedPNL: 2171, side: "BOT",
+          contract: { conId: 858539, symbol: "AAOI", secType: "OPT", strike: 85, right: "P", expiry: "2026-03-27" },
+        }),
+      ],
+    };
+    const allGroups = [openCallGroup, openPutGroup, closeGroup];
+    const data = positionGroupShareData(closeGroup, allGroups);
+    // Net cash from open: SELL puts (25 * 6.34 = 158.50) - BUY calls (25 * 5.59 = 139.75) = +18.75
+    // Entry per combo = -(18.75 / 25) = -0.75 (credit received)
+    expect(data.entryPrice).toBeCloseTo(-0.75, 2);
+    expect(data.exitPrice).toBe(1.00);
+    // entryNotional = |18.75| * 100 = $1875 (net credit × options multiplier)
+    // pnlPct = 4371 / 1875 * 100 ≈ 233.12%
+    expect(data.pnlPct).toBeCloseTo(233.12, 0);
+  });
+
+  it("returns null exitPrice for opening groups", () => {
+    const group: PositionFillGroup = {
+      id: "open", symbol: "AAOI",
+      description: "Opened AAOI Risk Reversal",
+      isClosing: false, totalQuantity: 25, netPrice: 0.25,
+      totalCommission: -8.50, totalPnL: null,
+      time: "2026-03-17T14:32:00+00:00",
+      fills: [makeBagFill({ quantity: 25, avgPrice: 0.25 })],
+    };
+    const data = positionGroupShareData(group);
+    expect(data.entryPrice).toBeNull();
+    expect(data.exitPrice).toBeNull();
   });
 });
 
@@ -653,6 +789,42 @@ describe("blotterShareData", () => {
       realized_pnl: 0, cost_basis: 0, proceeds: 0, total_cash_flow: 0, executions: [],
     };
     expect(blotterShareData(trade).pnlPct).toBeNull();
+  });
+
+  it("computes entry and exit prices from execution prices for OPT trades", () => {
+    const trade: BlotterTrade = {
+      symbol: "NET", contract_desc: "Long NET Call $120",
+      sec_type: "OPT", is_closed: true, net_quantity: 0,
+      total_commission: -5.20, realized_pnl: 2000, cost_basis: -4000,
+      proceeds: 6000, total_cash_flow: 2000,
+      executions: [
+        { exec_id: "a", time: "2026-03-01T10:00:00", side: "BOT", quantity: 10, price: 4.00, commission: -2.60, notional_value: 4000, net_cash_flow: -4002.60 },
+        { exec_id: "b", time: "2026-03-10T15:00:00", side: "SLD", quantity: 10, price: 6.00, commission: -2.60, notional_value: 6000, net_cash_flow: 5997.40 },
+      ],
+    };
+    const data = blotterShareData(trade);
+    // Entry = avg price of opening BOT fills = $4.00
+    // Exit = avg price of closing SLD fills = $6.00
+    expect(data.entryPrice).toBe(4.00);
+    expect(data.exitPrice).toBe(6.00);
+  });
+
+  it("computes entry and exit prices from execution prices for STK trades", () => {
+    const trade: BlotterTrade = {
+      symbol: "AAPL", contract_desc: "AAPL Stock",
+      sec_type: "STK", is_closed: true, net_quantity: 100,
+      total_commission: -2.00, realized_pnl: 500, cost_basis: -25000,
+      proceeds: 25500, total_cash_flow: 500,
+      executions: [
+        { exec_id: "a", time: "2026-03-01T10:00:00", side: "BOT", quantity: 100, price: 250.00, commission: -1.00, notional_value: 25000, net_cash_flow: -25001 },
+        { exec_id: "b", time: "2026-03-10T15:00:00", side: "SLD", quantity: 100, price: 255.00, commission: -1.00, notional_value: 25500, net_cash_flow: 25499 },
+      ],
+    };
+    const data = blotterShareData(trade);
+    // Entry = avg price of opening BOT fills = $250.00
+    // Exit = avg price of closing SLD fills = $255.00
+    expect(data.entryPrice).toBe(250);
+    expect(data.exitPrice).toBe(255);
   });
 });
 

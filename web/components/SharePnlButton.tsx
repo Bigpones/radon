@@ -9,7 +9,11 @@ export type SharePnlData = {
   pnlPct: number | null;
   commission: number | null;
   fillPrice: number | null;
-  time: string;
+  entryPrice: number | null;
+  exitPrice: number | null;
+  entryTime: string | null;
+  exitTime: string | null;
+  time: string; // Legacy field, kept for backward compatibility
 };
 
 type SharePnlButtonProps = {
@@ -82,8 +86,14 @@ export default function SharePnlButton({ data, size = 13 }: SharePnlButtonProps)
     params.set("description", data.description);
     if (showDollar) params.set("pnl", String(data.pnl));
     if (showPct && data.pnlPct != null) params.set("pnlPct", String(data.pnlPct));
-    if (data.commission != null) params.set("commission", String(data.commission));
-    if (data.fillPrice != null) params.set("fillPrice", String(data.fillPrice));
+    // Note: commission is intentionally NOT passed to the image API
+    if (data.entryPrice != null) params.set("entryPrice", String(data.entryPrice));
+    if (data.exitPrice != null) params.set("exitPrice", String(data.exitPrice));
+    if (data.entryTime) params.set("entryTime", data.entryTime);
+    if (data.exitTime) params.set("exitTime", data.exitTime);
+    if (data.fillPrice != null && data.entryPrice == null && data.exitPrice == null) {
+      params.set("fillPrice", String(data.fillPrice));
+    }
     if (data.time) params.set("time", data.time);
 
     const res = await fetch(`/api/share/pnl?${params.toString()}`);

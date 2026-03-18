@@ -15,6 +15,25 @@ function fmtPct(v: number): string {
   return `${sign}${v.toFixed(2)}%`;
 }
 
+/** Format ISO timestamp to PST with date and time */
+function fmtTimePST(isoTime: string): string {
+  try {
+    const date = new Date(isoTime);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleString("en-US", {
+      timeZone: "America/Los_Angeles",
+      month: "numeric",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }) + " PST";
+  } catch {
+    return "";
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -23,10 +42,14 @@ export async function GET(request: Request) {
     const pnl = pnlRaw != null ? parseFloat(pnlRaw) : null;
     const pnlPctRaw = searchParams.get("pnlPct");
     const pnlPct = pnlPctRaw != null ? parseFloat(pnlPctRaw) : null;
-    const commRaw = searchParams.get("commission");
-    const commission = commRaw != null ? parseFloat(commRaw) : null;
     const fillPriceRaw = searchParams.get("fillPrice");
     const fillPrice = fillPriceRaw != null ? parseFloat(fillPriceRaw) : null;
+    const entryPriceRaw = searchParams.get("entryPrice");
+    const entryPrice = entryPriceRaw != null ? parseFloat(entryPriceRaw) : null;
+    const exitPriceRaw = searchParams.get("exitPrice");
+    const exitPrice = exitPriceRaw != null ? parseFloat(exitPriceRaw) : null;
+    const entryTime = searchParams.get("entryTime") ?? "";
+    const exitTime = searchParams.get("exitTime") ?? "";
     const time = searchParams.get("time") ?? "";
 
     if (!description) {
@@ -44,14 +67,38 @@ export async function GET(request: Request) {
     const heroDollar = pnl != null && Number.isFinite(pnl) ? fmtDollar(pnl) : null;
     const heroPct = pnlPct != null && Number.isFinite(pnlPct) ? fmtPct(pnlPct) : null;
 
+    const fmtSignedPrice = (v: number): string =>
+      v < 0 ? `-$${Math.abs(v).toFixed(2)}` : `$${v.toFixed(2)}`;
+
     const detailItems: { label: string; value: string }[] = [];
-    if (fillPrice != null && Number.isFinite(fillPrice)) {
+
+    // Entry: price @ time (PST)
+    if (entryPrice != null && Number.isFinite(entryPrice)) {
+      const entryTimeFormatted = entryTime ? fmtTimePST(entryTime) : "";
+      const entryValue = entryTimeFormatted
+        ? `${fmtSignedPrice(entryPrice)} @ ${entryTimeFormatted}`
+        : fmtSignedPrice(entryPrice);
+      detailItems.push({ label: "ENTRY", value: entryValue });
+    }
+
+    // Exit: price @ time (PST)
+    if (exitPrice != null && Number.isFinite(exitPrice)) {
+      const exitTimeFormatted = exitTime ? fmtTimePST(exitTime) : "";
+      const exitValue = exitTimeFormatted
+        ? `${fmtSignedPrice(exitPrice)} @ ${exitTimeFormatted}`
+        : fmtSignedPrice(exitPrice);
+      detailItems.push({ label: "EXIT", value: exitValue });
+    }
+
+    // Fallback: single fill price (no entry/exit)
+    if (entryPrice == null && exitPrice == null && fillPrice != null && Number.isFinite(fillPrice)) {
       detailItems.push({ label: "FILL", value: `$${fillPrice.toFixed(2)}` });
     }
-    if (commission != null && Number.isFinite(commission)) {
-      detailItems.push({ label: "COMMISSION", value: `$${Math.abs(commission).toFixed(2)}` });
-    }
-    if (time) {
+
+    // Note: Commission is intentionally NOT included — it clutters the card
+
+    // Legacy: show executed time if no entry/exit times provided
+    if (time && !entryTime && !exitTime) {
       detailItems.push({ label: "EXECUTED", value: time });
     }
 

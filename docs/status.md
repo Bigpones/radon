@@ -1,9 +1,10 @@
 # Status & Decision Log
 
 ## Last Updated
-2026-03-17T08:50:00-07:00
+2026-03-18T08:25:00-07:00
 
 ## Recent Commits
+- 2026-03-18 — **fix: Share PnL entry/exit data for multi-day trades.** `positionGroupShareData()` now falls back to portfolio position data when opening fills aren't in today's executed orders (position opened on prior day). Entry price from `leg.avg_cost`, entry time from `entry_date`. Share image now correctly shows ENTRY/EXIT with PST times, no commission. 8 unit tests + 5 E2E tests.
 - 2026-03-17 — **fix: Normalize open-order combo net credit by leg size for ratio spreads.** 1x2 risk-reversal entries (for example, short puts + long calls) now compute true weighted net credit in the combo last-price cell; added regression coverage in `web/tests/open-order-combos.test.ts`.
 - 2026-03-17 — **ui: Update share PnL defaults and card emphasis.** X/share card rendering now scales single-value hero text larger (`$` or `%` only) while default share toggle state is now `%` only for cleaner default image output.
 - 2026-03-16 — **feat: News & Catalysts milestone (M1D) — fetch_news.py classifies headlines for material catalysts (buyback, M&A, earnings, FDA, etc.) and sentiment. Integrated into evaluate.py as parallel milestone. Context-only (not a gate) but surfaces in edge determination output for operator judgment. CRM's $25B buyback now visible in evaluation.**
@@ -530,6 +531,7 @@ Navigate to any ticker via search (CMD+K), ticker links in tables, or direct URL
 - [x] **Scenario stress test: `stress-test` command, pricing engine, expandable HTML report with per-position narratives**
 - [x] **Stress test template: `.pi/skills/html-report/stress-test-template.html` with ▶ detail rows**
 - [x] **SKILL.md Generation Checklist: Stress Test Reports (14 steps)**
+- [x] **Share PnL: entry/exit price+time for multi-day trades (portfolio fallback, PST timezone, no commission)**
 - [ ] Execute MSFT LEAP call trade (pending confirmation)
 - [ ] Close undefined risk positions before Friday expiry
 - [ ] Review PLTR for profit-taking (23 DTE, +175%)

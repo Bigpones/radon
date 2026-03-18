@@ -40,6 +40,7 @@ import PositionTable from "./PositionTable";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import CancelOrderDialog from "./CancelOrderDialog";
 import ModifyOrderModal from "./ModifyOrderModal";
+import type { ModifyOrderRequest } from "@/lib/orderModify";
 import RegimePanel from "./RegimePanel";
 import CtaPage from "./CtaPage";
 import PerformancePanel from "./PerformancePanel";
@@ -99,6 +100,8 @@ function execOrderShareData(e: ExecutedOrder): SharePnlData {
     fillPrice: e.avgPrice,
     entryPrice: null,
     exitPrice: null,
+    entryTime: null,
+    exitTime: null,
     time: e.time ? new Date(e.time).toLocaleString() : "",
   };
 }
@@ -120,11 +123,11 @@ function executedOptionContractKey(fill: ExecutedOrder): string | null {
 function resolveOpeningLegBasis(
   group: PositionFillGroup,
   allGroups?: PositionFillGroup[],
-): { entryPrice: number | null; entryNotional: number } {
-  if (!allGroups) return { entryPrice: null, entryNotional: 0 };
+): { entryPrice: number | null; entryNotional: number; entryTime: string | null } {
+  if (!allGroups) return { entryPrice: null, entryNotional: 0, entryTime: null };
 
   const closeOptFills = group.fills.filter((fill) => fill.contract.secType === "OPT");
-  if (closeOptFills.length === 0) return { entryPrice: null, entryNotional: 0 };
+  if (closeOptFills.length === 0) return { entryPrice: null, entryNotional: 0, entryTime: null };
 
   const requiredByContract = new Map<string, number>();
   for (const fill of closeOptFills) {
@@ -132,7 +135,7 @@ function resolveOpeningLegBasis(
     if (!key) continue;
     requiredByContract.set(key, (requiredByContract.get(key) ?? 0) + Math.abs(fill.quantity));
   }
-  if (requiredByContract.size === 0) return { entryPrice: null, entryNotional: 0 };
+  if (requiredByContract.size === 0) return { entryPrice: null, entryNotional: 0, entryTime: null };
 
   const closeTime = Date.parse(group.time);
   const candidateOpenFills = allGroups
@@ -157,6 +160,7 @@ function resolveOpeningLegBasis(
   const remainingByContract = new Map(requiredByContract);
   let matchedQty = 0;
   let netCash = 0;
+  let earliestEntryTime: string | null = null;
 
   for (const fill of candidateOpenFills) {
     const key = executedOptionContractKey(fill);
@@ -179,15 +183,29 @@ function resolveOpeningLegBasis(
     netCash += cashSign * fill.avgPrice * takeQty;
     matchedQty += takeQty;
     remainingByContract.set(key, remainingQty - takeQty);
+
+    // Track earliest entry time among matched fills
+    if (fill.time) {
+      if (!earliestEntryTime) {
+        earliestEntryTime = fill.time;
+      } else {
+        const fillTime = Date.parse(fill.time);
+        const currentEarliest = Date.parse(earliestEntryTime);
+        if (!Number.isNaN(fillTime) && !Number.isNaN(currentEarliest) && fillTime < currentEarliest) {
+          earliestEntryTime = fill.time;
+        }
+      }
+    }
   }
 
   const fullyMatched = [...remainingByContract.values()].every((remainingQty) => remainingQty <= 0);
-  if (!fullyMatched || matchedQty <= 0) return { entryPrice: null, entryNotional: 0 };
+  if (!fullyMatched || matchedQty <= 0) return { entryPrice: null, entryNotional: 0, entryTime: null };
 
   const comboUnits = Math.max(group.totalQuantity, 1);
   return {
     entryPrice: -(netCash / comboUnits),
     entryNotional: Math.abs(netCash) * 100,
+    entryTime: earliestEntryTime,
   };
 }
 
@@ -195,10 +213,19 @@ function resolveOpeningLegBasis(
  *  For BAG/combo closing groups, uses the matching opening group's net combo
  *  price as cost basis for accurate P&L % (e.g. risk reversal opened at $0.25
  *  credit, closed at $2.50 = +900%, not the misleading ~21% from leg notionals).
+ *
+ *  @param group - The position fill group to build share data for
+ *  @param allGroups - All position groups (for finding matching opening fills)
+ *  @param portfolioPositions - Portfolio positions (fallback for entry data when opening fills not in allGroups)
  */
-export function positionGroupShareData(group: PositionFillGroup, allGroups?: PositionFillGroup[]): SharePnlData {
+export function positionGroupShareData(
+  group: PositionFillGroup,
+  allGroups?: PositionFillGroup[],
+  portfolioPositions?: readonly PortfolioPosition[],
+): SharePnlData {
   let pnlPct: number | null = null;
   let entryPrice: number | null = null;
+  let entryTime: string | null = null;
 
   if (group.totalPnL != null && group.isClosing) {
     const hasBagFills = group.fills.some((f) => f.contract.secType === "BAG");
@@ -208,6 +235,48 @@ export function positionGroupShareData(group: PositionFillGroup, allGroups?: Pos
       const openingBasis = resolveOpeningLegBasis(group, allGroups);
       entryPrice = openingBasis.entryPrice;
       entryNotional = openingBasis.entryNotional;
+      entryTime = openingBasis.entryTime;
+    }
+
+    // Fallback for non-BAG closing groups: find matching opening fills
+    if (!hasBagFills && allGroups) {
+      const openingBasis = resolveOpeningLegBasis(group, allGroups);
+      if (openingBasis.entryPrice != null) {
+        entryPrice = openingBasis.entryPrice;
+        entryTime = openingBasis.entryTime;
+        if (entryNotional === 0) {
+          entryNotional = openingBasis.entryNotional;
+        }
+      }
+    }
+
+    // Fallback to portfolio position data if we couldn't find opening fills
+    // (happens when position was opened on a previous day)
+    if (entryPrice == null && portfolioPositions) {
+      const matchingPosition = portfolioPositions.find((p) => p.ticker === group.symbol);
+      if (matchingPosition) {
+        // Calculate per-unit entry price from legs
+        // For single-leg positions, use avg_cost directly
+        // For multi-leg, sum up the leg costs and divide by contracts
+        if (matchingPosition.legs.length === 1) {
+          entryPrice = matchingPosition.legs[0].avg_cost;
+        } else if (matchingPosition.legs.length > 1 && matchingPosition.contracts > 0) {
+          // Net entry price for combo = sum of (direction-adjusted avg_cost per leg)
+          const netCost = matchingPosition.legs.reduce((sum, leg) => {
+            const sign = leg.direction === "LONG" ? -1 : 1; // Long = paid, Short = received
+            return sum + sign * leg.avg_cost;
+          }, 0);
+          entryPrice = netCost;
+        }
+        // Use entry_date from portfolio (date only, no time)
+        if (matchingPosition.entry_date) {
+          entryTime = matchingPosition.entry_date;
+        }
+        // Calculate notional for P&L %
+        if (entryNotional === 0 && entryPrice != null) {
+          entryNotional = Math.abs(entryPrice) * (matchingPosition.contracts || group.totalQuantity) * 100;
+        }
+      }
     }
 
     if (entryNotional > 0) {
@@ -225,6 +294,9 @@ export function positionGroupShareData(group: PositionFillGroup, allGroups?: Pos
     }
   }
 
+  // Exit time is the closing group's time
+  const exitTime = group.isClosing ? group.time : null;
+
   return {
     description: group.description,
     pnl: group.totalPnL ?? 0,
@@ -233,6 +305,8 @@ export function positionGroupShareData(group: PositionFillGroup, allGroups?: Pos
     fillPrice: group.netPrice,
     entryPrice,
     exitPrice: group.isClosing ? group.netPrice : null,
+    entryTime,
+    exitTime,
     time: group.time ? new Date(group.time).toLocaleString() : "",
   };
 }
@@ -479,6 +553,31 @@ function blotterShareData(t: BlotterTrade): SharePnlData {
       exitPrice = totalQty > 0 ? totalVal / totalQty : null;
     }
   }
+  // Derive entry and exit times from executions
+  let entryTime: string | null = null;
+  let exitTime: string | null = null;
+  if (t.executions.length >= 2) {
+    const firstSide = t.executions[0].side;
+    const openExecs = t.executions.filter((e) => e.side === firstSide);
+    const closeExecs = t.executions.filter((e) => e.side !== firstSide);
+    if (openExecs.length > 0 && openExecs[0].time) {
+      // Use earliest opening execution time
+      entryTime = openExecs.reduce((earliest, e) => {
+        if (!e.time) return earliest;
+        if (!earliest) return e.time;
+        return Date.parse(e.time) < Date.parse(earliest) ? e.time : earliest;
+      }, null as string | null);
+    }
+    if (closeExecs.length > 0 && closeExecs[closeExecs.length - 1].time) {
+      // Use latest closing execution time
+      exitTime = closeExecs.reduce((latest, e) => {
+        if (!e.time) return latest;
+        if (!latest) return e.time;
+        return Date.parse(e.time) > Date.parse(latest) ? e.time : latest;
+      }, null as string | null);
+    }
+  }
+
   return {
     description: t.contract_desc || t.symbol,
     pnl: t.realized_pnl,
@@ -487,6 +586,8 @@ function blotterShareData(t: BlotterTrade): SharePnlData {
     fillPrice: lastExec?.price ?? null,
     entryPrice,
     exitPrice,
+    entryTime,
+    exitTime,
     time: lastExec?.time ? new Date(lastExec.time).toLocaleString() : "",
   };
 }
@@ -1324,10 +1425,10 @@ function OrdersSections({
     setCancelTarget(null);
   }, [cancelTarget, requestCancel]);
 
-  const handleModify = useCallback(async (newPrice: number, outsideRth?: boolean) => {
+  const handleModify = useCallback(async (request: ModifyOrderRequest) => {
     if (!modifyTarget) return;
     setActionLoading(true);
-    await requestModify(modifyTarget, newPrice, outsideRth);
+    await requestModify(modifyTarget, request);
     setActionLoading(false);
     setModifyTarget(null);
   }, [modifyTarget, requestModify]);
@@ -1676,7 +1777,7 @@ function OrdersSections({
                         <td>{new Date(group.time).toLocaleTimeString()}</td>
                         <td>
                           {group.isClosing && group.totalPnL != null && (
-                            <SharePnlButton data={positionGroupShareData(group, positionGroups)} />
+                            <SharePnlButton data={positionGroupShareData(group, positionGroups, portfolio?.positions)} />
                           )}
                         </td>
                       </tr>
