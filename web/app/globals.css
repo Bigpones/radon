@@ -2653,6 +2653,66 @@ tr.leg-row td {
 /* New order section at top */
 .new-order-section-top { margin-bottom: 16px; }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   UNIFIED ORDER COMPONENTS (web/lib/order/)
+   Reusable components for consistent order experience across the app
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* OrderPriceStrip — BID/MID/ASK/SPREAD horizontal strip */
+.order-price-strip { display: flex; gap: 16px; padding: 10px 12px; background: var(--bg-panel); border: 1px solid var(--line-grid); margin-bottom: 12px; }
+.order-price-strip-compact { display: flex; gap: 12px; padding: 8px 10px; background: var(--bg-panel); border: 1px solid var(--line-grid); margin-bottom: 8px; }
+.order-price-item { display: flex; flex-direction: column; gap: 2px; }
+.order-price-item.order-price-spread { margin-left: auto; }
+.order-price-label { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.05em; color: var(--text-muted); text-transform: uppercase; }
+.order-price-value { font-family: var(--font-mono); font-size: 14px; font-weight: 500; color: var(--text-primary); }
+.order-price-strip-compact .order-price-value { font-size: 12px; }
+.order-price-bid { color: var(--positive); }
+.order-price-ask { color: var(--negative); }
+.order-price-pct { font-size: 11px; color: var(--text-muted); font-weight: 400; }
+
+/* OrderLegPills — Colored leg pills */
+.order-leg-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.order-leg-pills-compact { display: flex; flex-wrap: wrap; gap: 4px; }
+.order-leg-pill { display: flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; font-family: var(--font-mono); font-size: 11px; }
+.order-leg-pills-compact .order-leg-pill { padding: 3px 8px; font-size: 10px; }
+.order-leg-pill-long { background: rgba(34, 197, 94, 0.1); }
+.order-leg-pill-short { background: rgba(239, 68, 68, 0.1); }
+.order-leg-dir { font-weight: 600; }
+.order-leg-pill-long .order-leg-dir { color: var(--positive); }
+.order-leg-pill-short .order-leg-dir { color: var(--negative); }
+.order-leg-strike { color: var(--text-primary); }
+.order-leg-price { color: var(--text-muted); margin-left: 4px; }
+
+/* OrderPriceButtons — Quick-fill BID/MID/ASK */
+.order-price-buttons { display: flex; gap: 6px; margin-top: 6px; }
+.order-price-btn-bid:not(:disabled) { color: var(--positive); }
+.order-price-btn-ask:not(:disabled) { color: var(--negative); }
+
+/* OrderActionToggle — BUY/SELL toggle */
+.order-action-toggle { display: flex; gap: 6px; }
+
+/* OrderTifSelector — DAY/GTC toggle */
+.order-tif-selector { display: flex; gap: 6px; }
+
+/* OrderQuantityInput, OrderPriceInput */
+.order-price-input-row { display: flex; align-items: center; gap: 4px; }
+.order-price-prefix { font-family: var(--font-mono); font-size: 14px; color: var(--text-muted); }
+.order-price-input { flex: 1; width: 100%; background: var(--bg-base); border: 1px solid var(--border-dim); color: var(--text-primary); font-family: var(--font-mono); font-size: 14px; padding: 8px 10px; outline: none; transition: border-color 200ms ease-in-out; }
+.order-price-input:focus { border-color: var(--border-focus); }
+.order-input-error { border-color: var(--negative); }
+.order-field-error { font-family: var(--font-mono); font-size: 10px; color: var(--negative); margin-top: 4px; }
+
+/* OrderConfirmSummary — Confirmation panel */
+.order-confirm-summary { background: var(--bg-panel); border: 1px solid var(--line-grid); border-radius: 4px; padding: 10px 12px; margin-bottom: 12px; }
+.order-confirm-summary-info { background: rgba(5, 173, 152, 0.08); border-color: var(--signal-core); }
+.order-confirm-description { font-family: var(--font-mono); font-size: 12px; color: var(--text-primary); margin-bottom: 6px; }
+.order-confirm-metrics { display: flex; flex-wrap: wrap; gap: 12px; font-family: var(--font-mono); font-size: 11px; }
+.order-confirm-metric { display: flex; gap: 4px; }
+.order-confirm-metric-label { color: var(--text-muted); }
+.order-confirm-metric-value { color: var(--text-primary); }
+.order-confirm-positive { color: var(--positive); }
+.order-confirm-negative { color: var(--negative); }
+
 /* Existing orders in ticker detail */
 .existing-orders-section { margin-bottom: 16px; }
 .existing-orders-title { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin-bottom: 8px; }

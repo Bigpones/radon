@@ -24,15 +24,15 @@
     "has_earnings_history": true
   },
   "stock_state": {
-    "close": "252.53",
-    "high": "254.94",
-    "low": "251.38",
-    "open": "252.72",
-    "volume": 6584873,
-    "market_time": "regular",
-    "tape_time": "2026-03-18T15:14:55Z",
-    "total_volume": 6870337,
-    "prev_close": "252.49"
+    "close": "250",
+    "high": "250.5",
+    "low": "249",
+    "open": "249.94",
+    "volume": 12435657,
+    "tape_time": "2026-03-18T23:03:18Z",
+    "market_time": "postmarket",
+    "total_volume": 35736537,
+    "prev_close": "249.94"
   },
   "exa_profile": {
     "ceo": "Timothy Donald Cook",
