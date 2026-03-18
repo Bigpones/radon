@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { readDataFile } from "@tools/data-reader";
 import { OrdersData } from "@tools/schemas/ib-orders";
 import { radonFetch } from "@/lib/radonApi";
+import { checkNakedShortRisk } from "@/lib/nakedShortGuard";
+import type { NakedShortPortfolio } from "@/lib/nakedShortGuard";
 
 export const runtime = "nodejs";
 
@@ -67,6 +69,20 @@ export async function POST(request: Request): Promise<Response> {
         { error: "Combo orders require 'legs' array with 2+ entries" },
         { status: 400 },
       );
+    }
+
+    // Naked short guard — block orders that would create naked short exposure
+    const portfolioResult = await readDataFile("data/portfolio.json");
+    if (portfolioResult.ok) {
+      const guard = checkNakedShortRisk(body, portfolioResult.data as NakedShortPortfolio);
+      if (!guard.allowed) {
+        return NextResponse.json(
+          { error: `Naked short blocked: ${guard.reason}` },
+          { status: 403 },
+        );
+      }
+    } else {
+      console.warn("[orders/place] Could not load portfolio for naked short guard:", portfolioResult.error);
     }
 
     const orderPayload = {

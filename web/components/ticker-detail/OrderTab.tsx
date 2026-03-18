@@ -1,13 +1,15 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 import type { OpenOrder, PortfolioData, PortfolioPosition } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { optionKey } from "@/lib/pricesProtocol";
 import { useOrderActions } from "@/lib/OrderActionsContext";
 import { fmtPrice, legPriceKey } from "@/lib/positionUtils";
 import ModifyOrderModal from "@/components/ModifyOrderModal";
+import type { ModifyOrderRequest } from "@/lib/orderModify";
+import { checkNakedShortRisk, type NakedShortPortfolio, type OrderPayload } from "@/lib/nakedShortGuard";
 
 type OrderTabProps = {
   ticker: string;
@@ -18,6 +20,26 @@ type OrderTabProps = {
   /** Resolved price data (option-level for single-leg options, underlying otherwise) */
   tickerPriceData?: PriceData | null;
 };
+
+/* ─── Convert PortfolioData to NakedShortPortfolio ─── */
+
+function toNakedShortPortfolio(portfolio: PortfolioData | null | undefined): NakedShortPortfolio {
+  if (!portfolio) return { positions: [] };
+  return {
+    positions: portfolio.positions.map((p) => ({
+      ticker: p.ticker,
+      structure_type: p.structure_type,
+      contracts: p.contracts,
+      direction: p.direction,
+      legs: p.legs.map((l) => ({
+        direction: l.direction,
+        type: l.type,
+        contracts: l.contracts,
+        strike: l.strike,
+      })),
+    })),
+  };
+}
 
 /* ─── Resolve price data for an order's contract ─── */
 
@@ -195,11 +217,13 @@ type OrderAction = "BUY" | "SELL";
 function NewOrderForm({
   ticker,
   position,
+  portfolio,
   tickerPriceData,
   onOrderPlaced,
 }: {
   ticker: string;
   position: PortfolioPosition | null;
+  portfolio?: PortfolioData | null;
   tickerPriceData?: PriceData | null;
   onOrderPlaced?: () => void;
 }) {
@@ -224,6 +248,23 @@ function NewOrderForm({
   const parsedPrice = parseFloat(limitPrice);
   const isValid = !isNaN(parsedQty) && parsedQty > 0 && !isNaN(parsedPrice) && parsedPrice > 0;
 
+  // Naked short guard — reactive warning when action is SELL
+  const nakedShortWarning = useMemo(() => {
+    if (action !== "SELL") return null;
+    const qty = !isNaN(parsedQty) && parsedQty > 0 ? parsedQty : 1;
+    const payload = buildSingleLegOrderPayload({
+      ticker,
+      action: "SELL",
+      quantity: qty,
+      limitPrice: 1, // price doesn't matter for guard
+      tif: "DAY",
+      position,
+    });
+    const guardPortfolio = toNakedShortPortfolio(portfolio);
+    const result = checkNakedShortRisk(payload as OrderPayload, guardPortfolio);
+    return result.allowed ? null : result.reason ?? null;
+  }, [action, parsedQty, ticker, position, portfolio]);
+
   const handlePlace = useCallback(async () => {
     if (!confirmStep) {
       setConfirmStep(true);
@@ -243,6 +284,16 @@ function NewOrderForm({
         tif,
         position,
       });
+
+      // Final naked short guard check before submission
+      const guardPortfolio = toNakedShortPortfolio(portfolio);
+      const guardResult = checkNakedShortRisk(payload as OrderPayload, guardPortfolio);
+      if (!guardResult.allowed) {
+        setError(guardResult.reason ?? "Order blocked: naked short exposure");
+        setLoading(false);
+        return;
+      }
+
       const res = await fetch("/api/orders/place", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -261,7 +312,7 @@ function NewOrderForm({
     } finally {
       setLoading(false);
     }
-  }, [confirmStep, ticker, action, parsedQty, parsedPrice, tif, position, onOrderPlaced]);
+  }, [confirmStep, ticker, action, parsedQty, parsedPrice, tif, position, portfolio, onOrderPlaced]);
 
   return (
     <div className="order-form">
@@ -325,6 +376,13 @@ function NewOrderForm({
         </div>
       </div>
 
+      {nakedShortWarning && (
+        <div className="order-error" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <AlertTriangle size={14} />
+          <span>{nakedShortWarning}</span>
+        </div>
+      )}
+
       {error && <div className="order-error">{error}</div>}
       {success && <div className="order-success">{success}</div>}
 
@@ -335,13 +393,13 @@ function NewOrderForm({
             <button
               className={`btn-primary ${action === "SELL" ? "btn-danger" : ""}`}
               onClick={handlePlace}
-              disabled={!isValid || loading}
+              disabled={!isValid || loading || !!nakedShortWarning}
             >
               {loading ? "Placing..." : `Confirm: ${action} ${parsedQty} ${ticker} @ ${fmtPrice(parsedPrice)}`}
             </button>
           </div>
         ) : (
-          <button className="btn-primary" onClick={handlePlace} disabled={!isValid || loading} style={{ width: "100%" }}>
+          <button className="btn-primary" onClick={handlePlace} disabled={!isValid || loading || !!nakedShortWarning} style={{ width: "100%" }}>
             Place Order
           </button>
         )}
@@ -355,11 +413,13 @@ function NewOrderForm({
 function ComboOrderForm({
   ticker,
   position,
+  portfolio,
   prices,
   onOrderPlaced,
 }: {
   ticker: string;
   position: PortfolioPosition;
+  portfolio?: PortfolioData | null;
   prices: Record<string, PriceData>;
   onOrderPlaced?: () => void;
 }) {
@@ -433,6 +493,30 @@ function ComboOrderForm({
   const parsedPrice = parseFloat(limitPrice);
   const isValid = !isNaN(parsedQty) && parsedQty > 0 && !isNaN(parsedPrice) && parsedPrice > 0;
 
+  // Naked short guard — reactive warning for combo orders
+  const nakedShortWarning = useMemo(() => {
+    if (action !== "SELL") return null;
+    const qty = !isNaN(parsedQty) && parsedQty > 0 ? parsedQty : 1;
+    const legs = legsWithActions.map((leg) => ({
+      expiry: leg.expiry,
+      strike: leg.strike!,
+      right: leg.right,
+      action: leg.legAction,
+      ratio: 1,
+    }));
+    const payload: OrderPayload = {
+      type: "combo",
+      symbol: ticker,
+      action: "SELL",
+      quantity: qty,
+      limitPrice: 1,
+      legs,
+    };
+    const guardPortfolio = toNakedShortPortfolio(portfolio);
+    const result = checkNakedShortRisk(payload, guardPortfolio);
+    return result.allowed ? null : result.reason ?? null;
+  }, [action, parsedQty, ticker, legsWithActions, portfolio]);
+
   const handlePlace = useCallback(async () => {
     if (!confirmStep) {
       setConfirmStep(true);
@@ -451,6 +535,23 @@ function ComboOrderForm({
         action: leg.legAction,
         ratio: 1,
       }));
+
+      // Final naked short guard check before submission
+      const guardPortfolio = toNakedShortPortfolio(portfolio);
+      const comboPayload: OrderPayload = {
+        type: "combo",
+        symbol: ticker,
+        action,
+        quantity: parsedQty,
+        limitPrice: parsedPrice,
+        legs,
+      };
+      const guardResult = checkNakedShortRisk(comboPayload, guardPortfolio);
+      if (!guardResult.allowed) {
+        setError(guardResult.reason ?? "Order blocked: naked short exposure");
+        setLoading(false);
+        return;
+      }
 
       const res = await fetch("/api/orders/place", {
         method: "POST",
@@ -478,7 +579,7 @@ function ComboOrderForm({
     } finally {
       setLoading(false);
     }
-  }, [confirmStep, ticker, action, parsedQty, parsedPrice, tif, legsWithActions, position.structure, onOrderPlaced]);
+  }, [confirmStep, ticker, action, parsedQty, parsedPrice, tif, legsWithActions, position.structure, portfolio, onOrderPlaced]);
 
   // Calculate spread width for display
   const spreadWidth = netPrices.bid != null && netPrices.ask != null 
@@ -605,6 +706,13 @@ function ComboOrderForm({
         </div>
       </div>
 
+      {nakedShortWarning && (
+        <div className="order-error" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <AlertTriangle size={14} />
+          <span>{nakedShortWarning}</span>
+        </div>
+      )}
+
       {error && <div className="order-error">{error}</div>}
       {success && <div className="order-success">{success}</div>}
 
@@ -616,13 +724,13 @@ function ComboOrderForm({
             <button
               className={`btn-primary ${action === "SELL" ? "btn-danger" : ""}`}
               onClick={handlePlace}
-              disabled={!isValid || loading}
+              disabled={!isValid || loading || !!nakedShortWarning}
             >
               {loading ? "Placing..." : `Confirm: ${action} ${parsedQty}x ${position.structure} @ ${fmtPrice(parsedPrice)}`}
             </button>
           </div>
         ) : (
-          <button className="btn-primary" onClick={handlePlace} disabled={!isValid || loading} style={{ width: "100%" }}>
+          <button className="btn-primary" onClick={handlePlace} disabled={!isValid || loading || !!nakedShortWarning} style={{ width: "100%" }}>
             Place Combo Order
           </button>
         )}
@@ -640,10 +748,10 @@ export default function OrderTab({ ticker, position, portfolio, prices, openOrde
   const [modifyTarget, setModifyTarget] = useState<OpenOrder | null>(null);
   const [modifyLoading, setModifyLoading] = useState(false);
 
-  const handleModifyConfirm = useCallback(async (newPrice: number, outsideRth?: boolean) => {
+  const handleModifyConfirm = useCallback(async (request: ModifyOrderRequest) => {
     if (!modifyTarget) return;
     setModifyLoading(true);
-    await requestModify(modifyTarget, newPrice, outsideRth);
+    await requestModify(modifyTarget, request);
     setModifyLoading(false);
     setModifyTarget(null);
   }, [modifyTarget, requestModify]);
@@ -665,7 +773,7 @@ export default function OrderTab({ ticker, position, portfolio, prices, openOrde
         {isCombo && (
           <div className="new-order-section-top">
             <div className="existing-orders-title">Close Position</div>
-            <ComboOrderForm ticker={ticker} position={position!} prices={prices} />
+            <ComboOrderForm ticker={ticker} position={position!} portfolio={portfolio} prices={prices} />
           </div>
         )}
 
@@ -673,7 +781,7 @@ export default function OrderTab({ ticker, position, portfolio, prices, openOrde
         {!isCombo && (
           <div className="new-order-section-top">
             <div className="existing-orders-title">{position ? "Close Position" : "New Order"}</div>
-            <NewOrderForm ticker={ticker} position={position} tickerPriceData={tickerPriceData} />
+            <NewOrderForm ticker={ticker} position={position} portfolio={portfolio} tickerPriceData={tickerPriceData} />
           </div>
         )}
 

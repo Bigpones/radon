@@ -24,15 +24,15 @@
     "has_earnings_history": true
   },
   "stock_state": {
-    "close": "92.45",
-    "high": "100.06",
-    "low": "91.23",
-    "open": "95.2",
-    "volume": 12655734,
-    "tape_time": "2026-03-18T19:33:43Z",
-    "market_time": "regular",
-    "total_volume": 13918792,
-    "prev_close": "95.89"
+    "close": "91.85",
+    "high": "92.87",
+    "low": "90.04",
+    "open": "92.63",
+    "volume": 442438,
+    "tape_time": "2026-03-18T23:05:05Z",
+    "market_time": "postmarket",
+    "total_volume": 15314182,
+    "prev_close": "92.63"
   },
   "exa_profile": {
     "ceo": "Chih Hsiang Lin",

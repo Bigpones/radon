@@ -19,6 +19,7 @@ import {
   findAtmStrike,
   getVisibleStrikes,
 } from "@/lib/optionsChainUtils";
+import { OrderPriceStrip, OrderLegPills, type OrderLeg as UnifiedOrderLeg } from "@/lib/order";
 
 /* ─── Types ─── */
 
@@ -282,6 +283,41 @@ function OrderBuilder({
     }
   }, [confirmStep, ticker, legs, parsedPrice, isDebit, normalizedOrder, totalQty, tif, structure]);
 
+  // Convert chain legs to unified OrderLeg format for pills
+  const unifiedLegs: UnifiedOrderLeg[] = useMemo(() => {
+    return legs.map((leg) => {
+      const key = optionKey({
+        symbol: ticker,
+        expiry: leg.expiry,
+        strike: leg.strike,
+        right: leg.right,
+      });
+      const pd = prices[key];
+      return {
+        id: leg.id,
+        action: leg.action,
+        direction: leg.action === "BUY" ? "LONG" : "SHORT" as const,
+        strike: leg.strike,
+        type: leg.right === "C" ? "Call" : "Put" as const,
+        expiry: leg.expiry,
+        quantity: leg.quantity,
+        bid: pd?.bid ?? null,
+        ask: pd?.ask ?? null,
+      };
+    });
+  }, [legs, prices, ticker]);
+
+  // OrderPriceStrip prices
+  const stripPrices = useMemo(() => {
+    const { bid, ask, mid } = netPrices;
+    if (bid == null || ask == null || mid == null) {
+      return { bid: null, mid: null, ask: null, spread: null, spreadPct: null, available: false };
+    }
+    const spread = ask - bid;
+    const spreadPct = mid > 0 ? (spread / mid) * 100 : null;
+    return { bid, mid, ask, spread, spreadPct, available: true };
+  }, [netPrices]);
+
   if (legs.length === 0) return null;
 
   return (
@@ -314,7 +350,19 @@ function OrderBuilder({
         </button>
       </div>
 
-      {/* Legs list */}
+      {/* Price strip for combo orders */}
+      {isCombo && stripPrices.available && (
+        <OrderPriceStrip prices={stripPrices} />
+      )}
+
+      {/* Leg pills for combo, detailed list for single */}
+      {isCombo ? (
+        <div style={{ marginBottom: "12px" }}>
+          <OrderLegPills legs={unifiedLegs} />
+        </div>
+      ) : null}
+
+      {/* Legs list (editable) */}
       <div className="order-builder-legs">
         {legs.map((leg) => {
           const key = optionKey({

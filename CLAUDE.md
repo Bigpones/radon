@@ -30,11 +30,14 @@
 
 Brand spec: `docs/brand-identity.md`
 
-## ⛔ Three Gates — Sequential, No Exceptions
+## ⛔ Four Gates — Mandatory, Sequential, No Exceptions
 
-1. **CONVEXITY**: Gain ≥ 2× loss. Defined-risk only.
-2. **EDGE**: Specific dark pool/OTC signal not yet in price.
-3. **RISK MGMT**: Fractional Kelly. Hard cap 2.5% bankroll/position.
+```
+GATE 1 — CONVEXITY      : Potential gain ≥ 2× potential loss. Defined-risk only (long options, verticals).
+GATE 2 — EDGE           : Specific, data-backed dark pool/OTC signal that hasn't moved price yet.
+GATE 3 — RISK MGMT      : Fractional Kelly sizing. Hard cap: 2.5% of bankroll per position.
+GATE 4 — NO NAKED SHORTS: Never naked short stock, calls, futures, or bonds. Every short call must be fully covered by long shares (1 contract = 100 shares). Violation = immediate cancel.
+```
 
 **Any gate fails → stop. No rationalization.**
 
@@ -94,7 +97,23 @@ Tests: `regime-market-closed-values.test.ts`, `regime-market-closed-eod.spec.ts`
 | RVOL | `intradayRvol - data.realized_vol` | `-0.01% intraday ↓` |
 | COR1M | `data.cor1m_5d_change` (always visible) | `+6.88 pts 5d chg ↑` |
 
-Arrow always **right** of text. CSS: `display: flex; gap: 4px` in `.regime-strip-day-chg`. Tests: `regime-day-change.test.ts` (12), `regime-day-change.spec.ts` (3).
+**Tests**: `web/tests/regime-market-closed-values.test.ts`, `web/e2e/regime-market-closed-eod.spec.ts`, `web/e2e/regime-cor1m.spec.ts`
+
+### RegimePanel Day Change Indicators
+
+During market hours (`market_open === true`), the regime strip shows day change for live metrics:
+
+| Metric | Component | Source | Display |
+|--------|-----------|--------|---------|
+| VIX | `DayChange` | WS `last` vs WS `close` | `+1.50 (+6.25%) ↑` |
+| VVIX | `DayChange` | WS `last` vs WS `close` | `-5.00 (-4.35%) ↓` |
+| SPY | `DayChange` | WS `last` vs WS `close` | `$+0.47 (+0.07%) ↑` |
+| RVOL | `PointChange` | `intradayRvol - data.realized_vol` | `-0.01% intraday ↓` |
+| COR1M | strip value from WS `last` when available, otherwise `data.cor1m`; `PointChange` remains `data.cor1m_5d_change` | `37.25` + `-0.50 pts 5d chg ↓` |
+
+**Arrow placement**: Arrow icon is always to the **right** of the change text (not left, not above). Uses `display: flex` with `gap: 4px` in `.regime-strip-day-chg`.
+
+**Tests**: `web/tests/regime-day-change.test.ts` (12 unit), `web/e2e/regime-day-change.spec.ts` (3 E2E)
 
 ### Regime History Charts
 
@@ -158,6 +177,31 @@ Startup: check port 4001, restart if needed, poll 45s. Runtime: IB endpoints det
 curl http://localhost:8321/health
 # Returns: ib_gateway, ib_pool (sync/orders/data), uw
 ```
+
+## Naked Short Protection (Gate 4)
+
+**Hard rule — no exceptions.** The system must never allow naked short exposure.
+
+| Scenario | Rule | Action |
+|----------|------|--------|
+| SELL stock, no long shares | Naked short stock | BLOCK + cancel |
+| SELL call, no long shares | Naked short call | BLOCK + cancel |
+| SELL N call contracts, shares < N × 100 | Short a tail | BLOCK + cancel |
+| SELL put (cash-secured) | Allowed | ALLOW |
+| Spread (BUY+SELL legs) | Covered by long leg | ALLOW |
+| BUY anything | No short exposure | ALLOW |
+
+**Enforcement layers:**
+1. **UI pre-submission** — `checkNakedShortRisk()` in `OrderTab.tsx` blocks form submission
+2. **API gate** — `orders/place/route.ts` returns 403 if guard fails
+3. **Post-sync audit** — `naked_short_audit.py` runs after every `ib_sync`, cancels violating open orders
+
+**"Short a tail"**: Selling more call contracts than shares can cover. Example: 500 shares of MSFT + selling 10 call contracts (1000 shares worth) = 5 contracts uncovered = short a tail.
+
+**Implementation**: `web/lib/nakedShortGuard.ts` (shared guard), `scripts/naked_short_audit.py` (audit + cancel)
+**Tests**: `web/tests/naked-short-guard.test.ts`, `scripts/tests/test_naked_short_audit.py`
+
+---
 
 ## High-Throughput Architecture
 
@@ -376,7 +420,7 @@ Output   : reports/{ticker}-evaluation-{YYYY-MM-DD}.html
 Reference: reports/goog-evaluation-2026-03-04.html
 ```
 
-10 sections: Header+gates | 6 Summary Metrics | Milestone pass/fail | Dark Pool | Options Flow | Context | Structure+Kelly | Trade Spec | Thesis+Risk | Three Gates table.
+**10 required sections:** Header + gate status | 6 Summary Metrics | Milestone pass/fail | Dark Pool Flow | Options Flow | Context (seasonality + ratings) | Structure & Kelly | Trade Spec (exact order) | Thesis & Risk | Four Gates table.
 
 Workflow: Complete M1-6 → Generate HTML → User confirmation → Execute via IB → Update `trade_log.json`, `portfolio.json`, `docs/status.md`.
 
