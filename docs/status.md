@@ -1,9 +1,10 @@
 # Status & Decision Log
 
 ## Last Updated
-2026-03-18T13:00:00-07:00
+2026-03-18T16:00:00-07:00
 
 ## Recent Commits
+- 2026-03-18 — **ui: Order entry UX improvements.** Form now appears ABOVE open orders (visible without scrolling). Added spread price strip showing BID/MID/ASK/SPREAD at top of combo form. Replaced leg list with compact colored pills (+/− prefixes, green/red backgrounds). 53 order tests.
 - 2026-03-18 — **feat: Add input validation for order placement.** API now rejects zero/negative quantity and limitPrice before sending to IB. Prevents IB errors and provides clearer user feedback. 4 new validation tests.
 - 2026-03-18 — **fix: Natural market bid/ask in ALL combo order forms.** Extended fix to ComboOrderForm (OrderTab.tsx) and ModifyOrderModal BAG resolution. Same bug as computeNetOptionQuote — using sign * bid/ask produces mid-mid instead of true marketable spread. Now: BUY legs pay ASK/receive BID, SELL legs receive BID/pay ASK. **101 order tests** (93 passed, 8 skipped).
 - 2026-03-18 — **fix: Correct natural market bid/ask for combo orders + intraday DP interpolation.** `computeNetOptionQuote` was computing mid-to-mid spread instead of true marketable bid/ask. Now correctly calculates: BUY spread = pay ASK on long legs, receive BID on short legs; SELL spread = receive BID on long legs, pay ASK on short legs. Verified end-to-end in options chain UI (bear call spread shows BID < MID < ASK). Also added intraday dark pool interpolation for partial-day data. **95 new order tests** (44 reliability, 25 E2E, 26 unit). `computeNetOptionQuote` was computing mid-to-mid spread instead of true marketable bid/ask. Now correctly calculates: BUY spread = pay ASK on long legs, receive BID on short legs; SELL spread = receive BID on long legs, pay ASK on short legs. Verified end-to-end in options chain UI (bear call spread shows BID < MID < ASK). Also added intraday dark pool interpolation for partial-day data. **95 new order tests** (44 reliability, 25 E2E, 26 unit).
