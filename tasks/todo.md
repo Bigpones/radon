@@ -2247,3 +2247,21 @@ Composite key scheme: stock prices keyed by ticker (`"AAPL"`), option prices by 
 - The combo-order guardrails were already ported to Codex surfaces.
 - The actual parity gap was Claude’s stronger browser-verification and coverage wording, which is now mirrored in Codex-native form under `AGENTS.md`/`.pi/AGENTS.md`.
 - The only meaningful capability caveat is `chrome-cdp` availability: Codex supports it in this session, but unlike markdown policy, skill availability is runtime-dependent, so the Codex docs now explicitly require Playwright fallback instead of assuming `chrome-cdp` always exists.
+
+## 2026-03-18 — modify-order resting quote overlay
+
+Dependency graph
+- T1 root-cause trace (`depends_on: []`)
+- T2 add failing regressions (`depends_on: [T1]`)
+- T3 overlay resting limit into modify quote model (`depends_on: [T2]`)
+- T4 verify in tests and chrome-cdp (`depends_on: [T3]`)
+
+- [x] T1 Trace `/orders` modify telemetry from IB quote stream and open-order sync to the modal
+- [x] T2 Add regression coverage for resting sell/buy limits in the modify quote model
+- [x] T3 Fix modify modal telemetry so it reflects the actionable best bid/ask including the resting order
+- [x] T4 Verify focused unit, Playwright, and live browser behavior; record review and lessons
+
+### Review
+- Root cause: `/api/orders` carries the resting limit price, while IB live quotes arrive separately through the WebSocket price stream; `ModifyOrderModal` displayed only the raw streamed bid/ask and never overlaid the user’s resting order onto the shown book.
+- Fix: `web/lib/modifyOrderQuote.ts` now applies the resting order to the effective bid/ask model, and `ModifyOrderModal` uses that adjusted quote for telemetry and reference-price actions.
+- Verification: `npx vitest run web/tests/modify-order-quote.test.ts`; `cd web && npx playwright test e2e/modify-order-resting-limit.spec.ts e2e/modify-order-spread-telemetry.spec.ts --config playwright.no-server.config.ts`; Chrome CDP verification on a mocked `/orders` page confirmed a sell order at `$5.05` renders `ASK $5.05` when the raw streamed ask is `$5.10`.

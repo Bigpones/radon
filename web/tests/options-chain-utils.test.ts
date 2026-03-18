@@ -247,7 +247,8 @@ describe("computeNetPrice", () => {
     expect(net).toBeCloseTo(5.5, 4);
   });
 
-  it("keeps BID <= ASK when both bid/ask should remain ordered after signed combination", () => {
+  it("computes natural market bid/ask for risk reversal (BUY call, SELL put)", () => {
+    // Risk reversal: BUY call, SELL put → credit when opened
     const legs = [
       makeLeg({ strike: 200, right: "C", action: "BUY" }),
       makeLeg({ strike: 190, right: "P", action: "SELL" }),
@@ -257,8 +258,11 @@ describe("computeNetPrice", () => {
       AAPL_20260417_190_P: makePriceData(100.0, 102.0),
     };
     const net = computeNetOptionQuote(legs, prices, "AAPL");
-    expect(net.bid).toBe(90.0);
-    expect(net.ask).toBe(90.0);
+    // To BUY combo: pay call ask (12), receive put bid (100) → net = 12 - 100 = -88 (credit)
+    // To SELL combo: receive call bid (10), pay put ask (102) → net = 10 - 102 = -92 (debit)
+    // Natural market: bid=88, ask=92, mid=90
+    expect(net.bid).toBe(88.0);
+    expect(net.ask).toBe(92.0);
     expect(net.mid).toBe(90.0);
   });
 
@@ -315,19 +319,26 @@ describe("computeNetPrice", () => {
     expect(net.mid).toBeCloseTo(1.46, 2);
   });
 
-  it("prices ratio combos from normalized leg quantities instead of raw leg size", () => {
+  it("prices ratio combos from normalized leg quantities with natural market", () => {
+    // Ratio: SELL 1x 85P, BUY 2x 90C (normalized from 25:50)
     const normalized = normalizeComboOrder([
       makeLeg({ strike: 85, right: "P", action: "SELL", quantity: 25 }),
       makeLeg({ strike: 90, right: "C", action: "BUY", quantity: 50 }),
     ]);
+    expect(normalized.legs[0].quantity).toBe(1); // 85P
+    expect(normalized.legs[1].quantity).toBe(2); // 90C
+
     const net = computeNetOptionQuote(normalized.legs, {
       AAPL_20260417_85_P: makePriceData(5.2, 5.4),
       AAPL_20260417_90_C: makePriceData(2.5, 2.7),
     }, "AAPL");
 
-    expect(net.bid).toBeCloseTo(0.0, 4);
-    expect(net.ask).toBeCloseTo(0.2, 4);
-    expect(net.mid).toBeCloseTo(0.1, 4);
+    // To BUY combo: BUY 2x 90C @ 2.7 (5.4), SELL 1x 85P @ 5.2 = 5.4 - 5.2 = 0.2 debit
+    // To SELL combo: SELL 2x 90C @ 2.5 (5.0), BUY 1x 85P @ 5.4 = 5.0 - 5.4 = -0.4 debit
+    // Natural market: bid=0.2, ask=0.4, mid=0.3
+    expect(net.bid).toBeCloseTo(0.2, 4);
+    expect(net.ask).toBeCloseTo(0.4, 4);
+    expect(net.mid).toBeCloseTo(0.3, 4);
   });
 });
 

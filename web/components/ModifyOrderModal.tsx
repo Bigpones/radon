@@ -7,6 +7,7 @@ import { optionKey } from "@/lib/pricesProtocol";
 import type { ModifyComboLeg, ModifyOrderRequest } from "@/lib/orderModify";
 import Modal from "./Modal";
 import { getQuoteMetrics } from "@/lib/quoteTelemetry";
+import { applyRestingLimitToQuote } from "@/lib/modifyOrderQuote";
 import { fmtPrice, legPriceKey } from "@/lib/positionUtils";
 import { ModifyOrderQuoteTelemetry } from "./QuoteTelemetry";
 
@@ -229,9 +230,18 @@ export default function ModifyOrderModal({ order, loading, prices, portfolio, on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderPermId]);
 
-  const priceData = useMemo(
+  const marketPriceData = useMemo(
     () => (order ? resolveOrderPriceData(order, prices, portfolio) : null),
     [order, prices, portfolio],
+  );
+
+  const priceData = useMemo(
+    () => applyRestingLimitToQuote({
+      priceData: marketPriceData,
+      action: order?.action,
+      limitPrice: order?.limitPrice,
+    }),
+    [marketPriceData, order?.action, order?.limitPrice],
   );
 
   if (!order) return null;

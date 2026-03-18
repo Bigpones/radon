@@ -73,6 +73,10 @@
 4. **Trace combo-order bugs through the full placement path before patching.**
    - Inspect the frontend builder, Next route, FastAPI bridge, and `scripts/ib_place_order.py` so IB semantics are not misdiagnosed as a UI-only issue.
 
+## ⚠️ Credit/Debit Sign Convention — Mandatory
+
+**Preserve the sign throughout the entire display pipeline.** Never use `Math.abs()` or equivalent on option prices/values without explicit approval. Credits must display as negative, debits as positive. This applies to P&L cards, share images, order forms, and all price displays.
+
 ---
 
 ## ⚠️ Data Fetching Priority (ALWAYS follow this order)
@@ -183,6 +187,98 @@ When market is closed, free trade analysis explicitly shows it's using closing p
 - Scripts should import `from utils.market_hours import is_market_open, get_market_status`
 - Include timestamp of data fetch in all analysis output
 - If IB connection unavailable during market hours, fall back to UW/Exa. Yahoo Finance is absolute last resort.
+
+---
+
+## ⚠️ Intraday Dark Pool Interpolation (MANDATORY)
+
+**When evaluating during market hours, today's partial dark pool data MUST be interpolated to estimate full-day values. Always output BOTH actual and interpolated values.**
+
+### Why This Is Required
+
+Comparing today's partial data (e.g., 45% of trading day elapsed) to yesterday's full-day data is apples-to-oranges. A "55% buy ratio" at noon could become 75% by close, or could be masking active distribution.
+
+### How Interpolation Works
+
+**Step 1: Calculate Trading Day Progress**
+```
+Trading Day = 9:30 AM - 4:00 PM ET = 390 minutes
+Progress = Minutes Elapsed / 390
+```
+
+**Step 2: Project Today's Volume to Full Day**
+```
+Projected Volume = Actual Volume / Progress
+Projected Buy = Actual Buy Volume / Progress
+Projected Sell = Actual Sell Volume / Progress
+```
+
+**Step 3: Blend with Prior Days' Pattern**
+Early in the day, today's data is noisy. Blend with prior days, weighting by progress:
+```
+Actual Weight = Progress (e.g., 0.45 at noon)
+Prior Weight = 1 - Progress (e.g., 0.55)
+
+Blended Ratio = (Today's Ratio × Actual Weight) + (Prior 5-Day Avg Ratio × Prior Weight)
+```
+
+**Step 4: Recalculate Aggregate**
+Use interpolated today + actual prior days for aggregate strength calculation.
+
+### Confidence Levels
+
+| Progress | Confidence | Interpretation |
+|----------|------------|----------------|
+| 0-25% | VERY_LOW | Too early — recommend waiting |
+| 25-50% | LOW | Early — significant prior weighting |
+| 50-75% | MEDIUM | Balanced — today's trend emerging |
+| 75-100% | HIGH | Late day — today's data reliable |
+
+### Volume Pace Check
+
+```
+Expected Volume = Avg Prior Volume × Progress
+Volume Pace = Actual Volume / Expected Volume
+```
+
+- Pace >1.1x = Above average (signal MORE reliable)
+- Pace <0.9x = Below average (signal less reliable)
+
+### Output Format (MANDATORY for Intraday Evaluations)
+
+Always show both actual and interpolated when market is open:
+
+```
+TODAY'S FLOW (45% of trading day)
+                      ACTUAL          INTERPOLATED
+  Buy Ratio:           25.4%           53.3%
+  Direction:          DISTRIBUTION   NEUTRAL
+  Strength:            49.3             0.0
+
+AGGREGATE (5-Day)
+                      ACTUAL          INTERPOLATED
+  Buy Ratio:           70.4%           65.3%
+  Strength:            40.7            30.6
+
+Confidence: LOW
+Volume Pace: 1.28x (Above average — signal is real)
+```
+
+### Edge Assessment Rules
+
+1. Use **interpolated values** for edge determination
+2. Flag confidence level in output
+3. If confidence is LOW/VERY_LOW, recommend re-evaluation after 2 PM ET
+4. If volume pace >1.2x AND today's direction opposes prior pattern → likely reversal, not noise
+5. If today shows DISTRIBUTION at above-average volume after 4 days of ACCUMULATION → accumulation cycle has broken
+
+### Implementation
+
+`scripts/fetch_flow.py` automatically:
+- Calculates `trading_day_progress` via `get_trading_day_progress()`
+- Calls `interpolate_intraday_flow()` for today's partial data
+- Returns both `aggregate_actual` and `aggregate_interpolated`
+- Includes `intraday_interpolation` object with full breakdown
 
 ---
 

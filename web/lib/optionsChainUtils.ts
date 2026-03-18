@@ -156,6 +156,21 @@ export type NetOptionQuote = {
   mid: number | null;
 };
 
+/**
+ * Compute the marketable bid/ask/mid for a combo order.
+ *
+ * For a debit spread (net positive, paying to open):
+ *   - BID = what you'd receive if you SELL the spread (hit bids on longs, lift asks on shorts)
+ *   - ASK = what you'd pay if you BUY the spread (lift asks on longs, hit bids on shorts)
+ *
+ * The "natural market" perspective:
+ *   - BUY leg: you pay the ASK to acquire it, receive the BID to liquidate it
+ *   - SELL leg: you receive the BID to open it, pay the ASK to close it
+ *
+ * So for the combo as a whole:
+ *   - netAsk (cost to BUY) = sum of (ask * qty) for BUY legs - sum of (bid * qty) for SELL legs
+ *   - netBid (proceeds to SELL) = sum of (bid * qty) for BUY legs - sum of (ask * qty) for SELL legs
+ */
 export function computeNetOptionQuote(
   legs: OrderLeg[],
   prices: Record<string, PriceData>,
@@ -163,8 +178,11 @@ export function computeNetOptionQuote(
 ): NetOptionQuote {
   if (legs.length === 0) return { bid: null, ask: null, mid: null };
 
-  let netBid = 0;
+  // Cost to BUY the combo = pay ask on BUY legs, receive bid on SELL legs
   let netAsk = 0;
+  // Proceeds to SELL the combo = receive bid on BUY legs, pay ask on SELL legs
+  let netBid = 0;
+
   for (const leg of legs) {
     const key = optionKey({
       symbol: ticker,
@@ -184,11 +202,20 @@ export function computeNetOptionQuote(
       return { bid: null, ask: null, mid: null };
     }
 
-    const sign = leg.action === "BUY" ? 1 : -1;
-    netBid += sign * bid * leg.quantity;
-    netAsk += sign * ask * leg.quantity;
+    if (leg.action === "BUY") {
+      // BUY leg: pay ask to acquire, receive bid to liquidate
+      netAsk += ask * leg.quantity;
+      netBid += bid * leg.quantity;
+    } else {
+      // SELL leg: receive bid to open, pay ask to close
+      netAsk -= bid * leg.quantity;
+      netBid -= ask * leg.quantity;
+    }
   }
 
+  // For debit spreads: netAsk > 0 (pay), netBid > 0 (receive)
+  // For credit spreads: netAsk < 0 (receive credit), netBid < 0 (pay credit)
+  // Normalize: bid < ask (bid is always the worse price for the order placer)
   const absBid = Math.abs(netBid);
   const absAsk = Math.abs(netAsk);
   const bid = Math.min(absBid, absAsk);
