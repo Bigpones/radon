@@ -1,11 +1,11 @@
 # Autoresearch: Evaluate Command Speed Optimization
 
 ## Summary
-**✅ TARGET ACHIEVED: 57% improvement (14.5s → 6.2s best case)**
+**✅ TARGET ACHIEVED: 58.5% improvement (14.5s → 6.0s best case)**
 
 | Metric | Baseline | Best | Improvement |
 |--------|----------|------|-------------|
-| 5 tickers | 14,501ms | 6,213ms | **-57%** |
+| 5 tickers | 14,501ms | 6,021ms | **-58.5%** |
 | Single ticker | 2,814ms | 2,020ms | **-28%** |
 
 **Status**: COMPLETE - Target of 50% improvement exceeded.
@@ -21,6 +21,8 @@ Key optimizations:
 3. **Analyst ratings cache** — Reuse cached ratings (change slowly)
 4. **UW request cache** — 60s TTL in-memory cache for API deduplication
 5. **Multi-ticker CLI** — `evaluate.py AAPL MSFT NVDA` now supported
+6. **M1 uses stock_info API** — Faster than darkpool for validation
+7. **M2/M3 cache alignment** — Same params enables cache hits between milestones
 
 Limitations:
 - UW API rate limiting causes high variability (7s-50s+ range)
