@@ -12,9 +12,9 @@
     "risk_type": "defined",
     "commands": ["scan", "evaluate [TICKER]", "discover"],
     "command_details": {
-      "scan": "Quick dark pool ranking — fetches 5-day dark pool data only, skips options flow for speed. Use to identify candidates.",
-      "evaluate": "Full 7-milestone analysis — dark pool + options flow + OI changes + news/catalysts + analyst ratings. Detects conflicts between dark pool and options flow. Use for trade decisions.",
-      "discover": "Market-wide candidate discovery — scans flow alerts across all tickers, excludes watchlist/portfolio."
+      "scan": "Quick dark pool ranking — fetches 5-day dark pool data only, skips options flow for speed. During market hours, data is automatically interpolated (partial today blended with prior days). Use to identify candidates.",
+      "evaluate": "Full 7-milestone analysis — dark pool + options flow + OI changes + news/catalysts + analyst ratings. During market hours, dark pool data is automatically interpolated. Detects conflicts between dark pool and options flow. Use for trade decisions.",
+      "discover": "Market-wide candidate discovery — scans flow alerts across all tickers, excludes watchlist/portfolio. Dark pool data interpolated during market hours."
     },
     "doc": "docs/strategies.md"
   },

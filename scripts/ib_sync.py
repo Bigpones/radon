@@ -785,9 +785,57 @@ def convert_to_portfolio_format(account: dict, collapsed_positions: list, pnl_da
     total_deployed = sum(p['entry_cost'] for p in collapsed_positions)
     deployed_pct = (total_deployed / bankroll * 100) if bankroll > 0 else 0
 
-    # Add entry_date to positions
+    # Derive entry_date from trade_log and previous portfolio.
+    # Priority: trade_log (most recent BUY/TRADE for matching ticker+structure) →
+    # previous portfolio → today (truly new position).
+    import json as _json
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    # Build date lookup from trade_log (latest trade per ticker+structure key)
+    trade_log_dates: dict[str, str] = {}
+    trade_log_path = PORTFOLIO_PATH.parent / "trade_log.json"
+    if trade_log_path.exists():
+        try:
+            raw_log = _json.loads(trade_log_path.read_text())
+            log_entries = raw_log if isinstance(raw_log, list) else raw_log.get("trades", [])
+            if isinstance(log_entries, list):
+                for entry in log_entries:
+                    t = entry.get("ticker", "")
+                    d = entry.get("date", "")
+                    s = entry.get("structure", "")
+                    if t and d:
+                        trade_log_dates[t] = d
+                        if s:
+                            trade_log_dates[f"{t}|{s}"] = d
+        except Exception:
+            pass
+
+    # Previous portfolio dates (fallback)
+    prev_dates: dict[str, str] = {}
+    if PORTFOLIO_PATH.exists():
+        try:
+            prev = _json.loads(PORTFOLIO_PATH.read_text())
+            for p in prev.get("positions", []):
+                key = f"{p.get('ticker')}|{p.get('structure')}|{p.get('expiry')}"
+                ed = p.get("entry_date", "")
+                # Only carry forward dates that aren't today (avoids inheriting
+                # the old bug where every sync set entry_date = today)
+                if ed and ed != today:
+                    prev_dates[key] = ed
+        except Exception:
+            pass
+
     for pos in collapsed_positions:
-        pos['entry_date'] = datetime.now().strftime("%Y-%m-%d")  # IB doesn't provide this easily
+        key = f"{pos.get('ticker')}|{pos.get('structure')}|{pos.get('expiry')}"
+        ticker = pos.get("ticker", "")
+        structure = pos.get("structure", "")
+        # Try: trade_log by ticker+structure → trade_log by ticker → prev portfolio → today
+        pos['entry_date'] = (
+            trade_log_dates.get(f"{ticker}|{structure}")
+            or trade_log_dates.get(ticker)
+            or prev_dates.get(key)
+            or today
+        )
 
     result = {
         "bankroll": round(bankroll, 2),

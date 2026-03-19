@@ -285,9 +285,9 @@ When market is closed, free trade analysis explicitly shows it's using closing p
 
 ---
 
-## ⚠️ Intraday Dark Pool Interpolation (MANDATORY)
+## ⚠️ Intraday Dark Pool Interpolation (AUTOMATIC)
 
-**When evaluating during market hours, today's partial dark pool data MUST be interpolated to estimate full-day values. Always output BOTH actual and interpolated values.**
+**During market hours, `fetch_flow.py` automatically interpolates today's partial dark pool data.** The `aggregate` field in the response contains interpolated values — edge determination uses these automatically. Raw partial-day values are available in `aggregate_actual` for reference.
 
 ### Why This Is Required
 
@@ -372,8 +372,11 @@ Volume Pace: 1.28x (Above average — signal is real)
 `scripts/fetch_flow.py` automatically:
 - Calculates `trading_day_progress` via `get_trading_day_progress()`
 - Calls `interpolate_intraday_flow()` for today's partial data
-- Returns both `aggregate_actual` and `aggregate_interpolated`
-- Includes `intraday_interpolation` object with full breakdown
+- Sets `aggregate` to interpolated values (used by `scanner.py` and `evaluate.py`)
+- Preserves `aggregate_actual` for reference
+- Includes `intraday_interpolation` object with confidence level and full breakdown
+
+**Key point**: Both `scan` and `evaluate` use interpolated values automatically during market hours. The daily breakdown shows actual partial-day values for today, but the aggregate used for scoring/edge determination is interpolated.
 
 ---
 

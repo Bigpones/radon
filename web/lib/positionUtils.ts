@@ -190,11 +190,10 @@ function todayInET(): string {
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
-/** True when the position was opened today and IB daily P&L is unavailable.
- *  In this case, "today's P&L" should equal total P&L because the position
- *  didn't exist yesterday — yesterday's close is meaningless as a baseline. */
-function isSameDayFallback(pos: PortfolioPosition): boolean {
-  return pos.ib_daily_pnl == null && pos.entry_date === todayInET();
+/** True when the position was opened today. Yesterday's close is
+ *  meaningless as a baseline because the position didn't exist. */
+function isSameDay(pos: PortfolioPosition): boolean {
+  return pos.entry_date === todayInET();
 }
 
 /** Compute real-time market value from WS prices for option positions. */
@@ -217,14 +216,19 @@ function computeRtMv(pos: PortfolioPosition, prices?: Record<string, PriceData>)
 export function getOptionDailyChg(pos: PortfolioPosition, prices?: Record<string, PriceData>): number | null {
   if (pos.structure_type === "Stock" || !prices) return null;
 
-  // Same-day position without IB daily P&L: use entry cost as baseline.
-  // The position didn't exist yesterday, so close-based calc is meaningless.
-  if (isSameDayFallback(pos)) {
+  // Same-day position: the position didn't exist yesterday, so yesterday's
+  // close is meaningless. Use entry cost as both baseline and denominator.
+  // This applies whether or not IB daily P&L is available — for % calc the
+  // denominator must reflect the position's actual starting value (entry cost).
+  if (isSameDay(pos)) {
+    const ec = resolveEntryCost(pos);
+    if (ec === 0) return null;
+    if (pos.ib_daily_pnl != null) {
+      return (pos.ib_daily_pnl / Math.abs(ec)) * 100;
+    }
     const rtMv = computeRtMv(pos, prices);
     const mv = rtMv ?? resolveMarketValue(pos);
     if (mv == null) return null;
-    const ec = resolveEntryCost(pos);
-    if (ec === 0) return null;
     return ((mv - ec) / Math.abs(ec)) * 100;
   }
 
@@ -262,7 +266,7 @@ export function getTodayPnlDollars(pos: PortfolioPosition, prices?: Record<strin
   // Prefer IB's per-position daily P&L (handles intraday additions correctly)
   if (pos.ib_daily_pnl != null) return pos.ib_daily_pnl;
   // Same-day position: Today's P&L = Total P&L (position didn't exist yesterday)
-  if (isSameDayFallback(pos)) {
+  if (isSameDay(pos)) {
     const rtMv = computeRtMv(pos, prices);
     const mv = rtMv ?? resolveMarketValue(pos);
     if (mv == null) return null;

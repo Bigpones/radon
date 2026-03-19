@@ -104,6 +104,8 @@ python3 scripts/fetch_options.py [TICKER]
 
 **Key difference**: `scan` skips options flow for speed. It ranks tickers by dark pool signal strength but does NOT detect conflicts with options flow. Use `evaluate` for trade decisions — it does full 7-milestone analysis including conflict detection.
 
+**Intraday interpolation**: During market hours, all dark pool data is **automatically interpolated**. Today's partial data is blended with prior days' patterns based on trading day progress. The `aggregate` values used for scoring/edge determination are interpolated — not raw partial-day values. Confidence level (LOW/MEDIUM/HIGH) depends on how much of the trading day has elapsed.
+
 **Workflow**: `scan` → identify top candidates → `evaluate [TICKER]` → trade decision
 
 ### Scripts
