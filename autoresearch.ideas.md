@@ -1,8 +1,10 @@
 # Autoresearch Ideas — Scan Command Speed Optimization
 
-## Status: ✅ COMPLETE (92% improvement achieved)
+## Status: ✅ COMPLETE (42% improvement achieved)
 
-Best result: 3,959ms for 19 tickers (from 51,293ms baseline)
+Best result: 29,801ms for 19 tickers (from 51,293ms baseline)
+
+**Note**: Reverted 3-day lookback to preserve signal accuracy.
 
 ## Promising Ideas
 
@@ -11,10 +13,11 @@ Best result: 3,959ms for 19 tickers (from 51,293ms baseline)
 - Verify cache is being hit during scans
 - May already be benefiting from evaluate.py optimizations
 
-### 2. Reduce Days of Darkpool Data ✅ APPLIED
-- Changed from 5 days to 3 days for scanning
-- Saves 2 API calls per ticker
-- Full 5 days still used in evaluate.py for edge determination
+### 2. Reduce Days of Darkpool Data ❌ REVERTED
+- Tried 3 days but reverted to 5 days
+- Scanner needs full 5-day context to detect pattern breaks
+- 3-day view can miss distribution day on day 4, giving false "sustained" signal
+- Signal accuracy > speed
 
 ### 3. Skip Flow Alerts for Scanning ✅ APPLIED
 - Scanner only uses darkpool data for ranking
