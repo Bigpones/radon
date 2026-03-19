@@ -59,9 +59,12 @@ export interface OrderValidation {
 export interface OrderSummary {
   description: string;        // "BUY 44x GOOG Bull Call Spread @ $6.50"
   totalCost: number | null;   // quantity * price * 100 for options
+  totalLabel?: string;        // override for close/debit/credit semantics
   maxGain?: number | null;    // For spreads
   maxLoss?: number | null;    // For spreads
   breakeven?: number | null;  // For options/spreads
+  estimatedPnl?: number | null;
+  estimatedPnlLabel?: string;
 }
 
 /** Props for price-related components */

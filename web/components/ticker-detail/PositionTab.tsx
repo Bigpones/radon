@@ -6,13 +6,15 @@ import type { PortfolioPosition } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import {
   fmtPrice,
-  fmtUsd,
   resolveEntryCost,
   resolveMarketValue,
   getAvgEntry,
   getMultiplier,
   legPriceKey,
+  resolveRealtimePrice,
+  resolveSpreadPriceData,
 } from "@/lib/positionUtils";
+import { fmtSignedPrice, fmtUsd, toneClass } from "@/lib/format";
 
 type PositionTabProps = {
   position: PortfolioPosition;
@@ -48,15 +50,26 @@ function LegsDisclosure({ position, prices }: { position: PortfolioPosition; pri
             {position.legs.map((leg, i) => {
               const key = legPriceKey(position.ticker, position.expiry, leg);
               const legPrice = key ? prices[key] : null;
-              const legMkt = legPrice?.last != null && legPrice.last > 0 ? legPrice.last : (leg.market_price != null ? Math.abs(leg.market_price) : null);
+              const legMktResolved = resolveRealtimePrice(
+                legPrice,
+                leg.market_price != null ? Math.abs(leg.market_price) : null,
+                Boolean(leg.market_price_is_calculated),
+              ).price;
+              const legSign = leg.direction === "LONG" ? 1 : -1;
+              const signedEntry = legSign * (Math.abs(leg.avg_cost) / (leg.type === "Stock" ? 1 : 100));
+              const signedMarket = legMktResolved != null ? legSign * legMktResolved : null;
               return (
                 <tr key={i}>
-                  <td>{leg.direction}</td>
+                  <td className={leg.direction === "LONG" ? "positive" : "negative"}>{leg.direction}</td>
                   <td>{leg.type}</td>
                   <td className="right">{leg.strike != null ? `$${leg.strike}` : "---"}</td>
                   <td className="right">{leg.contracts}</td>
-                  <td className="right">{fmtPrice(Math.abs(leg.avg_cost) / (leg.type === "Stock" ? 1 : 100))}</td>
-                  <td className="right">{legMkt != null ? fmtPrice(legMkt) : "---"}</td>
+                  <td className={`right ${toneClass(signedEntry) !== "neutral" ? toneClass(signedEntry) : ""}`}>
+                    {fmtSignedPrice(signedEntry)}
+                  </td>
+                  <td className={`right ${signedMarket != null && toneClass(signedMarket) !== "neutral" ? toneClass(signedMarket) : ""}`}>
+                    {fmtSignedPrice(signedMarket)}
+                  </td>
                 </tr>
               );
             })}
@@ -69,12 +82,23 @@ function LegsDisclosure({ position, prices }: { position: PortfolioPosition; pri
 
 export default function PositionTab({ position, prices }: PositionTabProps) {
   const isStock = position.structure_type === "Stock";
+  const spreadPriceData = useMemo(
+    () => (!isStock && position.legs.length > 1 ? resolveSpreadPriceData(position.ticker, position, prices) : null),
+    [isStock, position, prices],
+  );
 
   const rtData = useMemo(() => {
     if (isStock) {
       const rt = prices[position.ticker];
       const last = rt?.last != null && rt.last > 0 ? rt.last : null;
       return last != null ? { mv: last * position.contracts, lastPrice: last } : null;
+    }
+    if (spreadPriceData?.last != null) {
+      const mult = getMultiplier(position);
+      return {
+        mv: spreadPriceData.last * position.contracts * mult,
+        lastPrice: spreadPriceData.last,
+      };
     }
     // Options: compute from leg-level prices
     let rtMv = 0;
@@ -87,7 +111,7 @@ export default function PositionTab({ position, prices }: PositionTabProps) {
     }
     const mult = getMultiplier(position);
     return { mv: rtMv, lastPrice: rtMv / (position.contracts * mult) };
-  }, [isStock, prices, position]);
+  }, [isStock, prices, position, spreadPriceData]);
 
   const entryCost = resolveEntryCost(position);
   const avgEntry = getAvgEntry(position);
@@ -95,6 +119,7 @@ export default function PositionTab({ position, prices }: PositionTabProps) {
   const lastPrice = rtData?.lastPrice ?? (mv != null ? mv / (position.contracts * getMultiplier(position)) : null);
   const pnl = mv != null ? mv - entryCost : null;
   const pnlPct = pnl != null && entryCost !== 0 ? (pnl / Math.abs(entryCost)) * 100 : null;
+  const lastPriceLabel = !isStock && position.legs.length > 1 ? "Mark Price" : "Last Price";
 
   return (
     <div className="position-tab">
@@ -117,11 +142,13 @@ export default function PositionTab({ position, prices }: PositionTabProps) {
         </div>
         <div className="pos-stat">
           <span className="pos-stat-label">Avg Entry</span>
-          <span className="pos-stat-value">{fmtPrice(avgEntry)}</span>
+          <span className={`pos-stat-value ${toneClass(avgEntry) !== "neutral" ? toneClass(avgEntry) : ""}`}>{fmtSignedPrice(avgEntry)}</span>
         </div>
         <div className="pos-stat">
-          <span className="pos-stat-label">Last Price</span>
-          <span className="pos-stat-value">{lastPrice != null ? fmtPrice(lastPrice) : "---"}</span>
+          <span className="pos-stat-label">{lastPriceLabel}</span>
+          <span className={`pos-stat-value ${lastPrice != null && toneClass(lastPrice) !== "neutral" ? toneClass(lastPrice) : ""}`}>
+            {fmtSignedPrice(lastPrice)}
+          </span>
         </div>
         <div className="pos-stat">
           <span className="pos-stat-label">Entry Cost</span>
@@ -134,7 +161,7 @@ export default function PositionTab({ position, prices }: PositionTabProps) {
         <div className="pos-stat">
           <span className="pos-stat-label">Unrealized P&L</span>
           <span className={`pos-stat-value ${pnl != null ? (pnl >= 0 ? "positive" : "negative") : ""}`}>
-            {pnl != null ? `${pnl >= 0 ? "+" : ""}${fmtUsd(Math.abs(pnl))} (${pnlPct!.toFixed(1)}%)` : "---"}
+            {pnl != null ? `${pnl >= 0 ? "+" : "-"}${fmtUsd(Math.abs(pnl))} (${pnlPct!.toFixed(1)}%)` : "---"}
           </span>
         </div>
         {position.expiry !== "N/A" && (

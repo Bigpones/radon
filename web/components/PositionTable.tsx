@@ -19,6 +19,7 @@ import {
   getLastPriceIsCalculated,
   legPriceKey,
   getOptionDailyChg,
+  getTodayPnlDollars,
   resolveRealtimePrice,
 } from "@/lib/positionUtils";
 
@@ -129,32 +130,6 @@ function getOptionRtMv(pos: PortfolioPosition, prices?: Record<string, PriceData
   return rtMv;
 }
 
-function getTodayPnlDollars(pos: PortfolioPosition, prices?: Record<string, PriceData>): number | null {
-  if (pos.structure_type === "Stock") {
-    const p = prices?.[pos.ticker];
-    if (!p || p.last == null || p.last <= 0 || p.close == null || p.close <= 0) return null;
-    return (p.last - p.close) * pos.contracts;
-  }
-  // Prefer IB's per-position daily P&L (handles intraday additions correctly)
-  if (pos.ib_daily_pnl != null) return pos.ib_daily_pnl;
-  // Fall back to WS close-based calculation
-  let pnl = 0;
-  let hasClose = false;
-  for (const leg of pos.legs) {
-    const key = legPriceKey(pos.ticker, pos.expiry, leg);
-    const lp = key && prices ? prices[key] : null;
-    const last = (lp?.last != null && lp.last > 0) ? lp.last : (leg.market_price != null && leg.market_price > 0 ? leg.market_price : null);
-    if (last == null) return null;
-    const close = lp?.close;
-    if (close != null && close > 0) {
-      const sign = leg.direction === "LONG" ? 1 : -1;
-      pnl += sign * (last - close) * leg.contracts * 100;
-      hasClose = true;
-    }
-  }
-  return hasClose ? pnl : null;
-}
-
 /* ─── Sort extract factory ─────────────────────────────── */
 
 export type PositionSortKey = "ticker" | "structure" | "qty" | "direction" | "underlying" | "avg_entry" | "last_price" | "daily_chg" | "today_pnl" | "entry_cost" | "market_value" | "pnl" | "expiry";
@@ -240,7 +215,7 @@ function LegRow({
       <td></td>
       <td></td>
       <td className="right cell-muted">{fmtPrice(legEc)}</td>
-      <td className="right cell-muted">{rtLast != null ? fmtUsd(rtLast * leg.contracts * mult) : leg.market_value != null ? fmtUsd(Math.abs(leg.market_value)) : "—"}</td>
+      <td className="right cell-muted">{legMv != null ? fmtUsd(legMv) : "—"}</td>
       <td className={`right cell-muted ${legPnl != null ? (legPnl >= 0 ? "positive" : "negative") : ""}`}>
         {legPnl != null ? `${legPnl >= 0 ? "+" : "-"}${fmtUsd(Math.abs(legPnl))}` : "—"}
       </td>

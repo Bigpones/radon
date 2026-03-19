@@ -59,6 +59,10 @@ function formatMetricValue(value: number | null): string {
   return value != null ? fmtPrice(value) : "---";
 }
 
+function lastFieldLabel(priceData: PriceData): string {
+  return priceData.lastIsCalculated ? "MARK" : "LAST";
+}
+
 export function buildQuoteTelemetryModel(
   priceData: PriceData | null,
 ): QuoteTelemetryModel | null {
@@ -76,7 +80,7 @@ export function buildQuoteTelemetryModel(
     mid: { label: "MID", value: formatMetricValue(mid), tone: null, trend: null },
     ask: { label: "ASK", value: formatMetricValue(ask), tone: null, trend: null },
     spread: { label: "SPREAD", value: spreadLabel, tone: null, trend: null },
-    last: { label: "LAST", value: formatMetricValue(last), tone: null, trend: null },
+    last: { label: lastFieldLabel(priceData), value: formatMetricValue(last), tone: null, trend: null },
     volume: {
       label: "VOLUME",
       value: volume != null ? volume.toLocaleString("en-US") : "---",

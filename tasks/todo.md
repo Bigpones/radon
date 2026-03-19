@@ -1,5 +1,138 @@
 # TODO
 
+## Session: Fix Misleading Combo Close Summary On IWM Order Tab (2026-03-19)
+
+### Goal
+Trace why the IWM risk-reversal close-order confirmation uses opening-spread payoff language, reproduce the misleading `Max Gain` message with regression coverage, and update the combo close summary so held positions show close credit/debit and estimated realized P&L versus entry instead of implying a new short strategy payoff.
+
+### Dependency Graph
+- T1 (Trace the combo close summary path from the IWM order tab through `OrderTab` and `OrderConfirmSummary` to define the intended close-order semantics) depends_on: []
+- T2 (Add failing regression coverage for misleading `Max Gain` labels on combo close confirmations at unit and browser layers) depends_on: [T1]
+- T3 (Implement the minimal shared summary fix so held combo closes show close credit/debit plus estimated realized P&L versus entry) depends_on: [T2]
+- T4 (Run focused verification, verify the IWM close summary in the browser, and document review notes) depends_on: [T3]
+
+### Checklist
+- [x] T1 Trace the combo close summary path from the IWM order tab through `OrderTab` and `OrderConfirmSummary` to define the intended close-order semantics
+- [x] T2 Add failing regression coverage for misleading `Max Gain` labels on combo close confirmations at unit and browser layers
+- [x] T3 Implement the minimal shared summary fix so held combo closes show close credit/debit plus estimated realized P&L versus entry
+- [x] T4 Run focused verification, verify the IWM close summary in the browser, and document review notes
+
+### Review
+- Root-cause trace:
+  - Backend/provider boundary: the synced portfolio already preserved the held IWM risk-reversal entry basis at [portfolio.json](/Users/joemccann/dev/apps/finance/radon/data/portfolio.json) as `entry_cost: -579.79`, so the opening credit basis was available to the UI. No third-party provider bug was involved in the misleading `Max Gain` message.
+  - Order-tab intent boundary: [OrderTab.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ticker-detail/OrderTab.tsx) mounts the combo form under `Close Position` for held multi-leg positions, and the default `SELL` action is intended as the close/flatten path for that held combo.
+  - Confirmation-summary boundary: the combo summary logic in [OrderTab.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ticker-detail/OrderTab.tsx) treated any 2-leg combo as a generic opening spread and, on `SELL`, set `maxGain = totalCost`. [OrderConfirmSummary.tsx](/Users/joemccann/dev/apps/finance/radon/web/lib/order/components/OrderConfirmSummary.tsx) then rendered that gross close cash flow as `Max Gain`, which made the held close order look like a new short-risk payoff instead of a flattening order.
+- Red/green TDD:
+  - Extended [order-tab-combo-sign.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/order-tab-combo-sign.test.ts) to reproduce the misleading close summary by entering `3.00` on the held IWM combo and asserting that the confirm panel should not render `Max Gain`.
+  - Added [iwm-close-order-summary.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/iwm-close-order-summary.spec.ts) to verify the browser flow shows close-order labels and values on the actual confirmation panel.
+  - Red before fix:
+    - `npx vitest run web/tests/order-tab-combo-sign.test.ts --config vitest.config.ts`
+    - `cd web && npx playwright test e2e/iwm-close-order-summary.spec.ts --config playwright.config.ts`
+- Fixes:
+  - Extended [types.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/order/types.ts) so order summaries can override the total label and include an estimated P&L line for close-order contexts.
+  - Updated [OrderConfirmSummary.tsx](/Users/joemccann/dev/apps/finance/radon/web/lib/order/components/OrderConfirmSummary.tsx) to render the custom total label and an `Est. Realized P&L` metric with correct positive/negative tone.
+  - Updated [OrderTab.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ticker-detail/OrderTab.tsx) so held combo `SELL` confirmations no longer use `Max Gain` / `Max Loss`. They now show `Close Credit` or `Close Debit` from the entered close ticket plus `Est. Realized P&L` versus the preserved entry basis.
+- Verification:
+  - Focused unit: `npx vitest run web/tests/order-tab-combo-sign.test.ts --config vitest.config.ts`
+  - Focused browser: `cd web && npx playwright test e2e/iwm-close-order-summary.spec.ts --config playwright.config.ts`
+  - Live browser fallback verification: the bundled `chrome-cdp` skill script at `/Users/joemccann/.agents/skills/chrome-cdp/scripts/cdp.mjs` is still a zero-byte file, so direct CDP automation was unavailable in this runtime. Using Playwright against the live app at `http://127.0.0.1:3000/IWM?posId=13&tab=order`, entering `3.00` into the close ticket now renders:
+    - `Close Credit: $15,000`
+    - `Est. Realized P&L: $15,580`
+    and no `Max Gain` / `Max Loss` lines.
+  - Broader suite:
+    - `python3 -m pytest -q` is currently blocked by an unrelated import error in [test_scenario_analysis.py](/Users/joemccann/dev/apps/finance/radon/scripts/tests/test_scenario_analysis.py) because `scenario_analysis` no longer exports `approx_delta`.
+    - `npx vitest run --config vitest.config.ts` currently has 6 unrelated failures in [fastapi-migration.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/fastapi-migration.test.ts), [integration.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/integration.test.ts), and [modify-order-ticker-detail.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/modify-order-ticker-detail.test.ts).
+    - `cd web && npm run test:e2e` still fails in the existing harness with `spawn /bin/sh ENOENT`.
+
+## Session: Fix Synthetic Combo "Last" Telemetry On IWM Ticker Detail (2026-03-19)
+
+### Goal
+Trace why the IWM ticker-detail hero and position summary show a stale synthetic combo `LAST` value that contradicts the live combo market, confirm whether the UI is conflating execution basis with current mark, and fix the pricing/label semantics so multi-leg quotes use a live mark derived from bid/ask rather than stale leg trade prints.
+
+### Dependency Graph
+- T1 (Trace the multi-leg ticker-detail quote path from synced portfolio fields and live leg quotes through `resolveSpreadPriceData`, telemetry rendering, and position summary calculation) depends_on: []
+- T2 (Add failing regression coverage for stale synthetic combo `LAST` values and the intended mark-label behavior) depends_on: [T1]
+- T3 (Implement the minimal shared fix so synthetic combo quotes use a live mark and are labeled as such across the affected surfaces) depends_on: [T2]
+- T4 (Run focused verification, verify the IWM ticker-detail in the browser, and document review notes) depends_on: [T3]
+
+### Checklist
+- [x] T1 Trace the multi-leg ticker-detail quote path from synced portfolio fields and live leg quotes through `resolveSpreadPriceData`, telemetry rendering, and position summary calculation
+- [x] T2 Add failing regression coverage for stale synthetic combo `LAST` values and the intended mark-label behavior
+- [x] T3 Implement the minimal shared fix so synthetic combo quotes use a live mark and are labeled as such across the affected surfaces
+- [x] T4 Run focused verification, verify the IWM ticker-detail in the browser, and document review notes
+
+### Review
+- Root-cause trace:
+  - Provider/data boundary: the synced portfolio already carried the correct held IWM risk-reversal basis (`entry_cost: -579.79`) and leg directions. No third-party provider was misreporting the current combo; the stale value came from the frontend's synthetic quote construction.
+  - Quote-construction boundary: [resolveSpreadPriceData](/Users/joemccann/dev/apps/finance/radon/web/lib/positionUtils.ts) was building the combo `last` by summing resolved per-leg `last` prices. Because option `last` trades are asynchronous and can be stale relative to the current book, the synthetic combo `LAST` could drift far from the live natural market implied by leg bid/ask.
+  - Telemetry/render boundary: [quoteTelemetry.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/quoteTelemetry.ts), [PositionTab.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ticker-detail/PositionTab.tsx), and [BookTab.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ticker-detail/BookTab.tsx) rendered that synthetic value under `LAST`, which made a derived mark look like a real executed trade print and caused the IWM hero/position detail to contradict the live combo quote strip.
+- Red/green TDD:
+  - Extended [spread-price-bar.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/spread-price-bar.test.ts) to reproduce the stale IWM risk-reversal synthetic `LAST` when one leg has a stale trade print.
+  - Extended [price-bar-quote-telemetry.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/price-bar-quote-telemetry.test.ts) to assert calculated combo quotes render `MARK` instead of `LAST`.
+  - Extended [position-tab-leg-sign.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/position-tab-leg-sign.test.ts) to assert the position summary uses the live combo mark and `Mark Price` label.
+  - Added [iwm-synthetic-mark-label.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/iwm-synthetic-mark-label.spec.ts) to verify the browser renders `MARK`/`Mark Price` for the held IWM risk reversal rather than the stale synthetic `LAST`.
+  - Red before fix:
+    - `npx vitest run web/tests/spread-price-bar.test.ts web/tests/price-bar-quote-telemetry.test.ts web/tests/position-tab-leg-sign.test.ts --config vitest.config.ts`
+    - `cd web && npx playwright test e2e/iwm-synthetic-mark-label.spec.ts --config playwright.config.ts`
+- Fixes:
+  - Updated [positionUtils.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/positionUtils.ts) so synthetic combo quote data uses the rounded live net bid/ask midpoint as the derived mark and flags that value as calculated instead of trusting stale per-leg trade prints.
+  - Updated [quoteTelemetry.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/quoteTelemetry.ts) so calculated combo quote values are labeled `MARK`.
+  - Updated [PositionTab.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ticker-detail/PositionTab.tsx) and [BookTab.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ticker-detail/BookTab.tsx) so multi-leg non-stock positions use the derived mark consistently and label it clearly as `Mark Price` / `MARK`.
+- Verification:
+  - Focused unit: `npx vitest run web/tests/spread-price-bar.test.ts web/tests/price-bar-quote-telemetry.test.ts web/tests/position-tab-leg-sign.test.ts web/tests/same-day-pnl.test.ts --config vitest.config.ts`
+  - Focused browser: `cd web && npx playwright test e2e/iwm-synthetic-mark-label.spec.ts e2e/iwm-ticker-detail-combo-sign.spec.ts e2e/iwm-close-order-summary.spec.ts e2e/portfolio-leg-row-runtime.spec.ts --config playwright.config.ts`
+  - Live browser fallback verification: the bundled `chrome-cdp` skill script at `/Users/joemccann/.agents/skills/chrome-cdp/scripts/cdp.mjs` is still a zero-byte file, so direct CDP automation was unavailable in this runtime. Using Playwright against the live app at `http://127.0.0.1:3000/IWM?posId=13&tab=position`, the multi-leg quote now renders as a derived mark (`Mark Price`) aligned with the live combo book rather than as a stale `Last Price`.
+  - Broader suite:
+    - `python3 -m pytest -q` is currently blocked by an unrelated import error in [test_scenario_analysis.py](/Users/joemccann/dev/apps/finance/radon/scripts/tests/test_scenario_analysis.py) because `scenario_analysis` no longer exports `approx_delta`.
+    - `npx vitest run --config vitest.config.ts` currently has 6 unrelated failures in [fastapi-migration.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/fastapi-migration.test.ts), [integration.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/integration.test.ts), and [modify-order-ticker-detail.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/modify-order-ticker-detail.test.ts).
+    - `cd web && npm run test:e2e` still fails in the existing harness with `spawn /bin/sh ENOENT`.
+
+## Session: Fix Signed Combo Leg And Order Pricing On IWM Ticker Detail (2026-03-19)
+
+### Goal
+Trace why the IWM risk-reversal ticker detail loses sign semantics between the synced portfolio/provider data, the ticker-detail position tab, and the combo close-order form. Reproduce the bug with regression coverage, preserve signed long/short leg presentation on the Position tab, preserve signed combo bid/mid/ask and net limit input values on the Order tab, and verify the full IWM flow in the browser.
+
+### Dependency Graph
+- T1 (Trace the IWM ticker-detail data path from IB-synced portfolio fields and combo quote semantics through PositionTab/OrderTab rendering to identify where sign and leg-direction styling are lost) depends_on: []
+- T2 (Add failing regression coverage for signed combo leg rendering and negative combo quote/input behavior at unit and browser layers) depends_on: [T1]
+- T3 (Implement the minimal shared/frontend fix so short legs render with signed/red values and combo close quotes plus net-limit input preserve negative credit semantics end to end) depends_on: [T2]
+- T4 (Run focused verification, verify the live IWM ticker detail in the browser, run broader suites, and document review notes) depends_on: [T3]
+
+### Checklist
+- [x] T1 Trace the IWM ticker-detail data path from IB-synced portfolio fields and combo quote semantics through PositionTab/OrderTab rendering to identify where sign and leg-direction styling are lost
+- [x] T2 Add failing regression coverage for signed combo leg rendering and negative combo quote/input behavior at unit and browser layers
+- [x] T3 Implement the minimal shared/frontend fix so short legs render with signed/red values and combo close quotes plus net-limit input preserve negative credit semantics end to end
+- [x] T4 Run focused verification, verify the live IWM ticker detail in the browser, run broader suites, and document review notes
+
+### Review
+- Root-cause trace:
+  - Provider/data boundary: the synced portfolio at [portfolio.json](/Users/joemccann/dev/apps/finance/radon/data/portfolio.json) already preserved the combo-level credit sign (`entry_cost: -579.79`) and the per-leg direction (`LONG` call, `SHORT` put). The upstream data was not losing direction; the frontend was failing to reapply it when formatting the leg rows.
+  - Third-party semantics: Interactive Brokers combo pricing is signed rather than normalized to absolute debit-only values, so a close price for a credit/risk-reversal combo is expected to remain negative through the payload/display path. Relevant references: https://interactivebrokers.github.io/tws-api/basic_orders.html and https://www.interactivebrokers.com/campus/trading-lessons/complex-orders/
+  - Position tab boundary: [PositionTab.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ticker-detail/PositionTab.tsx) was rendering leg entry and market values with absolute formatting, so the short put row showed positive values and no negative styling even though the leg direction was `SHORT`.
+  - Order tab boundary: [OrderTab.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ticker-detail/OrderTab.tsx) computed signed combo `netBid`/`netAsk`, then immediately stripped the sign with `Math.abs(...)` before rendering the strip and before the quick-fill buttons populated the net limit input.
+  - API boundary: [route.ts](/Users/joemccann/dev/apps/finance/radon/web/app/api/orders/place/route.ts) still rejected any `limitPrice <= 0`, which meant a correctly signed negative combo limit would have been blocked before it reached the IB bridge.
+- Red/green TDD:
+  - Added [position-tab-leg-sign.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/position-tab-leg-sign.test.ts) to reproduce the missing signed/red short-leg rendering on the Position tab.
+  - Added [order-tab-combo-sign.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/order-tab-combo-sign.test.ts) to reproduce the combo strip and quick-fill sign loss in the Order tab.
+  - Added [order-place-combo-negative-price.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/order-place-combo-negative-price.test.ts) to reproduce the route rejecting signed combo prices.
+  - Added [iwm-ticker-detail-combo-sign.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/iwm-ticker-detail-combo-sign.spec.ts) to verify the full browser path: signed leg rows, signed combo strip, signed input, and signed POST payload.
+  - Red before fix:
+    - `npx vitest run web/tests/position-tab-leg-sign.test.ts web/tests/order-tab-combo-sign.test.ts web/tests/order-place-combo-negative-price.test.ts --config vitest.config.ts`
+    - `cd web && npx playwright test e2e/iwm-ticker-detail-combo-sign.spec.ts --config playwright.config.ts`
+- Fixes:
+  - Added [fmtSignedPrice](/Users/joemccann/dev/apps/finance/radon/web/lib/format.ts) so signed dollar prices render as `-$0.40` rather than forcing the sign to disappear behind the dollar symbol.
+  - Updated [PositionTab.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ticker-detail/PositionTab.tsx) to derive signed leg entry/market values from `leg.direction`, apply positive/negative tone classes to the leg rows, and preserve negative signs in the summary metrics.
+  - Updated [OrderTab.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ticker-detail/OrderTab.tsx) to keep signed combo bid/mid/ask values end to end, render negative combo quotes in the strip, and populate the net-limit input with the signed quick-fill value instead of an absolute one.
+  - Updated [route.ts](/Users/joemccann/dev/apps/finance/radon/web/app/api/orders/place/route.ts) so combo orders accept any non-zero finite signed `limitPrice`, while single-leg stock/option orders remain strictly positive.
+- Verification:
+  - Focused unit: `npx vitest run web/tests/position-tab-leg-sign.test.ts web/tests/order-tab-combo-sign.test.ts web/tests/order-place-combo-negative-price.test.ts --config vitest.config.ts`
+  - Focused browser: `cd web && npx playwright test e2e/iwm-ticker-detail-combo-sign.spec.ts --config playwright.config.ts`
+  - Live browser fallback verification: the bundled `chrome-cdp` skill script at `/Users/joemccann/.agents/skills/chrome-cdp/scripts/cdp.mjs` is still a zero-byte file, so direct CDP automation was unavailable in this runtime. Using Playwright against the live app at `http://127.0.0.1:3000/IWM?posId=12&tab=position`, I confirmed the rendered short leg stayed negative on the Position tab (`SHORT Put ... -$9.38 ... -$7.70`) with no page errors. The live Order tab had no quote available at probe time, so the signed quick-fill/input behavior is verified by the deterministic browser regression in [iwm-ticker-detail-combo-sign.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/iwm-ticker-detail-combo-sign.spec.ts), which submits `limitPrice: -0.4`.
+  - Broader suite:
+    - `python3 -m pytest -q` is currently blocked by an unrelated import error in [test_scenario_analysis.py](/Users/joemccann/dev/apps/finance/radon/scripts/tests/test_scenario_analysis.py) because `scenario_analysis` no longer exports `approx_delta`.
+    - `npx vitest run --config vitest.config.ts` currently has 6 unrelated failures in [fastapi-migration.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/fastapi-migration.test.ts), [integration.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/integration.test.ts), and [modify-order-ticker-detail.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/modify-order-ticker-detail.test.ts).
+    - `cd web && npm run test:e2e` still fails in the existing harness with `spawn /bin/sh ENOENT`.
+
 ## Session: Fix `rtLast` ReferenceError In Portfolio Leg Rows (2026-03-19)
 
 ### Goal
@@ -12,10 +145,30 @@ Fix the `/portfolio` runtime crash caused by `LegRow` referencing `rtLast`, whic
 - T4 (Run focused verification, confirm `/portfolio` renders without the runtime error in the browser, and document review notes) depends_on: [T3]
 
 ### Checklist
-- [ ] T1 Trace the `LegRow` render path and confirm how the undefined `rtLast` reference escaped into the expanded multi-leg row
-- [ ] T2 Add failing regression coverage for the expanded leg-row render path so the `ReferenceError` reproduces before the fix
-- [ ] T3 Implement the minimal fix so leg-row market value uses the resolved leg price instead of a missing parent-scope variable
-- [ ] T4 Run focused verification, confirm `/portfolio` renders without the runtime error in the browser, and document review notes
+- [x] T1 Trace the `LegRow` render path and confirm how the undefined `rtLast` reference escaped into the expanded multi-leg row
+- [x] T2 Add failing regression coverage for the expanded leg-row render path so the `ReferenceError` reproduces before the fix
+- [x] T3 Implement the minimal fix so leg-row market value uses the resolved leg price instead of a missing parent-scope variable
+- [x] T4 Run focused verification, confirm `/portfolio` renders without the runtime error in the browser, and document review notes
+
+### Review
+- Root-cause trace:
+  - Frontend row boundary: [PositionTable.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/PositionTable.tsx) computes `rtLast` inside `PositionRow` for top-level stock rows only.
+  - Expanded leg-row boundary: [LegRow](/Users/joemccann/dev/apps/finance/radon/web/components/PositionTable.tsx#L194) was later updated to render leg market value from realtime data, but the market-value cell at [PositionTable.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/PositionTable.tsx#L243) referenced `rtLast`, which does not exist in that component scope. Any expanded multi-leg position therefore threw `ReferenceError: rtLast is not defined` at render time.
+  - Data/path impact: no third-party provider was involved in this regression. The crash happened entirely in the frontend render path once a spread row expanded.
+- Red/green TDD:
+  - Added [position-table-leg-row-runtime.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/position-table-leg-row-runtime.test.ts) to reproduce the crash by rendering a multi-leg position, expanding the row, and asserting the leg market values render.
+  - Added [portfolio-leg-row-runtime.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/portfolio-leg-row-runtime.spec.ts) to verify the real `/portfolio` page path can expand spread legs without emitting the runtime error in the browser.
+  - Red before fix: `npx vitest run web/tests/position-table-leg-row-runtime.test.ts --config vitest.config.ts` failed with `ReferenceError: rtLast is not defined`.
+- Fix:
+  - Replaced the bad `rtLast` reference in [PositionTable.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/PositionTable.tsx) with the already-computed `legMv`. That keeps the cell aligned with the rest of `LegRow`'s pricing math and removes the illegal parent-scope dependency.
+- Verification:
+  - Focused unit: `npx vitest run web/tests/position-table-leg-row-runtime.test.ts --config vitest.config.ts`
+  - Focused browser: `cd web && npx playwright test e2e/portfolio-leg-row-runtime.spec.ts --config playwright.config.ts`
+  - Live browser fallback verification: the bundled `chrome-cdp` skill script at `/Users/joemccann/.agents/skills/chrome-cdp/scripts/cdp.mjs` is still a zero-byte file, so direct CDP automation was unavailable in this runtime. Using Playwright from the `web/` package against the live app at `http://127.0.0.1:3000/portfolio`, I expanded the first real multi-leg row (`AAPL`) and confirmed no `rtLast is not defined` page error was emitted.
+  - Broader suite:
+    - `python3 -m pytest -q` is currently blocked by an unrelated import error in [test_scenario_analysis.py](/Users/joemccann/dev/apps/finance/radon/scripts/tests/test_scenario_analysis.py) because `scenario_analysis` no longer exports `approx_delta`.
+    - `npx vitest run --config vitest.config.ts` currently has 6 unrelated failures in [fastapi-migration.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/fastapi-migration.test.ts), [integration.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/integration.test.ts), and [modify-order-ticker-detail.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/modify-order-ticker-detail.test.ts).
+    - `cd web && npm run test:e2e` still fails in the existing harness with `spawn /bin/sh ENOENT`.
 
 ## Session: Fix CROX Bull Call Spread Pricing On Portfolio Positions (2026-03-19)
 

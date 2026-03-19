@@ -25,6 +25,7 @@ function L1OrderBook({
   ask,
   spread,
   last,
+  lastLabel = "LAST",
   bidSize,
   askSize,
 }: {
@@ -32,6 +33,7 @@ function L1OrderBook({
   ask: number | null;
   spread: number | null;
   last: number | null;
+  lastLabel?: string;
   bidSize: number | null;
   askSize: number | null;
 }) {
@@ -123,7 +125,7 @@ function L1OrderBook({
               marginTop: "2px",
             }}
           >
-            {last != null ? `LAST ${fmtPrice(last)}` : ""}
+            {last != null ? `${lastLabel} ${fmtPrice(last)}` : ""}
           </div>
         </div>
 
@@ -559,6 +561,7 @@ export default function BookTab({
   const mid = bid != null && ask != null ? (bid + ask) / 2 : null;
   const spread = bid != null && ask != null ? ask - bid : null;
   const last = priceData?.last ?? null;
+  const lastLabel = priceData?.lastIsCalculated ? "MARK" : "LAST";
 
   return (
     <div className="book-tab" style={{ padding: "16px 0" }}>
@@ -567,6 +570,7 @@ export default function BookTab({
         ask={ask}
         spread={spread}
         last={last}
+        lastLabel={lastLabel}
         bidSize={priceData?.bidSize ?? null}
         askSize={priceData?.askSize ?? null}
       />

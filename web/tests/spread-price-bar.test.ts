@@ -36,6 +36,35 @@ const bullCallSpread: PortfolioPosition = {
 };
 
 describe("resolveSpreadPriceData", () => {
+  it("uses the live net midpoint as the synthetic combo mark when leg last trades are stale", () => {
+    const riskReversal: PortfolioPosition = {
+      ...bullCallSpread,
+      ticker: "IWM",
+      structure: "Risk Reversal (P$243.0/C$247.0)",
+      structure_type: "Risk Reversal",
+      direction: "COMBO",
+      contracts: 50,
+      entry_cost: -579.79,
+      market_value: 1800,
+      legs: [
+        { type: "Call", strike: 247, direction: "LONG", contracts: 50, entry_cost: 17285.02, market_value: 17300, market_price_is_calculated: false },
+        { type: "Put", strike: 243, direction: "SHORT", contracts: 50, entry_cost: 17864.81, market_value: 16000, market_price_is_calculated: false },
+      ],
+    };
+
+    const prices: Record<string, PriceData> = {
+      "IWM_20260320_247_C": makePriceData({ symbol: "IWM_20260320_247_C", bid: 3.25, ask: 3.28, last: 3.26 }),
+      "IWM_20260320_243_P": makePriceData({ symbol: "IWM_20260320_243_P", bid: 3.00, ask: 3.02, last: 3.51 }),
+    };
+
+    const result = resolveSpreadPriceData("IWM", riskReversal, prices);
+    expect(result).not.toBeNull();
+    expect(result!.bid).toBeCloseTo(0.25, 2);
+    expect(result!.ask).toBeCloseTo(0.26, 2);
+    expect(result!.last).toBeCloseTo(0.26, 2);
+    expect(result!.lastIsCalculated).toBe(true);
+  });
+
   it("computes net bid/ask/last for a bull call spread from per-leg WS prices", () => {
     const prices: Record<string, PriceData> = {
       "GOOG_20260320_315_C": makePriceData({ symbol: "GOOG", bid: 8.50, ask: 8.80, last: 8.65 }),

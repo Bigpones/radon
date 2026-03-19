@@ -84,6 +84,15 @@
 
 ---
 
+## Current Summary Semantics
+
+- Held combo closes in `OrderTab > ComboOrderForm` are close-order flows, not opening-spread payoff previews.
+- A held combo `SELL` confirmation should show `Close Credit` or `Close Debit` plus `Est. Realized P&L` versus the preserved entry basis.
+- `Max Gain` / `Max Loss` remain valid for opening defined-risk spread summaries, but they are misleading for close/flatten flows and should not be shown there.
+- Signed combo quotes must stay signed through the strip, quick-fill buttons, net-limit input, and `/api/orders/place` payload so credits do not silently flip positive.
+
+---
+
 ## Proposed Unified Component Architecture
 
 ```

@@ -45,7 +45,7 @@ export function OrderConfirmSummary({
       <div className="order-confirm-metrics">
         {summary.totalCost != null && (
           <span className="order-confirm-metric">
-            <span className="order-confirm-metric-label">Total:</span>
+            <span className="order-confirm-metric-label">{summary.totalLabel ?? "Total:"}</span>
             <span className="order-confirm-metric-value">{formatCurrency(summary.totalCost)}</span>
           </span>
         )}
@@ -69,6 +69,14 @@ export function OrderConfirmSummary({
           <span className="order-confirm-metric">
             <span className="order-confirm-metric-label">Breakeven:</span>
             <span className="order-confirm-metric-value">{formatPrice(summary.breakeven)}</span>
+          </span>
+        )}
+        {summary.estimatedPnl != null && (
+          <span className="order-confirm-metric">
+            <span className="order-confirm-metric-label">{summary.estimatedPnlLabel ?? "Est. P&L:"}</span>
+            <span className={`order-confirm-metric-value ${summary.estimatedPnl >= 0 ? "order-confirm-positive" : "order-confirm-negative"}`}>
+              {formatCurrency(summary.estimatedPnl)}
+            </span>
           </span>
         )}
       </div>

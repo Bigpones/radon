@@ -61,4 +61,28 @@ describe("Ticker quote telemetry", () => {
     expect(extractLabels(html).slice(1, 5)).toEqual(["BID", "MID", "ASK", "SPREAD"]);
     expect(html).toContain("$2.40 / 16.00%");
   });
+
+  it("labels calculated quote values as MARK instead of LAST", () => {
+    const priceData = makePriceData({
+      symbol: "IWM",
+      bid: 0.23,
+      ask: 0.27,
+      last: 0.25,
+      lastIsCalculated: true,
+    });
+
+    const html = renderToStaticMarkup(
+      createElement(TickerQuoteTelemetry as unknown as ComponentType<{
+        priceData: PriceData | null;
+        label?: string;
+      }>, {
+        priceData,
+        label: "IWM Risk Reversal",
+      }),
+    );
+
+    expect(extractLabels(html)).toContain("MARK");
+    expect(html).not.toContain(">LAST<");
+    expect(html).toContain("$0.25");
+  });
 });

@@ -138,29 +138,26 @@ export function resolveSpreadPriceData(
 
   let netBid = 0;
   let netAsk = 0;
-  let netLast = 0;
   for (const leg of position.legs) {
     const key = legPriceKey(ticker, position.expiry, leg);
     if (!key) return null;
     const lp = prices[key];
     if (!lp || lp.bid == null || lp.ask == null) return null;
-    const resolved = resolveRealtimePrice(lp);
-    if (resolved.price == null) return null;
     const sign = leg.direction === "LONG" ? 1 : -1;
     netBid += sign * lp.bid;
     netAsk += sign * lp.ask;
-    netLast += sign * resolved.price;
   }
 
-  const lo = Math.min(netBid, netAsk);
-  const hi = Math.max(netBid, netAsk);
+  const lo = Math.round(Math.min(netBid, netAsk) * 100) / 100;
+  const hi = Math.round(Math.max(netBid, netAsk) * 100) / 100;
+  const mid = Number((((lo + hi) / 2)).toFixed(2));
 
   return {
     symbol: ticker,
-    last: Math.round(netLast * 100) / 100,
+    last: mid,
     lastIsCalculated: true,
-    bid: Math.round(lo * 100) / 100,
-    ask: Math.round(hi * 100) / 100,
+    bid: lo,
+    ask: hi,
     bidSize: null,
     askSize: null,
     volume: null,
@@ -181,10 +178,55 @@ export function resolveSpreadPriceData(
   };
 }
 
+/* ─── Same-day position detection ─────────────────────────── */
+
+/** Return today's date in ET (YYYY-MM-DD). */
+function todayInET(): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find((p) => p.type === type)!.value;
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+/** True when the position was opened today and IB daily P&L is unavailable.
+ *  In this case, "today's P&L" should equal total P&L because the position
+ *  didn't exist yesterday — yesterday's close is meaningless as a baseline. */
+function isSameDayFallback(pos: PortfolioPosition): boolean {
+  return pos.ib_daily_pnl == null && pos.entry_date === todayInET();
+}
+
+/** Compute real-time market value from WS prices for option positions. */
+function computeRtMv(pos: PortfolioPosition, prices?: Record<string, PriceData>): number | null {
+  if (pos.structure_type === "Stock" || !prices) return null;
+  let rtMv = 0;
+  for (const leg of pos.legs) {
+    const key = legPriceKey(pos.ticker, pos.expiry, leg);
+    const lp = key ? prices[key] : null;
+    const current = resolveRealtimePrice(lp, leg.market_price, Boolean(leg.market_price_is_calculated)).price;
+    if (current == null) return null;
+    const sign = leg.direction === "LONG" ? 1 : -1;
+    rtMv += sign * current * leg.contracts * 100;
+  }
+  return rtMv;
+}
+
 /* ─── Option daily change ─────────────────────────────────── */
 
 export function getOptionDailyChg(pos: PortfolioPosition, prices?: Record<string, PriceData>): number | null {
   if (pos.structure_type === "Stock" || !prices) return null;
+
+  // Same-day position without IB daily P&L: use entry cost as baseline.
+  // The position didn't exist yesterday, so close-based calc is meaningless.
+  if (isSameDayFallback(pos)) {
+    const rtMv = computeRtMv(pos, prices);
+    const mv = rtMv ?? resolveMarketValue(pos);
+    if (mv == null) return null;
+    const ec = resolveEntryCost(pos);
+    if (ec === 0) return null;
+    return ((mv - ec) / Math.abs(ec)) * 100;
+  }
 
   // Compute WS close-based daily P&L and close value (needed for % calc)
   let wsDailyPnl = 0;
@@ -207,4 +249,39 @@ export function getOptionDailyChg(pos: PortfolioPosition, prices?: Record<string
   // Prefer IB's per-position daily P&L (handles intraday additions correctly)
   const effectivePnl = pos.ib_daily_pnl != null ? pos.ib_daily_pnl : wsDailyPnl;
   return (effectivePnl / Math.abs(closeValue)) * 100;
+}
+
+/* ─── Today's P&L (dollars) ──────────────────────────────── */
+
+export function getTodayPnlDollars(pos: PortfolioPosition, prices?: Record<string, PriceData>): number | null {
+  if (pos.structure_type === "Stock") {
+    const p = prices?.[pos.ticker];
+    if (!p || p.last == null || p.last <= 0 || p.close == null || p.close <= 0) return null;
+    return (p.last - p.close) * pos.contracts;
+  }
+  // Prefer IB's per-position daily P&L (handles intraday additions correctly)
+  if (pos.ib_daily_pnl != null) return pos.ib_daily_pnl;
+  // Same-day position: Today's P&L = Total P&L (position didn't exist yesterday)
+  if (isSameDayFallback(pos)) {
+    const rtMv = computeRtMv(pos, prices);
+    const mv = rtMv ?? resolveMarketValue(pos);
+    if (mv == null) return null;
+    return mv - resolveEntryCost(pos);
+  }
+  // Fall back to WS close-based calculation (overnight positions)
+  let pnl = 0;
+  let hasClose = false;
+  for (const leg of pos.legs) {
+    const key = legPriceKey(pos.ticker, pos.expiry, leg);
+    const lp = key && prices ? prices[key] : null;
+    const last = (lp?.last != null && lp.last > 0) ? lp.last : (leg.market_price != null && leg.market_price > 0 ? leg.market_price : null);
+    if (last == null) return null;
+    const close = lp?.close;
+    if (close != null && close > 0) {
+      const sign = leg.direction === "LONG" ? 1 : -1;
+      pnl += sign * (last - close) * leg.contracts * 100;
+      hasClose = true;
+    }
+  }
+  return hasClose ? pnl : null;
 }

@@ -39,6 +39,17 @@ export function fmtUsdExact(value: number): string {
   })}`;
 }
 
+/** Format as price with sign preserved ahead of the dollar sign: "$1.23" / "-$0.40" */
+export function fmtSignedPrice(value: number | null | undefined, showPlus = false): string {
+  if (value == null || !Number.isFinite(value)) return "---";
+  const abs = Math.abs(value).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const prefix = value < 0 ? "-" : showPlus ? "+" : "";
+  return `${prefix}$${abs}`;
+}
+
 /** Format as signed USD: "+$1,234" / "-$567" */
 export function fmtSignedUsd(n: number): string {
   return `${n >= 0 ? "+" : "-"}${fmtUsd(Math.abs(n)).replace("-", "")}`;

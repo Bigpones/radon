@@ -2,6 +2,9 @@
 
 ## 2026-03-19
 
+- When a ticker-detail or quote-telemetry surface shows a synthetic multi-leg option quote, do not label a derived combo midpoint as `LAST` or build it from asynchronous leg trade prints. For spreads and risk reversals, use the live combo mark from bid/ask and label it clearly as a mark so it cannot be confused with the entry fill basis.
+- When a combo or short-option surface already carries sign semantics from the portfolio model or combo quote math, do not normalize it with `Math.abs()` in a detail tab or order form; add regressions that assert both the displayed sign and the tone class survive into the input and leg table.
+- When refactoring shared portfolio row math across `PositionRow` and `LegRow`, do not let a child row reference a parent-only variable by name; add a render-path regression for expanded legs so scope leaks fail in test instead of at runtime on `/portfolio`.
 - When a user points to a specific bad position as the clue for a portfolio-wide P&L bug, pivot the reproduction to that exact live position first. Verify the cached portfolio snapshot, the live websocket quote payload, and the rendered row/card for that symbol before designing a generic fix, or you risk fixing the wrong layer.
 - When a dashboard Day Move bug involves a same-day position, compare the rendered close-based move to `ib_daily_pnl` before trusting the math. `reqPnLSingle` uses fill basis for intraday adds, so prior-close calculations can show the opposite sign even when the provider data is already correct.
 - When a user flags a second symbol as having the "same" pricing problem, check both the visible row path and any shared synthetic spread helpers. A row-level stale-last fix can leave shared combo/spread calculations still trusting raw option `last` prints outside the live market.

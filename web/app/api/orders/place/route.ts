@@ -49,10 +49,15 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    // Validate limitPrice: must be positive number
-    if (body.limitPrice == null || body.limitPrice <= 0 || !Number.isFinite(body.limitPrice)) {
+    // Signed combo prices are valid: IB combo pricing preserves credit/debit sign.
+    // Single-leg stock/option orders must remain strictly positive.
+    const comboSignedPrice = body.type === "combo";
+    const limitPriceInvalid = comboSignedPrice
+      ? body.limitPrice == null || body.limitPrice === 0 || !Number.isFinite(body.limitPrice)
+      : body.limitPrice == null || body.limitPrice <= 0 || !Number.isFinite(body.limitPrice);
+    if (limitPriceInvalid) {
       return NextResponse.json(
-        { error: "limitPrice must be a positive number" },
+        { error: comboSignedPrice ? "combo limitPrice must be a non-zero number" : "limitPrice must be a positive number" },
         { status: 400 },
       );
     }

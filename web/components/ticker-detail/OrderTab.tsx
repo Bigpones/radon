@@ -6,11 +6,12 @@ import type { OpenOrder, PortfolioData, PortfolioPosition } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { optionKey } from "@/lib/pricesProtocol";
 import { useOrderActions } from "@/lib/OrderActionsContext";
-import { fmtPrice, legPriceKey } from "@/lib/positionUtils";
+import { fmtPrice, legPriceKey, resolveEntryCost } from "@/lib/positionUtils";
 import ModifyOrderModal from "@/components/ModifyOrderModal";
 import type { ModifyOrderRequest } from "@/lib/orderModify";
 import { checkNakedShortRisk, type NakedShortPortfolio, type OrderPayload } from "@/lib/nakedShortGuard";
 import { OrderConfirmSummary, type OrderSummary } from "@/lib/order";
+import { fmtSignedPrice, toneClass } from "@/lib/format";
 
 type OrderTabProps = {
   ticker: string;
@@ -61,6 +62,14 @@ function resolveOrderPriceData(order: OpenOrder, prices: Record<string, PriceDat
     }
   }
   return null;
+}
+
+function comboQuoteClass(value: number | null, label: "bid" | "mid" | "ask"): string {
+  if (value == null) return "";
+  if (value < 0) return "negative";
+  if (label === "bid") return "spread-price-bid";
+  if (label === "ask") return "spread-price-ask";
+  return "";
 }
 
 /* ─── Existing order row with modify/cancel ─── */
@@ -506,17 +515,15 @@ function ComboOrderForm({
     }
 
     if (!allAvailable) return { bid: null, ask: null, mid: null };
-    const absBid = Math.abs(netBid);
-    const absAsk = Math.abs(netAsk);
-    const bid = Math.min(absBid, absAsk);
-    const ask = Math.max(absBid, absAsk);
+    const bid = Math.min(netBid, netAsk);
+    const ask = Math.max(netBid, netAsk);
     const mid = (bid + ask) / 2;
     return { bid, ask, mid };
   }, [position, prices, ticker, action]);
 
   const parsedQty = parseInt(quantity, 10);
   const parsedPrice = parseFloat(limitPrice);
-  const isValid = !isNaN(parsedQty) && parsedQty > 0 && !isNaN(parsedPrice) && parsedPrice > 0;
+  const isValid = !isNaN(parsedQty) && parsedQty > 0 && Number.isFinite(parsedPrice) && parsedPrice !== 0;
 
   // Naked short guard — reactive warning for combo orders
   const nakedShortWarning = useMemo(() => {
@@ -595,7 +602,7 @@ function ComboOrderForm({
       if (!res.ok) {
         setError(json.error || "Order placement failed");
       } else {
-        setSuccess(`Combo order placed: ${action} ${parsedQty}x ${position.structure} @ ${fmtPrice(parsedPrice)}`);
+        setSuccess(`Combo order placed: ${action} ${parsedQty}x ${position.structure} @ ${fmtSignedPrice(parsedPrice)}`);
         setConfirmStep(false);
         onOrderPlaced?.();
       }
@@ -611,7 +618,7 @@ function ComboOrderForm({
     ? (netPrices.ask - netPrices.bid).toFixed(2) 
     : null;
   const spreadPct = netPrices.mid != null && spreadWidth != null
-    ? ((parseFloat(spreadWidth) / netPrices.mid) * 100).toFixed(1)
+    ? ((parseFloat(spreadWidth) / Math.abs(netPrices.mid)) * 100).toFixed(1)
     : null;
 
   // Calculate order summary for confirmation
@@ -619,7 +626,7 @@ function ComboOrderForm({
     if (!isValid) return null;
     
     const totalCost = parsedQty * parsedPrice * 100;
-    const description = `${action} ${parsedQty}x ${position.structure} @ ${fmtPrice(parsedPrice)}`;
+    const description = `${action} ${parsedQty}x ${position.structure} @ ${fmtSignedPrice(parsedPrice)}`;
     
     // For vertical spreads, calculate max gain/loss
     // Bull Call Spread: LONG lower strike call, SHORT higher strike call
@@ -629,17 +636,18 @@ function ComboOrderForm({
     
     if (hasSpread) {
       const width = Math.abs(strikes[0] - strikes[1]);
-      const netDebit = parsedPrice;
       const maxWidth = width * parsedQty * 100;
       
-      // For closing a position (SELL), the P&L is inverse
+      // For a held combo, SELL is the close/flatten path. Show close-specific
+      // cash-flow semantics instead of generic opening-spread payoff terms.
       if (action === "SELL") {
-        // Selling means we receive premium — this closes the position
+        const closeCashFlow = totalCost;
         return {
           description,
-          totalCost: -totalCost, // Negative because we receive
-          maxGain: totalCost, // Receive the credit
-          maxLoss: null, // Position is closed
+          totalCost: Math.abs(closeCashFlow),
+          totalLabel: `${closeCashFlow >= 0 ? "Close Credit" : "Close Debit"}:`,
+          estimatedPnl: closeCashFlow - resolveEntryCost(position),
+          estimatedPnlLabel: "Est. Realized P&L:",
         };
       } else {
         // Buying to open
@@ -664,20 +672,20 @@ function ComboOrderForm({
       <div className="spread-price-strip">
         <div className="spread-price-item">
           <span className="spread-price-label">BID</span>
-          <span className="spread-price-value spread-price-bid">
-            {netPrices.bid != null ? `$${netPrices.bid.toFixed(2)}` : "---"}
+          <span className={`spread-price-value ${comboQuoteClass(netPrices.bid, "bid")}`}>
+            {fmtSignedPrice(netPrices.bid)}
           </span>
         </div>
         <div className="spread-price-item">
           <span className="spread-price-label">MID</span>
-          <span className="spread-price-value">
-            {netPrices.mid != null ? `$${netPrices.mid.toFixed(2)}` : "---"}
+          <span className={`spread-price-value ${comboQuoteClass(netPrices.mid, "mid")}`}>
+            {fmtSignedPrice(netPrices.mid)}
           </span>
         </div>
         <div className="spread-price-item">
           <span className="spread-price-label">ASK</span>
-          <span className="spread-price-value spread-price-ask">
-            {netPrices.ask != null ? `$${netPrices.ask.toFixed(2)}` : "---"}
+          <span className={`spread-price-value ${comboQuoteClass(netPrices.ask, "ask")}`}>
+            {fmtSignedPrice(netPrices.ask)}
           </span>
         </div>
         <div className="spread-price-item spread-price-width">
@@ -739,12 +747,11 @@ function ComboOrderForm({
       <div className="order-field">
         <label className="order-label">Net Limit Price</label>
         <div className="modify-price-input-row">
-          <span className="modify-price-prefix">$</span>
+          <span className={`modify-price-prefix ${Number.isFinite(parsedPrice) && parsedPrice < 0 ? "negative" : ""}`}>$</span>
           <input
-            className="modify-price-input"
+            className={`modify-price-input ${Number.isFinite(parsedPrice) && parsedPrice < 0 ? "negative" : toneClass(parsedPrice) === "positive" ? "positive" : ""}`}
             type="number"
             step="0.01"
-            min="0.01"
             value={limitPrice}
             onChange={(e) => { setLimitPrice(e.target.value); setConfirmStep(false); }}
             placeholder="0.00"
