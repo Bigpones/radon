@@ -47,9 +47,27 @@ const coveredCall = (ticker: string, shares: number, callContracts: number) => (
   structure_type: "Covered Call",
   contracts: callContracts,
   direction: "CREDIT" as const,
+  expiry: "N/A",
   legs: [
     { direction: "LONG" as const, type: "Stock" as const, contracts: shares, strike: null },
     { direction: "SHORT" as const, type: "Call" as const, contracts: callContracts, strike: 300 },
+  ],
+});
+
+const longOption = (
+  ticker: string,
+  expiry: string,
+  type: "Call" | "Put",
+  strike: number,
+  contracts: number,
+) => ({
+  ticker,
+  structure_type: `Long ${type}`,
+  contracts,
+  direction: "LONG" as const,
+  expiry,
+  legs: [
+    { direction: "LONG" as const, type, contracts, strike },
   ],
 });
 
@@ -314,6 +332,23 @@ describe("checkNakedShortRisk", () => {
     const result = checkNakedShortRisk(order, portfolio);
     expect(result.allowed).toBe(true);
   });
+
+  it("10c. SELL call matching an existing long call contract → allowed (sell to close)", () => {
+    const order = makeOrder({
+      action: "SELL",
+      type: "option",
+      symbol: "WULF",
+      right: "C",
+      strike: 17,
+      expiry: "20270115",
+      quantity: 77,
+    });
+    const portfolio = makePortfolio([
+      longOption("WULF", "2027-01-15", "Call", 17, 77),
+    ]);
+    const result = checkNakedShortRisk(order, portfolio);
+    expect(result.allowed).toBe(true);
+  });
 });
 
 describe("auditOpenOrders", () => {
@@ -368,5 +403,23 @@ describe("auditOpenOrders", () => {
     const violations = auditOpenOrders(orders, portfolio);
     expect(violations).toHaveLength(1);
     expect(violations[0].reason).toContain("AAPL");
+  });
+
+  it("14. audit ignores sell-to-close call orders backed by a matching long call position", () => {
+    const orders: NakedShortOpenOrder[] = [
+      {
+        orderId: 4,
+        permId: 400,
+        symbol: "WULF",
+        action: "SELL",
+        totalQuantity: 77,
+        contract: { secType: "OPT", right: "C", strike: 17, expiry: "2027-01-15", symbol: "WULF" },
+      },
+    ];
+    const portfolio = makePortfolio([
+      longOption("WULF", "2027-01-15", "Call", 17, 77),
+    ]);
+    const violations = auditOpenOrders(orders, portfolio);
+    expect(violations).toHaveLength(0);
   });
 });

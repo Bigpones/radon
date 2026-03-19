@@ -169,8 +169,13 @@ def latest_artifacts(limit: int = 2, artifact_dir: str | Path = ARTIFACT_DIR) ->
 
 
 def latest_available_cta_date(cache_dir: str | Path = CACHE_DIR) -> Optional[str]:
+    """Return the latest CTA cache date (YYYY-MM-DD) from date-named files only.
+
+    Uses a date-specific glob (cta_????-??-??.json) to exclude non-date files
+    like cta_sync_status.json which would otherwise sort after date strings.
+    """
     directory = Path(cache_dir)
-    files = sorted(directory.glob("cta_*.json"))
+    files = sorted(directory.glob("cta_????-??-??.json"))
     if not files:
         return None
     return files[-1].stem.removeprefix("cta_")

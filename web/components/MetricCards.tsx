@@ -24,7 +24,7 @@ const fmt = (n: number) =>
     : `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 
 const fmtSigned = (n: number) =>
-  `${n >= 0 ? "+" : ""}${fmt(Math.abs(n))}`;
+  `${n >= 0 ? "+" : "-"}${fmt(Math.abs(n))}`;
 
 const fmtExact = (n: number) =>
   `$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -293,7 +293,7 @@ function LegacyLeverageRow({ portfolio, pnl, pnlPct }: { portfolio: PortfolioDat
     { label: "Net Liquidation", value: fmt(portfolio.bankroll), change: "BANKROLL", tone: "neutral" },
     { label: "Positions", value: String(portfolio.position_count), change: `${portfolio.defined_risk_count} DEFINED / ${portfolio.undefined_risk_count} UNDEFINED`, tone: "neutral" },
     { label: "Deployed", value: fmt(portfolio.total_deployed_dollars), change: `${portfolio.total_deployed_pct.toFixed(1)}% OF BANKROLL`, tone: portfolio.total_deployed_pct > 100 ? "negative" : "neutral" },
-    { label: "Open P&L", value: `${pnl >= 0 ? "+" : ""}${fmt(Math.abs(pnl))}`, change: `${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%`, tone: tone(pnl) },
+    { label: "Open P&L", value: fmtSigned(pnl), change: `${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%`, tone: tone(pnl) },
   ];
 
   return (
@@ -451,9 +451,9 @@ export default function MetricCards({ portfolio, prices, realizedPnl, executedOr
         open={dayMoveModalOpen}
         title="Day Move — Intraday P&L"
         formula={
-          "Day Move = SUM( sign × (last − close) × contracts × multiplier ) per position\n" +
+          "Day Move = stocks: (last − close) × shares; options: IB reqPnLSingle daily P&L when available, else sign × (last − close) × contracts × multiplier\n" +
           "sign = +1 LONG, −1 SHORT  |  multiplier = 100 for options, 1 for stocks\n" +
-          "Source: Live IB realtime prices vs yesterday's closing price"
+          "Source: IB reqPnLSingle + live IB realtime prices"
         }
         col1Header="CLOSE"
         col2Header="CURRENT"
@@ -584,9 +584,9 @@ export default function MetricCards({ portfolio, prices, realizedPnl, executedOr
         title="Today's Total P&L"
         formula={
           `Total = Day Move + Realized\n` +
-          `      = ${unrealized >= 0 ? "+" : ""}$${Math.abs(unrealized).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (day move)` +
+          `      = ${unrealized >= 0 ? "+" : "-"}$${Math.abs(unrealized).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (day move)` +
           `  ${realized >= 0 ? "+" : "−"}  $${Math.abs(realized).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (fills)\n` +
-          `      = ${total >= 0 ? "+" : ""}$${Math.abs(total).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          `      = ${total >= 0 ? "+" : "-"}$${Math.abs(total).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
         }
         col1Header="COMPONENT"
         col2Header="SOURCE"
@@ -596,7 +596,7 @@ export default function MetricCards({ portfolio, prices, realizedPnl, executedOr
             ticker: "DAY MOVE",
             structure: `${todayUnrealized?.positionsWithData ?? 0} of ${todayUnrealized?.totalPositions ?? 0} positions`,
             col1: "Day Move",
-            col2: "Live WS prices",
+            col2: "IB daily P&L + live prices",
             pnl: unrealized,
             pnlPct: null,
           },

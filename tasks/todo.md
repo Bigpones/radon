@@ -1,5 +1,25 @@
 # TODO
 
+## Session: Fix False Naked-Short Warning On WULF Close Order (2026-03-19)
+
+### Goal
+Fix the WULF ticker order tab so selling the currently-held long Jan 2027 $17 call to close the position is not misclassified as a naked short call. Trace the held-position data from IB sync through the naked-short guard and order-tab payload construction, drive the bug red in unit/API/browser coverage, implement the minimal shared fix, and verify the close-position flow renders and submits without the false block.
+
+### Dependency Graph
+- T1 (Trace the WULF close-position data path from IB-backed portfolio data through the naked-short guard, order tab, and place-order route to reproduce the false warning) depends_on: []
+- T2 (Add failing regression coverage for the false-positive close-position block at the guard, API, and browser layers) depends_on: [T1]
+- T3 (Implement the root-cause fix so selling an owned option contract to close is allowed while true naked short openings stay blocked) depends_on: [T2]
+- T4 (Run focused verification, confirm the browser flow on the WULF order tab, and document review notes) depends_on: [T3]
+
+### Checklist
+- [ ] T1 Trace the WULF close-position data path from IB-backed portfolio data through the naked-short guard, order tab, and place-order route to reproduce the false warning
+- [ ] T2 Add failing regression coverage for the false-positive close-position block at the guard, API, and browser layers
+- [ ] T3 Implement the root-cause fix so selling an owned option contract to close is allowed while true naked short openings stay blocked
+- [ ] T4 Run focused verification, confirm the browser flow on the WULF order tab, and document review notes
+
+### Review
+- Pending
+
 ## Session: Fix Incorrect Positive Day Move On Account Dashboard (2026-03-19)
 
 ### Goal
@@ -12,7 +32,7 @@ Trace why the account dashboard's Day Move can render as positive when the under
 - T4 (Run focused and full verification, confirm the corrected rendering in Chrome/CDP, and document the review notes) depends_on: [T3]
 
 ### Checklist
-- [ ] T1 Trace the live Day Move data path across provider fields, backend shaping, and frontend calculation to reproduce the incorrect positive sign
+- [x] T1 Trace the live Day Move data path across provider fields, backend shaping, and frontend calculation to reproduce the incorrect positive sign
 - [ ] T2 Add failing regression coverage for the broken Day Move semantics at the smallest useful unit and browser layers
 - [ ] T3 Implement the root-cause fix so Day Move preserves the correct sign and source semantics end to end
 - [ ] T4 Run focused and full verification, confirm the corrected rendering in Chrome/CDP, and document the review notes

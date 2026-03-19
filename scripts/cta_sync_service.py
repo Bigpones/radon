@@ -49,6 +49,35 @@ def build_run_id(started_at: str | None = None) -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
+def _pid_is_alive(pid: int) -> bool:
+    """Return True if the given PID is a running process on this host."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except (ProcessLookupError, PermissionError):
+        # ProcessLookupError: no such process
+        # PermissionError: exists but we lack permission (still alive)
+        return isinstance(sys.exc_info()[1], PermissionError)
+
+
+def _clear_stale_lock(lock_dir: Path) -> bool:
+    """Remove lock_dir if held by a dead PID. Returns True if cleared."""
+    lock_file = lock_dir / "lock.json"
+    if not lock_file.exists():
+        shutil.rmtree(lock_dir, ignore_errors=True)
+        return True
+    try:
+        data = json.loads(lock_file.read_text(encoding="utf-8"))
+        pid = int(data.get("pid", 0))
+    except (OSError, json.JSONDecodeError, ValueError):
+        shutil.rmtree(lock_dir, ignore_errors=True)
+        return True
+    if pid and _pid_is_alive(pid):
+        return False
+    shutil.rmtree(lock_dir, ignore_errors=True)
+    return True
+
+
 @contextlib.contextmanager
 def cta_sync_lock(*, target_date: str, run_id: str, lock_dir: Path = LOCK_DIR):
     lock_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -62,7 +91,12 @@ def cta_sync_lock(*, target_date: str, run_id: str, lock_dir: Path = LOCK_DIR):
     try:
         lock_dir.mkdir()
     except FileExistsError as exc:
-        raise CtaSyncLockError("CTA sync lock already held") from exc
+        if not _clear_stale_lock(lock_dir):
+            raise CtaSyncLockError("CTA sync lock already held by a live process") from exc
+        try:
+            lock_dir.mkdir()
+        except FileExistsError as exc2:
+            raise CtaSyncLockError("CTA sync lock already held") from exc2
     try:
         (lock_dir / "lock.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         yield

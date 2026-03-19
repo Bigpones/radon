@@ -379,7 +379,7 @@ def analyze_options_flow(alerts: List[Dict]) -> Dict:
     }
 
 
-def fetch_flow(ticker: str, lookback_days: int = 5) -> Dict:
+def fetch_flow(ticker: str, lookback_days: int = 5, _client: Optional[UWClient] = None) -> Dict:
     """Full flow analysis: dark pool prints + options flow alerts.
 
     Fetches dark pool data for each of the last N TRADING days and aggregates,
@@ -392,6 +392,11 @@ def fetch_flow(ticker: str, lookback_days: int = 5) -> Dict:
     INTRADAY INTERPOLATION: When run during market hours, today's partial data
     is interpolated to estimate full-day values. Both actual and interpolated
     values are returned for transparency.
+    
+    Args:
+        ticker: Stock symbol
+        lookback_days: Number of trading days to fetch (default 5)
+        _client: Optional UWClient to reuse (avoids connection overhead)
     """
     ticker = ticker.upper()
 
@@ -410,7 +415,8 @@ def fetch_flow(ticker: str, lookback_days: int = 5) -> Dict:
     # Get trading day progress for interpolation
     trading_day_progress, is_market_hours, market_status = get_trading_day_progress()
 
-    with UWClient() as client:
+    def _do_fetch(client):
+        nonlocal all_dp_trades, daily_signals
         for date in trading_days:
             trades = fetch_darkpool(ticker, date, _client=client)
             if isinstance(trades, list):
@@ -418,12 +424,17 @@ def fetch_flow(ticker: str, lookback_days: int = 5) -> Dict:
                 day_analysis["date"] = date
                 daily_signals.append(day_analysis)
                 all_dp_trades.extend(trades)
+        return fetch_flow_alerts(ticker, _client=client)
 
-        # Aggregate dark pool analysis
-        aggregate_dp = analyze_darkpool(all_dp_trades)
+    # Use provided client or create new one
+    if _client is not None:
+        flow_alerts = _do_fetch(_client)
+    else:
+        with UWClient() as client:
+            flow_alerts = _do_fetch(client)
 
-        # Fetch options flow
-        flow_alerts = fetch_flow_alerts(ticker, _client=client)
+    # Aggregate dark pool analysis
+    aggregate_dp = analyze_darkpool(all_dp_trades)
     options_summary = analyze_options_flow(flow_alerts if isinstance(flow_alerts, list) else [])
 
     # Interpolate today's data if we're in market hours with partial data

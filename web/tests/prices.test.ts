@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import type { PortfolioPosition } from "../lib/types";
 import { normalizeSymbolList, symbolKey } from "../lib/pricesProtocol";
-import { fmtPriceOrCalculated, getLastPriceIsCalculated } from "../lib/positionUtils";
+import { fmtPriceOrCalculated, getLastPriceIsCalculated, resolveRealtimePrice } from "../lib/positionUtils";
+import type { PriceData } from "../lib/pricesProtocol";
 
 /**
  * Tests for real-time price functionality.
@@ -42,6 +43,64 @@ describe("Price formatting utilities", () => {
 
   it("does not prefix C for raw prices", () => {
     expect(fmtPriceOrCalculated(175.5, false)).toBe("$175.50");
+  });
+});
+
+describe("Realtime price resolution", () => {
+  const makePriceData = (overrides: Partial<PriceData>): PriceData => ({
+    symbol: "TEST",
+    last: null,
+    lastIsCalculated: false,
+    bid: null,
+    ask: null,
+    bidSize: null,
+    askSize: null,
+    volume: null,
+    high: null,
+    low: null,
+    open: null,
+    close: null,
+    week52High: null,
+    week52Low: null,
+    avgVolume: null,
+    delta: null,
+    gamma: null,
+    theta: null,
+    vega: null,
+    impliedVol: null,
+    undPrice: null,
+    timestamp: "2026-03-19T13:36:50.472Z",
+    ...overrides,
+  });
+
+  it("uses bid/ask midpoint for option quotes when last is far outside the live market", () => {
+    const resolved = resolveRealtimePrice(
+      makePriceData({
+        symbol: "WULF_20270115_17_C",
+        last: 21.015,
+        bid: 4.2,
+        ask: 4.75,
+        close: 4.78,
+      }),
+    );
+
+    expect(resolved.price).toBeCloseTo(4.475, 3);
+    expect(resolved.isCalculated).toBe(true);
+  });
+
+  it("keeps stock last prices even when they sit outside the current spread", () => {
+    const resolved = resolveRealtimePrice(
+      makePriceData({
+        symbol: "WULF",
+        last: 14.73,
+        bid: 14.2,
+        ask: 14.25,
+        close: 14.4,
+      }),
+    );
+
+    expect(resolved.price).toBe(14.73);
+    expect(resolved.isCalculated).toBe(false);
   });
 });
 

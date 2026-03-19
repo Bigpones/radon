@@ -1,5 +1,9 @@
 # Lessons
 
+## 2026-03-19
+
+- When a user points to a specific bad position as the clue for a portfolio-wide P&L bug, pivot the reproduction to that exact live position first. Verify the cached portfolio snapshot, the live websocket quote payload, and the rendered row/card for that symbol before designing a generic fix, or you risk fixing the wrong layer.
+
 ## 2026-03-17
 
 - IB Gateway's market data feed can go stale: the TCP connection stays alive (port 4001 listening, control plane responding to `qualifyContracts`) but the data plane stops delivering ticks. All `reqMktData` calls return nan indefinitely. The fix is restarting IB Gateway. This happens when the internal session expires overnight. The WS relay server should detect this condition (subscriptions active but zero ticks received for >30s during market hours) and auto-restart the gateway.

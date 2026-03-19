@@ -222,6 +222,34 @@ describe("computeDayMoveBreakdown — stock mid fallback", () => {
     expect(rows[0].col2).toContain("11.00");
     expect(rows[0].col2).not.toContain("MID");
   });
+
+  test("prefers IB per-position daily P&L over close-based stock math when present", () => {
+    const pos = makeStockPosition({
+      ticker: "AAPL",
+      contracts: 100,
+      ib_daily_pnl: -250,
+    });
+    const portfolio = makePortfolio([pos]);
+
+    const prices: Record<string, PriceData> = {
+      AAPL: makePrice({
+        symbol: "AAPL",
+        last: 11.0,
+        bid: 10.9,
+        ask: 11.1,
+        close: 10.0,
+      }),
+    };
+
+    const { rows, total } = computeDayMoveBreakdown(portfolio, prices);
+    expect(rows).toHaveLength(1);
+
+    // Close-based math would be +100.00, but same-day adds must use IB dailyPnL.
+    expect(total).toBeCloseTo(-250);
+    expect(rows[0].pnl).toBeCloseTo(-250);
+    expect(rows[0].col1).toContain("10.00");
+    expect(rows[0].col2).toContain("11.00");
+  });
 });
 
 // ── computeDayMoveBreakdown: option/leg path with mid fallback ────────────────
@@ -291,5 +319,49 @@ describe("computeDayMoveBreakdown — option mid fallback", () => {
     // Should use last=0.70, not mid=0.55; pnl = (0.70 - 0.45) * 1 * 100 = 25
     expect(total).toBeCloseTo(25);
     expect(rows[0].col2).toContain("0.70");
+  });
+
+  test("prefers IB per-position daily P&L over close-based option math when present", () => {
+    const pos = makeOptionPosition({
+      ticker: "WULF",
+      structure: "Long Call",
+      structure_type: "Long Call",
+      expiry: "2027-01-15",
+      contracts: 77,
+      ib_daily_pnl: -3688.02,
+      legs: [
+        {
+          direction: "LONG",
+          contracts: 77,
+          type: "Call",
+          strike: 17,
+          entry_cost: 40076.51,
+          avg_cost: 520.4741844,
+          market_price: 4.5,
+          market_value: 34650,
+        },
+      ],
+    });
+    const portfolio = makePortfolio([pos]);
+
+    const optionKey = "WULF_20270115_17_C";
+    const prices: Record<string, PriceData> = {
+      [optionKey]: makePrice({
+        symbol: optionKey,
+        last: 4.5,
+        bid: 4.45,
+        ask: 4.55,
+        close: 4.41,
+      }),
+    };
+
+    const { rows, total } = computeDayMoveBreakdown(portfolio, prices);
+    expect(rows).toHaveLength(1);
+
+    // Close-based math would be +693.00, but same-day adds must use IB dailyPnL.
+    expect(total).toBeCloseTo(-3688.02);
+    expect(rows[0].pnl).toBeCloseTo(-3688.02);
+    expect(rows[0].col1).toContain("4.41");
+    expect(rows[0].col2).toContain("4.50");
   });
 });

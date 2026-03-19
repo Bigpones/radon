@@ -42,9 +42,11 @@ export function computeDayMoveBreakdown(
       const current = p ? resolveLastOrMid(p) : null;
       if (current == null || p?.close == null || p.close <= 0) continue;
 
-      const pnl = (current - p.close) * pos.contracts;
-      total += pnl;
-      const pnlPct = p.close !== 0 ? ((current - p.close) / p.close) * 100 : null;
+      const wsPnl = (current - p.close) * pos.contracts;
+      const effectivePnl = pos.ib_daily_pnl != null ? pos.ib_daily_pnl : wsPnl;
+      total += effectivePnl;
+      const closeValue = p.close * pos.contracts;
+      const pnlPct = closeValue !== 0 ? (effectivePnl / Math.abs(closeValue)) * 100 : null;
       const currentLabel = isMid(p)
         ? `$${current.toFixed(2)} (MID)`
         : `$${current.toFixed(2)}`;
@@ -54,7 +56,7 @@ export function computeDayMoveBreakdown(
         structure: pos.structure,
         col1: `$${p.close.toFixed(2)}`,
         col2: currentLabel,
-        pnl,
+        pnl: effectivePnl,
         pnlPct,
       });
       continue;
@@ -84,14 +86,15 @@ export function computeDayMoveBreakdown(
     }
 
     if (allLegsValid) {
-      total += legPnl;
+      const effectivePnl = pos.ib_daily_pnl != null ? pos.ib_daily_pnl : legPnl;
+      total += effectivePnl;
       rows.push({
         id: pos.id,
         ticker: pos.ticker,
         structure: pos.structure,
         col1: closeStr || "---",
         col2: lastStr || "---",
-        pnl: legPnl,
+        pnl: effectivePnl,
         pnlPct: null,
       });
     }

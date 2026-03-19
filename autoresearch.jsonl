@@ -1,1 +1,2 @@
 {"type":"config","name":"Scan Command Speed Optimization","metricName":"total_ms","metricUnit":"ms","bestDirection":"lower"}
+{"run":40,"commit":"e77000c","metric":51293,"metrics":{"per_ticker_ms":2699},"status":"keep","description":"Baseline: 51s for 19 tickers (~2.7s/ticker)","timestamp":1773927362684,"segment":1}

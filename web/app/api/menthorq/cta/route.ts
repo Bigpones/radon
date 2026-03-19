@@ -296,9 +296,16 @@ export async function GET(): Promise<Response> {
     ?? null;
   const cache_meta = buildCacheMeta(expectedDate, latestAvailableDate, latest.mtimeMs);
 
+  // Allow re-trigger if the "syncing" state is stale (> 5 min since last attempt).
+  // A dead-process lock can leave the service permanently in "syncing" otherwise.
+  const syncingIsStale =
+    syncHealth?.state === "syncing" &&
+    syncHealth?.last_attempt_started_at != null &&
+    Date.now() - new Date(syncHealth.last_attempt_started_at).getTime() > 5 * 60 * 1000;
+
   if (
     cache_meta.is_stale === true
-    && syncHealth?.state !== "syncing"
+    && (syncHealth?.state !== "syncing" || syncingIsStale)
     && expectedDate !== latestAvailableDate
   ) {
     triggerBackgroundSync(expectedDate);
