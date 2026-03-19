@@ -21,8 +21,11 @@ Best result: 25,676ms for 19 tickers (from 51,293ms baseline)
 
 ### 3. Skip Flow Alerts for Scanning ✅ APPLIED
 - Scanner only uses darkpool data for ranking
-- Flow alerts were fetched but never used
+- Flow alerts were fetched but scanner didn't use them
 - Added `skip_options_flow=True` parameter — saves 1 API call per ticker
+- Conflict detection deferred to evaluate.py (which does full analysis)
+- Trade-off: Speed (50-67% faster) vs accuracy (scanner may rank conflicting tickers highly)
+- Decision: Accept trade-off — scanner is a quick filter, evaluate.py catches conflicts
 
 ### 4. Batch Darkpool Fetching ❌ NOT APPLICABLE
 - `/api/darkpool/recent` only returns live/recent trades
