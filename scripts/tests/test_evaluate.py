@@ -532,6 +532,7 @@ class TestRunEvaluation:
         assert result.decision == "NO_TRADE"
         assert result.failing_gate == "TICKER_VALIDATION"
 
+    @patch("evaluate.datetime")
     @patch("evaluate.fetch_ticker_info")
     @patch("evaluate.fetch_flow")
     @patch("evaluate.fetch_options")
@@ -541,11 +542,14 @@ class TestRunEvaluation:
     @patch("evaluate.fetch_price_history")
     def test_today_included_in_flow(
         self, mock_price, mock_season, mock_analyst, mock_oi,
-        mock_options, mock_flow, mock_ticker,
+        mock_options, mock_flow, mock_ticker, mock_datetime,
         ticker_data, flow_data_accumulation, options_data_bullish,
         oi_data_massive, analyst_data_bullish, price_history,
     ):
         """Verify we check that today's date appears in the flow data."""
+        # Mock datetime.now() to return the date in our test fixtures
+        mock_datetime.now.return_value = datetime(2026, 3, 5, 11, 0, 0)
+
         mock_ticker.return_value = ticker_data
         mock_flow.return_value = flow_data_accumulation
         mock_options.return_value = options_data_bullish

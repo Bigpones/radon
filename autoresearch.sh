@@ -13,7 +13,7 @@ python3 -m py_compile scripts/evaluate.py 2>&1 || {
 # Benchmark: Single ticker
 echo "=== Single Ticker Benchmark (AAPL) ===" >&2
 start_single=$(python3 -c "import time; print(int(time.time() * 1000))")
-python3 scripts/evaluate.py AAPL --json > /dev/null 2>&1
+python3 scripts/evaluate.py AAPL --json > /dev/null 2>&1 || true  # exit 1 = NO_TRADE (expected)
 end_single=$(python3 -c "import time; print(int(time.time() * 1000))")
 single_ms=$((end_single - start_single))
 echo "Single: ${single_ms}ms" >&2
