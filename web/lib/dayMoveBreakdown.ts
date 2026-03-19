@@ -5,7 +5,7 @@
 
 import type { PortfolioData } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
-import { legPriceKey } from "@/lib/positionUtils";
+import { legPriceKey, resolveRealtimePrice } from "@/lib/positionUtils";
 import type { PnlBreakdownRow } from "@/components/PnlBreakdownModal";
 
 /**
@@ -17,16 +17,12 @@ import type { PnlBreakdownRow } from "@/components/PnlBreakdownModal";
  *   3. null — position should be excluded from the Day Move calculation
  */
 export function resolveLastOrMid(p: PriceData): number | null {
-  if (p.last != null && p.last > 0) return p.last;
-  if (p.bid != null && p.bid > 0 && p.ask != null && p.ask > 0) {
-    return (p.bid + p.ask) / 2;
-  }
-  return null;
+  return resolveRealtimePrice(p).price;
 }
 
 /** Returns true when the resolved price came from the mid (bid/ask), not last. */
 function isMid(p: PriceData): boolean {
-  return (p.last == null || p.last <= 0) && p.bid != null && p.bid > 0 && p.ask != null && p.ask > 0;
+  return resolveRealtimePrice(p).isCalculated;
 }
 
 export function computeDayMoveBreakdown(

@@ -8,6 +8,48 @@ export const fmtUsd = (n: number) => `$${n.toLocaleString("en-US", { maximumFrac
 export const fmtPrice = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 export const fmtPriceOrCalculated = (n: number, isCalculated: boolean) => isCalculated ? `C${fmtPrice(n)}` : fmtPrice(n);
 
+type ResolvedRealtimePrice = {
+  price: number | null;
+  isCalculated: boolean;
+};
+
+function isPositiveNumber(value: number | null | undefined): value is number {
+  return value != null && Number.isFinite(value) && value > 0;
+}
+
+export function resolveRealtimePrice(
+  priceData?: PriceData | null,
+  fallbackPrice?: number | null,
+  fallbackIsCalculated = false,
+): ResolvedRealtimePrice {
+  const last = isPositiveNumber(priceData?.last) ? priceData.last : null;
+  const bid = isPositiveNumber(priceData?.bid) ? priceData.bid : null;
+  const ask = isPositiveNumber(priceData?.ask) ? priceData.ask : null;
+
+  if (last != null) {
+    if (priceData?.symbol?.includes("_") && bid != null && ask != null) {
+      const lo = Math.min(bid, ask);
+      const hi = Math.max(bid, ask);
+      const mid = Number(((bid + ask) / 2).toFixed(4));
+      const divergence = Math.abs(mid - last) / last;
+      if ((last < lo || last > hi) && divergence > 0.2) {
+        return { price: mid, isCalculated: true };
+      }
+    }
+    return { price: last, isCalculated: Boolean(priceData?.lastIsCalculated) };
+  }
+
+  if (bid != null && ask != null) {
+    return { price: Number(((bid + ask) / 2).toFixed(4)), isCalculated: true };
+  }
+
+  if (isPositiveNumber(fallbackPrice)) {
+    return { price: fallbackPrice, isCalculated: fallbackIsCalculated };
+  }
+
+  return { price: null, isCalculated: false };
+}
+
 /* ─── Position math ───────────────────────────────────────── */
 
 export function resolveMarketValue(pos: PortfolioPosition): number | null {
@@ -149,10 +191,11 @@ export function getOptionDailyChg(pos: PortfolioPosition, prices?: Record<string
   for (const leg of pos.legs) {
     const key = legPriceKey(pos.ticker, pos.expiry, leg);
     const lp = key ? prices[key] : null;
-    if (!lp || lp.last == null || lp.last <= 0) return null;
+    const current = resolveRealtimePrice(lp, leg.market_price, Boolean(leg.market_price_is_calculated)).price;
+    if (current == null) return null;
     const sign = leg.direction === "LONG" ? 1 : -1;
     if (lp.close != null && lp.close > 0) {
-      wsDailyPnl += sign * (lp.last - lp.close) * leg.contracts * 100;
+      wsDailyPnl += sign * (current - lp.close) * leg.contracts * 100;
       closeValue += sign * lp.close * leg.contracts * 100;
       hasClose = true;
     }

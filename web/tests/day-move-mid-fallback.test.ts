@@ -298,7 +298,7 @@ describe("computeDayMoveBreakdown — option mid fallback", () => {
     expect(rows).toHaveLength(0);
   });
 
-  test("uses last price when both last and mid are available (option)", () => {
+  test("uses last price for options when it remains inside the live bid/ask market", () => {
     const pos = makeOptionPosition({ ticker: "AAPL", contracts: 1 });
     const portfolio = makePortfolio([pos]);
 
@@ -306,7 +306,7 @@ describe("computeDayMoveBreakdown — option mid fallback", () => {
     const prices: Record<string, PriceData> = {
       [optionKey]: makePrice({
         symbol: optionKey,
-        last: 0.70,
+        last: 0.58,
         bid: 0.50,
         ask: 0.60,
         close: 0.45,
@@ -316,9 +316,9 @@ describe("computeDayMoveBreakdown — option mid fallback", () => {
     const { rows, total } = computeDayMoveBreakdown(portfolio, prices);
     expect(rows).toHaveLength(1);
 
-    // Should use last=0.70, not mid=0.55; pnl = (0.70 - 0.45) * 1 * 100 = 25
-    expect(total).toBeCloseTo(25);
-    expect(rows[0].col2).toContain("0.70");
+    // last=0.58 remains inside the market, so it should win over the midpoint 0.55.
+    expect(total).toBeCloseTo(13);
+    expect(rows[0].col2).toContain("0.58");
   });
 
   test("uses midpoint when an option last price is stale and far outside bid/ask", () => {

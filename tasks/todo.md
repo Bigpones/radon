@@ -35,10 +35,26 @@ Trace why the account dashboard's Day Move can render as positive when the under
 - [x] T1 Trace the live Day Move data path across provider fields, backend shaping, and frontend calculation to reproduce the incorrect positive sign
 - [x] T2 Add failing regression coverage for the broken Day Move semantics at the smallest useful unit and browser layers
 - [x] T3 Implement the root-cause fix so Day Move preserves the correct sign and source semantics end to end
-- [ ] T4 Run focused and full verification, confirm the corrected rendering in Chrome/CDP, and document the review notes
+- [x] T4 Run focused and full verification, confirm the corrected rendering in Chrome/CDP, and document the review notes
 
 ### Review
-- Pending
+- Root-cause trace:
+  - Third-party provider boundary: Interactive Brokers already exposes authoritative daily P&L through `reqPnL()` at the account level and `reqPnLSingle()` at the position level. In the live snapshot, WULF carried negative `ib_daily_pnl` while the account summary `daily_pnl` was also negative, so IB itself was not the source of the positive sign.
+  - Backend shaping boundary: [ib_sync.py](/Users/joemccann/dev/apps/finance/radon/scripts/ib_sync.py) persists per-position `ib_daily_pnl` into [portfolio.json](/Users/joemccann/dev/apps/finance/radon/data/portfolio.json). For WULF, that field stayed negative even when the option’s current mark was above the prior close, because IB correctly uses fill basis for same-day adds rather than treating them as overnight inventory.
+  - Frontend calculation boundary: [dayMoveBreakdown.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/dayMoveBreakdown.ts) already preferred `ib_daily_pnl` for option rows in the dirty worktree, but the stock path still recomputed `(last - close) * shares` unconditionally. That left the helper internally inconsistent and allowed intraday stock adds to drift from IB semantics.
+  - Frontend render boundary: [MetricCards.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/MetricCards.tsx) used compact signed formatting for the Day Move and Total cards. The live bundle had been rendering negative compact values without an explicit minus in that path, which made negative day P&L read as unsigned/positive at a glance.
+- Fixes:
+  - Extended [dayMoveBreakdown.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/dayMoveBreakdown.ts) so stock positions now also prefer `pos.ib_daily_pnl` over naive close-based math when IB already supplied authoritative daily P&L.
+  - Normalized the remaining compact-sign rendering in [MetricCards.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/MetricCards.tsx) so negative card values and the total-proof formula always print an explicit minus.
+  - Added regression coverage in [day-move-mid-fallback.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/day-move-mid-fallback.test.ts) for both the stock and option branches, and added browser coverage in [day-move-ib-daily-pnl.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/day-move-ib-daily-pnl.spec.ts) for a WULF-style same-day long call position where `last > prior close` but `ib_daily_pnl < 0`.
+- Verification:
+  - Focused unit: `npx vitest run web/tests/day-move-mid-fallback.test.ts --config vitest.config.ts`
+  - Focused browser: `cd web && npx playwright test e2e/day-move-ib-daily-pnl.spec.ts --config playwright.no-server.config.ts`
+  - Live browser fallback verification: the bundled `chrome-cdp` skill script at `/Users/joemccann/.agents/skills/chrome-cdp/scripts/cdp.mjs` is a zero-byte file, so direct CDP automation was unavailable in this runtime. I used the required Playwright fallback against the live app at `http://127.0.0.1:3000/portfolio`, which rendered `Day Move -$22,793`, `Total -$22,793`, and a negative WULF row (`-$3,472.02`) inside the Day Move modal.
+  - Full-suite attempts:
+    - `python3 -m pytest -q` is currently blocked by an unrelated import error in `scripts/tests/test_scenario_analysis.py` (`cannot import name 'approx_delta' from 'scenario_analysis'`).
+    - `npx vitest run --config vitest.config.ts` currently has unrelated existing failures in `fastapi-migration.test.ts`, `modify-order-ticker-detail.test.ts`, `naked-short-guard.test.ts`, `order-place-close-held-option.test.ts`, and `prices.test.ts`.
+    - `npm test` at repo root has no `test` script, `cd web && npm test` is misconfigured and finds no tests, and the full Playwright runner currently fails to spawn its configured web server (`spawn /bin/sh ENOENT`). None of those failures were introduced by this Day Move patch.
 
 ## Session: Fix False Modify Confirmation On `/orders` (2026-03-18)
 

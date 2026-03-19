@@ -19,6 +19,7 @@ import {
   getLastPriceIsCalculated,
   legPriceKey,
   getOptionDailyChg,
+  resolveRealtimePrice,
 } from "@/lib/positionUtils";
 
 /* ─── Sortable header cell ─────────────────────────────── */
@@ -120,10 +121,10 @@ function getOptionRtMv(pos: PortfolioPosition, prices?: Record<string, PriceData
   for (const leg of pos.legs) {
     const key = legPriceKey(pos.ticker, pos.expiry, leg);
     const lp = key && prices ? prices[key] : null;
-    const last = (lp?.last != null && lp.last > 0) ? lp.last : (leg.market_price != null && leg.market_price > 0 ? leg.market_price : null);
-    if (last == null) return null;
+    const current = resolveRealtimePrice(lp, leg.market_price, Boolean(leg.market_price_is_calculated)).price;
+    if (current == null) return null;
     const sign = leg.direction === "LONG" ? 1 : -1;
-    rtMv += sign * last * leg.contracts * 100;
+    rtMv += sign * current * leg.contracts * 100;
   }
   return rtMv;
 }
@@ -203,14 +204,18 @@ function LegRow({
   realtimeLegPrice?: PriceData | null;
   onLegClick?: (leg: PortfolioLeg) => void;
 }) {
-  const rtLast = realtimeLegPrice?.last != null && realtimeLegPrice.last > 0 ? realtimeLegPrice.last : null;
-  const marketPrice = rtLast ?? (leg.market_price != null ? Math.abs(leg.market_price) : null);
-  const isCalculated = rtLast != null ? Boolean(realtimeLegPrice?.lastIsCalculated) : Boolean(leg.market_price_is_calculated);
+  const resolvedPrice = resolveRealtimePrice(
+    realtimeLegPrice,
+    leg.market_price != null ? Math.abs(leg.market_price) : null,
+    Boolean(leg.market_price_is_calculated),
+  );
+  const marketPrice = resolvedPrice.price;
+  const isCalculated = resolvedPrice.isCalculated;
   const { direction: priceDirection, flashDirection } = usePriceDirection(marketPrice);
 
   // Per-leg P&L: sign-aware (MV - EC)
   const mult = leg.type === "Stock" ? 1 : 100;
-  const legMv = rtLast != null ? rtLast * leg.contracts * mult : leg.market_value != null ? Math.abs(leg.market_value) : null;
+  const legMv = marketPrice != null ? marketPrice * leg.contracts * mult : leg.market_value != null ? Math.abs(leg.market_value) : null;
   const legEc = Math.abs(leg.entry_cost);
   const sign = leg.direction === "LONG" ? 1 : -1;
   const legPnl = legMv != null ? sign * (legMv - legEc) : null;
@@ -261,22 +266,29 @@ function PositionRow({ pos, showExpiry = true, showStrike = false, showUnderlyin
     let rtDailyPnl = 0;
     let rtCloseValue = 0;
     let hasCloseData = false;
+    let priceIsCalculated = false;
     for (const leg of pos.legs) {
       const key = legPriceKey(pos.ticker, pos.expiry, leg);
       const lp = key && prices ? prices[key] : null;
-      // Use WS last, fall back to synced market_price
-      const last = (lp?.last != null && lp.last > 0) ? lp.last : (leg.market_price != null && leg.market_price > 0 ? leg.market_price : null);
-      if (last == null) return null;
+      const resolved = resolveRealtimePrice(lp, leg.market_price, Boolean(leg.market_price_is_calculated));
+      const current = resolved.price;
+      if (current == null) return null;
+      priceIsCalculated = priceIsCalculated || resolved.isCalculated;
       const sign = leg.direction === "LONG" ? 1 : -1;
-      rtMv += sign * last * leg.contracts * 100;
+      rtMv += sign * current * leg.contracts * 100;
       const close = lp?.close;
       if (close != null && close > 0) {
-        rtDailyPnl += sign * (last - close) * leg.contracts * 100;
+        rtDailyPnl += sign * (current - close) * leg.contracts * 100;
         rtCloseValue += sign * close * leg.contracts * 100;
         hasCloseData = true;
       }
     }
-    return { mv: rtMv, dailyPnl: hasCloseData ? rtDailyPnl : null, closeValue: rtCloseValue };
+    return {
+      mv: rtMv,
+      dailyPnl: hasCloseData ? rtDailyPnl : null,
+      closeValue: rtCloseValue,
+      priceIsCalculated,
+    };
   }, [isStock, prices, pos.legs, pos.ticker, pos.expiry]);
 
   const mv = rtLast != null ? rtLast * pos.contracts : optionsRt?.mv ?? resolveMarketValue(pos);
@@ -285,7 +297,7 @@ function PositionRow({ pos, showExpiry = true, showStrike = false, showUnderlyin
   const pnlPct = pnl != null && entryCost !== 0 ? (pnl / Math.abs(entryCost)) * 100 : null;
   const avgEntry = getAvgEntry(pos);
   const lastPrice = rtLast ?? (optionsRt ? mv! / (pos.contracts * getMultiplier(pos)) : getLastPrice(pos));
-  const lastPriceIsCalculated = rtLast != null || optionsRt != null ? false : getLastPriceIsCalculated(pos);
+  const lastPriceIsCalculated = rtLast != null ? false : optionsRt ? optionsRt.priceIsCalculated : getLastPriceIsCalculated(pos);
   const { direction: priceDirection, flashDirection } = usePriceDirection(lastPrice);
   // Stock: daily change from underlying WS price
   // Options: prefer IB's per-position daily P&L (handles intraday additions correctly)
