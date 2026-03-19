@@ -308,8 +308,9 @@ def determine_edge(
     recent_strength = float(daily[0].get("flow_strength", 0)) if daily else 0.0
 
     # Check if signal is priced in: price moved > 5% in same direction as flow
+    # This check is skipped if price_history is empty (deferred IB fetch optimization)
     signal_priced_in = False
-    if len(price_history) >= 2:
+    if price_history and len(price_history) >= 2:
         first_close = price_history[0].get("close", 0)
         last_close = price_history[-1].get("close", 0)
         if first_close and last_close:
@@ -556,18 +557,24 @@ def _fetch_all_prices(tickers: List[str], days: int = 10) -> Dict[str, List[Dict
 def run_evaluations(
     tickers: List[str],
     bankroll: float = 1_200_000,
+    skip_ib_price: bool = False,
 ) -> List[EvaluationResult]:
     """Run evaluations for multiple tickers with IB connection pooling.
 
     For single ticker: uses standard flow (IB fetch inside run_evaluation).
-    For multiple tickers: batches IB fetch, then runs UW milestones sequentially.
+    For multiple tickers: optionally batches IB fetch, then runs UW milestones.
+
+    Args:
+        tickers: List of ticker symbols
+        bankroll: Current bankroll for Kelly sizing
+        skip_ib_price: If True, skip IB price history entirely (faster, skips signal_priced_in check)
     """
-    if len(tickers) == 1:
+    if len(tickers) == 1 and not skip_ib_price:
         # Single ticker — standard flow, no batch overhead
         return [run_evaluation(tickers[0], bankroll=bankroll)]
 
-    # Batch fetch all price data with a single IB connection
-    price_cache = _fetch_all_prices(tickers)
+    # Optionally batch fetch all price data with a single IB connection
+    price_cache = {} if skip_ib_price else _fetch_all_prices(tickers)
 
     # Process tickers sequentially (each has internal parallelism for UW calls)
     # This avoids 35 concurrent UW requests (5 tickers × 7 milestones)
@@ -905,10 +912,12 @@ def main():
                         help="Current bankroll (default: 1,200,000)")
     parser.add_argument("--json", action="store_true",
                         help="Output raw JSON instead of formatted report")
+    parser.add_argument("--fast", action="store_true",
+                        help="Skip IB price history (faster, skips signal_priced_in check)")
     args = parser.parse_args()
 
     tickers = [t.upper() for t in args.tickers]
-    results = run_evaluations(tickers, bankroll=args.bankroll)
+    results = run_evaluations(tickers, bankroll=args.bankroll, skip_ib_price=args.fast)
 
     if args.json:
         output = []

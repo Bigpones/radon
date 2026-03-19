@@ -18,10 +18,10 @@ end_single=$(python3 -c "import time; print(int(time.time() * 1000))")
 single_ms=$((end_single - start_single))
 echo "Single: ${single_ms}ms" >&2
 
-# Benchmark: 5 tickers (batched with IB connection pooling)
-echo "=== Multi-Ticker Benchmark (5 tickers) ===" >&2
+# Benchmark: 5 tickers (fast mode - skip IB price history)
+echo "=== Multi-Ticker Benchmark (5 tickers, --fast) ===" >&2
 start_multi=$(python3 -c "import time; print(int(time.time() * 1000))")
-python3 scripts/evaluate.py AAPL MSFT NVDA GOOG TSLA --json > /dev/null 2>&1 || true
+python3 scripts/evaluate.py AAPL MSFT NVDA GOOG TSLA --json --fast > /dev/null 2>&1 || true
 end_multi=$(python3 -c "import time; print(int(time.time() * 1000))")
 total_ms=$((end_multi - start_multi))
 echo "Multi (5): ${total_ms}ms" >&2

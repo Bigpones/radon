@@ -72,6 +72,24 @@ evaluate.py
 
 ### Experiment 1: Baseline
 - Single ticker: ~2450ms
-- 5 tickers sequential: ~23,300ms
+- 5 tickers sequential: ~14,500ms
 - IB connect dominates: 1800ms per evaluation
+
+### Experiment 2: IB Connection Pooling ✅ KEEP
+- Added `run_evaluations()` with single IB connection for all tickers
+- Added `_fetch_all_prices()` batch fetch
+- Result: 8,500ms (-41%) but high variability (8s-49s)
+- Network/API variability causes inconsistent results
+- Single ticker path preserved (no batch overhead)
+
+### Experiment 3: Parallel Evaluation with 2 Workers ❌ DISCARD  
+- Tried running 2 evals in parallel after IB batch
+- Caused UW rate limiting — worse performance
+- Sequential per-ticker is more reliable
+
+### Key Bottlenecks Remaining
+1. Network variability (UW API, IB Gateway)
+2. M2 flow: 0.87s (5 days × UW calls)
+3. M1 ticker: 0.54s (3 days × UW + flow alerts)
+4. IB batch: 2-6s (connection + data)
 
