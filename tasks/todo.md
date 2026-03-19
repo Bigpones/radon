@@ -1,5 +1,22 @@
 # TODO
 
+## Session: Fix `rtLast` ReferenceError In Portfolio Leg Rows (2026-03-19)
+
+### Goal
+Fix the `/portfolio` runtime crash caused by `LegRow` referencing `rtLast`, which only exists in `PositionRow`. Reproduce the failure with regression coverage, patch the shared row rendering with the minimal root-cause fix, and verify the portfolio page renders expanded leg rows in the browser without throwing.
+
+### Dependency Graph
+- T1 (Trace the `LegRow` render path and confirm how the undefined `rtLast` reference escaped into the expanded multi-leg row) depends_on: []
+- T2 (Add failing regression coverage for the expanded leg-row render path so the `ReferenceError` reproduces before the fix) depends_on: [T1]
+- T3 (Implement the minimal fix so leg-row market value uses the resolved leg price instead of a missing parent-scope variable) depends_on: [T2]
+- T4 (Run focused verification, confirm `/portfolio` renders without the runtime error in the browser, and document review notes) depends_on: [T3]
+
+### Checklist
+- [ ] T1 Trace the `LegRow` render path and confirm how the undefined `rtLast` reference escaped into the expanded multi-leg row
+- [ ] T2 Add failing regression coverage for the expanded leg-row render path so the `ReferenceError` reproduces before the fix
+- [ ] T3 Implement the minimal fix so leg-row market value uses the resolved leg price instead of a missing parent-scope variable
+- [ ] T4 Run focused verification, confirm `/portfolio` renders without the runtime error in the browser, and document review notes
+
 ## Session: Fix CROX Bull Call Spread Pricing On Portfolio Positions (2026-03-19)
 
 ### Goal
