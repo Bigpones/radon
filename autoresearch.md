@@ -119,9 +119,19 @@ evaluate.py
 3. **--fast mode achieves target** — 7s average when no rate limiting
 4. **Parallel evaluation doesn't work** — UW can't handle 35 concurrent requests
 
+### Experiment 6: Enable Analyst Ratings Cache ✅ KEEP
+- Changed `use_cache=False` to `use_cache=True` in M1C
+- Reduces API calls when cache is warm
+- No semantic change (analyst ratings change slowly)
+
+### Experiment 7: Reduce Thread Pool Workers ❌ DISCARD
+- Tried reducing from 7 to 4 workers
+- Doesn't help with rate limiting, hurts single-ticker latency
+
 ### Bottlenecks Remaining (for future work)
-1. UW rate limiting (need request caching or smarter batching)
-2. M2 flow makes 5+ UW calls per ticker
-3. M1 ticker makes 3+ UW calls per ticker
+1. **UW rate limiting is the dominant factor** — 8s when not limited, 50s+ when limited
+2. M2 flow makes 5+ UW calls per ticker (5 days of darkpool + flow alerts)
+3. M1 ticker makes 3+ UW calls per ticker (3 days of darkpool + flow alerts)
 4. No request deduplication between evaluations
+5. UWClient backoff during rate limiting adds significant time
 

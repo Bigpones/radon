@@ -37,16 +37,38 @@ type CtaSyncHealth = {
 
 let bgSyncInFlight = false;
 
-function todayET(now = new Date()): string {
-  return now.toLocaleDateString("sv", { timeZone: "America/New_York" });
+/**
+ * Extract ET date/time parts directly using Intl — avoids the
+ * double-conversion bug where new Date(localeString) is parsed in
+ * the system timezone instead of ET.
+ */
+function etDateParts(now: Date): { year: number; month: number; day: number; hour: number; minute: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)!.value);
+  return { year: get("year"), month: get("month"), day: get("day"), hour: get("hour"), minute: get("minute") };
+}
+
+function formatYMD(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
 }
 
 function latestClosedTradingDay(now = new Date()): string {
-  const et = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
-  const candidate = new Date(et);
-  const minutes = candidate.getHours() * 60 + candidate.getMinutes();
+  const { year, month, day, hour, minute } = etDateParts(now);
+  const minutesOfDay = hour * 60 + minute;
+  const candidate = new Date(year, month - 1, day);
 
-  if (!isTradingDay(candidate) || minutes < 16 * 60) {
+  if (!isTradingDay(candidate) || minutesOfDay < 16 * 60) {
     candidate.setDate(candidate.getDate() - 1);
   }
 
@@ -54,7 +76,7 @@ function latestClosedTradingDay(now = new Date()): string {
     candidate.setDate(candidate.getDate() - 1);
   }
 
-  return todayET(candidate);
+  return formatYMD(candidate);
 }
 
 function isTradingDay(value: Date): boolean {

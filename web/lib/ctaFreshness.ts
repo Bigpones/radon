@@ -15,12 +15,28 @@ export interface CtaCacheMeta {
   stale_reason: CtaStaleReason;
 }
 
-function toEtDate(now: Date): Date {
-  return new Date(now.toLocaleString("en-US", { timeZone: ET_TIME_ZONE }));
+/**
+ * Extract ET date/time parts directly using Intl (no double-conversion).
+ */
+function etParts(now: Date): { year: number; month: number; day: number; hour: number; minute: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: ET_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)!.value);
+  return { year: get("year"), month: get("month"), day: get("day"), hour: get("hour"), minute: get("minute") };
 }
 
-function formatEtDate(value: Date): string {
-  return value.toLocaleDateString("sv", { timeZone: ET_TIME_ZONE });
+function formatYMD(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
 }
 
 function isTradingWeekday(value: Date): boolean {
@@ -29,9 +45,10 @@ function isTradingWeekday(value: Date): boolean {
 }
 
 export function latestClosedTradingDayET(now: Date = new Date()): string {
-  const et = toEtDate(now);
-  const candidate = new Date(et);
-  const minutes = candidate.getHours() * 60 + candidate.getMinutes();
+  const { year, month, day, hour, minute } = etParts(now);
+  const minutes = hour * 60 + minute;
+
+  const candidate = new Date(year, month - 1, day);
 
   if (!(isTradingWeekday(candidate) && minutes >= MARKET_CLOSE_MINUTES)) {
     candidate.setDate(candidate.getDate() - 1);
@@ -41,7 +58,7 @@ export function latestClosedTradingDayET(now: Date = new Date()): string {
     candidate.setDate(candidate.getDate() - 1);
   }
 
-  return formatEtDate(candidate);
+  return formatYMD(candidate);
 }
 
 export function buildCtaCacheMeta(params: {
