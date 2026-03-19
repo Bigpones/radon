@@ -256,7 +256,17 @@ export function positionGroupShareData(
     // Fallback to portfolio position data if we couldn't find opening fills
     // (happens when position was opened on a previous day)
     if (entryPrice == null && portfolioPositions) {
-      const matchingPosition = portfolioPositions.find((p) => p.ticker === group.symbol);
+      // Match by ticker AND structure to avoid picking up a different position
+      // on the same underlying (e.g., new PLTR Bull Call Spread vs closed PLTR Long Call).
+      // Extract key structure words from the group description for fuzzy matching.
+      const descWords = group.description.replace(/[()$,]/g, " ").toLowerCase().split(/\s+/).filter(Boolean);
+      const matchingPosition = portfolioPositions.find((p) => {
+        if (p.ticker !== group.symbol) return false;
+        const posWords = p.structure.replace(/[()$,]/g, " ").toLowerCase().split(/\s+/).filter(Boolean);
+        // At least 2 key words must overlap (e.g., "long" + "call", or "bull" + "spread")
+        const overlap = posWords.filter((w) => descWords.includes(w));
+        return overlap.length >= 2;
+      });
       if (matchingPosition) {
         // Calculate per-unit entry price from legs
         // For single-leg positions, use avg_cost directly
