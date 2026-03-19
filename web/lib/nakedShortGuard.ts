@@ -5,8 +5,15 @@
  * - SELL stock without sufficient long shares → BLOCK
  * - SELL call without sufficient long shares to cover → BLOCK
  * - SELL put → ALLOW (cash-secured, defined risk)
- * - Combo/spread with both BUY+SELL legs → ALLOW (covered by long leg)
- * - BUY anything → ALLOW
+ * - Combo closing (action=SELL) → ALLOW (reduces exposure)
+ * - Combo opening (action=BUY): inspect leg structure
+ *     - SELL call legs not offset by BUY call legs → need stock coverage (BLOCK if uncovered)
+ *     - SELL call legs fully offset by BUY call legs (vertical spread) → ALLOW
+ *     - Only SELL put legs in combo → ALLOW (cash-secured)
+ * - BUY single-leg → ALLOW
+ *
+ * NOTE: IB BAG combo orders always use BUY as the envelope action; leg actions define structure.
+ * The combo check must come BEFORE the BUY early-return to correctly inspect leg-level exposure.
  */
 
 /* ---------- types ---------- */
@@ -99,18 +106,46 @@ export function checkNakedShortRisk(
   order: OrderPayload,
   portfolio: NakedShortPortfolio,
 ): GuardResult {
-  // BUY anything → always allowed
-  if (order.action === "BUY") {
+  // Combo (BAG) orders — inspect leg structure before the BUY early-return.
+  // IB BAG orders always carry action=BUY on the envelope; leg actions define the structure.
+  if (order.type === "combo" && order.legs && order.legs.length >= 2) {
+    // Closing a combo (action=SELL) always reduces exposure → allow.
+    if (order.action === "SELL") {
+      return { allowed: true };
+    }
+
+    // Opening: each SELL call leg must be offset by a BUY call leg (vertical spread)
+    // or covered by sufficient long stock. Short put legs are cash-secured → always ok.
+    const sellCallRatio = order.legs
+      .filter((l) => l.action === "SELL" && l.right === "C")
+      .reduce((sum, l) => sum + l.ratio, 0);
+    const buyCallRatio = order.legs
+      .filter((l) => l.action === "BUY" && l.right === "C")
+      .reduce((sum, l) => sum + l.ratio, 0);
+
+    // Uncovered = short call ratio not offset by a long call in this combo
+    const uncoveredRatio = sellCallRatio - buyCallRatio;
+
+    if (uncoveredRatio > 0) {
+      const shares = countLongShares(order.symbol, portfolio);
+      const existingShortCalls = countExistingShortCalls(order.symbol, portfolio);
+      const totalShortCalls = existingShortCalls + uncoveredRatio * order.quantity;
+      const coveredContracts = Math.floor(shares / 100);
+
+      if (totalShortCalls > coveredContracts) {
+        return {
+          allowed: false,
+          reason: `Naked short call in combo: SELL call leg not covered by long call for ${order.symbol} — add a long call leg or hold ${uncoveredRatio * order.quantity * 100} shares`,
+        };
+      }
+    }
+
     return { allowed: true };
   }
 
-  // Combo/spread with both BUY and SELL legs → covered by long leg
-  if (order.type === "combo" && order.legs && order.legs.length >= 2) {
-    const hasBuy = order.legs.some((l) => l.action === "BUY");
-    const hasSell = order.legs.some((l) => l.action === "SELL");
-    if (hasBuy && hasSell) {
-      return { allowed: true };
-    }
+  // Single-leg: BUY anything → always allowed
+  if (order.action === "BUY") {
+    return { allowed: true };
   }
 
   const sym = order.symbol;

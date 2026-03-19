@@ -178,6 +178,127 @@ describe("checkNakedShortRisk", () => {
     expect(result.allowed).toBe(true);
   });
 
+  it("14. Short risk reversal (SELL C + BUY P), no stock → blocked", () => {
+    // Gap fix: BUY envelope but legs contain an uncovered SELL call
+    const order: OrderPayload = {
+      type: "combo",
+      symbol: "TSLA",
+      action: "BUY",
+      quantity: 1,
+      limitPrice: 0,
+      legs: [
+        { expiry: "2026-06-20", strike: 300, right: "C", action: "SELL", ratio: 1 },
+        { expiry: "2026-06-20", strike: 260, right: "P", action: "BUY", ratio: 1 },
+      ],
+    };
+    const result = checkNakedShortRisk(order, makePortfolio());
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain("Naked short call in combo");
+    expect(result.reason).toContain("TSLA");
+  });
+
+  it("15. Short risk reversal (SELL C + BUY P), stock covers → allowed", () => {
+    const order: OrderPayload = {
+      type: "combo",
+      symbol: "TSLA",
+      action: "BUY",
+      quantity: 1,
+      limitPrice: 0,
+      legs: [
+        { expiry: "2026-06-20", strike: 300, right: "C", action: "SELL", ratio: 1 },
+        { expiry: "2026-06-20", strike: 260, right: "P", action: "BUY", ratio: 1 },
+      ],
+    };
+    const portfolio = makePortfolio([longStock("TSLA", 100)]);
+    const result = checkNakedShortRisk(order, portfolio);
+    expect(result.allowed).toBe(true);
+  });
+
+  it("16. Bull call spread (BUY C + SELL C) → allowed (regression: still correct after fix)", () => {
+    const order: OrderPayload = {
+      type: "combo",
+      symbol: "AAPL",
+      action: "BUY",
+      quantity: 5,
+      limitPrice: 2.5,
+      legs: [
+        { expiry: "2026-04-17", strike: 270, right: "C", action: "BUY", ratio: 1 },
+        { expiry: "2026-04-17", strike: 290, right: "C", action: "SELL", ratio: 1 },
+      ],
+    };
+    const result = checkNakedShortRisk(order, makePortfolio());
+    expect(result.allowed).toBe(true);
+  });
+
+  it("17. Jade Lizard (BUY C + SELL higher C + SELL P) → allowed (call spread covered, put cash-secured)", () => {
+    const order: OrderPayload = {
+      type: "combo",
+      symbol: "AAPL",
+      action: "BUY",
+      quantity: 1,
+      limitPrice: 2.0,
+      legs: [
+        { expiry: "2026-04-17", strike: 300, right: "C", action: "BUY", ratio: 1 },
+        { expiry: "2026-04-17", strike: 310, right: "C", action: "SELL", ratio: 1 },
+        { expiry: "2026-04-17", strike: 270, right: "P", action: "SELL", ratio: 1 },
+      ],
+    };
+    const result = checkNakedShortRisk(order, makePortfolio());
+    expect(result.allowed).toBe(true);
+  });
+
+  it("18. 1x2 ratio call spread (BUY 1C + SELL 2C), no stock → blocked (1 uncovered call)", () => {
+    const order: OrderPayload = {
+      type: "combo",
+      symbol: "AAPL",
+      action: "BUY",
+      quantity: 1,
+      limitPrice: 0.5,
+      legs: [
+        { expiry: "2026-04-17", strike: 280, right: "C", action: "BUY", ratio: 1 },
+        { expiry: "2026-04-17", strike: 290, right: "C", action: "SELL", ratio: 2 },
+      ],
+    };
+    const result = checkNakedShortRisk(order, makePortfolio());
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain("Naked short call in combo");
+  });
+
+  it("19. 1x2 ratio call spread (BUY 1C + SELL 2C), stock covers uncovered call → allowed", () => {
+    const order: OrderPayload = {
+      type: "combo",
+      symbol: "AAPL",
+      action: "BUY",
+      quantity: 1,
+      limitPrice: 0.5,
+      legs: [
+        { expiry: "2026-04-17", strike: 280, right: "C", action: "BUY", ratio: 1 },
+        { expiry: "2026-04-17", strike: 290, right: "C", action: "SELL", ratio: 2 },
+      ],
+    };
+    // 1 uncovered short call × 1 qty × 100 = 100 shares needed
+    const portfolio = makePortfolio([longStock("AAPL", 100)]);
+    const result = checkNakedShortRisk(order, portfolio);
+    expect(result.allowed).toBe(true);
+  });
+
+  it("20. Closing a combo (action=SELL) → allowed regardless of leg structure", () => {
+    // Closing a short risk reversal should not be blocked
+    const order: OrderPayload = {
+      type: "combo",
+      symbol: "TSLA",
+      action: "SELL",
+      quantity: 1,
+      limitPrice: 0,
+      legs: [
+        { expiry: "2026-06-20", strike: 300, right: "C", action: "SELL", ratio: 1 },
+        { expiry: "2026-06-20", strike: 260, right: "P", action: "BUY", ratio: 1 },
+      ],
+    };
+    const result = checkNakedShortRisk(order, makePortfolio());
+    expect(result.allowed).toBe(true);
+  });
+
   it("10b. SELL call covered by existing covered-call stock leg → allowed", () => {
     const order = makeOrder({
       action: "SELL",
