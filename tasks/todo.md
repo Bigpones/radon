@@ -42,13 +42,31 @@ Trace why the Historical Trades (30 Days) section on `/orders` can stay stale, f
 - T4 (Run focused verification, confirm the refreshed `/orders` historical trades in the browser, and document review notes) depends_on: [T3]
 
 ### Checklist
-- [ ] T1 Trace the historical-trades data path from the provider fetch through cache writes, API reads, and `/orders` rendering to identify why stale rows persist
-- [ ] T2 Add failing regression coverage for the stale-history path at the smallest useful backend/API/browser layers
-- [ ] T3 Implement the minimal fix so refreshing `/orders` historical trades invalidates stale data and surfaces the latest provider payload
-- [ ] T4 Run focused verification, confirm the refreshed `/orders` historical trades in the browser, and document review notes
+- [x] T1 Trace the historical-trades data path from the provider fetch through cache writes, API reads, and `/orders` rendering to identify why stale rows persist
+- [x] T2 Add failing regression coverage for the stale-history path at the smallest useful backend/API/browser layers
+- [x] T3 Implement the minimal fix so refreshing `/orders` historical trades invalidates stale data and surfaces the latest provider payload
+- [x] T4 Run focused verification, confirm the refreshed `/orders` historical trades in the browser, and document review notes
 
 ### Review
-- Pending.
+- Root-cause trace:
+  - Third-party/provider boundary: the 30-day historical trade source is the Interactive Brokers Flex Web Service, reached by [trade_blotter.flex_query](/Users/joemccann/dev/apps/finance/radon/scripts/trade_blotter/flex_query.py). In the live environment the provider is currently rejecting requests with `1011 Service account is inactive`, but before this fix the runtime never reached that upstream error because the subprocess crashed first on a missing local `requests` dependency.
+  - Backend/runtime boundary: [scripts/api/server.py](/Users/joemccann/dev/apps/finance/radon/scripts/api/server.py) serves `POST /blotter` by calling [run_module](/Users/joemccann/dev/apps/finance/radon/scripts/api/subprocess.py) on `trade_blotter.flex_query --json`. The old subprocess path only surfaced stderr on non-zero exits, while `flex_query.py` printed its real failure to stdout. That collapsed live errors into blank `{"detail":""}` / `Radon API 502: ` responses.
+  - Cache/API boundary: [web/app/api/blotter/route.ts](/Users/joemccann/dev/apps/finance/radon/web/app/api/blotter/route.ts) serves the cached [blotter.json](/Users/joemccann/dev/apps/finance/radon/data/blotter.json) on GET. In the live snapshot that cache was frozen at `2026-03-05T06:44:00`, which is exactly what `/orders` was rendering.
+  - Frontend boundary: [useBlotter](/Users/joemccann/dev/apps/finance/radon/web/lib/useBlotter.ts) used to behave like a passive cache reader on `/orders`, and [HistoricalTradesSection](/Users/joemccann/dev/apps/finance/radon/web/components/WorkspaceSections.tsx) would stay pinned to the stale cache unless the operator manually clicked its local Refresh button. On top of that, the shared [useSyncHook](/Users/joemccann/dev/apps/finance/radon/web/lib/useSyncHook.ts) could let a StrictMode double-init reapply the stale GET snapshot after the background POST, preventing the auto-refresh state from stabilizing in tests.
+- Fixes:
+  - Removed the subprocess-only `requests` dependency from [flex_query.py](/Users/joemccann/dev/apps/finance/radon/scripts/trade_blotter/flex_query.py) and [blotter_service.py](/Users/joemccann/dev/apps/finance/radon/scripts/trade_blotter/blotter_service.py) by switching both Flex Query fetchers to stdlib HTTP helpers.
+  - Improved [subprocess.py](/Users/joemccann/dev/apps/finance/radon/scripts/api/subprocess.py) so module failures fall back to meaningful stdout lines when stderr is empty. The live FastAPI route now returns the real upstream reason: `Error: Flex Query request failed: Service account is inactive. (code: 1011)`.
+  - Updated [useBlotter.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/useBlotter.ts) to use the shared sync hook in active mode, and hardened [useSyncHook.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/useSyncHook.ts) against StrictMode-style double initial loads while allowing the blotter view to keep cached rows visible and still surface background sync errors.
+  - Updated [WorkspaceSections.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/WorkspaceSections.tsx) so the Historical Trades section uses the active blotter sync path on `/orders`.
+- Regression coverage:
+  - Python/runtime: [test_flex_query_runtime.py](/Users/joemccann/dev/apps/finance/radon/scripts/tests/test_flex_query_runtime.py), [test_api_subprocess.py](/Users/joemccann/dev/apps/finance/radon/scripts/tests/test_api_subprocess.py)
+  - Frontend hook: [use-blotter-refresh.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/use-blotter-refresh.test.ts)
+  - Browser: [orders-historical-trades-refresh.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/orders-historical-trades-refresh.spec.ts)
+- Verification:
+  - `python3 -m pytest scripts/tests/test_flex_query_runtime.py scripts/tests/test_api_subprocess.py -q`
+  - `npx vitest run web/tests/use-blotter-refresh.test.ts --config vitest.config.ts`
+  - `cd web && npx playwright test e2e/orders-historical-trades-refresh.spec.ts --config playwright.config.ts`
+  - Live browser fallback verification: the bundled `chrome-cdp` skill script at `/Users/joemccann/.agents/skills/chrome-cdp/scripts/cdp.mjs` is a zero-byte file, so direct CDP automation was unavailable in this runtime. Using Playwright against the real app on `http://127.0.0.1:3000/orders`, the page now still shows the cached March 5 table but also surfaces the actual upstream provider failure instead of hiding it: `Radon API 502: Error: Flex Query request failed: Service account is inactive. (code: 1011)`.
 
 ## Session: Fix False Naked-Short Warning On WULF Close Order (2026-03-19)
 

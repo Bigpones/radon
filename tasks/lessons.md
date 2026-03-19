@@ -5,6 +5,8 @@
 - When a user points to a specific bad position as the clue for a portfolio-wide P&L bug, pivot the reproduction to that exact live position first. Verify the cached portfolio snapshot, the live websocket quote payload, and the rendered row/card for that symbol before designing a generic fix, or you risk fixing the wrong layer.
 - When a dashboard Day Move bug involves a same-day position, compare the rendered close-based move to `ib_daily_pnl` before trusting the math. `reqPnLSingle` uses fill basis for intraday adds, so prior-close calculations can show the opposite sign even when the provider data is already correct.
 - When a user flags a second symbol as having the "same" pricing problem, check both the visible row path and any shared synthetic spread helpers. A row-level stale-last fix can leave shared combo/spread calculations still trusting raw option `last` prints outside the live market.
+- When a cached panel auto-syncs on mount through a shared hook, guard the initial GET path against StrictMode-style double effects. Otherwise a second stale cache read can overwrite the fresh POST result and make the auto-refresh appear broken even though the network request succeeded.
+- When a background refresh fails but cached data is still being shown, surface the upstream error instead of suppressing it. A stale table with no warning looks current and wastes debugging time; a degraded-but-explicit view makes the real provider boundary obvious.
 
 ## 2026-03-17
 

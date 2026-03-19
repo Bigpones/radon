@@ -96,6 +96,20 @@ def analyze_signal(flow_data: dict) -> dict:
     elif num_prints < 100:
         score -= 10
 
+    # Check options flow for conflict (matches evaluate.py edge criteria)
+    options_conflict = False
+    options_flow = flow_data.get("options_flow", {})
+    if options_flow:
+        combined_bias = options_flow.get("combined_bias", "NO_DATA")
+        bias_map = {
+            "BULLISH": "ACCUMULATION", "LEAN_BULLISH": "ACCUMULATION",
+            "BEARISH": "DISTRIBUTION", "LEAN_BEARISH": "DISTRIBUTION",
+        }
+        expected_dp = bias_map.get(combined_bias)
+        if expected_dp and expected_dp != direction:
+            options_conflict = True
+            score -= 25  # Penalty for conflict
+
     # Determine signal quality
     if score >= 60 and direction in ("ACCUMULATION", "DISTRIBUTION"):
         signal = "STRONG"
@@ -112,6 +126,7 @@ def analyze_signal(flow_data: dict) -> dict:
         "direction": direction,
         "strength": strength,
         "buy_ratio": buy_ratio,
+        "options_conflict": options_conflict,
         "num_prints": num_prints,
         "sustained_days": sustained + 1 if sustained > 0 else 0,
         "recent_direction": recent_dir,
@@ -132,8 +147,8 @@ def _process_ticker(item: dict, client=None) -> dict:
     try:
         # Pass client to fetch_flow if provided
         # Use 5 days to match evaluate.py edge criteria (sustained direction detection)
-        # Skip options flow - scanner only uses darkpool data for ranking
-        flow = fetch_flow_module(ticker, lookback_days=5, _client=client, skip_options_flow=True)
+        # Include options flow to detect conflicts (matches evaluate.py criteria)
+        flow = fetch_flow_module(ticker, lookback_days=5, _client=client, skip_options_flow=False)
         analysis = analyze_signal(flow)
         return {
             "ticker": ticker,
