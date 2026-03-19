@@ -170,7 +170,7 @@ SELL stock, qty > held    → BLOCK (oversell)
 import json
 from pathlib import Path
 
-with open(Path(__file__).parent.parent / "data/options-structures.json") as f:
+with open(Path(__file__).parent.parent / "docs/options-structures.json") as f:
     STRUCTURES = json.load(f)
 
 # Look up a structure by name
@@ -181,7 +181,7 @@ struct = next((s for s in STRUCTURES if s["name"] == "Bull Call Spread"), None)
 ```typescript
 import { readDataFile } from "@tools/data-reader";
 
-const result = await readDataFile("data/options-structures.json");
+const result = await readDataFile("docs/options-structures.json");
 const structures = result.data as OptionsStructure[];
 ```
 

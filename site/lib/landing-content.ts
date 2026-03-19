@@ -50,6 +50,12 @@ export const proofItems: ProofItem[] = [
     tone: "core",
   },
   {
+    label: "Option Structures",
+    value: "58",
+    detail: "Catalogued structures with guard decisions, risk profiles, and P&L attribution labels.",
+    tone: "strong",
+  },
+  {
     label: "Execution Path",
     value: "5-Step",
     detail: "Evaluate, structure, Kelly, execute, and track with the same operator context.",
@@ -240,7 +246,7 @@ export const executionItems: ExecutionItem[] = [
   {
     step: "Structure",
     summary:
-      "Directional view is converted into a defined or explicitly managed options structure with convexity in mind.",
+      "Directional view is converted into a defined or explicitly managed options structure with convexity in mind. 58 catalogued structures enforce consistent classification, risk labeling, and P&L attribution.",
     metadata: "Expiry, delta, spread width, max loss, target R:R",
   },
   {
@@ -322,6 +328,10 @@ export const auditItems: AuditItem[] = [
   {
     title: "Open Architecture",
     detail: "Workflows are auditable, extensible, and built for users who care how the system thinks.",
+  },
+  {
+    title: "Structure Catalog",
+    detail: "58 options structures catalogued with guard decisions, risk profiles, bias labels, and P&L attribution formulas. Reference used by order entry, audit scripts, and agent evaluation.",
   },
 ];
 

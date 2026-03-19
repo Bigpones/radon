@@ -7,6 +7,7 @@
 3. **Red/green TDD for ALL code.** Failing test → fix → green → refactor. Unit: Vitest, E2E: chrome-cdp/Playwright.
 4. **95% test coverage target.** Every change includes corresponding tests.
 5. **API keys** in `.env` files (see Credentials below). Fallback: `~/.zshrc`.
+6. **Options structure reference:** `docs/options-structures.json` + `docs/options-structures.md` — 58 structures, guard decisions, P&L attribution labels. Use for order entry, structure classification, and naked short guard logic.
 
 ## Combo / BAG Order Guardrails
 
@@ -391,6 +392,7 @@ Use **interpolated values** for edge determination, but flag confidence level:
 |------|---------|
 | `data/portfolio.json` | Open positions, bankroll, exposure |
 | `data/trade_log.json` | **Append-only** trade journal |
+| `docs/options-structures.json` | Options structure catalog — 58 structures, guard decisions, bias, risk profile |
 | `data/watchlist.json` | Surveillance tickers |
 | `data/ticker_cache.json` | Ticker → company cache |
 | `data/reconciliation.json` | IB reconciliation |

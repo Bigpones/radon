@@ -95,6 +95,37 @@ To SELL combo: receive BID on BUY legs, pay ASK on SELL legs
 
 **Implementations:** `computeNetOptionQuote()`, `ComboOrderForm.netPrices`, `resolveOrderPriceData()` for BAG.
 
+## ⚠️ Options Structure Catalog — Reference
+
+**Canonical file:** `data/options-structures.json` | **Human reference:** `docs/options-structures.md`
+
+58 structures across 12 categories. Use for:
+- Order entry: structure classification, default leg actions, bias labels
+- P&L attribution: risk profile (`defined`/`undefined`), max gain/loss formulas
+- Naked short guard: `guard_decision` + `guard_correct` fields per structure
+
+**Guard decision quick-reference:**
+```
+BUY anything          → ALLOW
+SELL put              → ALLOW (cash-secured)
+Vertical spread       → ALLOW (long leg covers short)
+SELL call, covered    → ALLOW (covered call — 100 shares per contract)
+SELL call, naked      → BLOCK
+SELL stock, no shares → BLOCK
+Short risk reversal   → ⚠ GUARD GAP (SELL C + BUY P passes combo check — fix pending)
+Jade Lizard           → ⚠ GUARD GAP (short put tail uncovered at extremes)
+Seagull Spread        → ⚠ GUARD GAP (short put uncovered — fix pending)
+```
+
+**Known guard gaps** (combo check sees hasBuy && hasSell → ALLOW, but short call is naked):
+1. **Short Risk Reversal** (SELL C + BUY P) — synthetic short stock
+2. **Jade Lizard** (BUY C spread + SELL P) — uncovered put tail
+3. **Seagull Spread** (BUY C + SELL higher C + SELL P) — uncovered short put
+
+Fix: inspect leg *types*, not just leg *directions*, in `nakedShortGuard.ts` combo check.
+
+---
+
 ## ⚠️ Order Placement Input Validation
 
 `/api/orders/place` rejects before sending to IB:
