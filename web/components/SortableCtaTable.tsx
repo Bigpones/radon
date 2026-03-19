@@ -7,9 +7,16 @@ import InfoTooltip from "./InfoTooltip";
 
 /* ─── Props ──────────────────────────────────────────── */
 
+export type CtaSectionCallout = {
+  headline: string;
+  body: string;
+  kind: "short" | "long" | "neutral";
+};
+
 type SortableCtaTableProps = {
   sectionKey: string;
   rows: CtaRow[];
+  callout?: CtaSectionCallout;
 };
 
 /* ─── Helpers ────────────────────────────────────────── */
@@ -66,11 +73,47 @@ type NumericSortCol =
   | "percentile_1y"
   | "z_score_3m";
 
+/* ─── Flag helpers ───────────────────────────────────── */
+
+function flagForRow(r: CtaRow): { kind: "short" | "long"; tooltip: string } | null {
+  const p = r.percentile_3m;
+  const z = r.z_score_3m;
+  const isExtreme = p <= 10 || p >= 90 || Math.abs(z) >= 1.5;
+  if (!isExtreme) return null;
+
+  const isShort = r.position_today < 0 && (p <= 10 || z <= -1.5);
+  const isLong  = r.position_today > 0 && (p >= 90 || z >= 1.5);
+
+  if (isShort) {
+    const flipped = r.position_1m_ago > 0;
+    return {
+      kind: "short",
+      tooltip: [
+        `${p}th pctile (3M), z ${fmt(z)}.`,
+        flipped ? `Flipped from ${fmt(r.position_1m_ago)} long 1M ago.` : null,
+        Math.abs(z) >= 2.0
+          ? "Extreme short. Violent covering risk on any bullish catalyst."
+          : "Heavy short positioning.",
+      ].filter(Boolean).join(" "),
+    };
+  }
+  if (isLong) {
+    return {
+      kind: "long",
+      tooltip: [
+        `${p}th pctile (3M), z ${fmt(z)}.`,
+        "Crowded long. Mean reversion risk elevated.",
+      ].join(" "),
+    };
+  }
+  return null;
+}
+
 type SortDir = "asc" | "desc";
 
 /* ─── Component ──────────────────────────────────────── */
 
-export default function SortableCtaTable({ sectionKey, rows }: SortableCtaTableProps) {
+export default function SortableCtaTable({ sectionKey, rows, callout }: SortableCtaTableProps) {
   const [sortCol, setSortCol] = useState<NumericSortCol | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -141,6 +184,33 @@ export default function SortableCtaTable({ sectionKey, rows }: SortableCtaTableP
           {rows.length}
         </span>
       </div>
+      {callout && (
+        <div
+          className="cta-section-callout"
+          style={{
+            borderLeftColor: callout.kind === "short"
+              ? "var(--negative)"
+              : callout.kind === "long"
+                ? "var(--signal-core)"
+                : "var(--border-dim)",
+          }}
+        >
+          <span
+            className="cta-section-callout-headline"
+            style={{
+              color: callout.kind === "short"
+                ? "var(--negative)"
+                : callout.kind === "long"
+                  ? "var(--signal-core)"
+                  : "var(--text-muted)",
+            }}
+          >
+            {callout.headline}
+          </span>
+          {" "}
+          <span className="cta-section-callout-body">{callout.body}</span>
+        </div>
+      )}
       <div className="cta-table-wrap" style={{ width: "100%" }}>
         <table className="cta-table" style={{ width: "100%" }}>
           <thead>
@@ -167,40 +237,55 @@ export default function SortableCtaTable({ sectionKey, rows }: SortableCtaTableP
               <th className="cta-th-num" style={thStyle("z_score_3m")} onClick={() => handleSort("z_score_3m")}>
                 3M Z{indicator("z_score_3m")}
               </th>
+              <th style={{ width: "24px" }} aria-label="signal flag" />
             </tr>
           </thead>
           <tbody>
-            {sorted.map((r) => (
-              <tr key={r.underlying}>
-                <td className="cta-td-underlying">{r.underlying}</td>
-                <td className="cta-td-num" style={{ color: posColor(r.position_today) }}>
-                  {fmt(r.position_today)}
-                </td>
-                <td className="cta-td-num" style={{ color: posColor(r.position_yesterday) }}>
-                  {fmt(r.position_yesterday)}
-                </td>
-                <td className="cta-td-num" style={{ color: posColor(r.position_1m_ago) }}>
-                  {fmt(r.position_1m_ago)}
-                </td>
-                <td className="cta-td-num" style={{ background: pctileBg(r.percentile_1m) }}>
-                  {r.percentile_1m}
-                </td>
-                <td className="cta-td-num" style={{ background: pctileBg(r.percentile_3m) }}>
-                  {r.percentile_3m}
-                </td>
-                <td className="cta-td-num" style={{ background: pctileBg(r.percentile_1y) }}>
-                  {typeof r.percentile_1y === "number" && r.percentile_1y > 100
-                    ? fmt(r.percentile_1y)
-                    : r.percentile_1y}
-                </td>
-                <td
-                  className="cta-td-num"
-                  style={{ color: zColor(r.z_score_3m), opacity: zOpacity(r.z_score_3m) }}
-                >
-                  {fmt(r.z_score_3m)}
-                </td>
-              </tr>
-            ))}
+            {sorted.map((r) => {
+              const flag = flagForRow(r);
+              return (
+                <tr key={r.underlying}>
+                  <td className="cta-td-underlying">{r.underlying}</td>
+                  <td className="cta-td-num" style={{ color: posColor(r.position_today) }}>
+                    {fmt(r.position_today)}
+                  </td>
+                  <td className="cta-td-num" style={{ color: posColor(r.position_yesterday) }}>
+                    {fmt(r.position_yesterday)}
+                  </td>
+                  <td className="cta-td-num" style={{ color: posColor(r.position_1m_ago) }}>
+                    {fmt(r.position_1m_ago)}
+                  </td>
+                  <td className="cta-td-num" style={{ background: pctileBg(r.percentile_1m) }}>
+                    {r.percentile_1m}
+                  </td>
+                  <td className="cta-td-num" style={{ background: pctileBg(r.percentile_3m) }}>
+                    {r.percentile_3m}
+                  </td>
+                  <td className="cta-td-num" style={{ background: pctileBg(r.percentile_1y) }}>
+                    {typeof r.percentile_1y === "number" && r.percentile_1y > 100
+                      ? fmt(r.percentile_1y)
+                      : r.percentile_1y}
+                  </td>
+                  <td
+                    className="cta-td-num"
+                    style={{ color: zColor(r.z_score_3m), opacity: zOpacity(r.z_score_3m) }}
+                  >
+                    {fmt(r.z_score_3m)}
+                  </td>
+                  <td className="cta-td-flag">
+                    {flag && (
+                      <span
+                        className={`cta-flag cta-flag-${flag.kind}`}
+                        title={flag.tooltip}
+                        aria-label={flag.tooltip}
+                      >
+                        {flag.kind === "short" ? "!" : "^"}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

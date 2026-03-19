@@ -5,7 +5,8 @@ import { useRegime } from "@/lib/useRegime";
 import { useMenthorqCta } from "@/lib/useMenthorqCta";
 import { SECTION_TOOLTIPS } from "@/lib/sectionTooltips";
 import InfoTooltip from "./InfoTooltip";
-import SortableCtaTable from "./SortableCtaTable";
+import SortableCtaTable, { type CtaSectionCallout } from "./SortableCtaTable";
+import CtaBriefing from "./CtaBriefing";
 
 /* ─── Helpers ────────────────────────────────────────── */
 
@@ -54,6 +55,76 @@ export default function CtaPage() {
   const exposurePct = cta?.exposure_pct ?? null;
 
   const order = ["main", "index", "commodity", "currency"] as const;
+
+  /* ─── Per-section callouts ─────────────────────────── */
+  function buildCallout(key: typeof order[number], tables: NonNullable<typeof ctaData>["tables"]): CtaSectionCallout | undefined {
+    if (!tables) return undefined;
+    const rows = tables[key];
+    if (!rows || rows.length === 0) return undefined;
+
+    switch (key) {
+      case "main": {
+        const spx = rows.find(r => r.underlying.toLowerCase().includes("s&p") || r.underlying.toLowerCase().includes("e-mini"));
+        const bonds = rows.filter(r => r.underlying.toLowerCase().includes("t-note") || r.underlying.toLowerCase().includes("treasury"));
+        if (spx && spx.percentile_3m <= 10) {
+          const flipped = spx.position_1m_ago > 0 && spx.position_today < 0;
+          const bondShortCount = bonds.filter(b => b.percentile_3m <= 10).length;
+          return {
+            kind: "short",
+            headline: `MAX SHORT · ${spx.percentile_3m === 0 ? "0th" : spx.percentile_3m + "th"} pctile (3M), z ${spx.z_score_3m.toFixed(2)}.`,
+            body: [
+              flipped ? `Flipped from ${spx.position_1m_ago.toFixed(2)} long one month ago.` : null,
+              bondShortCount >= 2 ? `${bondShortCount} bond contracts at 0th pctile — full duration short.` : null,
+              "Violent short-covering likely on any bullish catalyst.",
+            ].filter(Boolean).join(" "),
+          };
+        }
+        if (spx && spx.percentile_3m >= 85) {
+          return { kind: "long", headline: `HEAVY LONG · ${spx.percentile_3m}th pctile.`, body: "CTA equity exposure elevated. Watch for mean reversion on disappointing macro." };
+        }
+        return undefined;
+      }
+      case "index": {
+        const extreme = rows.filter(r => r.percentile_3m <= 5 && r.position_today < 0);
+        if (extreme.length >= 3) {
+          return {
+            kind: "short",
+            headline: `${extreme.length} INDEX FUTURES AT 0–5th PCTILE.`,
+            body: "Global equity CTA positioning uniformly short. Cross-asset squeeze risk if risk sentiment turns.",
+          };
+        }
+        return undefined;
+      }
+      case "commodity": {
+        const crowdedLongs = rows.filter(r => r.percentile_3m >= 85 && r.position_today > 0).sort((a, b) => b.percentile_3m - a.percentile_3m);
+        if (crowdedLongs.length >= 2) {
+          const labels = crowdedLongs.slice(0, 3).map(r => `${r.underlying.split(" ")[0]} ${r.percentile_3m}th`).join(", ");
+          return {
+            kind: "long",
+            headline: `CROWDED LONGS · ${labels}.`,
+            body: "Mean reversion risk elevated on energy and soft commodities. Stagflation trade at historically extreme levels.",
+          };
+        }
+        const gold = rows.find(r => r.underlying.toLowerCase().includes("gold"));
+        if (gold && gold.percentile_3m <= 10 && gold.position_today > 0 && gold.position_yesterday > gold.position_today) {
+          return { kind: "neutral", headline: "GOLD REDUCING.", body: `Position softening (${gold.position_yesterday.toFixed(2)} to ${gold.position_today.toFixed(2)}) despite elevated spot price. CTA reduction signal.` };
+        }
+        return undefined;
+      }
+      case "currency": {
+        const dxy = rows.find(r => r.underlying.toLowerCase().includes("dollar"));
+        const extreme = rows.filter(r => r.percentile_3m <= 10 && r.position_today < 0);
+        if (dxy && dxy.percentile_3m >= 85 && extreme.length >= 2) {
+          return {
+            kind: "long",
+            headline: `LONG USD · ${dxy.percentile_3m}th pctile.`,
+            body: `${extreme.length} currency pairs short at extreme levels. Dollar strength trade crowded — watch for reversal if risk appetite returns.`,
+          };
+        }
+        return undefined;
+      }
+    }
+  }
   const fetchLabel = formatFetchedAt(ctaData?.fetched_at);
   const ctaCacheMeta = ctaData?.cache_meta ?? null;
   const syncHealth = ctaData?.sync_health ?? null;
@@ -224,11 +295,16 @@ export default function CtaPage() {
         )}
 
         {!loading && ctaData?.tables && (
-          <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "8px", padding: "8px 0" }}>
+          <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "0" }}>
+            <CtaBriefing
+              tables={ctaData.tables}
+              estSellingBn={cta?.est_selling_bn ?? null}
+            />
             {order.map((key) => {
               const rows = ctaData.tables![key];
               if (!rows || rows.length === 0) return null;
-              return <SortableCtaTable key={key} sectionKey={key} rows={rows} />;
+              const callout = buildCallout(key, ctaData.tables!);
+              return <SortableCtaTable key={key} sectionKey={key} rows={rows} callout={callout} />;
             })}
           </div>
         )}

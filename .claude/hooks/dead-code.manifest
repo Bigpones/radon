@@ -15,3 +15,5 @@ scripts/trade_blotter/__pycache__/flex_query.cpython-314.pyc	compiled .pyc file
 scripts/trade_blotter/__pycache__/formatting.cpython-314.pyc	compiled .pyc file
 scripts/trade_blotter/__pycache__/__init__.cpython-314.pyc	compiled .pyc file
 scripts/__pycache__/fetch_menthorq_cta.cpython-39.pyc	compiled .pyc file
+scripts/utils/ib_connection.py	superseded by clients/
+scripts/utils/uw_api.py	superseded by clients/

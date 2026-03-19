@@ -4037,6 +4037,155 @@ tr {
   padding: 16px;
 }
 
+/* ── CtaBriefing ─────────────────────────────────────── */
+
+.cta-briefing {
+  width: 100%;
+}
+
+.cta-briefing-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.cta-briefing-regime-pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+
+.cta-briefing-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.cta-briefing-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.cta-briefing-metric {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-dim);
+  border-radius: 4px;
+  padding: 8px 10px;
+}
+
+.cta-briefing-metric-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.cta-briefing-metric-value {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.cta-briefing-narrative {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+
+.cta-briefing-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.cta-briefing-tag {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+/* ── CTA Section Callout ─────────────────────────────── */
+
+.cta-section-callout {
+  margin: 0 16px 8px;
+  padding: 7px 10px;
+  border-left: 2px solid var(--border-dim);
+  background: var(--bg-panel);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.cta-section-callout-headline {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.cta-section-callout-body {
+  color: var(--text-secondary);
+}
+
+/* ── CTA Flag Column ─────────────────────────────────── */
+
+.cta-td-flag {
+  width: 24px;
+  padding: 5px 4px 5px 2px;
+  text-align: center;
+  border-bottom: 1px solid var(--border-dim);
+  vertical-align: middle;
+}
+
+.cta-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  border: 1px solid;
+  border-radius: 999px;
+  width: 14px;
+  height: 14px;
+  cursor: help;
+  line-height: 1;
+}
+
+.cta-flag-short {
+  color: var(--negative);
+  border-color: rgba(232,93,108,0.4);
+}
+
+.cta-flag-long {
+  color: var(--signal-core);
+  border-color: rgba(5,173,152,0.4);
+}
+
+/* ─────────────────────────────────────────────────────── */
+
 .cta-status-banner {
   margin: 12px 16px 0;
   padding: 12px 14px;
