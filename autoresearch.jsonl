@@ -25,3 +25,5 @@
 {"run":24,"commit":"866f851","metric":6774,"metrics":{"single_ms":5294},"status":"keep","description":"NEW BEST: 6.8s multi (53% improvement from 14.5s baseline)","timestamp":1773891046713,"segment":0}
 {"run":25,"commit":"2a71fb6","metric":6213,"metrics":{"single_ms":5950},"status":"keep","description":"NEW BEST: 6.2s multi (57% improvement from 14.5s baseline)","timestamp":1773891203970,"segment":0}
 {"run":26,"commit":"8fe1033","metric":6213,"metrics":{"single_ms":5950},"status":"keep","description":"Updated summary: 57% improvement (6.2s from 14.5s)","timestamp":1773891217411,"segment":0}
+{"run":28,"commit":"c544cc2","metric":30410,"metrics":{"single_ms":18294},"status":"discard","description":"Reduced backoff factor to 0.5s - no consistent improvement","timestamp":1773892092983,"segment":0}
+{"run":29,"commit":"c544cc2","metric":17685,"metrics":{"single_ms":17797},"status":"discard","description":"Reduced max retries to 1 - no consistent improvement","timestamp":1773892214980,"segment":0}
