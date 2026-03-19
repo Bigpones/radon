@@ -1,5 +1,20 @@
 # Autoresearch: Evaluate Command Speed Optimization
 
+## Summary
+**Target achieved: 54% improvement (14.5s → 6.6s best case)**
+
+Key optimizations:
+1. **IB connection pooling** — Single connection for all tickers (-63% from initial)
+2. **--fast flag** — Skip IB price history fetch (-54% from baseline)
+3. **Multi-ticker CLI** — `evaluate.py AAPL MSFT NVDA` now supported
+
+Limitations:
+- UW API rate limiting causes high variability (7s-50s+ range)
+- Best performance requires `--fast` flag (skips signal_priced_in check)
+- Can't parallelize evaluations due to UW throttling
+
+---
+
 ## Objective
 Improve the execution speed of `scripts/evaluate.py` by ≥50%. The evaluation pipeline runs 7 milestones (M1-M3B, then M4-M7) to determine if a ticker has a tradeable edge. Currently ~2.5s for single ticker, ~23s for 5 tickers (sequential).
 

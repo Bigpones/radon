@@ -6,3 +6,4 @@
 {"run":5,"commit":"2e09dd8","metric":25025,"metrics":{"single_ms":2439},"status":"discard","description":"Reduce M1 to 1 trading day — no improvement (network variability)","timestamp":1773888673673,"segment":0}
 {"run":6,"commit":"6d67146","metric":6657,"metrics":{"single_ms":3425},"status":"keep","description":"--fast flag to skip IB price history (52% improvement, high network variability)","timestamp":1773888924272,"segment":0}
 {"run":7,"commit":"6d67146","metric":9574,"metrics":{"single_ms":5253},"status":"discard","description":"Add 0.3s delay between tickers — doesn't help with rate limiting variability","timestamp":1773889102505,"segment":0}
+{"run":8,"commit":"06467eb","metric":40555,"metrics":{"single_ms":3042},"status":"discard","description":"Try 3 tickers — still hit rate limits","timestamp":1773889220529,"segment":0}
