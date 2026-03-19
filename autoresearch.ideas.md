@@ -11,23 +11,23 @@ Best result: 3,959ms for 19 tickers (from 51,293ms baseline)
 - Verify cache is being hit during scans
 - May already be benefiting from evaluate.py optimizations
 
-### 2. Reduce Days of Darkpool Data
-- Currently fetches 5 days per ticker
-- For scanning/ranking, 3 days may be sufficient
-- Edge determination still needs 5 days (but that's in evaluate.py)
+### 2. Reduce Days of Darkpool Data ✅ APPLIED
+- Changed from 5 days to 3 days for scanning
+- Saves 2 API calls per ticker
+- Full 5 days still used in evaluate.py for edge determination
 
-### 3. Skip Flow Alerts for Scanning
+### 3. Skip Flow Alerts for Scanning ✅ APPLIED
 - Scanner only uses darkpool data for ranking
-- Flow alerts are fetched but may not be used
-- Remove unnecessary API call
+- Flow alerts were fetched but never used
+- Added `skip_options_flow=True` parameter — saves 1 API call per ticker
 
 ### 4. Batch Darkpool Fetching
 - UW may support fetching multiple tickers in one call
 - Check `/api/darkpool/recent` endpoint
 
-### 5. Reduce Worker Count
-- 15 workers may cause more rate limiting
-- Try 5-8 workers for more consistent throughput
+### 5. Reduce Worker Count ✅ APPLIED
+- Reduced from 15 to 5 workers
+- Less aggressive parallelism reduces rate limit pressure
 
 ### 6. Add Scanner-Specific Cache
 - Cache scan results for short period (5 min)
