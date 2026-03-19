@@ -70,26 +70,26 @@ const ORDERS_EMPTY = {
 const PRICE_FIXTURES = {
   WULF_20270115_17_C: {
     symbol: "WULF_20270115_17_C",
-    last: 4.475,
+    last: 21.015,
     lastIsCalculated: false,
-    bid: 4.45,
-    ask: 4.5,
-    bidSize: 12,
-    askSize: 8,
-    volume: 71,
+    bid: 4.2,
+    ask: 4.75,
+    bidSize: 1644,
+    askSize: 13660,
+    volume: 0,
     high: null,
     low: null,
     open: null,
-    close: 4.41,
+    close: 4.78,
     week52High: null,
     week52Low: null,
     avgVolume: null,
-    delta: 0.52,
+    delta: 0.617401944729918,
     gamma: null,
     theta: null,
     vega: null,
-    impliedVol: 0.88,
-    undPrice: 7.91,
+    impliedVol: 0.934928093906453,
+    undPrice: 14.743120193481445,
     timestamp: new Date().toISOString(),
   },
 };
@@ -222,4 +222,21 @@ test("dashboard day move card prefers IB daily P&L for same-day option positions
   await expect(modal).toContainText("WULF");
   await expect(modal).toContainText("-$3,405.31");
   await expect(modal).not.toContainText("+$500.50");
+});
+
+test("portfolio row uses the live option market around bid/ask, not a stale WULF last trade", async ({ page }) => {
+  await installMockWebSocket(page);
+  await stubApis(page);
+
+  await page.goto("/portfolio");
+
+  const wulfRow = page.locator("table tbody tr").filter({ hasText: "WULF" }).first();
+  await expect(wulfRow).toBeVisible();
+
+  const lastPriceCell = wulfRow.locator("td.last-price-cell").last();
+  await expect(lastPriceCell).toContainText("C$4.48");
+
+  await expect(wulfRow.locator("td")).toContainText(["-$3,405"]);
+  await expect(wulfRow).toContainText("$34,458");
+  await expect(wulfRow).not.toContainText("$161,816");
 });

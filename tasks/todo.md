@@ -12,8 +12,8 @@ Fix the WULF ticker order tab so selling the currently-held long Jan 2027 $17 ca
 - T4 (Run focused verification, confirm the browser flow on the WULF order tab, and document review notes) depends_on: [T3]
 
 ### Checklist
-- [ ] T1 Trace the WULF close-position data path from IB-backed portfolio data through the naked-short guard, order tab, and place-order route to reproduce the false warning
-- [ ] T2 Add failing regression coverage for the false-positive close-position block at the guard, API, and browser layers
+- [x] T1 Trace the WULF close-position data path from IB-backed portfolio data through the naked-short guard, order tab, and place-order route to reproduce the false warning
+- [x] T2 Add failing regression coverage for the false-positive close-position block at the guard, API, and browser layers
 - [ ] T3 Implement the root-cause fix so selling an owned option contract to close is allowed while true naked short openings stay blocked
 - [ ] T4 Run focused verification, confirm the browser flow on the WULF order tab, and document review notes
 
@@ -33,8 +33,8 @@ Trace why the account dashboard's Day Move can render as positive when the under
 
 ### Checklist
 - [x] T1 Trace the live Day Move data path across provider fields, backend shaping, and frontend calculation to reproduce the incorrect positive sign
-- [ ] T2 Add failing regression coverage for the broken Day Move semantics at the smallest useful unit and browser layers
-- [ ] T3 Implement the root-cause fix so Day Move preserves the correct sign and source semantics end to end
+- [x] T2 Add failing regression coverage for the broken Day Move semantics at the smallest useful unit and browser layers
+- [x] T3 Implement the root-cause fix so Day Move preserves the correct sign and source semantics end to end
 - [ ] T4 Run focused and full verification, confirm the corrected rendering in Chrome/CDP, and document the review notes
 
 ### Review
