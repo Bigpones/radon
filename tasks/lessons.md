@@ -4,6 +4,7 @@
 
 - When a user points to a specific bad position as the clue for a portfolio-wide P&L bug, pivot the reproduction to that exact live position first. Verify the cached portfolio snapshot, the live websocket quote payload, and the rendered row/card for that symbol before designing a generic fix, or you risk fixing the wrong layer.
 - When a dashboard Day Move bug involves a same-day position, compare the rendered close-based move to `ib_daily_pnl` before trusting the math. `reqPnLSingle` uses fill basis for intraday adds, so prior-close calculations can show the opposite sign even when the provider data is already correct.
+- When a user flags a second symbol as having the "same" pricing problem, check both the visible row path and any shared synthetic spread helpers. A row-level stale-last fix can leave shared combo/spread calculations still trusting raw option `last` prints outside the live market.
 
 ## 2026-03-17
 

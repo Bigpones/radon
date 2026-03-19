@@ -12,10 +12,40 @@ Trace why the CROX bull call spread row on `/portfolio` can render an inflated s
 - T4 (Run focused verification, confirm the corrected CROX row rendering locally, and document review notes) depends_on: [T3]
 
 ### Checklist
-- [ ] T1 Trace the CROX spread data path across IB sync, realtime quote payloads, and the portfolio row calculation to identify the exact stale-price failure mode
-- [ ] T2 Add failing regression coverage for CROX-style stale option leg lasts at the shared pricing/unit layer and browser row layer
-- [ ] T3 Implement the minimal shared fix so multi-leg portfolio rows and related spread pricing helpers use guarded realtime option marks instead of stale out-of-market lasts
-- [ ] T4 Run focused verification, confirm the corrected CROX row rendering locally, and document review notes
+- [x] T1 Trace the CROX spread data path across IB sync, realtime quote payloads, and the portfolio row calculation to identify the exact stale-price failure mode
+- [x] T2 Add failing regression coverage for CROX-style stale option leg lasts at the shared pricing/unit layer and browser row layer
+- [x] T3 Implement the minimal shared fix so multi-leg portfolio rows and related spread pricing helpers use guarded realtime option marks instead of stale out-of-market lasts
+- [x] T4 Run focused verification, confirm the corrected CROX row rendering locally, and document review notes
+
+### Review
+- Root-cause trace:
+  - Third-party/provider boundary: Interactive Brokers sync already persisted sane CROX spread marks in [portfolio.json](/Users/joemccann/dev/apps/finance/radon/data/portfolio.json): the long Apr 17 $82.5 call was around `1.925`, the short Apr 17 $95 call was around `0.275`, and the net spread market value was about `$26,895` (`$1.65` per spread). The live websocket feed likewise carried the real stock/option market around those values, so IB itself was not the source of the inflated `$5.25` spread price shown in the screenshot.
+  - Frontend row boundary: [PositionTable.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/PositionTable.tsx) was already using guarded option marks through [resolveRealtimePrice](/Users/joemccann/dev/apps/finance/radon/web/lib/positionUtils.ts), which is why the live `/portfolio` row now renders the correct CROX spread mark.
+  - Shared spread-helper boundary: [resolveSpreadPriceData](/Users/joemccann/dev/apps/finance/radon/web/lib/positionUtils.ts) still computed synthetic spread `last` from raw leg `last` prints (`7.80 - 2.55 = 5.25`) instead of the guarded live option marks around bid/ask. That left the shared spread-pricing path inconsistent with the portfolio row and could still leak stale inflated spread prices anywhere else that consumed the helper.
+- Fixed [resolveSpreadPriceData](/Users/joemccann/dev/apps/finance/radon/web/lib/positionUtils.ts) so each option leg now resolves through [resolveRealtimePrice](/Users/joemccann/dev/apps/finance/radon/web/lib/positionUtils.ts) before contributing to the synthetic spread `last`. Stale out-of-market option `last` prints are now replaced with the live midpoint consistently across row and helper paths.
+- Locked the regression in [spread-price-bar.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/spread-price-bar.test.ts) and [crox-bull-call-stale-price.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/crox-bull-call-stale-price.spec.ts).
+- Verification:
+  - Red before fix in worker branch: `npx vitest run web/tests/spread-price-bar.test.ts --config vitest.config.ts` failed with `expected 5.25 to be close to 1.65`.
+  - Green after fix: `npx vitest run web/tests/spread-price-bar.test.ts --config vitest.config.ts`
+  - Browser regression: `cd web && npx playwright test e2e/crox-bull-call-stale-price.spec.ts --config playwright.config.ts`
+  - Live browser fallback verification against `http://127.0.0.1:3000/portfolio`: the CROX row now renders `$77.59`, `$1.65`, `-$123`, `$27,613`, and `$26,895`, with no stale `$5.25` / `$85,575` inflation.
+
+## Session: Fix Stale Historical Trades On `/orders` (2026-03-19)
+
+### Goal
+Trace why the Historical Trades (30 Days) section on `/orders` can stay stale, following the path from the third-party historical trade provider through the backend cache/API route into the frontend refresh/render path. Reproduce the stale behavior, drive it red with regression coverage, implement the minimal fix, and verify the refreshed `/orders` history in the browser.
+
+### Dependency Graph
+- T1 (Trace the historical-trades data path from the provider fetch through cache writes, API reads, and `/orders` rendering to identify why stale rows persist) depends_on: []
+- T2 (Add failing regression coverage for the stale-history path at the smallest useful backend/API/browser layers) depends_on: [T1]
+- T3 (Implement the minimal fix so refreshing `/orders` historical trades invalidates stale data and surfaces the latest provider payload) depends_on: [T2]
+- T4 (Run focused verification, confirm the refreshed `/orders` historical trades in the browser, and document review notes) depends_on: [T3]
+
+### Checklist
+- [ ] T1 Trace the historical-trades data path from the provider fetch through cache writes, API reads, and `/orders` rendering to identify why stale rows persist
+- [ ] T2 Add failing regression coverage for the stale-history path at the smallest useful backend/API/browser layers
+- [ ] T3 Implement the minimal fix so refreshing `/orders` historical trades invalidates stale data and surfaces the latest provider payload
+- [ ] T4 Run focused verification, confirm the refreshed `/orders` historical trades in the browser, and document review notes
 
 ### Review
 - Pending.
