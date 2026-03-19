@@ -128,6 +128,12 @@ evaluate.py
 - Tried reducing from 7 to 4 workers
 - Doesn't help with rate limiting, hurts single-ticker latency
 
+### Experiment 8: In-Memory UW Request Cache (60s TTL) ✅ KEEP
+- Added `scripts/utils/uw_cache.py` with TTL-based caching
+- UWClient._get() checks cache before making API call
+- Single ticker improved: 2.3s vs 2.8s baseline
+- Deduplicates M1/M2 overlapping darkpool requests (3 days overlap)
+
 ### Bottlenecks Remaining (for future work)
 1. **UW rate limiting is the dominant factor** — 8s when not limited, 50s+ when limited
 2. M2 flow makes 5+ UW calls per ticker (5 days of darkpool + flow alerts)
