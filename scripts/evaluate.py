@@ -422,18 +422,24 @@ def determine_edge(
 # Parallel data fetching
 # ---------------------------------------------------------------------------
 
-def _run_parallel_milestones(ticker: str, bankroll: float) -> Dict[str, Any]:
+def _run_parallel_milestones(ticker: str, bankroll: float, skip_ib: bool = False) -> Dict[str, Any]:
     """Fetch all independent milestones concurrently.
 
     Returns a dict keyed by milestone name with raw results.
+
+    Args:
+        ticker: Ticker symbol
+        bankroll: Current bankroll (unused here, kept for API compat)
+        skip_ib: If True, skip IB price fetch (used when batch-fetching prices)
 
     Note: IB price history runs on the main thread (ib_insync requires the
     main asyncio event loop). All UW-based fetches run in a thread pool.
     """
     results: Dict[str, Any] = {}
 
-    # ── IB price fetch on main thread (ib_insync asyncio limitation) ─────
-    results["PRICE"] = fetch_price_history(ticker)
+    # ── IB price fetch on main thread (skip if batch mode) ───────────────
+    if not skip_ib:
+        results["PRICE"] = fetch_price_history(ticker)
 
     # ── All other fetches in parallel ────────────────────────────────────
     def _m1():
@@ -492,9 +498,98 @@ def _run_parallel_milestones(ticker: str, bankroll: float) -> Dict[str, Any]:
 # Main orchestrator
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Batch price fetching (IB connection pooling)
+# ---------------------------------------------------------------------------
+
+def _fetch_all_prices(tickers: List[str], days: int = 10) -> Dict[str, List[Dict]]:
+    """Fetch price history for multiple tickers using a single IB connection.
+
+    Returns dict mapping ticker -> price bars. Empty list on failure.
+    This avoids 1.8s connection overhead per ticker.
+    """
+    try:
+        import asyncio
+        import logging
+        from ib_insync import IB, Stock
+
+        logging.getLogger("ib_insync").setLevel(logging.CRITICAL)
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        ib = IB()
+        ib.connect("127.0.0.1", 4001, clientId=18, timeout=8)
+        ib.reqMarketDataType(4)
+
+        results = {}
+        for ticker in tickers:
+            try:
+                contract = Stock(ticker, "SMART", "USD")
+                ib.qualifyContracts(contract)
+                bars = ib.reqHistoricalData(
+                    contract,
+                    endDateTime="",
+                    durationStr=f"{days} D",
+                    barSizeSetting="1 day",
+                    whatToShow="TRADES",
+                    useRTH=True,
+                )
+                results[ticker] = [
+                    {
+                        "date": str(b.date),
+                        "open": float(b.open),
+                        "close": float(b.close),
+                        "volume": float(b.volume),
+                    }
+                    for b in bars
+                ]
+            except Exception:
+                results[ticker] = []
+
+        ib.disconnect()
+        return results
+    except Exception:
+        return {t: [] for t in tickers}
+
+
+def run_evaluations(
+    tickers: List[str],
+    bankroll: float = 1_200_000,
+) -> List[EvaluationResult]:
+    """Run evaluations for multiple tickers with IB connection pooling.
+
+    Fetches price data for ALL tickers using a single IB connection (saves ~1.8s
+    per additional ticker), then runs the rest of the evaluation in parallel.
+    """
+    # Batch fetch all price data with a single IB connection
+    price_cache = _fetch_all_prices(tickers)
+
+    # Run evaluations in parallel threads
+    results = []
+    with ThreadPoolExecutor(max_workers=len(tickers)) as pool:
+        futures = {
+            pool.submit(_run_single_eval, t, bankroll, price_cache.get(t, [])): t
+            for t in tickers
+        }
+        for future in as_completed(futures):
+            results.append(future.result())
+
+    # Sort by original ticker order
+    ticker_order = {t: i for i, t in enumerate(tickers)}
+    results.sort(key=lambda r: ticker_order.get(r.ticker, 999))
+    return results
+
+
+def _run_single_eval(ticker: str, bankroll: float, price_history: List[Dict]) -> EvaluationResult:
+    """Run evaluation for a single ticker with pre-fetched price data."""
+    return run_evaluation(ticker, bankroll=bankroll, price_history=price_history)
+
+
 def run_evaluation(
     ticker: str,
     bankroll: float = 1_200_000,
+    price_history: Optional[List[Dict]] = None,
 ) -> EvaluationResult:
     """Run a full 7-milestone evaluation for *ticker*.
 
@@ -504,6 +599,11 @@ def run_evaluation(
       3. Run M4 (edge determination) using M2, M3, M3B, Price, News.
       4. If edge passes, proceed to M5 (structure) and M6 (Kelly).
       5. Return EvaluationResult with full audit trail.
+
+    Args:
+        ticker: Ticker symbol
+        bankroll: Current bankroll for Kelly sizing
+        price_history: Pre-fetched price data (skips IB fetch if provided)
     """
     now = datetime.now()
     eval_result = EvaluationResult(
@@ -512,7 +612,10 @@ def run_evaluation(
     )
 
     # ── Phase 1: Parallel fetch ──────────────────────────────────────────
-    raw = _run_parallel_milestones(ticker, bankroll)
+    # If price_history was pre-fetched (batch mode), skip IB in _run_parallel_milestones
+    raw = _run_parallel_milestones(ticker, bankroll, skip_ib=price_history is not None)
+    if price_history is not None:
+        raw["PRICE"] = price_history
 
     # ── M1: Ticker Validation ────────────────────────────────────────────
     m1_data = raw.get("M1", {})
@@ -798,34 +901,41 @@ def format_report(result: EvaluationResult) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run full evaluation for a ticker."
+        description="Run full evaluation for one or more tickers."
     )
-    parser.add_argument("ticker", help="Ticker symbol to evaluate")
+    parser.add_argument("tickers", nargs="+", help="Ticker symbol(s) to evaluate")
     parser.add_argument("--bankroll", type=float, default=1_200_000,
                         help="Current bankroll (default: 1,200,000)")
     parser.add_argument("--json", action="store_true",
                         help="Output raw JSON instead of formatted report")
     args = parser.parse_args()
 
-    result = run_evaluation(args.ticker, bankroll=args.bankroll)
+    tickers = [t.upper() for t in args.tickers]
+    results = run_evaluations(tickers, bankroll=args.bankroll)
 
     if args.json:
-        output = {
-            "ticker": result.ticker,
-            "decision": result.decision,
-            "failing_gate": result.failing_gate,
-            "fetched_at": result.fetched_at,
-            "edge_details": result.edge_details,
-            "milestones": {
-                k: {"name": v.name, "passed": v.passed, "data": v.data, "error": v.error}
-                for k, v in result.milestones.items()
-            },
-        }
-        print(json.dumps(output, indent=2, default=str))
+        output = []
+        for result in results:
+            output.append({
+                "ticker": result.ticker,
+                "decision": result.decision,
+                "failing_gate": result.failing_gate,
+                "fetched_at": result.fetched_at,
+                "edge_details": result.edge_details,
+                "milestones": {
+                    k: {"name": v.name, "passed": v.passed, "data": v.data, "error": v.error}
+                    for k, v in result.milestones.items()
+                },
+            })
+        print(json.dumps(output if len(output) > 1 else output[0], indent=2, default=str))
     else:
-        print(format_report(result))
+        for result in results:
+            print(format_report(result))
+            print("\n")
 
-    sys.exit(0 if result.decision != "NO_TRADE" else 1)
+    # Exit 0 if any trade, 1 if all NO_TRADE
+    any_trade = any(r.decision != "NO_TRADE" for r in results)
+    sys.exit(0 if any_trade else 1)
 
 
 if __name__ == "__main__":

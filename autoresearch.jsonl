@@ -1,1 +1,2 @@
 {"type":"config","name":"Evaluate Command Speed Optimization","metricName":"total_ms","metricUnit":"ms","bestDirection":"lower"}
+{"run":1,"commit":"99a442a","metric":14501,"metrics":{"single_ms":2814},"status":"keep","description":"Baseline: 5 tickers sequential, fix datetime mock in test","timestamp":1773887665123,"segment":0}
