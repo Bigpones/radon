@@ -403,21 +403,21 @@ export default function ModifyOrderModal({ order, loading, prices, portfolio, on
                     disabled={!hasPriceData || bid == null}
                     onClick={() => bid != null && setNewPrice(bid.toFixed(2))}
                   >
-                    BID
+                    BID{bid != null ? ` ${bid.toFixed(2)}` : ""}
                   </button>
                   <button
                     className="btn-quick"
                     disabled={!hasPriceData || mid == null}
                     onClick={() => mid != null && setNewPrice(mid.toFixed(2))}
                   >
-                    MID
+                    MID{mid != null ? ` ${mid.toFixed(2)}` : ""}
                   </button>
                   <button
                     className="btn-quick"
                     disabled={!hasPriceData || ask == null}
                     onClick={() => ask != null && setNewPrice(ask.toFixed(2))}
                   >
-                    ASK
+                    ASK{ask != null ? ` ${ask.toFixed(2)}` : ""}
                   </button>
                 </div>
               </div>

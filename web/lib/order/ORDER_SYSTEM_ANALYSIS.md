@@ -41,12 +41,12 @@
 | Feature | OrderTab (New) | OrderTab (Combo) | ChainBuilder | BookTab | InstrumentModal | ModifyModal |
 |---------|----------------|------------------|--------------|---------|-----------------|-------------|
 | **Price Display** |
-| Spread price strip | ❌ | ✅ NEW | ✅ DONE | ❌ | ❌ | ✅ DONE |
+| Spread price strip | ❌ N/A | ✅ DONE | ✅ DONE | ❌ N/A | ❌ N/A | ✅ DONE |
 | BID/MID/ASK buttons | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Price values in buttons | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ |
-| Spread width display | ❌ | ✅ NEW | ❌ | ❌ | ❌ | ❌ |
+| Price values in buttons | ✅ | ✅ | ✅ DONE | ✅ | ✅ | ✅ DONE |
+| Spread width display | ❌ N/A | ✅ DONE | ❌ | ❌ N/A | ❌ N/A | ✅ DONE |
 | **Leg Display** |
-| Leg pills (colored) | N/A | ✅ NEW | ✅ DONE | N/A | N/A | ✅ DONE |
+| Leg pills (colored) | N/A | ✅ DONE | ✅ DONE | N/A | N/A | ✅ DONE |
 | Leg list (vertical) | N/A | ❌ legacy | ✅ | N/A | N/A | ✅ |
 | Direction indicators | N/A | ✅ +/− | ✅ action | N/A | N/A | ✅ |
 | **Input Validation** |
@@ -54,10 +54,10 @@
 | Client-side validation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Confirmation** |
 | 2-step confirm | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Order summary | ✅ DONE | ✅ DONE | ✅ | ❌ | ❌ | ✅ delta |
-| Total cost display | ✅ DONE | ✅ DONE | ❌ | ❌ | ❌ | ❌ |
+| Order summary | ✅ DONE | ✅ DONE | ✅ DONE | ✅ DONE | ✅ DONE | ✅ delta |
+| Total cost display | ✅ DONE | ✅ DONE | ✅ DONE | ✅ DONE | ✅ DONE | ❌ |
 | **Layout** |
-| Form above orders | ✅ NEW | ✅ NEW | N/A | N/A | N/A | N/A |
+| Form above orders | ✅ DONE | ✅ DONE | N/A | N/A | N/A | N/A |
 
 ---
 

@@ -19,7 +19,7 @@ import {
   findAtmStrike,
   getVisibleStrikes,
 } from "@/lib/optionsChainUtils";
-import { OrderPriceStrip, OrderLegPills, type OrderLeg as UnifiedOrderLeg } from "@/lib/order";
+import { OrderPriceStrip, OrderLegPills, OrderConfirmSummary, type OrderLeg as UnifiedOrderLeg, type OrderSummary } from "@/lib/order";
 
 /* ─── Types ─── */
 
@@ -219,6 +219,46 @@ function OrderBuilder({
 
   const parsedPrice = parseFloat(limitPrice);
   const isValidPrice = !isNaN(parsedPrice) && parsedPrice > 0;
+
+  // Calculate order summary for confirmation
+  const orderSummary: OrderSummary | null = useMemo(() => {
+    if (!isValidPrice) return null;
+    
+    const totalCost = parsedPrice * totalQty * 100;
+    const description = `${structure || "Option"} @ ${fmtPrice(parsedPrice)}`;
+    
+    // For vertical spreads, calculate max gain/loss
+    if (legs.length === 2) {
+      const strikes = legs.map((l) => l.strike);
+      const width = Math.abs(strikes[0] - strikes[1]);
+      const maxWidth = width * totalQty * 100;
+      
+      if (isDebit) {
+        // Debit spread: max loss = premium paid, max gain = width - premium
+        return {
+          description,
+          totalCost,
+          maxGain: maxWidth - totalCost,
+          maxLoss: totalCost,
+        };
+      } else {
+        // Credit spread: max gain = premium received, max loss = width - premium
+        return {
+          description,
+          totalCost: -totalCost, // Negative because we receive
+          maxGain: totalCost,
+          maxLoss: maxWidth - totalCost,
+        };
+      }
+    }
+    
+    // Single leg or complex: max loss = premium paid (for debit)
+    return {
+      description,
+      totalCost: isDebit ? totalCost : -totalCost,
+      ...(isDebit ? { maxLoss: totalCost } : {}),
+    };
+  }, [isValidPrice, parsedPrice, totalQty, structure, legs, isDebit]);
 
   const handlePlace = useCallback(async () => {
     if (!confirmStep) {
@@ -565,6 +605,11 @@ function OrderBuilder({
       {error && <div className="order-error">{error}</div>}
       {success && <div className="order-success">{success}</div>}
 
+      {/* Order Summary (shown in confirm step) */}
+      {confirmStep && orderSummary && (
+        <OrderConfirmSummary summary={orderSummary} variant="info" />
+      )}
+
       {/* Submit */}
       <div className="order-submit" style={{ marginTop: "8px" }}>
         {confirmStep ? (
@@ -581,7 +626,7 @@ function OrderBuilder({
               onClick={handlePlace}
               disabled={!isValidPrice || loading}
             >
-              {loading ? "Placing..." : `Confirm: ${structure || "Option"} @ ${fmtPrice(parsedPrice)}`}
+              {loading ? "Placing..." : "Confirm Order"}
             </button>
           </div>
         ) : (

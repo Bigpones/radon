@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { OpenOrder, PortfolioPosition } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { fmtPrice } from "@/lib/positionUtils";
+import { OrderConfirmSummary, type OrderSummary } from "@/lib/order";
 
 /* ─── Types ─── */
 
@@ -321,6 +322,17 @@ function StockOrderForm({
     !isNaN(parsedPrice) &&
     parsedPrice > 0;
 
+  // Calculate order summary for confirmation (stock: no multiplier)
+  const orderSummary: OrderSummary | null = useMemo(() => {
+    if (!isValid) return null;
+    const totalCost = parsedQty * parsedPrice;
+    const description = `${action} ${parsedQty} ${ticker} @ ${fmtPrice(parsedPrice)}`;
+    return {
+      description,
+      totalCost: action === "SELL" ? -totalCost : totalCost,
+    };
+  }, [isValid, parsedQty, parsedPrice, action, ticker]);
+
   const handlePlace = useCallback(async () => {
     if (!confirmStep) {
       setConfirmStep(true);
@@ -494,6 +506,11 @@ function StockOrderForm({
       {error && <div className="order-error">{error}</div>}
       {success && <div className="order-success">{success}</div>}
 
+      {/* Order Summary (shown in confirm step) */}
+      {confirmStep && orderSummary && (
+        <OrderConfirmSummary summary={orderSummary} variant="info" />
+      )}
+
       <div className="order-submit">
         {confirmStep ? (
           <div className="order-confirm-row">
@@ -509,9 +526,7 @@ function StockOrderForm({
               onClick={handlePlace}
               disabled={!isValid || loading}
             >
-              {loading
-                ? "Placing..."
-                : `Confirm: ${action} ${parsedQty} ${ticker} @ ${fmtPrice(parsedPrice)}`}
+              {loading ? "Placing..." : "Confirm Order"}
             </button>
           </div>
         ) : (

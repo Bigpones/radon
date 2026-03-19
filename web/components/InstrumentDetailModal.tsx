@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PortfolioLeg } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { fmtPrice, fmtUsd, legPriceKey } from "@/lib/positionUtils";
 import Modal from "./Modal";
 import { InstrumentOrderQuoteTelemetry } from "./QuoteTelemetry";
+import { OrderConfirmSummary, type OrderSummary } from "@/lib/order";
 
 export type InstrumentDetailProps = {
   leg: PortfolioLeg | null;
@@ -131,6 +132,18 @@ function LegOrderForm({
   const right = leg.type === "Call" ? "C" : "P";
   const expiryClean = expiry.replace(/-/g, "");
 
+  // Calculate order summary for confirmation (single option)
+  const orderSummary: OrderSummary | null = useMemo(() => {
+    if (!isValid) return null;
+    const totalCost = parsedQty * parsedPrice * 100;
+    const description = `${action} ${parsedQty}x ${ticker} ${strikeStr}${right} @ ${fmtPrice(parsedPrice)}`;
+    return {
+      description,
+      totalCost: action === "SELL" ? -totalCost : totalCost,
+      ...(action === "BUY" ? { maxLoss: totalCost } : {}),
+    };
+  }, [isValid, parsedQty, parsedPrice, action, ticker, strikeStr, right]);
+
   const handlePlace = useCallback(async () => {
     if (!confirmStep) {
       setConfirmStep(true);
@@ -242,6 +255,11 @@ function LegOrderForm({
       {error && <div className="order-error">{error}</div>}
       {success && <div className="order-success">{success}</div>}
 
+      {/* Order Summary (shown in confirm step) */}
+      {confirmStep && orderSummary && (
+        <OrderConfirmSummary summary={orderSummary} variant="info" />
+      )}
+
       <div className="order-submit">
         {confirmStep ? (
           <div className="order-confirm-row">
@@ -251,7 +269,7 @@ function LegOrderForm({
               onClick={handlePlace}
               disabled={!isValid || loading}
             >
-              {loading ? "Placing..." : `Confirm: ${action} ${parsedQty}x ${strikeStr}${right} @ ${fmtPrice(parsedPrice)}`}
+              {loading ? "Placing..." : "Confirm Order"}
             </button>
           </div>
         ) : (
