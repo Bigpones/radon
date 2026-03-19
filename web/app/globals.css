@@ -4127,6 +4127,75 @@ tr {
   padding: 2px 8px;
 }
 
+/* ── CTA Share Modal ─────────────────────────────────── */
+
+.cta-share-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: modal-fade-in 150ms ease-out;
+}
+
+.cta-share-modal {
+  display: flex;
+  flex-direction: column;
+  width: 90vw;
+  max-width: 1160px;
+  height: 88vh;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-dim);
+  border-radius: 4px;
+  overflow: hidden;
+  animation: modal-slide-up 150ms ease-out;
+}
+
+.cta-share-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-dim);
+  flex-shrink: 0;
+}
+
+.cta-share-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.cta-share-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 3px;
+  transition: color 100ms, background 100ms;
+}
+
+.cta-share-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.cta-share-iframe {
+  flex: 1;
+  width: 100%;
+  border: none;
+  background: var(--bg-base);
+}
+
 /* ── CTA Section Callout ─────────────────────────────── */
 
 .cta-section-callout {

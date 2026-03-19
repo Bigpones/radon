@@ -1,7 +1,7 @@
 "use client";
 
-import { Activity, Share2 } from "lucide-react";
-import { useState } from "react";
+import { Activity, Share2, X } from "lucide-react";
+import { useState, useCallback, useEffect } from "react";
 import { useRegime } from "@/lib/useRegime";
 import { useMenthorqCta } from "@/lib/useMenthorqCta";
 import { SECTION_TOOLTIPS } from "@/lib/sectionTooltips";
@@ -57,22 +57,41 @@ export default function CtaPage() {
 
   const order = ["main", "index", "commodity", "currency"] as const;
 
-  /* ─── Share state ──────────────────────────────────── */
+  /* ─── Share modal state ────────────────────────────── */
   const [sharing, setSharing] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  // Revoke blob URL when modal closes to free memory
+  const closeModal = useCallback(() => {
+    setModalOpen(false);
+    if (shareUrl) {
+      setTimeout(() => {
+        URL.revokeObjectURL(shareUrl);
+        setShareUrl(null);
+      }, 300); // wait for close animation
+    }
+  }, [shareUrl]);
+
+  // Close on Escape
+  useEffect(() => {
+    if (!modalOpen) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") closeModal(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [modalOpen, closeModal]);
 
   async function handleShare() {
     setSharing(true);
     setShareError(null);
     try {
-      // Step 1: trigger generation
       const res = await fetch("/api/menthorq/cta/share", { method: "POST" });
       const data = await res.json() as { preview_path?: string; error?: string };
       if (!res.ok) {
         setShareError(data?.error ?? "Share generation failed");
         return;
       }
-      // Step 2: fetch the generated HTML and open as blob URL (avoids file:// CORS)
       const previewPath = data?.preview_path;
       if (previewPath) {
         const htmlRes = await fetch(`/api/menthorq/cta/share/content?path=${encodeURIComponent(previewPath)}`);
@@ -80,12 +99,10 @@ export default function CtaPage() {
           const html = await htmlRes.text();
           const blob = new Blob([html], { type: "text/html" });
           const url = URL.createObjectURL(blob);
-          window.open(url, "_blank");
-          // Clean up after a delay
-          setTimeout(() => URL.revokeObjectURL(url), 60_000);
+          setShareUrl(url);
+          setModalOpen(true);
         } else {
-          // Fallback: use the OS open command via a server-side trigger
-          setShareError("Preview generated. Open: " + previewPath);
+          setShareError("Preview generated but could not be loaded.");
         }
       }
     } catch (e) {
@@ -205,6 +222,7 @@ export default function CtaPage() {
       : "cta-status-banner";
 
   return (
+    <>
     <div data-testid="cta-page" style={{ width: "100%", display: "flex", flexDirection: "column", gap: "0" }}>
 
       {/* ── Vol-Targeting Model Panel ─────────────────── */}
@@ -395,5 +413,35 @@ export default function CtaPage() {
         )}
       </div>
     </div>
+
+    {/* ── Share Modal ───────────────────────────────────── */}
+    {modalOpen && shareUrl && (
+      <div
+        className="cta-share-backdrop"
+        onClick={closeModal}
+        role="dialog"
+        aria-modal="true"
+        aria-label="CTA Share Preview"
+      >
+        <div
+          className="cta-share-modal"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="cta-share-header">
+            <span className="cta-share-title">CTA REPORT — SHARE TO X</span>
+            <button className="cta-share-close" onClick={closeModal} aria-label="Close">
+              <X size={14} />
+            </button>
+          </div>
+          <iframe
+            src={shareUrl}
+            className="cta-share-iframe"
+            title="CTA Share Preview"
+            sandbox="allow-scripts allow-same-origin"
+          />
+        </div>
+      </div>
+    )}
+    </>
   );
 }
