@@ -263,7 +263,44 @@ export function buildExecutedGroupDescription(
   }
 
   const base = isClosing ? "Closed" : "Opened";
-  const structure = parts.length === 2 ? "Risk Reversal" : parts.length > 2 ? "Combo" : "";
+  let structure = "";
+  if (parts.length === 2) {
+    // Classify 2-leg combos by option type:
+    // - Same type (Call+Call or Put+Put) = vertical spread
+    // - Different types (Call+Put) = risk reversal / synthetic
+    const rights = new Set(
+      [...legGroups.values()].map((g) => {
+        const r = g[0].contract.right;
+        return r === "C" || r === "CALL" ? "C" : "P";
+      }),
+    );
+    if (rights.size === 1) {
+      // Both legs same type → vertical spread
+      const hasShort = parts.some((p) => p.startsWith("Short"));
+      const hasLong = parts.some((p) => p.startsWith("Long"));
+      if (hasShort && hasLong) {
+        const right = rights.has("C") ? "Call" : "Put";
+        // Determine bull/bear from strike ordering
+        const strikes = [...legGroups.values()].map((g) => ({
+          strike: g[0].contract.strike ?? 0,
+          dir: parts.find((p) => p.includes(`$${g[0].contract.strike}`))?.startsWith("Long") ? "Long" : "Short",
+        }));
+        const longStrike = strikes.find((s) => s.dir === "Long")?.strike ?? 0;
+        const shortStrike = strikes.find((s) => s.dir === "Short")?.strike ?? 0;
+        if (right === "Call") {
+          structure = longStrike < shortStrike ? "Bull Call Spread" : "Bear Call Spread";
+        } else {
+          structure = longStrike > shortStrike ? "Bear Put Spread" : "Bull Put Spread";
+        }
+      } else {
+        structure = "Spread";
+      }
+    } else {
+      structure = "Risk Reversal";
+    }
+  } else if (parts.length > 2) {
+    structure = "Combo";
+  }
   return `${base} ${fills[0].contract.symbol} ${structure} (${parts.join(" / ")})`;
 }
 
