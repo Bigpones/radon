@@ -15,3 +15,4 @@
 {"run":14,"commit":"0118c95","metric":8075,"metrics":{"single_ms":3054},"status":"keep","description":"Documentation update + stable run at 8.0s","timestamp":1773889982487,"segment":0}
 {"run":15,"commit":"1aae36f","metric":7027,"metrics":{"single_ms":4202},"status":"keep","description":"Best run: 7.0s (52% improvement from 14.5s baseline)","timestamp":1773890055576,"segment":0}
 {"run":16,"commit":"0274ccc","metric":7291,"metrics":{"single_ms":2283},"status":"keep","description":"Add UW request cache (60s TTL) — faster single ticker (2.3s vs 2.8s baseline)","timestamp":1773890188957,"segment":0}
+{"run":17,"commit":"529edc1","metric":7407,"metrics":{"single_ms":5337},"status":"keep","description":"Documentation update, good run at 7.4s","timestamp":1773890328229,"segment":0}
