@@ -225,6 +225,7 @@ export function positionGroupShareData(
   group: PositionFillGroup,
   allGroups?: PositionFillGroup[],
   portfolioPositions?: readonly PortfolioPosition[],
+  tradeLogDates?: Record<string, string>,
 ): SharePnlData {
   let pnlPct: number | null = null;
   let entryPrice: number | null = null;
@@ -329,6 +330,11 @@ export function positionGroupShareData(
         pnlPct = (group.totalPnL / derivedEntry) * 100;
       }
     }
+  }
+
+  // Fallback entry time from trade_log for fully-closed positions
+  if (entryTime == null && tradeLogDates?.[group.symbol]) {
+    entryTime = tradeLogDates[group.symbol];
   }
 
   // Exit time is the closing group's time
@@ -1866,7 +1872,7 @@ function OrdersSections({
                         <td>{new Date(group.time).toLocaleTimeString()}</td>
                         <td>
                           {group.isClosing && group.totalPnL != null && (
-                            <SharePnlButton data={positionGroupShareData(group, positionGroups, portfolio?.positions)} />
+                            <SharePnlButton data={positionGroupShareData(group, positionGroups, portfolio?.positions, portfolio?.trade_log_dates)} />
                           )}
                         </td>
                       </tr>

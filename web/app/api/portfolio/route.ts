@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { stat } from "fs/promises";
+import { readFile, stat } from "fs/promises";
 import { join } from "path";
 import { readDataFile } from "@tools/data-reader";
 import { PortfolioData } from "@tools/schemas/ib-sync";
@@ -9,6 +9,30 @@ export const runtime = "nodejs";
 
 const PORTFOLIO_PATH = join(process.cwd(), "..", "data", "portfolio.json");
 const CACHE_TTL_MS = 60_000; // 1 minute
+
+const TRADE_LOG_PATH = join(process.cwd(), "..", "data", "trade_log.json");
+
+/** Load ticker → earliest trade date from trade_log.json */
+async function loadTradeLogDates(): Promise<Record<string, string>> {
+  try {
+    const raw = JSON.parse(await readFile(TRADE_LOG_PATH, "utf-8"));
+    const trades = Array.isArray(raw) ? raw : (raw?.trades ?? []);
+    const dates: Record<string, string> = {};
+    for (const t of trades) {
+      const ticker = t?.ticker;
+      const date = t?.date;
+      if (typeof ticker === "string" && typeof date === "string") {
+        // Keep the LATEST date per ticker (most recent entry)
+        if (!dates[ticker] || date > dates[ticker]) {
+          dates[ticker] = date;
+        }
+      }
+    }
+    return dates;
+  } catch {
+    return {};
+  }
+}
 
 let bgSyncInFlight = false;
 
@@ -54,7 +78,9 @@ export async function GET(): Promise<Response> {
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 404 });
     }
-    return NextResponse.json(result.data);
+    // Inject trade_log dates for share PnL entry timestamps
+    const tradeLogDates = await loadTradeLogDates();
+    return NextResponse.json({ ...result.data, trade_log_dates: tradeLogDates });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to read portfolio";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -64,13 +90,15 @@ export async function GET(): Promise<Response> {
 export async function POST(): Promise<Response> {
   try {
     const data = await radonFetch("/portfolio/sync", { method: "POST", timeout: 35_000 });
-    return NextResponse.json(data);
+    const tradeLogDates = await loadTradeLogDates();
+    return NextResponse.json({ ...data, trade_log_dates: tradeLogDates });
   } catch {
     // Sync failed — fall back to cached data file
     const cached = await readDataFile("data/portfolio.json", PortfolioData);
     if (cached.ok) {
       console.warn("[Portfolio] Sync failed, serving cached data");
-      const res = NextResponse.json(cached.data);
+      const tradeLogDates = await loadTradeLogDates();
+      const res = NextResponse.json({ ...cached.data, trade_log_dates: tradeLogDates });
       res.headers.set("X-Sync-Warning", "IB sync failed - serving cached data");
       return res;
     }
