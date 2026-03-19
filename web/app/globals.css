@@ -2810,6 +2810,46 @@ tr.leg-row td {
 /* ── Table wrap for horizontal scroll ── */
 .table-wrap { overflow-x: auto; }
 
+/* ── Table Search / Filter ── */
+.table-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-dim);
+  border-radius: 4px;
+  padding: 4px 8px;
+  background: var(--bg-panel);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.table-search-icon { color: var(--text-secondary); flex-shrink: 0; }
+.table-search-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  width: 120px;
+  letter-spacing: 0.04em;
+}
+.table-search-input::placeholder { color: var(--text-secondary); opacity: 0.6; }
+.table-search-clear {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+}
+.table-search-clear:hover { color: var(--text-primary); }
+.table-search-count {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* ── Micro-interactions: Press feedback ── */
 
 .sync-button:active:not(:disabled),

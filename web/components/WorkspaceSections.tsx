@@ -29,6 +29,8 @@ import { useFlowAnalysis } from "@/lib/useFlowAnalysis";
 import { useScanner } from "@/lib/useScanner";
 import { useBlotter } from "@/lib/useBlotter";
 import { useSort, type SortDirection } from "@/lib/useSort";
+import { useTableFilter } from "@/lib/useTableFilter";
+import TableSearch from "./TableSearch";
 import { fmtPrice, fmtUsd, legPriceKey } from "@/lib/positionUtils";
 import {
   buildOpenOrderDisplayRows,
@@ -922,7 +924,7 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
             <span className="pill defined">{definedPositions.length} POSITIONS</span>
           </div>
           <div className="section-body">
-            <PositionTable positions={definedPositions} showStrike={true} showUnderlying={true} prices={prices} />
+            <PositionTable positions={definedPositions} showStrike={true} showUnderlying={true} prices={prices} showSearch={true} />
           </div>
         </div>
       )}
@@ -938,7 +940,7 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
             <span className="pill undefined">{undefinedPositions.length} POSITIONS</span>
           </div>
           <div className="section-body">
-            <PositionTable positions={undefinedPositions} showUnderlying={true} prices={prices} />
+            <PositionTable positions={undefinedPositions} showUnderlying={true} prices={prices} showSearch={true} />
           </div>
         </div>
       )}
@@ -954,7 +956,7 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
             <span className="pill neutral">{equityPositions.length} POSITIONS</span>
           </div>
           <div className="section-body">
-            <PositionTable positions={equityPositions} showExpiry={false} prices={prices} />
+            <PositionTable positions={equityPositions} showExpiry={false} prices={prices} showSearch={true} />
           </div>
         </div>
       )}
@@ -1436,6 +1438,14 @@ function OrdersSections({
     return buildOpenOrderDisplayRows(orders.open_orders, portfolio?.positions);
   }, [orders, portfolio?.positions]);
   const openSort = useSort(openOrderRows, openOrderExtract);
+  const extractOpenSearch = useCallback(
+    (row: OpenOrderDisplayRow) => {
+      if (row.kind === "combo") return `${row.symbol} ${row.structure} combo`;
+      return `${row.order.contract.symbol} ${row.order.action} ${row.order.orderType}`;
+    },
+    [],
+  );
+  const openFilter = useTableFilter(openSort.sorted, extractOpenSearch);
 
   const [cancelTarget, setCancelTarget] = useState<OpenOrder | null>(null);
   const [modifyTarget, setModifyTarget] = useState<{
@@ -1508,6 +1518,12 @@ function OrdersSections({
     [allExecutedRows, portfolio?.positions],
   );
 
+  const extractExecSearch = useCallback(
+    (g: PositionFillGroup) => `${g.symbol} ${g.description}`,
+    [],
+  );
+  const execFilter = useTableFilter(positionGroups, extractExecSearch);
+
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const toggleGroup = useCallback((groupId: string) => {
     setExpandedGroups((prev) => {
@@ -1563,7 +1579,10 @@ function OrdersSections({
             Open Orders
             <InfoTooltip text={SECTION_TOOLTIPS["Open Orders"]} />
           </div>
-          <span className="pill defined">{orders.open_count} ORDERS</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <TableSearch query={openFilter.query} setQuery={openFilter.setQuery} placeholder="Filter orders..." resultCount={openFilter.filtered.length} totalCount={openSort.sorted.length} />
+            <span className="pill defined">{orders.open_count} ORDERS</span>
+          </div>
         </div>
         <div className="section-body">
           {openOrderRows.length === 0 ? (
@@ -1584,7 +1603,7 @@ function OrdersSections({
                 </tr>
               </thead>
               <tbody>
-                {openSort.sorted.map((o) => {
+                {openFilter.filtered.map((o) => {
                   if (o.kind === "combo") {
                     const comboCanModify = o.orders.every(canModify);
                     const comboModifyTarget = buildGroupedComboModifyTarget(o);
@@ -1760,7 +1779,10 @@ function OrdersSections({
             Today&apos;s Executed Orders
             <InfoTooltip text={SECTION_TOOLTIPS["Today's Executed Orders"]} />
           </div>
-          <span className="pill neutral">{positionGroups.length} {positionGroups.length === 1 ? "POSITION" : "POSITIONS"}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <TableSearch query={execFilter.query} setQuery={execFilter.setQuery} placeholder="Filter fills..." resultCount={execFilter.filtered.length} totalCount={positionGroups.length} />
+            <span className="pill neutral">{positionGroups.length} {positionGroups.length === 1 ? "POSITION" : "POSITIONS"}</span>
+          </div>
         </div>
         <div className="section-body">
           {positionGroups.length === 0 ? (
@@ -1781,7 +1803,7 @@ function OrdersSections({
                 </tr>
               </thead>
               <tbody>
-                {positionGroups.map((group) => {
+                {execFilter.filtered.map((group) => {
                   const isExpanded = expandedGroups.has(group.id);
                   const isCancelled = group.fills[0]?.side === "CANCELLED";
                   return (
