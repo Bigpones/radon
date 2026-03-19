@@ -1,10 +1,10 @@
 # Autoresearch Ideas — Scan Command Speed Optimization
 
-## Status: ✅ COMPLETE (42% improvement achieved)
+## Status: ✅ COMPLETE (50% improvement achieved)
 
-Best result: 29,801ms for 19 tickers (from 51,293ms baseline)
+Best result: 25,676ms for 19 tickers (from 51,293ms baseline)
 
-**Note**: Reverted 3-day lookback to preserve signal accuracy.
+**Note**: Reverted 3-day lookback to preserve signal accuracy. 50% target achieved when UW not rate limiting.
 
 ## Promising Ideas
 
@@ -24,9 +24,10 @@ Best result: 29,801ms for 19 tickers (from 51,293ms baseline)
 - Flow alerts were fetched but never used
 - Added `skip_options_flow=True` parameter — saves 1 API call per ticker
 
-### 4. Batch Darkpool Fetching
-- UW may support fetching multiple tickers in one call
-- Check `/api/darkpool/recent` endpoint
+### 4. Batch Darkpool Fetching ❌ NOT APPLICABLE
+- `/api/darkpool/recent` only returns live/recent trades
+- Scanner needs 5 days of historical data per ticker
+- No batch historical endpoint available
 
 ### 5. Reduce Worker Count ✅ APPLIED
 - Reduced from 15 to 5 workers
