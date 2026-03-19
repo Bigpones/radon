@@ -6,7 +6,11 @@
 | Metric | Baseline | Best | Improvement |
 |--------|----------|------|-------------|
 | 5 tickers | 14,501ms | 6,336ms | -56% |
-| Single ticker | 2,814ms | 2,229ms | -21% |
+| Single ticker | 2,814ms | 2,020ms | -28% |
+
+**Note**: Performance is highly variable due to UW API rate limiting. When rate
+limited, multi-ticker times spike to 40-50s. When not limited, we achieve 7-8s
+consistently.
 
 Key optimizations:
 1. **IB connection pooling** — Single connection for all tickers
