@@ -15,9 +15,16 @@ function fmtPct(v: number): string {
   return `${sign}${v.toFixed(2)}%`;
 }
 
-/** Format ISO timestamp to PST with date and time */
+/** Format ISO timestamp to PST with date and time.
+ *  Date-only strings (e.g., "2026-03-09" from trade_log) render as
+ *  date only — no fake timestamp. */
 function fmtTimePST(isoTime: string): string {
   try {
+    // Date-only (no "T" separator) → display as date without time
+    if (/^\d{4}-\d{2}-\d{2}$/.test(isoTime.trim())) {
+      const [y, m, d] = isoTime.split("-");
+      return `${parseInt(m)}/${parseInt(d)}/${y}`;
+    }
     const date = new Date(isoTime);
     if (Number.isNaN(date.getTime())) return "";
     return date.toLocaleString("en-US", {
