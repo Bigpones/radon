@@ -1,6 +1,7 @@
 "use client";
 
-import { Activity } from "lucide-react";
+import { Activity, Share2 } from "lucide-react";
+import { useState } from "react";
 import { useRegime } from "@/lib/useRegime";
 import { useMenthorqCta } from "@/lib/useMenthorqCta";
 import { SECTION_TOOLTIPS } from "@/lib/sectionTooltips";
@@ -55,6 +56,32 @@ export default function CtaPage() {
   const exposurePct = cta?.exposure_pct ?? null;
 
   const order = ["main", "index", "commodity", "currency"] as const;
+
+  /* ─── Share state ──────────────────────────────────── */
+  const [sharing, setSharing] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
+
+  async function handleShare() {
+    setSharing(true);
+    setShareError(null);
+    try {
+      const res = await fetch("/api/menthorq/cta/share", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setShareError(data?.error ?? "Share generation failed");
+        return;
+      }
+      // Open the generated preview file in browser
+      const previewPath = data?.preview_path;
+      if (previewPath) {
+        window.open(`file://${previewPath}`, "_blank");
+      }
+    } catch (e) {
+      setShareError(e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setSharing(false);
+    }
+  }
 
   /* ─── Per-section callouts ─────────────────────────── */
   function buildCallout(key: typeof order[number], tables: NonNullable<typeof ctaData>["tables"]): CtaSectionCallout | undefined {
@@ -255,18 +282,64 @@ export default function CtaPage() {
             borderBottom: "1px solid var(--border)",
             textTransform: "uppercase",
             display: "flex",
-            alignItems: "baseline",
+            alignItems: "center",
             gap: "8px",
           }}
         >
-          MENTHORQ CTA POSITIONING — {ctaData?.date ?? "---"}{" "}
-          <InfoTooltip text={SECTION_TOOLTIPS["MENTHORQ CTA POSITIONING"]} />
-          {fetchLabel && (
-            <span style={{ fontWeight: 400, fontSize: "9px", color: "var(--text-muted)", letterSpacing: "0.06em" }}>
-              · FETCHED {fetchLabel}
-            </span>
+          <span style={{ flex: 1, display: "flex", alignItems: "baseline", gap: "8px" }}>
+            MENTHORQ CTA POSITIONING — {ctaData?.date ?? "---"}{" "}
+            <InfoTooltip text={SECTION_TOOLTIPS["MENTHORQ CTA POSITIONING"]} />
+            {fetchLabel && (
+              <span style={{ fontWeight: 400, fontSize: "9px", color: "var(--text-muted)", letterSpacing: "0.06em" }}>
+                · FETCHED {fetchLabel}
+              </span>
+            )}
+          </span>
+          {ctaData?.tables && (
+            <button
+              onClick={handleShare}
+              disabled={sharing}
+              title="Share CTA report to X"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                padding: "4px 10px",
+                background: sharing ? "var(--bg-hover)" : "transparent",
+                border: "1px solid var(--border-dim)",
+                borderRadius: "3px",
+                fontFamily: "var(--font-mono, monospace)",
+                fontSize: "9px",
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: sharing ? "var(--text-muted)" : "var(--text-primary)",
+                cursor: sharing ? "not-allowed" : "pointer",
+                transition: "all 150ms",
+                flexShrink: 0,
+              }}
+              onMouseEnter={e => { if (!sharing) (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--signal-core)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--signal-core)"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--border-dim)"; (e.currentTarget as HTMLButtonElement).style.color = sharing ? "var(--text-muted)" : "var(--text-primary)"; }}
+            >
+              <Share2 size={11} />
+              {sharing ? "Generating…" : "Share to X"}
+            </button>
           )}
         </div>
+        {shareError && (
+          <div style={{
+            margin: "8px 12px",
+            padding: "7px 10px",
+            border: "1px solid var(--negative)",
+            borderRadius: "3px",
+            background: "rgba(232,93,108,0.06)",
+            fontFamily: "var(--font-mono, monospace)",
+            fontSize: "10px",
+            color: "var(--negative)",
+          }}>
+            {shareError}
+          </div>
+        )}
 
         {!loading && ctaIsStale && (
           <div className={statusBannerClass} data-testid="cta-stale-banner" role="alert">

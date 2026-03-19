@@ -343,6 +343,15 @@ async def orders_modify(request: Request):
 # Phase 4: Market data & long-running endpoints (subprocess-based)
 # ---------------------------------------------------------------------------
 
+@app.post("/cta/share")
+async def cta_share():
+    """Generate CTA X share report (4 cards + preview HTML). Returns output path."""
+    result = await run_script("generate_cta_share.py", ["--json", "--no-open"], timeout=120)
+    if not result.ok:
+        raise HTTPException(status_code=502, detail=result.error)
+    return result.data
+
+
 @app.post("/regime/scan")
 async def regime_scan():
     """Run CRI scan (cri_scan.py --json). 120s timeout."""
