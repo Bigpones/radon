@@ -42,7 +42,23 @@ describe("resolveRealtimePrice — stale option last trade", () => {
     expect(result.isCalculated).toBe(true);
   });
 
-  it("keeps last when it is within bid-ask spread", () => {
+  it("uses mid when last is inside wide spread but far from mid (>10% spread width)", () => {
+    // BTU $39 Put: last=2.85, bid=2.76, ask=3.35, spread=0.59 (19.28%)
+    // last is inside bid-ask but spread is very wide and last is near the bottom.
+    // mid=3.055, divergence from mid = |2.85-3.055|/3.055 = 6.7%
+    // With spread this wide, mid is more representative than stale last.
+    const pd = makePriceData({
+      symbol: "BTU_20260417_39_P",
+      last: 2.85,
+      bid: 2.76,
+      ask: 3.35,
+    });
+    const result = resolveRealtimePrice(pd);
+    expect(result.price).toBeCloseTo(3.055, 2);
+    expect(result.isCalculated).toBe(true);
+  });
+
+  it("keeps last when it is within a tight spread", () => {
     const pd = makePriceData({
       symbol: "IWM_20260326_247_C",
       last: 3.50,

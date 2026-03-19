@@ -34,8 +34,18 @@ export function resolveRealtimePrice(
     if (priceData?.symbol?.includes("_") && bid != null && ask != null) {
       const lo = Math.min(bid, ask);
       const hi = Math.max(bid, ask);
+      const mid = Number(((bid + ask) / 2).toFixed(4));
+      // Case 1: last is outside the bid-ask spread (clearly stale)
       if (last < lo || last > hi) {
-        const mid = Number(((bid + ask) / 2).toFixed(4));
+        return { price: mid, isCalculated: true };
+      }
+      // Case 2: last is inside but spread is wide (>10% of mid) and last
+      // diverges >5% from mid. Wide spreads make last unreliable — the mid
+      // better represents current value. Example: BTU $39P with bid=2.76,
+      // ask=3.35, last=2.85 has a 19% spread; last sits near the bottom.
+      const spreadPct = (hi - lo) / mid;
+      const lastDivergence = Math.abs(last - mid) / mid;
+      if (spreadPct > 0.10 && lastDivergence > 0.05) {
         return { price: mid, isCalculated: true };
       }
     }

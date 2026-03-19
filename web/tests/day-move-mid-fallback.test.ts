@@ -298,16 +298,17 @@ describe("computeDayMoveBreakdown — option mid fallback", () => {
     expect(rows).toHaveLength(0);
   });
 
-  test("uses last price for options when it remains inside the live bid/ask market", () => {
+  test("uses last price for options when spread is narrow and last is inside", () => {
     const pos = makeOptionPosition({ ticker: "AAPL", contracts: 1 });
     const portfolio = makePortfolio([pos]);
 
     const optionKey = "AAPL_20260417_230_C";
+    // Narrow spread (4%) — last should be used as-is
     const prices: Record<string, PriceData> = {
       [optionKey]: makePrice({
         symbol: optionKey,
         last: 0.58,
-        bid: 0.50,
+        bid: 0.56,
         ask: 0.60,
         close: 0.45,
       }),
@@ -316,7 +317,7 @@ describe("computeDayMoveBreakdown — option mid fallback", () => {
     const { rows, total } = computeDayMoveBreakdown(portfolio, prices);
     expect(rows).toHaveLength(1);
 
-    // last=0.58 remains inside the market, so it should win over the midpoint 0.55.
+    // last=0.58 inside narrow spread, so last is used
     expect(total).toBeCloseTo(13);
     expect(rows[0].col2).toContain("0.58");
   });

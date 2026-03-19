@@ -829,13 +829,15 @@ def convert_to_portfolio_format(account: dict, collapsed_positions: list, pnl_da
         key = f"{pos.get('ticker')}|{pos.get('structure')}|{pos.get('expiry')}"
         ticker = pos.get("ticker", "")
         structure = pos.get("structure", "")
-        # Try: trade_log by ticker+structure → prev portfolio → today
-        # Don't fall back to ticker-only from trade_log — a new position on
-        # the same ticker (different structure) should get today's date.
+        # Try: trade_log by ticker+structure → prev portfolio → "unknown" sentinel.
+        # Default to "unknown" (not today) for positions without a trade_log match.
+        # This prevents isSameDay() from incorrectly flagging old positions as
+        # opened today, which would make Today P&L = Total P&L for everything.
+        # "unknown" date is in the past so it never matches todayInET().
         pos['entry_date'] = (
             trade_log_dates.get(f"{ticker}|{structure}")
             or prev_dates.get(key)
-            or today
+            or "unknown"
         )
 
     result = {
