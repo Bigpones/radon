@@ -321,6 +321,49 @@ describe("computeDayMoveBreakdown — option mid fallback", () => {
     expect(rows[0].col2).toContain("0.70");
   });
 
+  test("uses midpoint when an option last price is stale and far outside bid/ask", () => {
+    const pos = makeOptionPosition({
+      ticker: "WULF",
+      structure: "Long Call",
+      structure_type: "Long Call",
+      expiry: "2027-01-15",
+      contracts: 77,
+      legs: [
+        {
+          direction: "LONG",
+          contracts: 77,
+          type: "Call",
+          strike: 17,
+          entry_cost: 40076.51,
+          avg_cost: 520.4741844,
+          market_price: 4.475,
+          market_value: 34457.5,
+          market_price_is_calculated: false,
+        },
+      ],
+    });
+    const portfolio = makePortfolio([pos]);
+
+    const optionKey = "WULF_20270115_17_C";
+    const prices: Record<string, PriceData> = {
+      [optionKey]: makePrice({
+        symbol: optionKey,
+        last: 21.015,
+        bid: 4.20,
+        ask: 4.75,
+        close: 4.78,
+      }),
+    };
+
+    const { rows, total } = computeDayMoveBreakdown(portfolio, prices);
+    expect(rows).toHaveLength(1);
+
+    // Mid = 4.475, so the day move should use a small negative change, not a massive positive one.
+    expect(total).toBeCloseTo((4.475 - 4.78) * 77 * 100, 2);
+    expect(rows[0].col2).toContain("4.47");
+    expect(rows[0].col2).toContain("MID");
+  });
+
   test("prefers IB per-position daily P&L over close-based option math when present", () => {
     const pos = makeOptionPosition({
       ticker: "WULF",
