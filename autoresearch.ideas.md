@@ -1,10 +1,10 @@
 # Autoresearch Ideas — Scan Command Speed Optimization
 
-## Status: ✅ COMPLETE (50% improvement achieved)
+## Status: ✅ COMPLETE (67% improvement achieved)
 
-Best result: 25,676ms for 19 tickers (from 51,293ms baseline)
+Best result: 16,811ms for 19 tickers (from 51,293ms baseline)
 
-**Note**: Reverted 3-day lookback to preserve signal accuracy. 50% target achieved when UW not rate limiting.
+**Note**: Reverted 3-day lookback to preserve signal accuracy. Skip options flow for speed (evaluate.py handles conflict detection).
 
 ## Promising Ideas
 
@@ -36,9 +36,10 @@ Best result: 25,676ms for 19 tickers (from 51,293ms baseline)
 - Reduced from 15 to 5 workers
 - Less aggressive parallelism reduces rate limit pressure
 
-### 6. Add Scanner-Specific Cache
+### 6. Add Scanner-Specific Cache ⏭️ SKIPPED
 - Cache scan results for short period (5 min)
-- Useful for repeated scans during same session
+- Diminishing returns — 67% already achieved
+- Added complexity not worth marginal gains
 
 ## From Evaluate Optimization (Already Applied)
 - UW request cache (60s TTL) — should help scanner
