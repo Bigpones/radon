@@ -315,6 +315,44 @@ describe("Share PnL - Entry/Exit Price and Time", () => {
       expect(data.exitTime).toBe("2026-03-18T07:03:53-07:00");
     });
   });
+
+  describe("fully-closed positions (no longer in portfolio)", () => {
+    it("derives entry price from exit price and realized P&L", () => {
+      // PLTR Long $145 Call: opened on prior day, fully closed today.
+      // Position no longer exists in portfolio.positions.
+      // Entry price should be derived: exitPrice - realizedPNL / (qty * 100)
+      const closingGroup: PositionFillGroup = {
+        id: "pltr-close",
+        symbol: "PLTR",
+        description: "Closed PLTR (Long $145 Call)",
+        isClosing: true,
+        totalQuantity: 50,
+        netPrice: 11.70, // exit price per contract
+        totalCommission: 38.50,
+        totalPnL: 35529.88,
+        time: "2026-03-19T12:42:02-07:00",
+        fills: [
+          makeOptionFill({
+            contract: { symbol: "PLTR", secType: "OPT", strike: 145, right: "C", expiry: "2026-03-27", conId: 2001 },
+            side: "SLD",
+            quantity: 50,
+            avgPrice: 11.70,
+            realizedPNL: 35529.88,
+            time: "2026-03-19T12:42:02-07:00",
+          }),
+        ],
+      };
+
+      // No opening fills today, no portfolio position (fully closed)
+      const data = positionGroupShareData(closingGroup, [closingGroup], []);
+
+      // entryPrice = exitPrice - realizedPNL / (qty * 100) = 11.70 - 35529.88 / 5000 = 4.5941
+      expect(data.entryPrice).not.toBeNull();
+      expect(data.entryPrice).toBeCloseTo(4.59, 1);
+      expect(data.exitPrice).toBeCloseTo(11.70, 2);
+      expect(data.exitTime).toBe("2026-03-19T12:42:02-07:00");
+    });
+  });
 });
 
 describe("Share PnL API Route - Detail Items", () => {

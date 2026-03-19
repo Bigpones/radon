@@ -280,6 +280,23 @@ export function positionGroupShareData(
       }
     }
 
+    // Fallback for fully-closed positions no longer in portfolio:
+    // derive entry price from exit price and realized P&L.
+    // entryPrice = exitPrice - realizedPNL / (quantity * multiplier)
+    if (entryPrice == null && group.totalPnL != null) {
+      const optFills = group.fills.filter((f) => f.contract.secType === "OPT");
+      const totalQty = optFills.reduce((sum, f) => sum + f.quantity, 0);
+      // For single-leg fills, netPrice is null; use the fill's avgPrice instead
+      const exitPx = group.netPrice ?? (optFills.length === 1 ? optFills[0].avgPrice : null);
+      if (totalQty > 0 && exitPx != null) {
+        const mult = optFills[0]?.contract.secType === "OPT" ? 100 : 1;
+        entryPrice = exitPx - (group.totalPnL / (totalQty * mult));
+        if (entryNotional === 0) {
+          entryNotional = Math.abs(entryPrice) * totalQty * mult;
+        }
+      }
+    }
+
     if (entryNotional > 0) {
       pnlPct = (group.totalPnL / entryNotional) * 100;
     } else {
