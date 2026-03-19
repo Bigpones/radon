@@ -43,6 +43,7 @@ export function useSyncHook<T>(config: UseSyncConfig<T>, active: boolean): UseSy
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didInitialSync = useRef(false);
+  const initialLoadKeyRef = useRef<string | null>(null);
   const requestRef = useRef<(method: RetryMethod, background?: boolean) => Promise<void>>(async () => {});
 
   const clearRetry = useCallback(() => {
@@ -96,7 +97,13 @@ export function useSyncHook<T>(config: UseSyncConfig<T>, active: boolean): UseSy
 
   // Initial fetch — read cached file, auto-sync if stale
   useEffect(() => {
-    if (!active) return;
+    if (!active) {
+      initialLoadKeyRef.current = null;
+      return;
+    }
+
+    if (initialLoadKeyRef.current === endpoint) return;
+    initialLoadKeyRef.current = endpoint;
 
     const init = async () => {
       try {
