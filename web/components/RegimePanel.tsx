@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Check, Share2, Shield, X, Zap } from "lucide-react";
+import { AlertTriangle, Check, Shield, X, Zap } from "lucide-react";
 import CriHistoryChart from "./CriHistoryChart";
 import RegimeRelationshipView from "./RegimeRelationshipView";
 import { DayChange, LiveBadge, PointChange, RegimeStrip, RegimeStripCell } from "./RegimeStrip";
+import ShareReportModal from "./ShareReportModal";
 import type { ChartSeries, CriHistoryEntry } from "./CriHistoryChart";
 import InfoTooltip from "./InfoTooltip";
 import type { PriceData } from "@/lib/pricesProtocol";
@@ -170,50 +171,10 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
   const hasIntradayRvol = intradayRvol != null;
   const activeRvol = intradayRvol ?? data?.realized_vol ?? null;
 
-  // ── Share to X state ──────────────────────────────────────────────────
-  const [shareUrl, setShareUrl] = useState<string | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [shareLoading, setShareLoading] = useState(false);
-
-  async function handleShare() {
-    setShareLoading(true);
-    try {
-      const res = await fetch("/api/regime/share", { method: "POST" });
-      if (!res.ok) throw new Error("Share generation failed");
-      const payload = await res.json();
-      const previewPath = payload.preview_path as string;
-      // Load HTML via content API → blob URL for iframe
-      const contentRes = await fetch(
-        `/api/regime/share/content?path=${encodeURIComponent(previewPath)}`
-      );
-      if (!contentRes.ok) throw new Error("Could not load preview");
-      const html = await contentRes.text();
-      const blob = new Blob([html], { type: "text/html" });
-      setShareUrl(URL.createObjectURL(blob));
-      setModalOpen(true);
-    } catch (err) {
-      console.error("Share error:", err);
-    } finally {
-      setShareLoading(false);
-    }
-  }
-
-  // Close modal handler + Escape key
-  function closeModal() {
-    setModalOpen(false);
-    if (shareUrl) { URL.revokeObjectURL(shareUrl); setShareUrl(null); }
-  }
-  useEffect(() => {
-    if (!modalOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") closeModal(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modalOpen]);
-
   const activeCorrChange = corr5dChange ?? 0;
+  const safeActiveCorr = activeCorr ?? 0;
   const correlationTriggerMet =
-    data?.crash_trigger?.conditions.cor1m_gt_60 ?? activeCorr > 60;
+    data?.crash_trigger?.conditions.cor1m_gt_60 ?? safeActiveCorr > 60;
 
   // Merge live + cached into CRI inputs. If any live values are present,
   // recompute CRI from them to avoid waiting for the scan loop.
@@ -233,7 +194,7 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
       vix5dRoc: data.vix_5d_roc,
       vvix,
       vvixVixRatio,
-      corr: activeCorr,
+      corr: safeActiveCorr,
       corr5dChange: activeCorrChange,
       spxDistancePct,
     });
@@ -242,7 +203,9 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
   const cri = liveCri ?? (data?.cri ? { ...data.cri, level: data.cri.level as CriLevel } : { score: 0, level: "LOW" as CriLevel, components: { vix: 0, vvix: 0, correlation: 0, momentum: 0 } });
   const color = levelColor(cri.level);
   const ma = data?.spx_100d_ma;
-  const spxBelowMa = ma ? spyVal < ma : data?.crash_trigger?.conditions.spx_below_100d_ma ?? false;
+  const spxBelowMa = ma && spyVal != null
+    ? spyVal < ma
+    : data?.crash_trigger?.conditions.spx_below_100d_ma ?? false;
 
   if (!data && !syncing) {
     return (
@@ -274,15 +237,13 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
               Last scan: {new Date(lastSync).toLocaleTimeString()}
             </span>
           )}
-          <button
-            className="cta-share-btn"
-            onClick={handleShare}
-            disabled={shareLoading}
-            title="Share Regime report to X"
-          >
-            <Share2 size={13} />
-            {shareLoading ? "Generating…" : "Share to X"}
-          </button>
+          <ShareReportModal
+            modalTitle="REGIME REPORT — SHARE TO X"
+            shareEndpoint="/api/regime/share"
+            buttonTitle="Share Regime report to X"
+            iconSize={11}
+            shareContentTitle="Regime Share Preview"
+          />
         </div>
         <div className="regime-hero-bar">
           <div className="regime-hero-bar-fill" style={{ width: `${cri.score}%`, background: color }} />
@@ -469,15 +430,6 @@ export default function RegimePanel({ prices }: RegimePanelProps) {
         );
       })()}
 
-      {/* ── Share Modal ────────────────────────────── */}
-      {modalOpen && shareUrl && (
-        <div className="cta-share-backdrop" onClick={closeModal}>
-          <div className="cta-share-modal" onClick={e => e.stopPropagation()}>
-            <button className="cta-share-close" onClick={closeModal}>✕</button>
-            <iframe className="cta-share-iframe" src={shareUrl} title="Regime Share Preview" />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

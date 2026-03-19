@@ -86,53 +86,41 @@ describe("Next.js /api/regime/share routes", () => {
 // ── 4. RegimePanel component has Share button ──────────────────────
 
 describe("RegimePanel share button", () => {
-  it("imports Share2 from lucide-react", async () => {
+  it("uses shared ShareReportModal component", async () => {
     const panelPath = path.join(
       PROJECT_ROOT, "web", "components", "RegimePanel.tsx"
     );
     const content = await readFile(panelPath, "utf-8");
-    expect(content).toContain("Share2");
+    expect(content).toContain("ShareReportModal");
   });
 
-  it("has handleShare function", async () => {
+  it("has /api/regime/share endpoint", async () => {
     const panelPath = path.join(
       PROJECT_ROOT, "web", "components", "RegimePanel.tsx"
     );
     const content = await readFile(panelPath, "utf-8");
-    expect(content).toContain("handleShare");
+    expect(content).toContain('shareEndpoint="/api/regime/share"');
   });
 
-  it("has share modal state (shareUrl, modalOpen)", async () => {
-    const panelPath = path.join(
-      PROJECT_ROOT, "web", "components", "RegimePanel.tsx"
+  it("reuses cta-share modal classes through shared component", async () => {
+    const modalPath = path.join(
+      PROJECT_ROOT, "web", "components", "ShareReportModal.tsx"
     );
-    const content = await readFile(panelPath, "utf-8");
-    expect(content).toContain("shareUrl");
-    expect(content).toContain("modalOpen");
-  });
-
-  it("calls /api/regime/share", async () => {
-    const panelPath = path.join(
-      PROJECT_ROOT, "web", "components", "RegimePanel.tsx"
-    );
-    const content = await readFile(panelPath, "utf-8");
-    expect(content).toContain("/api/regime/share");
-  });
-
-  it("renders cta-share-backdrop modal class", async () => {
-    const panelPath = path.join(
-      PROJECT_ROOT, "web", "components", "RegimePanel.tsx"
-    );
-    const content = await readFile(panelPath, "utf-8");
+    const content = await readFile(modalPath, "utf-8");
     expect(content).toContain("cta-share-backdrop");
+    expect(content).toContain("cta-share-iframe");
   });
 
-  it("renders iframe with blob url", async () => {
+  it("shares the same implementation in /cta and /regime", async () => {
     const panelPath = path.join(
       PROJECT_ROOT, "web", "components", "RegimePanel.tsx"
     );
+    const ctaContent = await readFile(path.join(PROJECT_ROOT, "web", "components", "CtaPage.tsx"), "utf-8");
+    const modalContent = await readFile(path.join(PROJECT_ROOT, "web", "components", "ShareReportModal.tsx"), "utf-8");
     const content = await readFile(panelPath, "utf-8");
-    expect(content).toContain("cta-share-iframe");
+    expect(content).toContain("ShareReportModal");
+    expect(ctaContent).toContain("ShareReportModal");
+    expect(modalContent).toContain("role=\"dialog\"");
   });
 });
 

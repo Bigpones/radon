@@ -1,7 +1,7 @@
 "use client";
 
-import { Activity, Share2, X } from "lucide-react";
-import { useState, useCallback, useEffect } from "react";
+import { Activity } from "lucide-react";
+import ShareReportModal from "./ShareReportModal";
 import { useRegime } from "@/lib/useRegime";
 import { useMenthorqCta } from "@/lib/useMenthorqCta";
 import { SECTION_TOOLTIPS } from "@/lib/sectionTooltips";
@@ -56,61 +56,6 @@ export default function CtaPage() {
   const exposurePct = cta?.exposure_pct ?? null;
 
   const order = ["main", "index", "commodity", "currency"] as const;
-
-  /* ─── Share modal state ────────────────────────────── */
-  const [sharing, setSharing] = useState(false);
-  const [shareError, setShareError] = useState<string | null>(null);
-  const [shareUrl, setShareUrl] = useState<string | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
-
-  // Revoke blob URL when modal closes to free memory
-  const closeModal = useCallback(() => {
-    setModalOpen(false);
-    if (shareUrl) {
-      setTimeout(() => {
-        URL.revokeObjectURL(shareUrl);
-        setShareUrl(null);
-      }, 300); // wait for close animation
-    }
-  }, [shareUrl]);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!modalOpen) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") closeModal(); };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [modalOpen, closeModal]);
-
-  async function handleShare() {
-    setSharing(true);
-    setShareError(null);
-    try {
-      const res = await fetch("/api/menthorq/cta/share", { method: "POST" });
-      const data = await res.json() as { preview_path?: string; error?: string };
-      if (!res.ok) {
-        setShareError(data?.error ?? "Share generation failed");
-        return;
-      }
-      const previewPath = data?.preview_path;
-      if (previewPath) {
-        const htmlRes = await fetch(`/api/menthorq/cta/share/content?path=${encodeURIComponent(previewPath)}`);
-        if (htmlRes.ok) {
-          const html = await htmlRes.text();
-          const blob = new Blob([html], { type: "text/html" });
-          const url = URL.createObjectURL(blob);
-          setShareUrl(url);
-          setModalOpen(true);
-        } else {
-          setShareError("Preview generated but could not be loaded.");
-        }
-      }
-    } catch (e) {
-      setShareError(e instanceof Error ? e.message : "Unknown error");
-    } finally {
-      setSharing(false);
-    }
-  }
 
   /* ─── Per-section callouts ─────────────────────────── */
   function buildCallout(key: typeof order[number], tables: NonNullable<typeof ctaData>["tables"]): CtaSectionCallout | undefined {
@@ -326,50 +271,15 @@ export default function CtaPage() {
             )}
           </span>
           {ctaData?.tables && (
-            <button
-              onClick={handleShare}
-              disabled={sharing}
-              title="Share CTA report to X"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "5px",
-                padding: "4px 10px",
-                background: sharing ? "var(--bg-hover)" : "transparent",
-                border: "1px solid var(--border-dim)",
-                borderRadius: "3px",
-                fontFamily: "var(--font-mono, monospace)",
-                fontSize: "9px",
-                fontWeight: 700,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: sharing ? "var(--text-muted)" : "var(--text-primary)",
-                cursor: sharing ? "not-allowed" : "pointer",
-                transition: "all 150ms",
-                flexShrink: 0,
-              }}
-              onMouseEnter={e => { if (!sharing) (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--signal-core)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--signal-core)"; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--border-dim)"; (e.currentTarget as HTMLButtonElement).style.color = sharing ? "var(--text-muted)" : "var(--text-primary)"; }}
-            >
-              <Share2 size={11} />
-              {sharing ? "Generating…" : "Share to X"}
-            </button>
+            <ShareReportModal
+              modalTitle="CTA REPORT — SHARE TO X"
+              shareEndpoint="/api/menthorq/cta/share"
+              buttonTitle="Share CTA report to X"
+              iconSize={11}
+              shareContentTitle="CTA Share Preview"
+            />
           )}
         </div>
-        {shareError && (
-          <div style={{
-            margin: "8px 12px",
-            padding: "7px 10px",
-            border: "1px solid var(--negative)",
-            borderRadius: "3px",
-            background: "rgba(232,93,108,0.06)",
-            fontFamily: "var(--font-mono, monospace)",
-            fontSize: "10px",
-            color: "var(--negative)",
-          }}>
-            {shareError}
-          </div>
-        )}
 
         {!loading && ctaIsStale && (
           <div className={statusBannerClass} data-testid="cta-stale-banner" role="alert">
@@ -414,34 +324,6 @@ export default function CtaPage() {
       </div>
     </div>
 
-    {/* ── Share Modal ───────────────────────────────────── */}
-    {modalOpen && shareUrl && (
-      <div
-        className="cta-share-backdrop"
-        onClick={closeModal}
-        role="dialog"
-        aria-modal="true"
-        aria-label="CTA Share Preview"
-      >
-        <div
-          className="cta-share-modal"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="cta-share-header">
-            <span className="cta-share-title">CTA REPORT — SHARE TO X</span>
-            <button className="cta-share-close" onClick={closeModal} aria-label="Close">
-              <X size={14} />
-            </button>
-          </div>
-          <iframe
-            src={shareUrl}
-            className="cta-share-iframe"
-            title="CTA Share Preview"
-            sandbox="allow-scripts allow-same-origin"
-          />
-        </div>
-      </div>
-    )}
     </>
   );
 }
