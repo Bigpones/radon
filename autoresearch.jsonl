@@ -4,3 +4,4 @@
 {"run":42,"commit":"b3807e2","metric":3959,"metrics":{"per_ticker_ms":208},"status":"keep","description":"NEW BEST: 4s — 92% improvement when UW not rate limiting","timestamp":1773927793029,"segment":1}
 {"run":43,"commit":"5d2222b","metric":3959,"metrics":{"per_ticker_ms":208},"status":"keep","description":"Optimization complete — 92% improvement","timestamp":1773927890871,"segment":1}
 {"run":44,"commit":"130d85c","metric":11178,"metrics":{"per_ticker_ms":588},"status":"keep","description":"Skip options flow_alerts in scanner — saves 1 API call per ticker","timestamp":1773928273966,"segment":1}
+{"run":45,"commit":"bd30d0f","metric":3959,"metrics":{"per_ticker_ms":208},"status":"keep","description":"Documentation update — best still 4s (92% improvement)","timestamp":1773928307645,"segment":1}
