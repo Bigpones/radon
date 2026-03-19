@@ -232,7 +232,8 @@ def fetch_uw_flow(ticker: str, days: int = 7, _client: UWClient = None) -> Optio
 
     try:
         def _fetch(client):
-            return client.get_flow_alerts(ticker=ticker, limit=100)
+            # Use same params as fetch_flow.py for cache hits
+            return client.get_flow_alerts(ticker=ticker, min_premium=50000, limit=100)
 
         if _client is not None:
             raw = _fetch(_client)
