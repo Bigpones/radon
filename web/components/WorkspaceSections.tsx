@@ -288,8 +288,12 @@ export function positionGroupShareData(
     if (entryPrice == null && group.totalPnL != null) {
       const optFills = group.fills.filter((f) => f.contract.secType === "OPT");
       const totalQty = optFills.reduce((sum, f) => sum + f.quantity, 0);
-      // For single-leg fills, netPrice is null; use the fill's avgPrice instead
-      const exitPx = group.netPrice ?? (optFills.length === 1 ? optFills[0].avgPrice : null);
+      // Derive exit price: BAG netPrice, or weighted avg of OPT fills
+      let exitPx = group.netPrice;
+      if (exitPx == null && totalQty > 0) {
+        const weightedSum = optFills.reduce((s, f) => s + (f.avgPrice ?? 0) * f.quantity, 0);
+        exitPx = weightedSum / totalQty;
+      }
       if (totalQty > 0 && exitPx != null) {
         const mult = optFills[0]?.contract.secType === "OPT" ? 100 : 1;
         entryPrice = exitPx - (group.totalPnL / (totalQty * mult));
@@ -302,14 +306,17 @@ export function positionGroupShareData(
     if (entryNotional > 0) {
       pnlPct = (group.totalPnL / entryNotional) * 100;
     } else {
-      // Fallback: use sum of closing OPT leg notionals
+      // Fallback: derive entry notional from exit notional - P&L
+      // Return on Risk = P&L / Capital at Risk (entry cost)
       const optFills = group.fills.filter((f) => f.contract.secType === "OPT");
-      const totalNotional = optFills.reduce((sum, f) => {
+      const exitNotional = optFills.reduce((sum, f) => {
         const mult = f.contract.secType === "OPT" ? 100 : 1;
         return sum + Math.abs((f.avgPrice ?? 0) * f.quantity * mult);
       }, 0);
-      if (totalNotional > 0) {
-        pnlPct = (group.totalPnL / totalNotional) * 100;
+      const derivedEntry = Math.abs(exitNotional - (group.totalPnL ?? 0));
+      if (derivedEntry > 0) {
+        entryNotional = derivedEntry;
+        pnlPct = (group.totalPnL / derivedEntry) * 100;
       }
     }
   }
@@ -1838,9 +1845,11 @@ function OrdersSections({
                         <td className="right">{group.totalCommission !== 0 ? fmtPrice(group.totalCommission) : "—"}</td>
                         <td className={`right ${group.totalPnL != null ? (group.totalPnL >= 0 ? "positive" : "negative") : ""}`}>
                           {group.totalPnL != null ? (() => {
+                            // Return on Risk: P&L / entry notional. Entry = exit - P&L.
                             const optFills = group.fills.filter((f) => f.contract.secType === "OPT");
-                            const totalNotional = optFills.reduce((sum, f) => sum + Math.abs((f.avgPrice ?? 0) * f.quantity * 100), 0);
-                            const pct = totalNotional > 0 ? (group.totalPnL / totalNotional) * 100 : null;
+                            const exitNotional = optFills.reduce((sum, f) => sum + Math.abs((f.avgPrice ?? 0) * f.quantity * 100), 0);
+                            const entryNotional = Math.abs(exitNotional - group.totalPnL);
+                            const pct = entryNotional > 0 ? (group.totalPnL / entryNotional) * 100 : null;
                             return `${group.totalPnL >= 0 ? "+" : ""}${fmtPrice(group.totalPnL)}${pct != null ? ` (${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%)` : ""}`;
                           })() : "—"}
                         </td>
