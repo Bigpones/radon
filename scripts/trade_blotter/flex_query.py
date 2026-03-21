@@ -108,7 +108,7 @@ class FlexQueryFetcher:
         
         # Step 2: Poll for the report
         statement_url = f"{self.FLEX_SERVICE_URL}.GetStatement"
-        max_attempts = 20
+        max_attempts = 40
         
         for attempt in range(max_attempts):
             time.sleep(3)  # Wait before polling
@@ -126,14 +126,15 @@ class FlexQueryFetcher:
                 continue
             
             # Check if still processing
-            if "<Status>Success</Status>" not in response_text and "<FlexStatements>" not in response_text:
+            # IB returns <FlexStatements count="N"> (with attribute), not bare <FlexStatements>
+            if "<Status>Success</Status>" not in response_text and "<FlexStatements" not in response_text:
                 print(f"  Attempt {attempt + 1}: Still processing...")
                 continue
             
             print("Report ready. Parsing...")
             return self._parse_xml(response_text)
         
-        raise RuntimeError("Flex Query timed out after 60 seconds")
+        raise RuntimeError("Flex Query timed out after 120 seconds")
     
     def _parse_xml(self, xml_content: str) -> List[Execution]:
         """Parse Flex Query XML response into executions."""
@@ -179,7 +180,11 @@ class FlexQueryFetcher:
         
         try:
             if ";" in datetime_str:
-                exec_time = datetime.strptime(datetime_str, "%Y-%m-%d;%H:%M:%S")
+                # IB Flex returns YYYYMMDD;HHMMSS (no separators)
+                try:
+                    exec_time = datetime.strptime(datetime_str, "%Y%m%d;%H%M%S")
+                except ValueError:
+                    exec_time = datetime.strptime(datetime_str, "%Y-%m-%d;%H:%M:%S")
             elif "T" in datetime_str:
                 exec_time = datetime.fromisoformat(datetime_str.replace("Z", "+00:00"))
             elif " " in datetime_str:

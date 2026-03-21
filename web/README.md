@@ -55,18 +55,6 @@ FastAPI (port 8321)
 | `ib_realtime_server.js` | Live bid/ask/last prices | Real-time (<1ms latency) |
 | `scripts/api/server.py` | FastAPI bridge — runs Python scripts as async subprocesses | On-demand (API calls) |
 
-### Portfolio Price Table Indicators
-
-Portfolio tables now visually mark live price updates on each tick:
-
-- `Last Price` and leg `market_price` cells flash briefly on change:
-  - Green flash for an uptick
-  - Red flash for a downtick
-- Direction arrows remain visible after the flash:
-  - Green up arrow for price increases
-  - Red down arrow for price decreases
-- Flash duration is `2.5s` to keep updates readable without being too aggressive.
-
 ## API Keys
 
 Create `web/.env` from the template:
@@ -174,7 +162,7 @@ function PriceDisplay() {
 | Route | Method | Description |
 |-------|--------|-------------|
 | `/api/portfolio` | GET, POST | Positions and exposure (GET=read, POST=IB sync). Stale-while-revalidate |
-| `/api/performance` | GET, POST | YTD performance metrics. GET serves cache + background rebuild; POST blocks on full rebuild |
+| `/api/performance` | GET, POST | YTD performance metrics (hidden — see `docs/performance-reconstruction.md`) |
 | `/api/blotter` | GET, POST | Today's fills and closed trades |
 | `/api/journal` | GET | Trade log (append-only) |
 | `/api/journal/sync` | POST | Import new IB trades from reconciliation |
@@ -194,7 +182,7 @@ function PriceDisplay() {
 | Route | Method | Description |
 |-------|--------|-------------|
 | `/api/prices` | POST | One-time price snapshot (GET deprecated) |
-| `/api/previous-close` | POST | Previous-day closing prices (UW → Yahoo fallback) |
+| `/api/previous-close` | POST | Previous-day closing prices (IB → UW → Yahoo fallback) |
 | `/api/regime` | GET, POST | CRI regime data with market-hours staleness logic |
 | `/api/internals` | GET, POST | Market internals and skew history |
 | `/api/scanner` | GET, POST | Watchlist scan results with cache metadata |
@@ -296,6 +284,7 @@ API specifications, strategy docs, and implementation notes live in the project 
 | `docs/plans.md` | Implementation plans |
 | `docs/implement.md` | Implementation notes |
 | `docs/prompt.md` | System prompt reference |
+| `docs/performance-reconstruction.md` | Performance page analysis — TWR approaches tried, why shelved |
 
 ## Troubleshooting
 
