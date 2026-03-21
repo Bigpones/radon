@@ -35,22 +35,16 @@ The `npm run dev` command starts three services:
 ### Data Flow
 
 ```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────┐
-│   IB Gateway    │────▶│  ib_sync.py      │────▶│ portfolio   │
-│   (TWS/4001)    │     │  (periodic sync) │     │   .json     │
-└─────────────────┘     └──────────────────┘     └─────────────┘
-        │
-        │               ┌──────────────────┐     ┌─────────────┐
-                        └──────────────▶│ ib_realtime_     │◀───▶│  WebSocket  │
-                        │ server.js        │     │  Clients    │
-                        │ (streaming)      │     └─────────────┘
-                        └──────────────────┘
-                                │
-                                ▼
-                        ┌──────────────────┐     ┌─────────────┐
-                        │ /api/prices      │────▶│  usePrices  │
-                        │ (snapshot only)  │     │  (React)    │
-                        └──────────────────┘     └─────────────┘
+IB Gateway (4001)
+  ├──▶ ib_sync.py ──▶ portfolio.json (positions, P&L, account)
+  │
+  └──▶ ib_realtime_server.js (port 8765)
+         │
+         ├──▶ Browser WebSocket (usePrices hook) ── live bid/ask/last
+         └──▶ /api/prices POST (one-time snapshot)
+
+FastAPI (port 8321)
+  └──▶ Python scripts as async subprocesses (scanner, sync, perf, etc.)
 ```
 
 ### Pricing vs Sync (Separated)
@@ -175,53 +169,89 @@ function PriceDisplay() {
 
 ## API Routes
 
+### Portfolio and Performance
+
 | Route | Method | Description |
 |-------|--------|-------------|
-| `/api/portfolio` | GET | Read portfolio.json |
-| `/api/portfolio` | POST | Trigger IB sync |
-| `/api/performance` | GET | Read cached YTD performance metrics, refresh `portfolio.json` through `ibSync` when it is behind the current ET session, rebuild when the cache lags the latest portfolio sync, and let `/performance` revalidate immediately after the shell portfolio snapshot advances |
-| `/api/performance` | POST | Rebuild YTD performance metrics from the Python engine |
-| `/api/menthorq/cta` | GET | Read the latest MenthorQ CTA cache, attach `cache_meta` plus `sync_health`/`sync_status`, and trigger one background CTA refresh when the latest closed trading day is missing |
-| `/api/orders` | GET | Read open/executed orders |
-| `/api/orders` | POST | Sync orders from IB |
-| `/api/prices` | GET | Deprecated (real-time SSE removed) |
-| `/api/prices` | POST | One-time price snapshot |
+| `/api/portfolio` | GET, POST | Positions and exposure (GET=read, POST=IB sync). Stale-while-revalidate |
+| `/api/performance` | GET, POST | YTD performance metrics. GET serves cache + background rebuild; POST blocks on full rebuild |
+| `/api/blotter` | GET, POST | Today's fills and closed trades |
+| `/api/journal` | GET | Trade log (append-only) |
+| `/api/journal/sync` | POST | Import new IB trades from reconciliation |
+| `/api/attribution` | GET | P&L attribution data |
+
+### Orders
+
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/api/orders` | GET, POST | Open/executed orders (GET=read, POST=IB sync) |
+| `/api/orders/place` | POST | Place stock/option/combo orders (naked short guard enforced) |
+| `/api/orders/cancel` | POST | Cancel by orderId or permId |
+| `/api/orders/modify` | POST | Modify price/quantity/outsideRth or replace combo |
+
+### Market Data and Regime
+
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/api/prices` | POST | One-time price snapshot (GET deprecated) |
+| `/api/previous-close` | POST | Previous-day closing prices (UW → Yahoo fallback) |
+| `/api/regime` | GET, POST | CRI regime data with market-hours staleness logic |
+| `/api/internals` | GET, POST | Market internals and skew history |
+| `/api/scanner` | GET, POST | Watchlist scan results with cache metadata |
+| `/api/discover` | GET, POST | Market-wide flow scanning |
+| `/api/flow-analysis` | GET, POST | Portfolio flow analysis (supports/against/watch) |
+| `/api/menthorq/cta` | GET | CTA positioning with sync health metadata |
+| `/api/flex-token` | GET | IB Flex token expiry status |
+
+### Ticker Data
+
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/api/ticker/info` | GET | Company info (UW + Exa, cached) |
+| `/api/ticker/news` | GET | News headlines (UW → Yahoo fallback) |
+| `/api/ticker/ratings` | GET | Analyst ratings and price targets |
+| `/api/ticker/seasonality` | GET | Monthly seasonality (UW → EquityClock Vision → cache) |
+| `/api/options/chain` | GET | Options chain for symbol |
+| `/api/options/expirations` | GET | Available expiration dates |
+
+### AI and Commands
+
+| Route | Method | Description |
+|-------|--------|-------------|
 | `/api/assistant` | POST | Claude conversation |
-| `/api/pi` | POST | Execute PI commands |
+| `/api/pi` | POST | Execute PI commands (scanner, evaluate, etc.) |
+
+### Share Cards
+
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/api/regime/share` | POST | Generate regime PNG card |
+| `/api/menthorq/cta/share` | POST | Generate CTA PNG card |
+| `/api/internals/share` | POST | Generate internals PNG card |
 
 ## Tests
 
 ```bash
-# Run all tests
+# Unit tests (Vitest)
 npm test
 
-# Run with mock mode (no API keys needed)
+# E2E tests (Playwright)
+npx playwright test
+
+# Mock mode (no API keys needed)
 ASSISTANT_MOCK=1 npm test
 ```
 
-Tests cover:
+**Unit tests** (`web/tests/`): Route logic, price utilities, naked short guard, WebSocket state machine, regime/CRI staleness, CTA freshness, share cards, P&L calculations, day change, exposure breakdown.
 
-- CTA freshness contract and `/cta` stale/degraded rendering in unit tests (`web/tests/cta-route-freshness.test.ts`, `web/tests/cta-page-freshness.test.ts`)
-- CTA route compatibility coverage in `web/tests/menthorq-cta-route.test.ts`
-- Browser CTA stale-banner coverage in `web/e2e/cta-stale-banner.spec.ts` and the `/cta` stale-state browser contract in `web/e2e/cta-page.spec.ts`
-- `/regime` live index websocket coverage, including cold-start contract preservation and live `VIX` / `VVIX` / `COR1M` strip rendering in `web/tests/ib-index-stream-contracts.test.ts`, `web/tests/use-previous-close-indexes.test.ts`, `web/e2e/regime-live-index-streaming.spec.ts`, and `web/e2e/regime-live-index-stream.spec.ts`
-- `/api/assistant` route (mock mode)
-- PI command entrypoints (`fetch_ticker`, `fetch_flow`, `discover`, `scanner`)
-- `kelly.py` output parsing
-- Real-time price utilities and state management
-- Share P&L popover defaults and share image rendering behavior (`web/e2e/share-pnl.spec.ts`, `web/tests/share-pnl.test.ts`, `/api/share/pnl`)
+**E2E tests** (`web/e2e/`): Regime live index streaming, CTA stale banners, share P&L rendering, options chain sticky headers, market-closed EOD values.
 
-### Python Tests
+### IB Connectivity Tests
 
 ```bash
-# Test IB connectivity
-python3 ../scripts/test_ib_realtime.py
-
-# Test IB only (no WebSocket server needed)
-python3 ../scripts/test_ib_realtime.py --ib-only
-
-# Test WebSocket server only
-python3 ../scripts/test_ib_realtime.py --ws-only
+python3 ../scripts/test_ib_realtime.py            # Full test
+python3 ../scripts/test_ib_realtime.py --ib-only   # IB only
+python3 ../scripts/test_ib_realtime.py --ws-only   # WebSocket only
 ```
 
 ## Development
@@ -293,6 +323,3 @@ node ../scripts/ib_realtime_server.js --ib-port 4001
 
 If IB is unavailable, some features fall back to Yahoo Finance which has aggressive rate limits. Wait a few minutes and retry, or ensure IB is connected.
 
-### Recent UI Changes
-
-- `f0f50e4` — Added persistent directional arrows and 2.5s flash highlighting for `Last Price` / `market_price` updates in portfolio tables.
