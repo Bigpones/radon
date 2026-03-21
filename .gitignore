@@ -118,6 +118,18 @@ tmp/
 /.playwright-mcp/
 /regime-*.png
 
+# Runtime caches
+data/cache/
+data/nav_history.jsonl
+
+# Verification screenshots (generated during UI work)
+/internals-panel.png
+web/internals-panel.png
+web/regime-panel.png
+
+# One-time verification scripts
+web/verify-regime-internals.mjs
+
 # Local agent worktrees / scratch state
 /.claude/worktrees/
 

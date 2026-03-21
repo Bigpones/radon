@@ -1,7 +1,7 @@
 #!/bin/bash
 # Checks for scanner optimization - verify output format is correct
 set -e
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/../.."
 
 # Check that scanner output has required fields
 python3 -c "

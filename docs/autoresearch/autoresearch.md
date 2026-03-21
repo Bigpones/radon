@@ -33,7 +33,7 @@ Improve the execution speed of `scripts/scanner.py` by ≥50%. The scanner fetch
 - **Secondary**: `per_ticker_ms` — average time per ticker
 
 ## How to Run
-`./autoresearch.sh` — outputs `METRIC total_ms=number` and `METRIC per_ticker_ms=number` lines.
+`./scripts/benchmarks/autoresearch.sh` — outputs `METRIC total_ms=number` and `METRIC per_ticker_ms=number` lines.
 
 ## Files in Scope
 | File | Purpose |

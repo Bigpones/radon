@@ -3,7 +3,7 @@
 # Measures scan time for watchlist tickers
 
 set -e
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/../.."
 
 echo "=== Scanner Benchmark ===" >&2
 

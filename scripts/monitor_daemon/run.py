@@ -44,8 +44,9 @@ def setup_logging(verbose: bool = False):
     
     level = logging.DEBUG if verbose else logging.INFO
     
-    # File handler
-    file_handler = logging.FileHandler(LOG_FILE)
+    # File handler (rotate at 10MB, keep 2 backups)
+    from logging.handlers import RotatingFileHandler
+    file_handler = RotatingFileHandler(LOG_FILE, maxBytes=10*1024*1024, backupCount=2)
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(logging.Formatter(
         '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
