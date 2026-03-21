@@ -30,7 +30,7 @@ Radon reconstructs market structure from multiple institutional signals and conv
 
 - Dark pool and OTC flow from [Unusual Whales](https://unusualwhales.com/referral#39985a64-656c-4642-a051-db89f6324d64)
 - Options flow, volatility surface, and open-interest change data
-- Real-time quotes and options chains from Interactive Brokers
+- Real-time quotes and options chains from [Interactive Brokers](https://ibkr.com/referral/joseph5632)
 - Cross-asset volatility relationships, CTA positioning, and analyst context
 
 **Processing**
@@ -45,7 +45,7 @@ Radon reconstructs market structure from multiple institutional signals and conv
 - Trade candidates and evaluations
 - HTML reports for scans, portfolio state, and stress tests
 - Live portfolio and order-state monitoring in the web terminal
-- Execution and post-trade management through Interactive Brokers
+- Execution and post-trade management through [Interactive Brokers](https://ibkr.com/referral/joseph5632)
 
 ## Trade Validation Framework
 
@@ -123,7 +123,7 @@ At a high level:
 
 - Python `3.9+`
 - Node.js `18+`
-- Interactive Brokers TWS or Gateway running locally
+- [Interactive Brokers](https://ibkr.com/referral/joseph5632) TWS or Gateway running locally
 - [Unusual Whales](https://unusualwhales.com/referral#39985a64-656c-4642-a051-db89f6324d64) API access
 
 **Install and run**
@@ -173,11 +173,11 @@ pip install playwright httpx
 playwright install chromium
 ```
 
-Interactive Brokers connects locally on port `4001` for Gateway or `7497` for TWS. No broker API key is required, but TWS or Gateway must be running before live workflows.
+[Interactive Brokers](https://ibkr.com/referral/joseph5632) connects locally on port `4001` for Gateway or `7497` for TWS. No broker API key is required, but TWS or Gateway must be running before live workflows.
 
 ## Radon Terminal
 
-Radon includes a real-time trading terminal built with **Next.js 16**. It streams Interactive Brokers prices, computes live greeks, visualizes portfolio exposures, and serves as the operator interface for scans, evaluation, and monitoring.
+Radon includes a real-time trading terminal built with **Next.js 16**. It streams [Interactive Brokers](https://ibkr.com/referral/joseph5632) prices, computes live greeks, visualizes portfolio exposures, and serves as the operator interface for scans, evaluation, and monitoring.
 
 ```bash
 cd web
@@ -253,7 +253,7 @@ If local port binding is unavailable, build the static site and point the audit 
 1. Run `scan` to surface dark pool and regime-aware candidates.
 2. Run `evaluate NVDA` to execute the full seven-milestone validation flow.
 3. If edge passes, design a convex structure and size it with Kelly constraints.
-4. Send or stage the trade through Interactive Brokers.
+4. Send or stage the trade through [Interactive Brokers](https://ibkr.com/referral/joseph5632).
 5. Monitor the position in the Radon Terminal and portfolio report.
 
 ## CLI Commands
@@ -286,7 +286,7 @@ If local port binding is unavailable, build the static site and point the audit 
 | `portfolio` | Live portfolio report with dark pool thesis checks |
 | `free-trade` | Analyze multi-leg positions for free-trade progression |
 | `journal` | View recent trade log entries |
-| `sync` | Pull live portfolio data from Interactive Brokers |
+| `sync` | Pull live portfolio data from [Interactive Brokers](https://ibkr.com/referral/joseph5632) |
 | `blotter` | Today's fills, grouped spreads, and commission totals |
 | `blotter-history` | Historical trades via IB Flex Query |
 
@@ -326,7 +326,7 @@ Important directories:
 
 Market-data priority is intentionally strict:
 
-1. **Interactive Brokers** for real-time quotes, options chains, and portfolio state
+1. **[Interactive Brokers](https://ibkr.com/referral/joseph5632)** for real-time quotes, options chains, and portfolio state
 2. **[Unusual Whales](https://unusualwhales.com/referral#39985a64-656c-4642-a051-db89f6324d64)** for dark pool flow, sweeps, options flow, and analyst data
 3. **Exa** for company and market research
 4. **Cboe official index feeds** for COR1M historical fallback before any generic web source
@@ -375,6 +375,8 @@ CTA freshness is now an explicit contract:
 - `/api/menthorq/cta` compares the latest cache date against the latest closed trading day, triggers one background CTA sync when stale, and returns explicit `cache_meta` plus `sync_health` metadata (with a `sync_status` compatibility alias) so `/cta` can show stale/degraded state instead of silently presenting old data as current.
 
 For the `/regime` RVOL/COR1M chart, the CRI cache now preserves enough trailing SPY closes to rebuild the full prior 20 sessions of realized volatility. COR1M history now falls back to the official Cboe dashboard feed before Yahoo, and the API prefers the richer CRI cache candidate when scheduled snapshots lag and backfills missing `history[].realized_vol` values from cached closes before rendering the chart.
+
+For `/internals`, the skew charts use the live `/internals/skew-history` backfill only during active ET market hours. On weekends and other closed sessions, `/api/internals` skips the live skew fetch and serves the newest shared long-range cache artifact from `data/cache/internals_skew_history_*.json` so the page keeps its full SPX/NDX history without attempting a non-trading-day refresh.
 
 ### Phase 1 Remote IBC Access
 

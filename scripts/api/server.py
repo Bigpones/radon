@@ -10,14 +10,18 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
+from datetime import datetime, timezone
 import sys
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any, Iterable, List, Optional, Tuple
 
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -25,6 +29,8 @@ from fastapi.responses import JSONResponse
 SCRIPTS_DIR = Path(__file__).parent.parent
 PROJECT_ROOT = SCRIPTS_DIR.parent
 DATA_DIR = PROJECT_ROOT / "data"
+INTERNALS_SKEW_CACHE_DIR = DATA_DIR / "cache"
+INTERNALS_SKEW_CACHE_TTL_SECONDS = 60 * 15
 
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
@@ -50,9 +56,13 @@ logging.getLogger("ib_insync.wrapper").setLevel(logging.WARNING)
 logging.getLogger("ib_insync.client").setLevel(logging.WARNING)
 
 # ---------------------------------------------------------------------------
+from clients.uw_client import UWClient
+from clients.uw_client import UWAPIError, UWNotFoundError
+from ib_insync import Index
+
+
 # Shared state
 # ---------------------------------------------------------------------------
-from typing import Optional
 ib_pool: Optional[IBPool] = None
 uw_available: bool = False
 
@@ -127,6 +137,467 @@ def _atomic_save(path: str, data: dict) -> str:
     """Use the project's atomic_save for portfolio/orders files."""
     from utils.atomic_io import atomic_save
     return atomic_save(path, data)
+
+
+def _coerce_float(value: object) -> Optional[float]:
+    """Parse an arbitrary value into a finite float."""
+    if isinstance(value, (int, float)):
+        return float(value) if value == value and value != float("inf") and value != float("-inf") else None
+    if isinstance(value, str):
+        try:
+            parsed = float(value)
+        except ValueError:
+            return None
+        return parsed if parsed == parsed and parsed not in (float("inf"), float("-inf")) else None
+    return None
+
+
+def _coerce_date(value: object) -> Optional[datetime]:
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        try:
+            return datetime.strptime(value, "%Y-%m-%d")
+        except ValueError:
+            return None
+
+
+def _normalize_risk_reversal_series(raw: object) -> List[dict]:
+    """Normalize UW historical risk reversal payloads into a stable list."""
+    rows: Iterable[object] = []
+    if isinstance(raw, dict):
+        raw_rows = raw.get("data")
+        if isinstance(raw_rows, list):
+            rows = raw_rows
+    elif isinstance(raw, list):
+        rows = raw
+
+    normalized: List[dict] = []
+    seen_dates: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        date = row.get("date")
+        value = row.get("risk_reversal")
+        if not isinstance(date, str):
+            continue
+        numeric = _coerce_float(value)
+        if numeric is None:
+            continue
+        # Skip invalid or duplicate dates; keep the latest row for a date.
+        if date in seen_dates:
+            continue
+        seen_dates.add(date)
+        normalized.append({"date": date, "value": numeric})
+
+    normalized.sort(key=lambda item: item["date"])
+    return normalized
+
+
+def _extract_expiry_candidates(raw: object) -> List[str]:
+    rows: Iterable[object] = []
+    if isinstance(raw, dict):
+        raw_rows = raw.get("data")
+        if isinstance(raw_rows, list):
+            rows = raw_rows
+    elif isinstance(raw, list):
+        rows = raw
+
+    candidates: List[str] = []
+    for row in rows:
+        if isinstance(row, dict):
+            expiry = row.get("expiry")
+            if not isinstance(expiry, str):
+                expiry = row.get("expires")
+            if not isinstance(expiry, str):
+                expiry = row.get("expiration")
+            if isinstance(expiry, str) and expiry not in candidates:
+                candidates.append(expiry)
+    return candidates
+
+
+def _pick_preferred_expiry(raw: object, now: Optional[datetime] = None) -> Optional[str]:
+    """Choose the nearest expiry that is today or newer, else the most recent expiry."""
+    candidates = _extract_expiry_candidates(raw)
+    if not candidates:
+        return None
+
+    parsed: List[Tuple[str, datetime]] = []
+    for expiry in candidates:
+        parsed_date = _coerce_date(expiry)
+        if parsed_date is None:
+            continue
+        parsed.append((expiry, parsed_date))
+
+    if not parsed:
+        return candidates[0]
+
+    current = now or datetime.now(timezone.utc)
+    future_candidates = [(expiry, expiry_date) for expiry, expiry_date in parsed if expiry_date.date() >= current.date()]
+    if future_candidates:
+        return min(future_candidates, key=lambda item: item[1])[0]
+    return max(parsed, key=lambda item: item[1])[0]
+
+
+def _normalize_expiry_string(value: object) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+
+    parsed = _coerce_date(value)
+    if parsed is not None:
+        return parsed.date().isoformat()
+
+    compact = value.strip()
+    if len(compact) == 8 and compact.isdigit():
+        try:
+            return datetime.strptime(compact, "%Y%m%d").date().isoformat()
+        except ValueError:
+            return None
+
+    return None
+
+
+def _sort_expiry_candidates(expiries: Iterable[str], now: Optional[datetime] = None) -> List[str]:
+    parsed: List[Tuple[str, datetime]] = []
+    seen: set[str] = set()
+    for expiry in expiries:
+        normalized = _normalize_expiry_string(expiry)
+        if normalized is None or normalized in seen:
+            continue
+        parsed_date = _coerce_date(normalized)
+        if parsed_date is None:
+            continue
+        seen.add(normalized)
+        parsed.append((normalized, parsed_date))
+
+    if not parsed:
+        return []
+
+    current = now or datetime.now(timezone.utc)
+    future = sorted(
+        (item for item in parsed if item[1].date() >= current.date()),
+        key=lambda item: item[1],
+    )
+    past = sorted(
+        (item for item in parsed if item[1].date() < current.date()),
+        key=lambda item: item[1],
+        reverse=True,
+    )
+    return [expiry for expiry, _ in [*future, *past]]
+
+
+def _extract_ib_expiry_candidates(raw: object) -> List[str]:
+    rows: Iterable[object] = raw if isinstance(raw, list) else []
+    candidates: List[str] = []
+    for row in rows:
+        expirations = getattr(row, "expirations", None)
+        if not expirations:
+            continue
+        for expiry in expirations:
+            normalized = _normalize_expiry_string(expiry)
+            if normalized and normalized not in candidates:
+                candidates.append(normalized)
+    return candidates
+
+
+async def _fetch_ib_expiry_candidates(ticker: str) -> List[str]:
+    normalized_ticker = ticker.upper()
+    if ib_pool is None:
+        return []
+
+    attempts = [
+        ("NASDAQ", "IND"),
+        ("CBOE", "IND"),
+        ("SMART", "IND"),
+        ("", "IND"),
+    ]
+    for exchange, sec_type in attempts:
+        try:
+            async with ib_pool.acquire("data") as client:
+                chains = await asyncio.to_thread(
+                    _fetch_ib_index_option_chain,
+                    client,
+                    normalized_ticker,
+                    exchange,
+                    sec_type,
+                )
+            candidates = _sort_expiry_candidates(_extract_ib_expiry_candidates(chains))
+            if candidates:
+                logger.info(
+                    "Internals skew: IB expiries for %s resolved via %s/%s (%d candidates)",
+                    normalized_ticker,
+                    exchange or "default",
+                    sec_type,
+                    len(candidates),
+                )
+                return candidates
+        except Exception as exc:
+            logger.warning(
+                "Internals skew: IB expiry lookup failed for %s via %s/%s: %s",
+                normalized_ticker,
+                exchange or "default",
+                sec_type,
+                exc,
+            )
+    return []
+
+
+def _preferred_index_exchange(ticker: str) -> str:
+    return "NASDAQ" if ticker.upper() == "NDX" else "CBOE"
+
+
+def _fetch_ib_index_option_chain(client: Any, ticker: str, exchange: str, sec_type: str) -> object:
+    if sec_type != "IND":
+        return client.get_option_chain(ticker, exchange, sec_type)
+
+    contract = Index(symbol=ticker, exchange=exchange or _preferred_index_exchange(ticker))
+    qualified = client.qualify_contract(contract)
+    return client.ib.reqSecDefOptParams(ticker, exchange, sec_type, qualified.conId)
+
+
+def _prepend_expiry(candidates: List[str], expiry: Optional[str]) -> List[str]:
+    normalized = _normalize_expiry_string(expiry)
+    if normalized is None:
+        return candidates
+    return [normalized, *[candidate for candidate in candidates if candidate != normalized]]
+
+
+def _limit_expiry_candidates(candidates: List[str], max_expiries: int) -> List[str]:
+    if max_expiries <= 0 or len(candidates) <= max_expiries:
+        return candidates
+    if max_expiries == 1:
+        return candidates[:1]
+
+    last_index = len(candidates) - 1
+    selected_indices = {0, last_index}
+    for slot in range(1, max_expiries - 1):
+        index = round(slot * last_index / (max_expiries - 1))
+        selected_indices.add(index)
+
+    return [candidates[index] for index in sorted(selected_indices)[:max_expiries]]
+
+
+def _build_internals_skew_cache_path(
+    nq_ticker: str,
+    spx_ticker: str,
+    timeframe: str,
+    nq_delta: int,
+    spx_delta: int,
+    nq_expiry: Optional[str],
+    spx_expiry: Optional[str],
+) -> Path:
+    key = (
+        f"v7-uw-skew-history|{nq_ticker}|{spx_ticker}|{timeframe}|"
+        f"{nq_delta}|{spx_delta}|{nq_expiry or ''}|{spx_expiry or ''}"
+    )
+    key_hash = hashlib.md5(key.encode()).hexdigest()[:16]
+    return INTERNALS_SKEW_CACHE_DIR / f"internals_skew_history_{key_hash}.json"
+
+
+def _read_internals_skew_cache(path: Path) -> Optional[dict]:
+    cached = _read_cache(path)
+    if not isinstance(cached, dict):
+        return None
+
+    generated_at = cached.get("generated_at")
+    if not isinstance(generated_at, str):
+        return None
+
+    parsed = _coerce_date(generated_at)
+    if parsed is None:
+        return None
+
+    age_seconds = (datetime.now(timezone.utc) - parsed.replace(tzinfo=timezone.utc)).total_seconds()
+    if age_seconds > INTERNALS_SKEW_CACHE_TTL_SECONDS:
+        return None
+    return cached
+
+
+def _internals_skew_cache_payload(
+    nq_ticker: str,
+    spx_ticker: str,
+    timeframe: str,
+    nq_delta: int,
+    spx_delta: int,
+    nq_expiry: Optional[str],
+    spx_expiry: Optional[str],
+    nq_rows: List[dict],
+    spx_rows: List[dict],
+    used_nq_expiries: List[str],
+    used_spx_expiries: List[str],
+) -> dict:
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "source": {
+            "expiry_discovery": "Unusual Whales",
+            "skew_history": "Unusual Whales",
+        },
+        "nq": {
+            "ticker": nq_ticker.upper(),
+            "expiry": used_nq_expiries[0] if used_nq_expiries else None,
+            "expiries": used_nq_expiries,
+            "delta": nq_delta,
+            "timeframe": timeframe,
+            "data": nq_rows,
+        },
+        "spx": {
+            "ticker": spx_ticker.upper(),
+            "expiry": used_spx_expiries[0] if used_spx_expiries else None,
+            "expiries": used_spx_expiries,
+            "delta": spx_delta,
+            "timeframe": timeframe,
+            "data": spx_rows,
+        },
+    }
+
+
+def _merge_risk_reversal_series(series_rows: Iterable[List[dict]]) -> List[dict]:
+    merged: dict[str, float] = {}
+    for rows in series_rows:
+        for row in rows:
+            date = row.get("date")
+            value = row.get("value")
+            if not isinstance(date, str) or not isinstance(value, (int, float)):
+                continue
+            if date not in merged:
+                merged[date] = float(value)
+    return [{"date": date, "value": merged[date]} for date in sorted(merged)]
+
+
+def _series_span_days(rows: List[dict]) -> int:
+    if len(rows) < 2:
+        return 0
+    start = _coerce_date(rows[0].get("date"))
+    end = _coerce_date(rows[-1].get("date"))
+    if start is None or end is None:
+        return 0
+    return (end.date() - start.date()).days
+
+
+def _needs_deeper_backfill(rows: List[dict], timeframe: str) -> bool:
+    if not rows:
+        return True
+    span_days = _series_span_days(rows)
+    normalized = timeframe.upper().strip()
+    if normalized in {"5Y", "ALL"}:
+        return span_days < 700
+    if normalized == "2Y":
+        return span_days < 400
+    return False
+
+
+async def _resolve_expiry_candidates(
+    ticker: str,
+    expiry: Optional[str] = None,
+) -> Tuple[List[str], List[str], str]:
+    normalized_ticker = ticker.upper()
+    uw_candidates: List[str] = []
+    try:
+        with UWClient() as client:
+            expiry_breakdown = client.get_expiry_breakdown(normalized_ticker)
+        uw_candidates = _sort_expiry_candidates(_extract_expiry_candidates(expiry_breakdown))
+    except Exception:
+        uw_candidates = []
+
+    uw_candidates = _prepend_expiry(uw_candidates, expiry)
+    if uw_candidates:
+        return [], uw_candidates, "uw"
+
+    raise HTTPException(status_code=422, detail=f"No expiry available for {normalized_ticker}")
+
+
+def _compose_expiry_candidates(
+    ib_candidates: List[str],
+    uw_candidates: List[str],
+    max_expiries: int,
+) -> List[str]:
+    if not ib_candidates:
+        return _limit_expiry_candidates(uw_candidates, max_expiries)
+    if not uw_candidates:
+        return _limit_expiry_candidates(ib_candidates, max_expiries)
+
+    ib_budget = min(4, max_expiries)
+    selected = _limit_expiry_candidates(ib_candidates, ib_budget)
+    remaining = max_expiries - len(selected)
+    if remaining <= 0:
+        return selected
+
+    uw_only = [candidate for candidate in uw_candidates if candidate not in selected]
+    return selected + _limit_expiry_candidates(uw_only, remaining)
+
+
+async def _fetch_risk_reversal_history(
+    ticker: str,
+    timeframe: str,
+    delta: int,
+    expiry: Optional[str] = None,
+    max_expiries: int = 8,
+) -> Tuple[List[dict], List[str], str]:
+    normalized_ticker = ticker.upper()
+    ib_candidates, uw_candidates, expiry_source = await _resolve_expiry_candidates(normalized_ticker, expiry)
+    selected_candidates = _compose_expiry_candidates(ib_candidates, uw_candidates, max_expiries)
+
+    last_error: Optional[BaseException] = None
+    merged_rows: List[List[dict]] = []
+    used_expiries: List[str] = []
+    requested_expiry = _normalize_expiry_string(expiry)
+
+    for candidate_expiry in selected_candidates:
+        try:
+            with UWClient() as client:
+                payload = client.get_historical_risk_reversal_skew(
+                    normalized_ticker,
+                    expiry=candidate_expiry,
+                    timeframe=timeframe,
+                    delta=delta,
+                )
+            rows = _normalize_risk_reversal_series(payload)
+            if rows:
+                merged_rows.append(rows)
+                used_expiries.append(candidate_expiry)
+        except UWNotFoundError as exc:
+            last_error = exc
+            if requested_expiry and candidate_expiry == requested_expiry:
+                continue
+        except UWAPIError as exc:
+            last_error = exc
+            continue
+
+    merged = _merge_risk_reversal_series(merged_rows)
+    if "uw" in expiry_source and _needs_deeper_backfill(merged, timeframe):
+        extra_candidates = _limit_expiry_candidates(
+            [candidate for candidate in uw_candidates if candidate not in selected_candidates],
+            12,
+        )
+        for candidate_expiry in extra_candidates:
+            try:
+                with UWClient() as client:
+                    payload = client.get_historical_risk_reversal_skew(
+                        normalized_ticker,
+                        expiry=candidate_expiry,
+                        timeframe=timeframe,
+                        delta=delta,
+                    )
+                rows = _normalize_risk_reversal_series(payload)
+                if rows:
+                    merged_rows.append(rows)
+                    used_expiries.append(candidate_expiry)
+            except UWAPIError as exc:
+                last_error = exc
+                continue
+        merged = _merge_risk_reversal_series(merged_rows)
+
+    if merged:
+        return merged, used_expiries, expiry_source
+
+    if last_error is None:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch skew history for {normalized_ticker}")
+    raise HTTPException(
+        status_code=502,
+        detail=getattr(last_error, "args", (f"Failed to fetch skew history for {normalized_ticker}",))[0],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -369,6 +840,81 @@ async def regime_share():
     if not result.ok:
         raise HTTPException(status_code=502, detail=result.error)
     return result.data
+
+
+@app.post("/internals/share")
+async def internals_share():
+    """Generate internals share report using the shared CRI report builder."""
+    result = await run_script("generate_regime_share.py", ["--json", "--no-open"], timeout=120)
+    if not result.ok:
+        raise HTTPException(status_code=502, detail=result.error)
+    return result.data
+
+
+@app.get("/internals/skew-history")
+async def internals_skew_history(
+    nq_ticker: str = Query(default="NDX"),
+    spx_ticker: str = Query(default="SPX"),
+    timeframe: str = Query(default="5Y"),
+    nq_delta: int = Query(default=25),
+    spx_delta: int = Query(default=25),
+    nq_expiry: Optional[str] = None,
+    spx_expiry: Optional[str] = None,
+):
+    if not uw_available:
+        raise HTTPException(status_code=503, detail="UW token is required for internals skew history")
+
+    normalized_timeframe = timeframe.upper().strip() or "5Y"
+    cache_path = _build_internals_skew_cache_path(
+        nq_ticker,
+        spx_ticker,
+        normalized_timeframe,
+        nq_delta,
+        spx_delta,
+        nq_expiry,
+        spx_expiry,
+    )
+    cached = _read_internals_skew_cache(cache_path)
+    if cached:
+        return cached
+
+    try:
+        nq_rows, used_nq_expiries, nq_expiry_source = await _fetch_risk_reversal_history(
+            nq_ticker,
+            normalized_timeframe,
+            nq_delta,
+            nq_expiry,
+            max_expiries=12,
+        )
+        spx_rows, used_spx_expiries, spx_expiry_source = await _fetch_risk_reversal_history(
+            spx_ticker,
+            normalized_timeframe,
+            spx_delta,
+            spx_expiry,
+            max_expiries=12,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    payload = _internals_skew_cache_payload(
+        nq_ticker,
+        spx_ticker,
+        normalized_timeframe,
+        nq_delta,
+        spx_delta,
+        nq_expiry,
+        spx_expiry,
+        nq_rows,
+        spx_rows,
+        used_nq_expiries,
+        used_spx_expiries,
+    )
+    payload["nq"]["expiry_source"] = nq_expiry_source
+    payload["spx"]["expiry_source"] = spx_expiry_source
+    _write_cache(cache_path, payload)
+    return payload
 
 
 @app.post("/blotter")

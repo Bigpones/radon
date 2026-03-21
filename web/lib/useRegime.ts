@@ -61,6 +61,20 @@ export type CriData = {
     values: Record<string, unknown>;
   };
   history: CriHistoryEntry[];
+  nq_skew_history?: Array<{
+    date: string;
+    nq_skew: number;
+    spx_position: number | null;
+    nq_position: number | null;
+    spx_skew?: number | null;
+  }>;
+  spx_skew_history?: Array<{
+    date: string;
+    spx_skew: number;
+  }>;
+  nasdaq_skew?: number | null;
+  nq_skew?: number | null;
+  spx_skew?: number | null;
   /** Last 21 SPY daily closes — used to compute intraday realized vol when live price is available */
   spy_closes?: number[];
 };
@@ -88,7 +102,15 @@ export const REGIME_SYNC_CONFIG = {
   retryMethod: "GET" as const,
 };
 
-export function useRegime(active: boolean): UseSyncReturn<CriData> {
-  const stableConfig = useMemo(() => REGIME_SYNC_CONFIG, []);
+type UseRegimeOptions = {
+  endpoint?: string;
+};
+
+export function useRegime(active: boolean, options: UseRegimeOptions = {}): UseSyncReturn<CriData> {
+  const endpoint = options.endpoint ?? REGIME_SYNC_CONFIG.endpoint;
+  const stableConfig = useMemo(() => ({
+    ...REGIME_SYNC_CONFIG,
+    endpoint,
+  }), [endpoint]);
   return useSyncHook<CriData>(stableConfig, active);
 }

@@ -48,6 +48,23 @@ describe("POST /regime/share FastAPI endpoint", () => {
   });
 });
 
+describe("POST /internals/share FastAPI endpoint", () => {
+  it("is registered in server.py", async () => {
+    const serverPath = path.join(PROJECT_ROOT, "scripts", "api", "server.py");
+    const content = await readFile(serverPath, "utf-8");
+    expect(content).toContain('"/internals/share"');
+  });
+
+  it("calls generate_regime_share.py", async () => {
+    const serverPath = path.join(PROJECT_ROOT, "scripts", "api", "server.py");
+    const content = await readFile(serverPath, "utf-8");
+    const idxInternals = content.indexOf('"/internals/share"');
+    const idxGenerate = content.indexOf("generate_regime_share.py");
+    expect(idxInternals).toBeGreaterThan(-1);
+    expect(idxGenerate).toBeGreaterThan(-1);
+  });
+});
+
 // ── 3. Next.js API routes ──────────────────────────────────────────
 
 describe("Next.js /api/regime/share routes", () => {
@@ -76,6 +93,39 @@ describe("Next.js /api/regime/share routes", () => {
   it("content route is sandboxed to reports directory", async () => {
     const routePath = path.join(
       PROJECT_ROOT, "web", "app", "api", "regime", "share", "content", "route.ts"
+    );
+    const content = await readFile(routePath, "utf-8");
+    expect(content).toContain("REPORTS_DIR");
+    expect(content).toContain("startsWith");
+  });
+});
+
+describe("Next.js /api/internals/share routes", () => {
+  it("POST route exists", async () => {
+    const routePath = path.join(
+      PROJECT_ROOT, "web", "app", "api", "internals", "share", "route.ts"
+    );
+    await expect(readFile(routePath, "utf-8")).resolves.toContain("POST");
+  });
+
+  it("POST route proxies to /internals/share on FastAPI", async () => {
+    const routePath = path.join(
+      PROJECT_ROOT, "web", "app", "api", "internals", "share", "route.ts"
+    );
+    const content = await readFile(routePath, "utf-8");
+    expect(content).toContain("/internals/share");
+  });
+
+  it("content GET route exists", async () => {
+    const routePath = path.join(
+      PROJECT_ROOT, "web", "app", "api", "internals", "share", "content", "route.ts"
+    );
+    await expect(readFile(routePath, "utf-8")).resolves.toContain("GET");
+  });
+
+  it("content route is sandboxed to reports directory", async () => {
+    const routePath = path.join(
+      PROJECT_ROOT, "web", "app", "api", "internals", "share", "content", "route.ts"
     );
     const content = await readFile(routePath, "utf-8");
     expect(content).toContain("REPORTS_DIR");

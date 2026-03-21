@@ -52,6 +52,7 @@ import SharePnlButton, { type SharePnlData } from "./SharePnlButton";
 import { SECTION_TOOLTIPS } from "@/lib/sectionTooltips";
 import TickerLink from "./TickerLink";
 import TickerWorkspace from "./TickerWorkspace";
+import InternalsPanel from "./InternalsPanel";
 
 /* ─── Re-exports for backward compat ──────────────────── */
 
@@ -2044,13 +2045,17 @@ function HistoricalTradesSection() {
                       </span>
                     </td>
                     <td className="right">{t.net_quantity}</td>
-                    <td className="right">{fmtPrice(t.total_commission)}</td>
-                    <td className={`right ${t.realized_pnl >= 0 ? "positive" : "negative"}`}>
-                      {t.realized_pnl >= 0 ? "+" : ""}{fmtPrice(t.realized_pnl)}
-                      {t.cost_basis != null && Math.abs(t.cost_basis) > 0 ? ` (${((t.realized_pnl / Math.abs(t.cost_basis)) * 100) >= 0 ? "+" : ""}${((t.realized_pnl / Math.abs(t.cost_basis)) * 100).toFixed(1)}%)` : ""}
+                    <td className="right">{t.total_commission != null ? fmtPrice(t.total_commission) : "---"}</td>
+                    <td className={`right ${(t.realized_pnl ?? 0) >= 0 ? "positive" : "negative"}`}>
+                      {t.realized_pnl != null ? (
+                        <>
+                          {t.realized_pnl >= 0 ? "+" : ""}{fmtPrice(t.realized_pnl)}
+                          {t.cost_basis != null && Math.abs(t.cost_basis) > 0 ? ` (${((t.realized_pnl / Math.abs(t.cost_basis)) * 100) >= 0 ? "+" : ""}${((t.realized_pnl / Math.abs(t.cost_basis)) * 100).toFixed(1)}%)` : ""}
+                        </>
+                      ) : "---"}
                     </td>
-                    <td className="right">{fmtPrice(t.cost_basis)}</td>
-                    <td className="right">{fmtPrice(t.proceeds)}</td>
+                    <td className="right">{t.cost_basis != null ? fmtPrice(t.cost_basis) : "---"}</td>
+                    <td className="right">{t.proceeds != null ? fmtPrice(t.proceeds) : "---"}</td>
                     <td>
                       {t.is_closed && <SharePnlButton data={blotterShareData(t)} />}
                     </td>
@@ -2108,6 +2113,8 @@ export default function WorkspaceSections({ section, portfolio, portfolioLastSyn
       return <JournalSections />;
     case "regime":
       return <RegimePanel prices={prices ?? {}} />;
+    case "internals":
+      return <InternalsPanel />;
     case "cta":
       return <CtaPage />;
     case "ticker-detail":

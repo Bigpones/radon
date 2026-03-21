@@ -5,6 +5,7 @@ import WorkspaceShell from "@/components/WorkspaceShell";
 const RESERVED = new Set([
   "api", "dashboard", "flow-analysis", "portfolio", "performance",
   "orders", "scanner", "discover", "journal", "regime", "cta", "kit",
+  "internals",
   "_next", "favicon",
 ]);
 

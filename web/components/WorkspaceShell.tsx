@@ -112,7 +112,7 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
   }, [orders]);
 
   const regimeStocks = useMemo(
-    () => activeSection === "regime"
+    () => activeSection === "regime" || activeSection === "internals"
       ? ["SPY"]
       : [],
     [activeSection],
@@ -136,7 +136,7 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
   );
 
   const regimeIndexes = useMemo<IndexContract[]>(
-    () => activeSection === "regime"
+    () => activeSection === "regime" || activeSection === "internals"
       ? [
           { symbol: "VIX", exchange: "CBOE" },
           { symbol: "VVIX", exchange: "CBOE" },

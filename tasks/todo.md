@@ -1,5 +1,53 @@
 # TODO
 
+## Session: Backfill Internals Skew With IB-First Discovery (2026-03-19)
+
+### Goal
+Make `/internals` fetch materially deeper Nasdaq and S&P 500 skew history by checking IB first for option expiries, then merging Unusual Whales historical risk-reversal series across multiple expiries instead of relying on a single-expiry slice that tops out around one year.
+
+### Dependency Graph
+- T1 (Read the existing internals skew backend, task tracking surfaces, and current frontend data contract) depends_on: []
+- T2 (Capture the plan and the user correction about IB-first source priority in durable task docs and lessons) depends_on: [T1]
+- T3 (Implement IB-first expiry discovery plus multi-expiry skew-history backfill in `scripts/api/server.py`) depends_on: [T2]
+- T4 (Confirm the existing `/internals` frontend can consume longer NQ/SPX skew histories without further code changes) depends_on: [T1]
+- T5 (Verify the live `/internals` behavior and update the review notes with source semantics and risks) depends_on: [T3, T4]
+
+### Checklist
+- [x] T1 Read the existing internals skew backend, task tracking surfaces, and current frontend data contract
+- [x] T2 Capture the plan and the user correction about IB-first source priority in durable task docs and lessons
+- [x] T3 Implement IB-first expiry discovery plus multi-expiry skew-history backfill in `scripts/api/server.py`
+- [x] T4 Confirm the existing `/internals` frontend can consume longer NQ/SPX skew histories without further code changes
+- [x] T5 Verify the live `/internals` behavior and update the review notes with source semantics and risks
+
+### Review
+- Root cause:
+  - `/internals/skew-history` was using one expiry per ticker, so the Nasdaq chart especially collapsed to roughly a year of usable rows even when the page and chart components were already wired correctly for longer histories.
+  - The first attempt at IB-first expiry discovery was not actually qualifying index underlyings correctly for `reqSecDefOptParams`, so the server silently fell back to UW discovery or served stale cache artifacts.
+- Fixes:
+  - Updated [server.py](/Users/joemccann/dev/apps/finance/radon/scripts/api/server.py) so internals skew history now:
+    - checks IB first for expiry discovery using qualified index contracts,
+    - augments with UW expiry candidates when IB’s current chain is too front-heavy for historical depth,
+    - merges multiple UW historical risk-reversal series per ticker,
+    - carries source metadata (`expiry_discovery: IB-first`, per-series `expiry_source`) and a cache-key version that invalidates prior single-expiry artifacts.
+  - Kept the frontend contract unchanged; the existing [route.ts](/Users/joemccann/dev/apps/finance/radon/web/app/api/internals/route.ts) and [InternalsPanel.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/InternalsPanel.tsx) already normalize and render longer NQ/SPX histories without additional edits.
+- Verification:
+  - Direct FastAPI check: `GET http://127.0.0.1:8321/internals/skew-history`
+    - NQ: `589` points, `2023-11-16` → `2026-03-19`, `expiry_source: "ib+uw"`
+    - SPX: `729` points, `2023-04-27` → `2026-03-19`, `expiry_source: "ib+uw"`
+  - Browser-facing Next route: `GET http://127.0.0.1:3000/api/internals`
+    - unified histories now start at `2023-04-27` for both chart feeds after normalization
+  - Browser verification via `chrome-cdp` on `http://localhost:3000/internals`
+    - the page renders only the skew-focused internals surface,
+    - NQ chart x-axis now shows labels beginning in `Dec 2023`,
+    - S&P 500 chart x-axis now shows labels beginning in `Jul 2023`.
+- Source semantics:
+  - Final direction changed after review: the route now uses UW for both expiry discovery and historical skew values.
+  - IB is no longer part of the `/internals/skew-history` source path.
+  - Verified after the UW-only switch:
+    - FastAPI route: NQ `590` points from `2023-11-16`, SPX `730` points from `2023-04-27`
+    - Next route normalization: both chart feeds begin at `2023-04-27`
+    - Browser rendering via chrome-cdp still shows the extended x-axes (`Dec 2023` on NQ, `Jul 2023` on S&P 500).
+
 ## Session: Clear Blocking Full-Suite Regressions (2026-03-19)
 
 ### Goal
@@ -2186,6 +2234,24 @@ Bootstrap the installed `com.radon.cta-sync` launch agent into the live user `la
 - Completed API route checks for `/help`, scan/discover/evaluate/watchlist/portfolio/journal command wiring through `web/src/lib/pi-shell.ts`.
 - Verified `cd web && npm run build` and `npm run lint`.
 - Verified runtime endpoint by starting `next dev` and POSTing to `/api/chat`.
+
+# Internals Skew Closed-Market Guard (2026-03-21)
+
+Dependency graph:
+- T1 -> T2
+- T1 -> T3
+- T2 -> T4
+- T3 -> T4
+
+- [x] T1 Review the `/api/internals` skew-history trigger path and confirm the closed-market failure boundary. `depends_on: []`
+- [x] T2 Patch `/api/internals` to skip long-range skew fetches when the market is closed or it is a non-trading day. `depends_on: [T1]`
+- [x] T3 Keep the existing internals response shape stable when the closed-market guard is active. `depends_on: [T1]`
+- [x] T4 Review the route behavior and document the result. `depends_on: [T2, T3]`
+
+Review:
+- `/api/internals` no longer attempts the UW long-range skew fetch when `isMarketOpenNow()` is false.
+- The route now serves the newest shared long-range skew snapshot from `data/cache/internals_skew_history_*.json` during closed sessions and falls back to that same cache on fetch errors.
+- The response shape for the internals charts remains unchanged because the cached points are normalized into the existing `MenthorqSkewHistoryPoint[]` structure.
 
 ---
 

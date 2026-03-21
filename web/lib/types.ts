@@ -37,7 +37,7 @@ export type PiResponse = {
   error?: string;
 };
 
-export type WorkspaceSection = "dashboard" | "flow-analysis" | "portfolio" | "performance" | "orders" | "scanner" | "discover" | "journal" | "regime" | "cta" | "ticker-detail";
+export type WorkspaceSection = "dashboard" | "flow-analysis" | "portfolio" | "performance" | "orders" | "scanner" | "discover" | "journal" | "regime" | "cta" | "internals" | "ticker-detail";
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
@@ -153,6 +153,22 @@ export type AccountSummary = {
   excess_liquidity: number;
   buying_power: number;
   dividends: number;
+  /** TotalCashValue — total cash including unsettled proceeds */
+  cash?: number;
+  /** InitMarginReq — initial margin requirement */
+  initial_margin?: number;
+  /** AvailableFunds — EWL minus initial margin */
+  available_funds?: number;
+  /** EquityWithLoanValue — equity including loan value */
+  equity_with_loan?: number;
+  /** PreviousDayEquityWithLoanValue */
+  previous_day_ewl?: number;
+  /** RegTEquity — Regulation T equity */
+  reg_t_equity?: number;
+  /** SMA — Special Memorandum Account */
+  sma?: number;
+  /** GrossPositionValue — securities gross position value */
+  gross_position_value?: number;
 };
 
 export type PortfolioData = {
