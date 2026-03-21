@@ -15,7 +15,7 @@ type UsePortfolioReturn = {
   syncNow: () => void;
 };
 
-export function usePortfolio(): UsePortfolioReturn {
+export function usePortfolio(active: boolean = true): UsePortfolioReturn {
   const [data, setData] = useState<PortfolioData | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -41,12 +41,15 @@ export function usePortfolio(): UsePortfolioReturn {
   }, []);
 
   const scheduleNext = useCallback((delay: number) => {
+    if (!active) {
+      // Don't schedule next sync when inactive
+      return;
+    }
     if (intervalRef.current) clearTimeout(intervalRef.current);
     intervalRef.current = setTimeout(() => {
       void doSync();
     }, delay);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [active]);
 
   const doSync = useCallback(async () => {
     if (syncingRef.current) return; // skip if already in-flight
@@ -83,29 +86,37 @@ export function usePortfolio(): UsePortfolioReturn {
 
   // Initial fetch (GET cached file), then start sync loop
   useEffect(() => {
+    if (!active) {
+      // Clear any pending sync when becoming inactive
+      if (intervalRef.current) clearTimeout(intervalRef.current);
+      return;
+    }
+
     void fetchPortfolio().then(() => {
       scheduleNext(BASE_INTERVAL_MS);
     });
     return () => {
       if (intervalRef.current) clearTimeout(intervalRef.current);
     };
-  }, [fetchPortfolio, scheduleNext]);
+  }, [active, fetchPortfolio, scheduleNext]);
 
   // Reset backoff & force sync when tab becomes visible again.
   // Prevents stale data when user returns after FastAPI outage
   // pushed backoff to 5 min.
   useEffect(() => {
     const onVisible = () => {
-      if (document.visibilityState === "visible") {
+      if (document.visibilityState === "visible" && active) {
         backoffRef.current = BASE_INTERVAL_MS;
         if (!syncingRef.current) {
           scheduleNext(500); // sync almost immediately
         }
       }
     };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [scheduleNext]);
+    if (active) {
+      document.addEventListener("visibilitychange", onVisible);
+      return () => document.removeEventListener("visibilitychange", onVisible);
+    }
+  }, [scheduleNext, active]);
 
   return { data, loading, syncing, error, lastSync, syncNow };
 }

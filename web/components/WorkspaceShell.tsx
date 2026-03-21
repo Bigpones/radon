@@ -8,6 +8,7 @@ import { navItems } from "@/lib/data";
 import { resolveSectionFromPath } from "@/lib/chat";
 import { usePortfolio } from "@/lib/usePortfolio";
 import { useOrders } from "@/lib/useOrders";
+import { useMarketHours, MarketState } from "@/lib/useMarketHours";
 import { useToast } from "@/lib/useToast";
 import { useOrderActions } from "@/lib/OrderActionsContext";
 import { usePrices } from "@/lib/usePrices";
@@ -37,8 +38,10 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
   const navLabel = navItems.find((item) => item.route === activeSection)?.label ?? "Dashboard";
   const activeLabel = activeSection === "ticker-detail" && tickerParam ? tickerParam : navLabel;
   const { toasts, addToast, removeToast } = useToast();
+  const marketState = useMarketHours();
+  const isMarketActive = marketState !== MarketState.CLOSED;
 
-  const { data: portfolio, syncing: portfolioSyncing, error: portfolioError, lastSync: portfolioLastSync, syncNow: portfolioSyncNow } = usePortfolio();
+  const { data: portfolio, syncing: portfolioSyncing, error: portfolioError, lastSync: portfolioLastSync, syncNow: portfolioSyncNow } = usePortfolio(isMarketActive);
 
   const portfolioSymbols = useMemo(
     () => (portfolio?.positions ?? []).map((p) => p.ticker),
@@ -61,8 +64,8 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
   const { drainNotifications, setOrdersUpdater } = useOrderActions();
 
   const isOrdersPage = activeSection === "orders";
-  // Always fetch orders so fills are available for the Realized P&L card on all pages
-  const { data: orders, syncing: ordersSyncing, error: ordersError, lastSync: ordersLastSync, syncNow: ordersSyncNow, updateData: updateOrdersData } = useOrders(true);
+  // Fetch orders polling based on market hours (initial fetch always happens on mount)
+  const { data: orders, syncing: ordersSyncing, error: ordersError, lastSync: ordersLastSync, syncNow: ordersSyncNow, updateData: updateOrdersData } = useOrders(isMarketActive);
 
   // Trigger a fresh IB sync every time the user navigates TO the orders page.
   // place/modify/cancel all sync orders.json immediately after the action, so
@@ -352,6 +355,7 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
               prices={prices}
               tickerParam={tickerParam}
               theme={resolvedTheme}
+              marketState={marketState}
             />
           ) : null}
         </div>

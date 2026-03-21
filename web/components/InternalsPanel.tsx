@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRegime } from "@/lib/useRegime";
+import { MarketState } from "@/lib/useMarketHours";
 import { RegimeStrip, RegimeStripCell } from "@/components/RegimeStrip";
 import InternalsSkewChart from "@/components/InternalsSkewChart";
 
@@ -30,22 +31,26 @@ const TIMEFRAME_OPTIONS: ReadonlyArray<{ key: TimeframeWindow; label: string }> 
   { key: "ALL", label: "ALL" },
 ];
 
-export default function InternalsPanel() {
-  const { data, loading, lastSync, syncing } = useRegime(true, { endpoint: "/api/internals" });
+export default function InternalsPanel({ marketState }: { marketState?: MarketState }) {
+  const { data, loading, lastSync, syncing } = useRegime(marketState, { endpoint: "/api/internals" });
   const [timeframe, setTimeframe] = useState<TimeframeWindow>("ALL");
 
   const nqSkewHistory = useMemo(
     () =>
       (data?.nq_skew_history ?? [])
         .map((entry) => ({ date: entry.date, value: entry.nq_skew }))
-        .filter((entry) => Number.isFinite(entry.value)),
+        .filter((entry): entry is { date: string; value: number } =>
+          Number.isFinite(entry.value) && entry.value !== null && entry.value !== undefined,
+        ),
     [data?.nq_skew_history],
   );
   const spxSkewHistory = useMemo(
     () =>
       ((data?.spx_skew_history ?? data?.nq_skew_history ?? []) as SpxSkewHistoryPoint[])
         .map((entry) => ({ date: entry.date, value: entry.spx_skew ?? entry.value }))
-        .filter((entry) => Number.isFinite(entry.value)),
+        .filter((entry): entry is { date: string; value: number } =>
+          Number.isFinite(entry.value) && entry.value !== null && entry.value !== undefined,
+        ),
     [data?.spx_skew_history, data?.nq_skew_history],
   );
   const latestDate = useMemo(() => {

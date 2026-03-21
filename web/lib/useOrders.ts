@@ -15,7 +15,7 @@ type UseOrdersReturn = {
   updateData: (data: OrdersData) => void;
 };
 
-export function useOrders(active: boolean): UseOrdersReturn {
+export function useOrders(active: boolean = true): UseOrdersReturn {
   const [data, setData] = useState<OrdersData | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);

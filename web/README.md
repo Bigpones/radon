@@ -30,6 +30,8 @@ The `npm run dev` command starts three services:
 - IB real-time price server (port 8765)
 - FastAPI server (port 8321) — Python script execution, IB Gateway auto-restart
 
+**Note:** Frontend data polling automatically respects market hours. During CLOSED market (weekends, holidays, overnight), all polls stop. During regular hours (9:30 AM - 4:00 PM ET) polling is most frequent. See [Market-Hours Polling](#market-hours-polling) for details.
+
 ## Architecture
 
 ### Data Flow
@@ -51,9 +53,58 @@ FastAPI (port 8321)
 
 | Component | Purpose | Update Frequency |
 |-----------|---------|------------------|
-| `ib_sync.py` | Portfolio positions, P&L, account values | Every 60 seconds (via FastAPI) |
+| `ib_sync.py` | Portfolio positions, P&L, account values | Every 60 seconds (via FastAPI, **paused during CLOSED market**) |
 | `ib_realtime_server.js` | Live bid/ask/last prices | Real-time (<1ms latency) |
-| `scripts/api/server.py` | FastAPI bridge — runs Python scripts as async subprocesses | On-demand (API calls) |
+| `scripts/api/server.py` | FastAPI bridge — runs Python scripts as async subprocesses | On-demand (API calls, **paused during CLOSED market**) |
+
+## Market-Hours Polling
+
+The frontend automatically adjusts polling intervals based on market state (OPEN, EXTENDED, CLOSED) computed from Eastern Time.
+
+### Polling Behavior
+
+| Market State | Time (ET) | Portfolio | Orders | Regime |
+|--------------|-----------|-----------|--------|--------|
+| **CLOSED** | Weekends / 8:00 PM – 4:00 AM | ❌ Paused | ❌ Paused | ❌ Paused |
+| **EXTENDED** | 4:00 AM – 9:30 AM (premarket) | 30s ✅ | 30s ✅ | 5min ✅ |
+| **OPEN** | 9:30 AM – 4:00 PM (regular) | 30s ✅ | 30s ✅ | 1min ✅ |
+| **EXTENDED** | 4:00 PM – 8:00 PM (after hours) | 30s ✅ | 30s ✅ | 5min ✅ |
+
+### Expected Savings
+
+- **Weekends:** 41 API calls/60s → 0 API calls/60s (**-100% reduction**)
+- **Overnight:** 328+ calls/night → 0 calls (**-100% reduction**)
+- **Extended Regime:** 1-minute → 5-minute polling (**5x reduction**)
+
+### Implementation
+
+**Core hook:** `web/lib/useMarketHours.ts`
+```typescript
+import { useMarketHours, MarketState } from "@/lib/useMarketHours";
+
+function PortfolioComponent() {
+  const marketState = useMarketHours();  // Returns OPEN/EXTENDED/CLOSED
+
+  // Use in data fetching hooks
+  const { data, syncing } = usePortfolio(marketState !== MarketState.CLOSED);
+  const { data: orders } = useOrders(marketState !== MarketState.CLOSED);
+
+  // Regime uses adaptive intervals automatically
+  const { data: regime } = useRegime(marketState);
+}
+```
+
+All polling hooks automatically respect market hours:
+- `usePortfolio()` - Stops sync when market is CLOSED
+- `useOrders()` - Stops sync when market is CLOSED
+- `useRegime()` - Adaptive intervals (60s OPEN / 300s EXTENDED / 0 CLOSED)
+
+### Backward Compatibility
+
+All changes maintain backward compatibility:
+- `useOrders()` defaults to `active=true`
+- `usePortfolio()` defaults to `active=true`
+- `useRegime(true)` converts boolean → `MarketState.OPEN`
 
 ## API Keys
 
@@ -161,7 +212,7 @@ function PriceDisplay() {
 
 | Route | Method | Description |
 |-------|--------|-------------|
-| `/api/portfolio` | GET, POST | Positions and exposure (GET=read, POST=IB sync). Stale-while-revalidate |
+| `/api/portfolio` | GET, POST | Positions and exposure (GET=read, POST=IB sync). Stale-while-revalidate. **Frontend poll stops during CLOSED market.** |
 | `/api/performance` | GET, POST | YTD performance metrics (hidden — see `docs/performance-reconstruction.md`) |
 | `/api/blotter` | GET, POST | Today's fills and closed trades |
 | `/api/journal` | GET | Trade log (append-only) |
@@ -172,7 +223,7 @@ function PriceDisplay() {
 
 | Route | Method | Description |
 |-------|--------|-------------|
-| `/api/orders` | GET, POST | Open/executed orders (GET=read, POST=IB sync) |
+| `/api/orders` | GET, POST | Open/executed orders (GET=read, POST=IB sync). **Frontend poll stops during CLOSED market.** |
 | `/api/orders/place` | POST | Place stock/option/combo orders (naked short guard enforced) |
 | `/api/orders/cancel` | POST | Cancel by orderId or permId |
 | `/api/orders/modify` | POST | Modify price/quantity/outsideRth or replace combo |
@@ -183,8 +234,8 @@ function PriceDisplay() {
 |-------|--------|-------------|
 | `/api/prices` | POST | One-time price snapshot (GET deprecated) |
 | `/api/previous-close` | POST | Previous-day closing prices (IB → UW → Yahoo fallback) |
-| `/api/regime` | GET, POST | CRI regime data with market-hours staleness logic |
-| `/api/internals` | GET, POST | Market internals and skew history |
+| `/api/regime` | GET, POST | CRI regime data. **Frontend poll adaptive intervals: 1min (OPEN), 5min (EXTENDED), paused (CLOSED).** |
+| `/api/internals` | GET, POST | Market internals and skew history. **Frontend poll adaptive intervals: 1min (OPEN), 5min (EXTENDED), paused (CLOSED).** |
 | `/api/scanner` | GET, POST | Watchlist scan results with cache metadata |
 | `/api/discover` | GET, POST | Market-wide flow scanning |
 | `/api/flow-analysis` | GET, POST | Portfolio flow analysis (supports/against/watch) |
@@ -270,6 +321,10 @@ npm run lint
 npm run test:ib
 ```
 
+**Note:** When developing on weekends or outside market hours, data polling will be paused. To test live polling behavior:
+- Use browser DevTools console to simulate different times (modify `useMarketHours.ts` temporarily)
+- Wait for market hours (9:30 AM - 4:00 PM ET on weekdays) to observe full-rate polling
+
 ## Documentation
 
 API specifications, strategy docs, and implementation notes live in the project root `docs/` directory (`../docs/` from here):
@@ -287,6 +342,31 @@ API specifications, strategy docs, and implementation notes live in the project 
 | `docs/performance-reconstruction.md` | Performance page analysis — TWR approaches tried, why shelved |
 
 ## Troubleshooting
+
+### Verifying Market-Hours Polling
+
+To verify that market-hours aware polling is working correctly:
+
+1. **Open browser DevTools Network tab**
+   - Open Chrome DevTools → Network tab
+   - Filter by "Fetch/XHR"
+   - Visit any page (e.g., `/portfolio`, `/orders`, `/regime`)
+
+2. **On weekends (CLOSED market):**
+   - Verify **ZERO** API calls to `/api/portfolio`, `/api/orders`, `/api/regime`, `/api/internals`
+   - All data should come from cached responses
+
+3. **On weekdays:**
+   - **4:00 AM ET (premarket):** Portfolio/orders polling at 30s, regime/internals at 5min
+   - **9:30 AM ET (market open):** All polls resume at full rate (30s for portfolio/orders, 1min for regime/internals)
+   - **4:00 PM ET (after hours):** Regime/internals reduce to 5min, portfolio/orders continue at 30s
+   - **8:00 PM ET (market closed):** All polling stops
+
+4. **Debug in console:**
+   ```javascript
+   // Check current market state
+   // Open browser console and inspect Network tab timing
+   ```
 
 ### IB Connection Issues
 

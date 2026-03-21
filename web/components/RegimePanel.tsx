@@ -14,6 +14,7 @@ import { resolveRegimeStripLiveState } from "@/lib/regimeLiveStrip";
 import { useRegime } from "@/lib/useRegime";
 import { SECTION_TOOLTIPS } from "@/lib/sectionTooltips";
 import { computeCri, type CriLevel, type CriResult } from "@/lib/criCalc";
+import { MarketState } from "@/lib/useMarketHours";
 
 type RegimePanelProps = {
   prices: Record<string, PriceData>;
@@ -23,6 +24,7 @@ type RegimePanelProps = {
   shareModalTitle?: string;
   shareButtonTitle?: string;
   shareContentTitle?: string;
+  marketState?: MarketState;
 };
 
 /* ─── Helpers ────────────────────────────────────────── */
@@ -104,8 +106,9 @@ export default function RegimePanel({
   shareModalTitle = "REGIME REPORT — SHARE TO X",
   shareButtonTitle = "Share Regime report to X",
   shareContentTitle = "Regime Share Preview",
+  marketState,
 }: RegimePanelProps) {
-  const { data, syncing, lastSync } = useRegime(true, { endpoint: dataEndpoint });
+  const { data, syncing, lastSync } = useRegime(marketState, { endpoint: dataEndpoint });
 
   // market_open flag from CRI data — controls session-close display and
   // whether intraday realized-vol is computed from live SPY ticks.

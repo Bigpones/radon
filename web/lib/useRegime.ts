@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { useSyncHook, type UseSyncReturn } from "./useSyncHook";
+import { MarketState } from "./useMarketHours";
 
 export type CriHistoryEntry = {
   date: string;
@@ -106,11 +107,36 @@ type UseRegimeOptions = {
   endpoint?: string;
 };
 
-export function useRegime(active: boolean, options: UseRegimeOptions = {}): UseSyncReturn<CriData> {
+export function useRegime(marketState: boolean | MarketState | null = null, options: UseRegimeOptions = {}): UseSyncReturn<CriData> {
+  // Backward compatibility: if called with boolean (old API), convert to MarketState
+  let state: MarketState | null;
+  if (typeof marketState === "boolean") {
+    // true → OPEN, false → CLOSED
+    state = marketState ? MarketState.OPEN : MarketState.CLOSED;
+  } else {
+    state = marketState;
+  }
+
+  // Default to OPEN if not specified (maintains backward compatibility)
+  const actualState = state ?? MarketState.OPEN;
+
+  // Adaptive interval based on market state
+  // OPEN: 60s (1 minute) - full rate during regular hours
+  // EXTENDED: 300s (5 minutes) - reduced rate during extended hours
+  // CLOSED: 0 (paused) - no polling
+  const adaptiveInterval: number =
+    actualState === MarketState.OPEN ? 60_000 :
+    actualState === MarketState.EXTENDED ? 300_000 :
+    0;
+
+  const isActive = actualState !== MarketState.CLOSED;
+
   const endpoint = options.endpoint ?? REGIME_SYNC_CONFIG.endpoint;
   const stableConfig = useMemo(() => ({
     ...REGIME_SYNC_CONFIG,
     endpoint,
-  }), [endpoint]);
-  return useSyncHook<CriData>(stableConfig, active);
+    interval: adaptiveInterval, // Override default interval
+  }), [endpoint, adaptiveInterval]);
+
+  return useSyncHook<CriData>(stableConfig, isActive);
 }
