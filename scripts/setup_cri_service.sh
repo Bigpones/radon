@@ -30,7 +30,7 @@ WRAPPER="$PROJECT_DIR/scripts/run_cri_scan.sh"
 
 generate_plist() {
     local entries
-    entries=$(PROJECT_DIR_ENV="$PROJECT_DIR" python3 - <<'PY'
+    entries=$(PROJECT_DIR_ENV="$PROJECT_DIR" python3.13 - <<'PY'
 import os
 import sys
 
@@ -186,7 +186,7 @@ status() {
         echo "Last scan: $filename"
         # Extract CRI score if available
         local cri_score
-        cri_score=$(python3 -c "
+        cri_score=$(python3.13 -c "
 import json, sys
 try:
     d = json.load(open('$latest'))

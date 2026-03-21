@@ -8,14 +8,14 @@ cd "$(dirname "$0")/../.."
 echo "=== Scanner Benchmark ===" >&2
 
 # Run scanner and capture timing
-START=$(python3 -c "import time; print(int(time.time() * 1000))")
-python3 scripts/scanner.py --top 5 > /tmp/scanner_output.json 2>/tmp/scanner_stderr.txt
-END=$(python3 -c "import time; print(int(time.time() * 1000))")
+START=$(python3.13 -c "import time; print(int(time.time() * 1000))")
+python3.13 scripts/scanner.py --top 5 > /tmp/scanner_output.json 2>/tmp/scanner_stderr.txt
+END=$(python3.13 -c "import time; print(int(time.time() * 1000))")
 
 TOTAL_MS=$((END - START))
 
 # Extract tickers scanned from output
-TICKERS_SCANNED=$(python3 -c "import json; d=json.load(open('/tmp/scanner_output.json')); print(d.get('tickers_scanned', 0))")
+TICKERS_SCANNED=$(python3.13 -c "import json; d=json.load(open('/tmp/scanner_output.json')); print(d.get('tickers_scanned', 0))")
 
 # Calculate per-ticker time
 if [ "$TICKERS_SCANNED" -gt 0 ]; then

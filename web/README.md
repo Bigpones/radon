@@ -288,9 +288,9 @@ ASSISTANT_MOCK=1 npm test
 ### IB Connectivity Tests
 
 ```bash
-python3 ../scripts/test_ib_realtime.py            # Full test
-python3 ../scripts/test_ib_realtime.py --ib-only   # IB only
-python3 ../scripts/test_ib_realtime.py --ws-only   # WebSocket only
+python3.13 ../scripts/test_ib_realtime.py            # Full test
+python3.13 ../scripts/test_ib_realtime.py --ib-only   # IB only
+python3.13 ../scripts/test_ib_realtime.py --ws-only   # WebSocket only
 ```
 
 ## Development

@@ -30,7 +30,7 @@ mkdir -p data/menthorq_cache logs
 
 resolve_python() {
     local candidate
-    for candidate in "${RADON_PYTHON_BIN:-}" python3.9 /usr/bin/python3 python3; do
+    for candidate in "${RADON_PYTHON_BIN:-}" python3.13 python3.9 /usr/bin/python3 python3; do
         [ -n "$candidate" ] || continue
         command -v "$candidate" >/dev/null 2>&1 || continue
         "$candidate" - <<'PY' >/dev/null 2>&1

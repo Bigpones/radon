@@ -109,7 +109,7 @@ export function runScript<T = unknown, S extends TSchema | undefined = undefined
       return;
     }
 
-    const proc: ChildProcess = spawn("python3", [scriptPath, ...args], {
+    const proc: ChildProcess = spawn("python3.13", [scriptPath, ...args], {
       cwd,
       env: process.env,
       detached,

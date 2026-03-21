@@ -4,7 +4,7 @@ set -e
 cd "$(dirname "$0")/../.."
 
 # Check that scanner output has required fields
-python3 -c "
+python3.13 -c "
 import json
 import sys
 

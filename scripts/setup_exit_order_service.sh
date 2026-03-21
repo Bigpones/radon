@@ -86,7 +86,7 @@ case "$1" in
         
     run-once)
         echo "Running exit order check once..."
-        python3 "$(dirname "$0")/exit_order_service.py"
+        python3.13 "$(dirname "$0")/exit_order_service.py"
         ;;
         
     *)

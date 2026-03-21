@@ -365,7 +365,7 @@ function NoData({ command }: { command: string }) {
         fontSize: "13px",
       }}
     >
-      No data for {command.toUpperCase()}. Run: python3 scripts/fetch_menthorq_dashboard.py --command {command}
+      No data for {command.toUpperCase()}. Run: python3.13 scripts/fetch_menthorq_dashboard.py --command {command}
     </div>
   );
 }

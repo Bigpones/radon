@@ -16,7 +16,7 @@ The Radon employs six strategies, each exploiting informational or structural ad
 | **Crash Risk Index** | CTA deleveraging | SPY puts, tail hedges | 3-5 days | Defined (long puts/spreads) |
 
 See also: [`strategy-garch-convergence.md`](strategy-garch-convergence.md) for the full GARCH Convergence Spreads specification.
-See also: [`VCG_institutional_research_note.md`](VCG_institutional_research_note.md) for the full VCG mathematical specification.
+See also: [`cross_asset_volatility_credit_gap_spec_(VCG).md`](cross_asset_volatility_credit_gap_spec_(VCG).md) for the full VCG mathematical specification.
 
 ---
 
@@ -685,7 +685,7 @@ These come from the rolling 21-day ordinary least squares regression: `ΔC_t = �
 | Credit 5d threshold | -0.5% | If credit has already dropped more than 0.5% in a week, the catch-up is underway and the "artificially calm" premise fails. |
 | VIX panic threshold | 40-48 | Rule-of-16: VIX 48 ≈ 3% daily equity moves. The transition from growth scare to liquidity panic where divergence signals lose predictive power. |
 
-Full mathematical specification: [`VCG_institutional_research_note.md`](VCG_institutional_research_note.md)
+Full mathematical specification: [`cross_asset_volatility_credit_gap_spec_(VCG).md`](cross_asset_volatility_credit_gap_spec_(VCG).md)
 
 ---
 

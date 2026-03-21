@@ -81,7 +81,7 @@ status() {
         if [ -f "$STATE_FILE" ]; then
             echo ""
             echo "Last state:"
-            python3 -c "
+            python3.13 -c "
 import json
 from datetime import datetime
 state = json.load(open('$STATE_FILE'))
@@ -111,11 +111,11 @@ test_run() {
     echo "Running monitor daemon once..."
     echo ""
     cd "$PROJECT_DIR/scripts"
-    python3 -m monitor_daemon.run --once --verbose
+    python3.13 -m monitor_daemon.run --once --verbose
 }
 
 handlers() {
-    python3 -m monitor_daemon.run --list-handlers
+    python3.13 -m monitor_daemon.run --list-handlers
 }
 
 # Main

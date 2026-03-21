@@ -89,7 +89,7 @@ Six active strategies drive the system.
 | **Volatility-Credit Gap (VCG)** | VIX/VVIX/HYG divergence | Credit markets are lagging vol stress | Index puts, put spreads | 1-5 days | Defined |
 | **Crash Risk Index (CRI)** | CTA deleveraging plus COR1M implied-correlation stress | Systematic positioning unwind | Index puts, tactical hedges | 3-5 days | Defined |
 
-Full strategy specs live in [docs/strategies.md](docs/strategies.md). VCG research notes live in [docs/VCG_institutional_research_note.md](docs/VCG_institutional_research_note.md).
+Full strategy specs live in [docs/strategies.md](docs/strategies.md). VCG research notes live in [docs/cross_asset_volatility_credit_gap_spec_(VCG).md](docs/cross_asset_volatility_credit_gap_spec_(VCG).md).
 
 ## System Architecture
 

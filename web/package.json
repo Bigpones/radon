@@ -16,7 +16,7 @@
     "lint": "next lint",
     "test": "NODE_ENV=test ASSISTANT_MOCK=1 vitest run tests/**/*.test.ts --config ../vitest.config.ts",
     "test:e2e": "npx playwright test --config playwright.no-server.config.ts",
-    "test:ib": "python3 ../scripts/test_ib_realtime.py"
+    "test:ib": "python3.13 ../scripts/test_ib_realtime.py"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.7",

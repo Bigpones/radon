@@ -214,7 +214,7 @@ export default function (pi: ExtensionAPI) {
     }
     
     try {
-      const output = execSync(`python3 "${scriptPath}" --json --budget 8000`, {
+      const output = execSync(`python3.13 "${scriptPath}" --json --budget 8000`, {
         cwd,
         encoding: "utf-8",
         timeout: 10000,
@@ -289,7 +289,7 @@ ${memoryContent}
     }
     
     // Spawn Python process in background
-    const proc = spawn("python3", [scriptPath], {
+    const proc = spawn("python3.13", [scriptPath], {
       cwd,
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
@@ -450,7 +450,7 @@ ${memoryContent}
     }
     
     // Spawn Python process in background with --table for full table output
-    const proc = spawn("python3", [scriptPath, "--table"], {
+    const proc = spawn("python3.13", [scriptPath, "--table"], {
       cwd,
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
@@ -554,7 +554,7 @@ ${memoryContent}
     }
 
     // Spawn cri_scan.py --json in background
-    const proc = spawn("python3", [scriptPath, "--json"], {
+    const proc = spawn("python3.13", [scriptPath, "--json"], {
       cwd,
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
@@ -664,7 +664,7 @@ ${memoryContent}
     }
     
     // Spawn Python process in background
-    const proc = spawn("python3", [scriptPath, "--account", account], {
+    const proc = spawn("python3.13", [scriptPath, "--account", account], {
       cwd,
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],

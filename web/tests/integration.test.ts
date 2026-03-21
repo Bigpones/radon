@@ -13,7 +13,7 @@ type CommandResult = {
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 const runPython = (args: string[]): CommandResult => {
-  const result = spawnSync("python3", args, {
+  const result = spawnSync("python3.13", args, {
     cwd: projectRoot,
     encoding: "utf8",
     shell: false,

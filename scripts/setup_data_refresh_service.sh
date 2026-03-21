@@ -29,7 +29,7 @@ WRAPPER="$PROJECT_DIR/scripts/run_data_refresh.sh"
 
 generate_plist() {
     local entries
-    entries=$(PROJECT_DIR_ENV="$PROJECT_DIR" python3 - <<'PY'
+    entries=$(PROJECT_DIR_ENV="$PROJECT_DIR" python3.13 - <<'PY'
 import os
 import sys
 
