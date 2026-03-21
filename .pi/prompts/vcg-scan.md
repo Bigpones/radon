@@ -5,7 +5,7 @@ Run the Cross-Asset Volatility-Credit Gap (VCG) scan:
 
 **STEP 1: RUN THE VCG SCANNER**
 ```bash
-python3 scripts/vcg_scan.py --json
+python3.13 scripts/vcg_scan.py --json
 ```
 This fetches 1Y daily bars for VIX, VVIX, and HYG (IB primary, Yahoo fallback), runs the rolling 21-day OLS regression, computes the VCG z-score, and evaluates the binary signal.
 
@@ -37,7 +37,7 @@ If any condition fails, state which one and why the divergence thesis is weakene
 **STEP 5: GENERATE HTML REPORT**
 The script auto-generates `reports/vcg-scan-{YYYY-MM-DD}.html`. If it didn't open automatically:
 ```bash
-python3 scripts/vcg_scan.py
+python3.13 scripts/vcg_scan.py
 ```
 (Without `--json`, it generates and opens the HTML report.)
 

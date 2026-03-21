@@ -47,7 +47,7 @@ Large institutional players accumulate or distribute positions through dark pool
 Use `fetch_options.py` to confirm or contradict dark pool signals:
 
 ```bash
-python3 scripts/fetch_options.py [TICKER]
+python3.13 scripts/fetch_options.py [TICKER]
 ```
 
 **Chain Analysis:**
@@ -112,26 +112,26 @@ python3 scripts/fetch_options.py [TICKER]
 
 ```bash
 # Scan watchlist for flow signals (dark pool only, fast)
-python3 scripts/scanner.py
+python3.13 scripts/scanner.py
 
 # Discover new candidates market-wide (default)
-python3 scripts/discover.py
+python3.13 scripts/discover.py
 
 # Discover from a preset
-python3 scripts/discover.py ndx100
-python3 scripts/discover.py sp500-semiconductors
+python3.13 scripts/discover.py ndx100
+python3.13 scripts/discover.py sp500-semiconductors
 
 # Discover specific tickers
-python3 scripts/discover.py AAPL MSFT NVDA
+python3.13 scripts/discover.py AAPL MSFT NVDA
 
 # Fetch dark pool flow (5-day)
-python3 scripts/fetch_flow.py [TICKER]
+python3.13 scripts/fetch_flow.py [TICKER]
 
 # Fetch options chain + flow analysis
-python3 scripts/fetch_options.py [TICKER]
+python3.13 scripts/fetch_options.py [TICKER]
 
 # Full evaluation output (JSON)
-python3 scripts/fetch_options.py [TICKER] --json
+python3.13 scripts/fetch_options.py [TICKER] --json
 ```
 
 ---
@@ -259,16 +259,16 @@ When fetching any market data, **ALWAYS** use sources in this priority order:
 
 ```bash
 # Scan State Street sector ETFs
-python3 scripts/leap_iv_scanner.py --preset sectors
+python3.13 scripts/leap_iv_scanner.py --preset sectors
 
 # Scan specific tickers
-python3 scripts/leap_iv_scanner.py AAPL MSFT NVDA EWY
+python3.13 scripts/leap_iv_scanner.py AAPL MSFT NVDA EWY
 
 # Scan with custom parameters
-python3 scripts/leap_iv_scanner.py --min-gap 20 --years 2027 2028
+python3.13 scripts/leap_iv_scanner.py --min-gap 20 --years 2027 2028
 
 # Scan portfolio holdings
-python3 scripts/leap_iv_scanner.py --portfolio
+python3.13 scripts/leap_iv_scanner.py --portfolio
 ```
 
 ### Presets Available
@@ -313,14 +313,14 @@ When a structural catalyst elevates realized volatility in a sector, individual 
 
 ```bash
 # ⭐ ALWAYS use the unified scanner
-python3 scripts/garch_convergence.py --preset all          # All 4 built-in presets (~3s)
-python3 scripts/garch_convergence.py --preset semis        # Semiconductors only
-python3 scripts/garch_convergence.py --preset mega-tech    # Mega-cap tech
-python3 scripts/garch_convergence.py --preset energy       # Energy sector
-python3 scripts/garch_convergence.py --preset china-etf    # China/Asia
-python3 scripts/garch_convergence.py --preset sp500-semiconductors  # File preset
-python3 scripts/garch_convergence.py NVDA AMD GOOGL META   # Ad-hoc pairs
-python3 scripts/garch_convergence.py --preset all --json   # JSON output
+python3.13 scripts/garch_convergence.py --preset all          # All 4 built-in presets (~3s)
+python3.13 scripts/garch_convergence.py --preset semis        # Semiconductors only
+python3.13 scripts/garch_convergence.py --preset mega-tech    # Mega-cap tech
+python3.13 scripts/garch_convergence.py --preset energy       # Energy sector
+python3.13 scripts/garch_convergence.py --preset china-etf    # China/Asia
+python3.13 scripts/garch_convergence.py --preset sp500-semiconductors  # File preset
+python3.13 scripts/garch_convergence.py NVDA AMD GOOGL META   # Ad-hoc pairs
+python3.13 scripts/garch_convergence.py --preset all --json   # JSON output
 ```
 
 ### Built-in Pair Presets
@@ -437,19 +437,19 @@ Three recommendations are generated:
 
 ```bash
 # Bullish risk reversal on IWM (default)
-python3 scripts/risk_reversal.py IWM
+python3.13 scripts/risk_reversal.py IWM
 
 # Bearish risk reversal
-python3 scripts/risk_reversal.py SPY --bearish
+python3.13 scripts/risk_reversal.py SPY --bearish
 
 # Custom parameters
-python3 scripts/risk_reversal.py QQQ --bankroll 500000 --min-dte 21 --max-dte 45
+python3.13 scripts/risk_reversal.py QQQ --bankroll 500000 --min-dte 21 --max-dte 45
 
 # Don't open browser
-python3 scripts/risk_reversal.py IWM --no-open
+python3.13 scripts/risk_reversal.py IWM --no-open
 
 # JSON output (for programmatic use)
-python3 scripts/risk_reversal.py IWM --json
+python3.13 scripts/risk_reversal.py IWM --json
 ```
 
 ### Tickers Best Suited
@@ -582,19 +582,19 @@ For LQD, use Treasury-hedged excess returns to isolate pure credit:
 
 ```bash
 # Run VCG scan (check current divergence state)
-python3 scripts/vcg_scan.py
+python3.13 scripts/vcg_scan.py
 
 # VCG with specific credit proxy
-python3 scripts/vcg_scan.py --proxy HYG
+python3.13 scripts/vcg_scan.py --proxy HYG
 
 # VCG with LQD (rate-hedged)
-python3 scripts/vcg_scan.py --proxy LQD --rate-hedge
+python3.13 scripts/vcg_scan.py --proxy LQD --rate-hedge
 
 # Historical backtest
-python3 scripts/vcg_scan.py --backtest --days 252
+python3.13 scripts/vcg_scan.py --backtest --days 252
 
 # JSON output
-python3 scripts/vcg_scan.py --json
+python3.13 scripts/vcg_scan.py --json
 ```
 
 ### Output Reference — Field Definitions
@@ -817,25 +817,25 @@ The vol-targeting model estimates CTA exposure from realized vol. MenthorQ provi
 
 ```bash
 # Run CRI scan (HTML report, includes MenthorQ data if cached)
-python3 scripts/cri_scan.py
+python3.13 scripts/cri_scan.py
 
 # JSON output
-python3 scripts/cri_scan.py --json
+python3.13 scripts/cri_scan.py --json
 
 # Don't open browser
-python3 scripts/cri_scan.py --no-open
+python3.13 scripts/cri_scan.py --no-open
 
 # Fetch MenthorQ CTA data (requires login, ~40s)
-python3 scripts/fetch_menthorq_cta.py
+python3.13 scripts/fetch_menthorq_cta.py
 
 # Run the hardened CTA sync runtime (used by launchd/service wrappers)
-python3 scripts/cta_sync_service.py --source manual
+python3.13 scripts/cta_sync_service.py --source manual
 
 # MenthorQ JSON output
-python3 scripts/fetch_menthorq_cta.py --json
+python3.13 scripts/fetch_menthorq_cta.py --json
 
 # MenthorQ specific date
-python3 scripts/fetch_menthorq_cta.py --date 2026-03-06
+python3.13 scripts/fetch_menthorq_cta.py --date 2026-03-06
 ```
 
 **Cache behavior:** the CRI JSON cache now stores enough trailing SPY closes to reconstruct the prior 20 realized-vol sessions used by `/regime`. Scheduled CRI snapshots and the post-close data refresh both refresh `data/cri.json`, and the API backfills missing `history[].realized_vol` values from cached closes when a newer snapshot is less complete than the legacy cache. CTA sync now also keeps a machine-readable health file plus per-attempt log artifacts so stale MenthorQ data fails loudly and can self-heal through the dedicated sync runtime.

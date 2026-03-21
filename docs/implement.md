@@ -11,9 +11,9 @@
 
 | Question | Source of Truth | NOT a Source of Truth |
 |----------|----------------|---------------------|
-| What positions do I hold? | `python3 scripts/ib_sync.py` (IB live) | `docs/status.md`, `data/portfolio.json` (cache) |
-| Is a position still open? | `python3 scripts/ib_sync.py` (IB live) | `docs/status.md` "Rule Violations" table |
-| Current P&L? | `python3 scripts/ib_sync.py` (IB live) | `docs/status.md` "Portfolio State" section |
+| What positions do I hold? | `python3.13 scripts/ib_sync.py` (IB live) | `docs/status.md`, `data/portfolio.json` (cache) |
+| Is a position still open? | `python3.13 scripts/ib_sync.py` (IB live) | `docs/status.md` "Rule Violations" table |
+| Current P&L? | `python3.13 scripts/ib_sync.py` (IB live) | `docs/status.md` "Portfolio State" section |
 | What trades happened? | `data/trade_log.json` (append-only) | `docs/status.md` "Trade Log Summary" |
 
 **Rules:**
@@ -24,7 +24,7 @@
 5. When IB is unavailable (Gateway down), say so explicitly: *"Cannot verify — IB unavailable."* Do NOT fall back to status.md.
 
 ## ⚠️ Evaluate Command → ALWAYS `evaluate.py`
-**Any evaluation request routes to `python3 scripts/evaluate.py [TICKER]`. No exceptions.**
+**Any evaluation request routes to `python3.13 scripts/evaluate.py [TICKER]`. No exceptions.**
 Even if the user provides manual steps (e.g., "run fetch_flow.py, then fetch_options.py"),
 ignore the manual steps and run the unified script. It handles M1–M3B (plus M1D news/catalysts) in parallel.
 
@@ -88,16 +88,16 @@ All IB and UW access goes through centralized clients in `scripts/clients/`:
 - When a strategy is deprecated/removed, update both files
 - **Required fields per strategy**: `id`, `name`, `status`, `description`, `edge`, `instruments`, `hold_period`, `win_rate`, `target_rr`, `risk_type`, `commands`, `doc`
 - Optional fields: `manager_override` (only for undefined-risk strategies)
-- After any change, validate: `python3 -m json.tool data/strategies.json`
+- After any change, validate: `python3.13 -m json.tool data/strategies.json`
 - The `strategies` command reads `data/strategies.json` — if it's stale, users see outdated info
 
 ### 6. Verification Commands
 After any trade decision:
 ```bash
 # Validate JSON integrity
-python3 -m json.tool data/portfolio.json
-python3 -m json.tool data/trade_log.json
-python3 -m json.tool data/watchlist.json
+python3.13 -m json.tool data/portfolio.json
+python3.13 -m json.tool data/trade_log.json
+python3.13 -m json.tool data/watchlist.json
 ```
 
 ### 7. Error Recovery
@@ -114,58 +114,58 @@ If a script fails:
 ### Evaluation Commands
 | Action | Command |
 |--------|---------|
-| **⭐ Full evaluation** | `python3 scripts/evaluate.py [TICKER]` |
-| Full evaluation (JSON) | `python3 scripts/evaluate.py [TICKER] --json` |
-| Full evaluation (custom bankroll) | `python3 scripts/evaluate.py [TICKER] --bankroll 1200000` |
-| Validate ticker | `python3 scripts/fetch_ticker.py [TICKER]` |
-| Fetch dark pool flow | `python3 scripts/fetch_flow.py [TICKER]` |
-| Fetch options data | `python3 scripts/fetch_options.py [TICKER]` |
-| Fetch options (JSON) | `python3 scripts/fetch_options.py [TICKER] --json` |
-| Fetch analyst ratings | `python3 scripts/fetch_analyst_ratings.py [TICKER]` |
-| Fetch news & catalysts | `python3 scripts/fetch_news.py [TICKER]` |
-| Calculate Kelly | `python3 scripts/kelly.py --prob P --odds O --bankroll B` |
+| **⭐ Full evaluation** | `python3.13 scripts/evaluate.py [TICKER]` |
+| Full evaluation (JSON) | `python3.13 scripts/evaluate.py [TICKER] --json` |
+| Full evaluation (custom bankroll) | `python3.13 scripts/evaluate.py [TICKER] --bankroll 1200000` |
+| Validate ticker | `python3.13 scripts/fetch_ticker.py [TICKER]` |
+| Fetch dark pool flow | `python3.13 scripts/fetch_flow.py [TICKER]` |
+| Fetch options data | `python3.13 scripts/fetch_options.py [TICKER]` |
+| Fetch options (JSON) | `python3.13 scripts/fetch_options.py [TICKER] --json` |
+| Fetch analyst ratings | `python3.13 scripts/fetch_analyst_ratings.py [TICKER]` |
+| Fetch news & catalysts | `python3.13 scripts/fetch_news.py [TICKER]` |
+| Calculate Kelly | `python3.13 scripts/kelly.py --prob P --odds O --bankroll B` |
 
 ### Scanning Commands
 | Action | Command |
 |--------|---------|
-| **⭐ GARCH Convergence (all presets)** | `python3 scripts/garch_convergence.py --preset all` |
-| GARCH Convergence (one preset) | `python3 scripts/garch_convergence.py --preset semis` |
-| GARCH Convergence (file preset) | `python3 scripts/garch_convergence.py --preset sp500-semiconductors` |
-| GARCH Convergence (ad-hoc) | `python3 scripts/garch_convergence.py NVDA AMD GOOGL META` |
-| GARCH Convergence (JSON) | `python3 scripts/garch_convergence.py --preset all --json` |
-| **⭐ Risk Reversal** | `python3 scripts/risk_reversal.py IWM` |
-| Risk Reversal (bearish) | `python3 scripts/risk_reversal.py SPY --bearish` |
-| Risk Reversal (custom) | `python3 scripts/risk_reversal.py QQQ --bankroll 500000 --min-dte 21` |
-| LEAP IV scan (UW) | `python3 scripts/leap_scanner_uw.py --preset sectors` |
-| LEAP IV scan (IB) | `python3 scripts/leap_iv_scanner.py AAPL --portfolio` |
-| Discovery (market-wide) | `python3 scripts/discover.py` |
-| Discovery (preset) | `python3 scripts/discover.py ndx100` |
-| Discovery (tickers) | `python3 scripts/discover.py AAPL MSFT NVDA` |
-| Watchlist scan | `python3 scripts/scanner.py` |
-| **⭐ Stress Test (model)** | `python3 scripts/scenario_analysis.py` (update params first, outputs `/tmp/scenario_analysis.json`) |
-| **⭐ Stress Test (report)** | `python3 scripts/scenario_report.py` (reads JSON, generates HTML, opens browser) |
+| **⭐ GARCH Convergence (all presets)** | `python3.13 scripts/garch_convergence.py --preset all` |
+| GARCH Convergence (one preset) | `python3.13 scripts/garch_convergence.py --preset semis` |
+| GARCH Convergence (file preset) | `python3.13 scripts/garch_convergence.py --preset sp500-semiconductors` |
+| GARCH Convergence (ad-hoc) | `python3.13 scripts/garch_convergence.py NVDA AMD GOOGL META` |
+| GARCH Convergence (JSON) | `python3.13 scripts/garch_convergence.py --preset all --json` |
+| **⭐ Risk Reversal** | `python3.13 scripts/risk_reversal.py IWM` |
+| Risk Reversal (bearish) | `python3.13 scripts/risk_reversal.py SPY --bearish` |
+| Risk Reversal (custom) | `python3.13 scripts/risk_reversal.py QQQ --bankroll 500000 --min-dte 21` |
+| LEAP IV scan (UW) | `python3.13 scripts/leap_scanner_uw.py --preset sectors` |
+| LEAP IV scan (IB) | `python3.13 scripts/leap_iv_scanner.py AAPL --portfolio` |
+| Discovery (market-wide) | `python3.13 scripts/discover.py` |
+| Discovery (preset) | `python3.13 scripts/discover.py ndx100` |
+| Discovery (tickers) | `python3.13 scripts/discover.py AAPL MSFT NVDA` |
+| Watchlist scan | `python3.13 scripts/scanner.py` |
+| **⭐ Stress Test (model)** | `python3.13 scripts/scenario_analysis.py` (update params first, outputs `/tmp/scenario_analysis.json`) |
+| **⭐ Stress Test (report)** | `python3.13 scripts/scenario_report.py` (reads JSON, generates HTML, opens browser) |
 
 ### Portfolio Commands
 | Action | Command |
 |--------|---------|
-| **⭐ Generate portfolio report** | `python3 scripts/portfolio_report.py` (self-contained: IB + DP flow + HTML) |
-| Portfolio report (no browser) | `python3 scripts/portfolio_report.py --no-open` |
-| Free trade analysis | `python3 scripts/free_trade_analyzer.py --table` |
-| Sync IB portfolio | `python3 scripts/ib_sync.py --sync` |
-| Run reconciliation | `python3 scripts/ib_reconcile.py` |
-| View today's fills | `python3 scripts/blotter.py` |
-| Fetch historical trades | `python3 scripts/trade_blotter/flex_query.py --symbol [TICKER]` |
+| **⭐ Generate portfolio report** | `python3.13 scripts/portfolio_report.py` (self-contained: IB + DP flow + HTML) |
+| Portfolio report (no browser) | `python3.13 scripts/portfolio_report.py --no-open` |
+| Free trade analysis | `python3.13 scripts/free_trade_analyzer.py --table` |
+| Sync IB portfolio | `python3.13 scripts/ib_sync.py --sync` |
+| Run reconciliation | `python3.13 scripts/ib_reconcile.py` |
+| View today's fills | `python3.13 scripts/blotter.py` |
+| Fetch historical trades | `python3.13 scripts/trade_blotter/flex_query.py --symbol [TICKER]` |
 | Start realtime server | `node scripts/ib_realtime_server.js` |
-| Validate JSON | `python3 -m json.tool data/[file].json` |
+| Validate JSON | `python3.13 -m json.tool data/[file].json` |
 
 ### Context Engineering Commands
 | Action | Command |
 |--------|---------|
-| **View persistent memory** | `python3 scripts/context_constructor.py` |
-| View as JSON | `python3 scripts/context_constructor.py --json` |
-| View manifest only | `python3 scripts/context_constructor.py --manifest-only` |
-| **Save a fact** | `python3 scripts/context_constructor.py --save-fact "key" "value" --confidence 0.95 --source "source"` |
-| **Save session episode** | `python3 scripts/context_constructor.py --save-episode "summary" --session-id "id"` |
+| **View persistent memory** | `python3.13 scripts/context_constructor.py` |
+| View as JSON | `python3.13 scripts/context_constructor.py --json` |
+| View manifest only | `python3.13 scripts/context_constructor.py --manifest-only` |
+| **Save a fact** | `python3.13 scripts/context_constructor.py --save-fact "key" "value" --confidence 0.95 --source "source"` |
+| **Save session episode** | `python3.13 scripts/context_constructor.py --save-episode "summary" --session-id "id"` |
 
 ### Tweet-It Commands
 | Action | Command |
@@ -180,13 +180,13 @@ If a script fails:
 
 | Action | Command |
 |--------|---------|
-| **Sell stock** | `python3 scripts/ib_execute.py --type stock --symbol X --qty N --side SELL --limit N --yes` |
-| **Buy stock** | `python3 scripts/ib_execute.py --type stock --symbol X --qty N --side BUY --limit N --yes` |
-| **Buy option** | `python3 scripts/ib_execute.py --type option --symbol X --expiry YYYYMMDD --strike N --right C/P --qty N --side BUY --limit MID --yes` |
-| **Sell option** | `python3 scripts/ib_execute.py --type option --symbol X --expiry YYYYMMDD --strike N --right C/P --qty N --side SELL --limit N --yes` |
-| Check pending exits | `python3 scripts/exit_order_service.py --status` |
-| Run exit order check | `python3 scripts/exit_order_service.py` |
-| Exit service daemon | `python3 scripts/exit_order_service.py --daemon` |
+| **Sell stock** | `python3.13 scripts/ib_execute.py --type stock --symbol X --qty N --side SELL --limit N --yes` |
+| **Buy stock** | `python3.13 scripts/ib_execute.py --type stock --symbol X --qty N --side BUY --limit N --yes` |
+| **Buy option** | `python3.13 scripts/ib_execute.py --type option --symbol X --expiry YYYYMMDD --strike N --right C/P --qty N --side BUY --limit MID --yes` |
+| **Sell option** | `python3.13 scripts/ib_execute.py --type option --symbol X --expiry YYYYMMDD --strike N --right C/P --qty N --side SELL --limit N --yes` |
+| Check pending exits | `python3.13 scripts/exit_order_service.py --status` |
+| Run exit order check | `python3.13 scripts/exit_order_service.py` |
+| Exit service daemon | `python3.13 scripts/exit_order_service.py --daemon` |
 | Install exit service | `./scripts/setup_exit_order_service.sh install` |
 | Exit service status | `./scripts/setup_exit_order_service.sh status` |
 | **IBC Gateway status** | `~/ibc/bin/status-secure-ibc-service.sh` |
@@ -305,10 +305,10 @@ reports/{ticker}-evaluation-{date}.html
 reports/stress-test-{date}.html
 
 # Pricing engine (update parameters per scenario, then run)
-python3 scripts/scenario_analysis.py
+python3.13 scripts/scenario_analysis.py
 
 # Reference report generator (reads /tmp/scenario_analysis.json)
-python3 scripts/scenario_report.py
+python3.13 scripts/scenario_report.py
 ```
 
 **Model pipeline:**
@@ -341,19 +341,19 @@ python3 scripts/scenario_report.py
 **Stock:**
 ```bash
 # Sell stock at bid
-python3 scripts/ib_execute.py --type stock --symbol NFLX --qty 4500 --side SELL --limit BID --yes
+python3.13 scripts/ib_execute.py --type stock --symbol NFLX --qty 4500 --side SELL --limit BID --yes
 
 # Buy stock at limit
-python3 scripts/ib_execute.py --type stock --symbol AAPL --qty 100 --side BUY --limit 175.50 --yes
+python3.13 scripts/ib_execute.py --type stock --symbol AAPL --qty 100 --side BUY --limit 175.50 --yes
 ```
 
 **Option:**
 ```bash
 # Buy call at mid
-python3 scripts/ib_execute.py --type option --symbol GOOG --expiry 20260417 --strike 315 --right C --qty 44 --side BUY --limit MID --yes
+python3.13 scripts/ib_execute.py --type option --symbol GOOG --expiry 20260417 --strike 315 --right C --qty 44 --side BUY --limit MID --yes
 
 # Sell put at limit
-python3 scripts/ib_execute.py --type option --symbol GOOG --expiry 20260417 --strike 290 --right P --qty 10 --side SELL --limit 3.50 --yes
+python3.13 scripts/ib_execute.py --type option --symbol GOOG --expiry 20260417 --strike 290 --right P --qty 10 --side SELL --limit 3.50 --yes
 ```
 
 **Multi-leg spread:** Use inline Python with `ib_insync` (see `ib-order-execution` skill)
@@ -374,17 +374,17 @@ Automatically places pending target orders when IB will accept them.
 
 **Check status:**
 ```bash
-python3 scripts/exit_order_service.py --status
+python3.13 scripts/exit_order_service.py --status
 ```
 
 **Run single check:**
 ```bash
-python3 scripts/exit_order_service.py
+python3.13 scripts/exit_order_service.py
 ```
 
 **Run as daemon (every 5 min during market hours):**
 ```bash
-python3 scripts/exit_order_service.py --daemon
+python3.13 scripts/exit_order_service.py --daemon
 ```
 
 **Install as launchd service:**
@@ -404,15 +404,15 @@ The `fetch_options.py` script provides comprehensive options analysis:
 
 ```bash
 # Full analysis with formatted report
-python3 scripts/fetch_options.py AAPL
+python3.13 scripts/fetch_options.py AAPL
 
 # JSON output for programmatic use
-python3 scripts/fetch_options.py AAPL --json
+python3.13 scripts/fetch_options.py AAPL --json
 
 # Force specific data source
-python3 scripts/fetch_options.py AAPL --source uw   # Unusual Whales
-python3 scripts/fetch_options.py AAPL --source ib   # Interactive Brokers
-python3 scripts/fetch_options.py AAPL --source yahoo # LAST RESORT ONLY
+python3.13 scripts/fetch_options.py AAPL --source uw   # Unusual Whales
+python3.13 scripts/fetch_options.py AAPL --source ib   # Interactive Brokers
+python3.13 scripts/fetch_options.py AAPL --source yahoo # LAST RESORT ONLY
 ```
 
 **Output includes:**
@@ -426,7 +426,7 @@ python3 scripts/fetch_options.py AAPL --source yahoo # LAST RESORT ONLY
 
 ### Today's Fills
 ```bash
-python3 scripts/blotter.py
+python3.13 scripts/blotter.py
 ```
 
 Shows:
@@ -438,10 +438,10 @@ Shows:
 ### Historical Trades (Flex Query)
 ```bash
 # All trades
-python3 scripts/trade_blotter/flex_query.py
+python3.13 scripts/trade_blotter/flex_query.py
 
 # Filter by symbol
-python3 scripts/trade_blotter/flex_query.py --symbol EWY
+python3.13 scripts/trade_blotter/flex_query.py --symbol EWY
 ```
 
 Requires `IB_FLEX_TOKEN` and `IB_FLEX_QUERY_ID` environment variables.
@@ -493,7 +493,7 @@ When startup shows `⚠️ IB: N new trades`, **immediately** run this workflow:
 
 ```bash
 # 1. Check reconciliation data
-cat data/reconciliation.json | python3 -m json.tool
+cat data/reconciliation.json | python3.13 -m json.tool
 
 # 2. For each trade in new_trades, add to trade_log.json:
 #    - id: next sequential ID
@@ -513,7 +513,7 @@ cat data/reconciliation.json | python3 -m json.tool
 #    processed_trades: [list of processed trade IDs]
 
 # 5. Validate JSON
-python3 -m json.tool data/trade_log.json
+python3.13 -m json.tool data/trade_log.json
 ```
 
 **Do NOT prompt user** — this auto-log runs automatically whenever `needs_attention: true`.
@@ -522,10 +522,10 @@ python3 -m json.tool data/trade_log.json
 
 ```bash
 # Trigger reconciliation manually
-python3 scripts/ib_reconcile.py
+python3.13 scripts/ib_reconcile.py
 
 # Check results
-cat data/reconciliation.json | python3 -m json.tool
+cat data/reconciliation.json | python3.13 -m json.tool
 ```
 
 ---

@@ -10,8 +10,8 @@ GARCH Convergence Spread scan for {{tickers}}:
 
 **STEP 2: FETCH IV/HV DATA FOR BOTH SIDES**
 For each asset in the pair:
-- Run `python3 scripts/leap_iv_scanner.py [TICKER1] [TICKER2] --min-gap 0` (IB, preferred)
-- OR `python3 scripts/leap_scanner_uw.py [TICKER1] [TICKER2]` (no IB fallback)
+- Run `python3.13 scripts/leap_iv_scanner.py [TICKER1] [TICKER2] --min-gap 0` (IB, preferred)
+- OR `python3.13 scripts/leap_scanner_uw.py [TICKER1] [TICKER2]` (no IB fallback)
 - Record: HV20, HV60, ATM IV (3-6 month expiry), IV rank
 - Fetch current spot price via IB or UW
 
@@ -56,7 +56,7 @@ Signal strength:
 - Verify R:R ≥ 2:1 (expected gain + delta upside vs premium cost)
 
 **STEP 6: KELLY SIZING**
-- Run `python3 scripts/kelly.py --prob [P] --odds [X] --fraction 0.25 --bankroll [B]`
+- Run `python3.13 scripts/kelly.py --prob [P] --odds [X] --fraction 0.25 --bankroll [B]`
 - P(convergence) estimate: 50-65% based on signal strength
 - Odds = Expected gain / Premium cost
 - Hard cap: 2.5% of bankroll

@@ -14,7 +14,7 @@ Run this first to classify the failure:
 lsof -iTCP:4001 -sTCP:LISTEN
 
 # 3. Is the port accepting connections?
-python3 -c "
+python3.13 -c "
 import socket, time
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.settimeout(3)
@@ -32,7 +32,7 @@ finally:
 lsof -iTCP:8765 -sTCP:LISTEN
 
 # 5. What does the web UI report?
-curl -s http://localhost:3000/api/ib-status | python3 -m json.tool
+curl -s http://localhost:3000/api/ib-status | python3.13 -m json.tool
 ```
 
 ## Failure Classification
@@ -87,7 +87,7 @@ tail -50 ~/ibc/logs/ibc-gateway-service.log
 
 # Verify recovery
 lsof -iTCP:4001 -sTCP:LISTEN
-python3 -c "
+python3.13 -c "
 import socket
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.settimeout(5)
@@ -255,7 +255,7 @@ curl -s -o /dev/null -w "%{http_code} %{time_total}s" -X POST http://localhost:3
 # Broken:   "502 3.XXXs" (no cache available)
 
 # WebSocket server
-curl -s http://localhost:3000/api/ib-status | python3 -m json.tool
+curl -s http://localhost:3000/api/ib-status | python3.13 -m json.tool
 # Expected: {"connected": true}
 ```
 

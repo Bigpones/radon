@@ -215,7 +215,7 @@ When fetching ANY market data (quotes, options, fundamentals, analyst ratings, e
 
 **Any request to evaluate a ticker — regardless of how the user phrases it — MUST route to:**
 ```bash
-python3 scripts/evaluate.py [TICKER]
+python3.13 scripts/evaluate.py [TICKER]
 ```
 
 This is non-negotiable. The script handles all data fetching (M1–M3B plus M1D news/catalysts) in parallel, includes today's intraday data, and stops at the first failing gate.
@@ -402,7 +402,7 @@ Volume Pace: 1.28x (Above average — signal is real)
 
 | Command | Action |
 |---------|--------|
-| `evaluate [TICKER]` | **Run `python3 scripts/evaluate.py [TICKER]`** — full 7-milestone evaluation |
+| `evaluate [TICKER]` | **Run `python3.13 scripts/evaluate.py [TICKER]`** — full 7-milestone evaluation |
 | `scan` | Scan watchlist for dark pool flow signals + CRI regime overlay — generates HTML report |
 | `discover` | Find new candidates — market-wide (default), or pass tickers/presets |
 | `portfolio` | **Generate HTML portfolio report and open in browser** |
@@ -410,7 +410,7 @@ Volume Pace: 1.28x (Above average — signal is real)
 | `journal` | View recent trade log entries |
 | `sync` | Pull live portfolio from Interactive Brokers |
 | `blotter` | Trade blotter - today's fills, P&L, spread grouping |
-| `risk-reversal [TICKER]` | **Run `python3 scripts/risk_reversal.py [TICKER]`** — IV skew risk reversal analysis + HTML report |
+| `risk-reversal [TICKER]` | **Run `python3.13 scripts/risk_reversal.py [TICKER]`** — IV skew risk reversal analysis + HTML report |
 | `vcg` | **VCG scan — call `vcg_scan` tool (registered Pi tool).** Do NOT re-read strategy docs. |
 | `strategies` | List available trading strategies (reads `data/strategies.json`) |
 | `stress-test` | **Interactive scenario stress test — asks for market scenario, runs portfolio P&L analysis, generates HTML report** |
@@ -461,7 +461,7 @@ When adding, modifying, or removing a strategy in `docs/strategies.md`, **ALWAYS
 
 **Optional:** `"manager_override": true` (only for undefined-risk strategies).
 
-**After any change:** `python3 -m json.tool data/strategies.json`
+**After any change:** `python3.13 -m json.tool data/strategies.json`
 
 ### Stress Test Command Details
 
@@ -613,13 +613,13 @@ When user runs `scan`, execute BOTH scans in sequence and combine into a single 
 
 **Step 1 — Dark Pool Flow Scan:**
 ```bash
-python3 scripts/scanner.py
+python3.13 scripts/scanner.py
 ```
 Scans all watchlist tickers for dark pool flow signals. Returns scored candidates with direction, strength, sustained days, and buy ratio.
 
 **Step 2 — CRI Regime Scan:**
 ```bash
-python3 scripts/cri_scan.py --json
+python3.13 scripts/cri_scan.py --json
 ```
 Computes the Crash Risk Index — VIX/VVIX momentum, Cboe 1-Month Implied Correlation Index (COR1M), CTA exposure model. Returns regime level (LOW/ELEVATED/HIGH/CRITICAL) and crash trigger status.
 For COR1M history inside the CRI scan, source order is: IB first, then the official Cboe dashboard historical feed, then Yahoo Finance last resort.
@@ -665,7 +665,7 @@ Output: `reports/daily-scan-{date}.html` — auto-open in browser.
 ### Evaluate Command Details
 
 When user runs `evaluate [TICKER]`, ALWAYS:
-1. Run `python3 scripts/evaluate.py [TICKER]` — this fetches ALL data in parallel
+1. Run `python3.13 scripts/evaluate.py [TICKER]` — this fetches ALL data in parallel
 2. Read the output (text report or `--json`)
 3. If decision is `NO_TRADE`: log to `docs/status.md` under Recent Evaluations
 4. If decision is `PENDING` (edge passed): design structure using live IB quotes, run Kelly, generate trade spec HTML report, present for confirmation
@@ -673,13 +673,13 @@ When user runs `evaluate [TICKER]`, ALWAYS:
 
 ```bash
 # Standard evaluation (human-readable output)
-python3 scripts/evaluate.py AAPL
+python3.13 scripts/evaluate.py AAPL
 
 # JSON output (for programmatic use)
-python3 scripts/evaluate.py AAPL --json
+python3.13 scripts/evaluate.py AAPL --json
 
 # Custom bankroll
-python3 scripts/evaluate.py AAPL --bankroll 1200000
+python3.13 scripts/evaluate.py AAPL --bankroll 1200000
 ```
 
 **What the script does automatically:**
@@ -698,29 +698,29 @@ python3 scripts/evaluate.py AAPL --bankroll 1200000
 
 ### Discover Command Details
 
-When user runs `discover`, ALWAYS run `python3 scripts/discover.py`.
+When user runs `discover`, ALWAYS run `python3.13 scripts/discover.py`.
 
 **Three modes:**
 
 ```bash
 # Market-wide (default) — scans all flow alerts, excludes watchlist/portfolio
-python3 scripts/discover.py
+python3.13 scripts/discover.py
 
 # Targeted tickers — scans specific tickers with per-ticker flow + DP
-python3 scripts/discover.py AAPL MSFT NVDA
+python3.13 scripts/discover.py AAPL MSFT NVDA
 
 # Preset — resolves preset to tickers, then runs targeted mode
-python3 scripts/discover.py ndx100
-python3 scripts/discover.py ndx100-semiconductors
-python3 scripts/discover.py sp500-biotechnology
+python3.13 scripts/discover.py ndx100
+python3.13 scripts/discover.py ndx100-semiconductors
+python3.13 scripts/discover.py sp500-biotechnology
 
 # Mix presets and tickers
-python3 scripts/discover.py ndx100-semiconductors WULF CRWV
+python3.13 scripts/discover.py ndx100-semiconductors WULF CRWV
 
 # Options
-python3 scripts/discover.py ndx100 --top 10          # Limit results
-python3 scripts/discover.py ndx100 --dp-days 5       # More DP history
-python3 scripts/discover.py ndx100 --min-premium 100000  # Custom premium filter
+python3.13 scripts/discover.py ndx100 --top 10          # Limit results
+python3.13 scripts/discover.py ndx100 --dp-days 5       # More DP history
+python3.13 scripts/discover.py ndx100 --min-premium 100000  # Custom premium filter
 ```
 
 **How it works:**
@@ -735,7 +735,7 @@ python3 scripts/discover.py ndx100 --min-premium 100000  # Custom premium filter
 
 ### Portfolio Command Details
 
-When user runs `portfolio`, ALWAYS run `python3 scripts/portfolio_report.py`.
+When user runs `portfolio`, ALWAYS run `python3.13 scripts/portfolio_report.py`.
 
 The script is **fully self-contained** — it connects to IB, fetches all positions + live prices, fetches 5-day dark pool flow (including today) for every ticker in parallel, loads the trade log for thesis checks, fills the HTML template, and opens the report in the browser.
 
@@ -756,16 +756,16 @@ The script is **fully self-contained** — it connects to IB, fetches all positi
 
 ```bash
 # Generate and open report (default)
-python3 scripts/portfolio_report.py
+python3.13 scripts/portfolio_report.py
 
 # Generate without opening
-python3 scripts/portfolio_report.py --no-open
+python3.13 scripts/portfolio_report.py --no-open
 
 # Custom IB port
-python3 scripts/portfolio_report.py --port 7497
+python3.13 scripts/portfolio_report.py --port 7497
 
 # Also sync portfolio.json
-python3 scripts/portfolio_report.py --sync
+python3.13 scripts/portfolio_report.py --sync
 ```
 
 ### Free Trade Command
@@ -774,19 +774,19 @@ Analyze multi-leg positions to find opportunities to close hedge legs profitably
 
 ```bash
 # Full analysis of all positions
-python3 scripts/free_trade_analyzer.py
+python3.13 scripts/free_trade_analyzer.py
 
 # Filter by ticker
-python3 scripts/free_trade_analyzer.py --ticker EWY
+python3.13 scripts/free_trade_analyzer.py --ticker EWY
 
 # Compact table format (used by startup protocol)
-python3 scripts/free_trade_analyzer.py --table
+python3.13 scripts/free_trade_analyzer.py --table
 
 # Brief one-line summary
-python3 scripts/free_trade_analyzer.py --summary
+python3.13 scripts/free_trade_analyzer.py --summary
 
 # JSON output
-python3 scripts/free_trade_analyzer.py --json
+python3.13 scripts/free_trade_analyzer.py --json
 ```
 
 **Supported Structures:**
@@ -819,7 +819,7 @@ python3 scripts/free_trade_analyzer.py --json
 
 ### Risk Reversal Command Details
 
-When user runs `risk-reversal [TICKER]`, ALWAYS run `python3 scripts/risk_reversal.py [TICKER]`.
+When user runs `risk-reversal [TICKER]`, ALWAYS run `python3.13 scripts/risk_reversal.py [TICKER]`.
 
 The script is **fully self-contained** — it connects to IB for live quotes/greeks, fetches dark pool flow and options flow for context, builds the risk reversal matrix, selects primary/alternative/aggressive recommendations, and generates an HTML report.
 
@@ -827,19 +827,19 @@ The script is **fully self-contained** — it connects to IB for live quotes/gre
 
 ```bash
 # Bullish risk reversal (default: sell put / buy call)
-python3 scripts/risk_reversal.py IWM
+python3.13 scripts/risk_reversal.py IWM
 
 # Bearish risk reversal (sell call / buy put)
-python3 scripts/risk_reversal.py SPY --bearish
+python3.13 scripts/risk_reversal.py SPY --bearish
 
 # Custom parameters
-python3 scripts/risk_reversal.py QQQ --bankroll 500000 --min-dte 21 --max-dte 45
+python3.13 scripts/risk_reversal.py QQQ --bankroll 500000 --min-dte 21 --max-dte 45
 
 # Don't open browser
-python3 scripts/risk_reversal.py IWM --no-open
+python3.13 scripts/risk_reversal.py IWM --no-open
 
 # JSON output
-python3 scripts/risk_reversal.py IWM --json
+python3.13 scripts/risk_reversal.py IWM --json
 ```
 
 **Output:** `reports/{ticker}-risk-reversal-{date}.html` (auto-opens in browser)
@@ -884,13 +884,13 @@ Attribution: VVIX {vvix_pct}% / VIX {vix_pct}%
 SIGNAL: {RO/HDR/NORMAL/UNRELIABLE}
 ```
 
-**To also generate HTML report:** `python3 scripts/vcg_scan.py` (without --json).
+**To also generate HTML report:** `python3.13 scripts/vcg_scan.py` (without --json).
 
 | `menthorq-cta` | Fetch MenthorQ institutional CTA positioning data |
 | `cri-scan` | **CRI scan — Crash Risk Index with MenthorQ CTA overlay** |
 | `blotter-history` | Historical trades via Flex Query (requires setup) |
 | `leap-scan [TICKERS]` | Scan for LEAP IV mispricing opportunities |
-| `garch-convergence [TICKERS]` | **Run `python3 scripts/garch_convergence.py`** — cross-asset GARCH vol divergence scan |
+| `garch-convergence [TICKERS]` | **Run `python3.13 scripts/garch_convergence.py`** — cross-asset GARCH vol divergence scan |
 | `seasonal [TICKERS]` | Seasonality assessment for one or more tickers |
 | `x-scan [@ACCOUNT]` | Fetch tweets via xAI API (recommended, slower) |
 | `x-scan-browser [@ACCOUNT]` | Fetch tweets via browser scraping (faster, lower quality) |
@@ -900,13 +900,13 @@ SIGNAL: {RO/HDR/NORMAL/UNRELIABLE}
 
 Always follow in order. Stop immediately if a gate fails.
 
-1. **Validate Ticker** → `python3 scripts/fetch_ticker.py [TICKER]`
+1. **Validate Ticker** → `python3.13 scripts/fetch_ticker.py [TICKER]`
 1B. **Seasonality** → Fetch & analyze (does not affect score, but report in analysis)
-1C. **Analyst Ratings** → `python3 scripts/fetch_analyst_ratings.py [TICKER]` (context, not a gate)
-1D. **News & Catalysts** → `python3 scripts/fetch_news.py [TICKER]` (context — buybacks, M&A, earnings, material events)
-2. **Dark Pool Flow** → `python3 scripts/fetch_flow.py [TICKER]`
-3. **Options Flow** → `python3 scripts/fetch_options.py [TICKER]`
-3B. **OI Change Analysis** → `python3 scripts/fetch_oi_changes.py [TICKER]` (ALWAYS — reveals hidden institutional positioning)
+1C. **Analyst Ratings** → `python3.13 scripts/fetch_analyst_ratings.py [TICKER]` (context, not a gate)
+1D. **News & Catalysts** → `python3.13 scripts/fetch_news.py [TICKER]` (context — buybacks, M&A, earnings, material events)
+2. **Dark Pool Flow** → `python3.13 scripts/fetch_flow.py [TICKER]`
+3. **Options Flow** → `python3.13 scripts/fetch_options.py [TICKER]`
+3B. **OI Change Analysis** → `python3.13 scripts/fetch_oi_changes.py [TICKER]` (ALWAYS — reveals hidden institutional positioning)
 4. **Edge Decision** → PASS/FAIL with reasoning (stop if FAIL)
 5. **Structure** → Design convex position (stop if R:R < 2:1)
 6. **Kelly Sizing** → Calculate + enforce caps
@@ -924,16 +924,16 @@ Always follow in order. Stop immediately if a gate fails.
 
 ```bash
 # Per-ticker OI changes (ALWAYS run this)
-python3 scripts/fetch_oi_changes.py MSFT
+python3.13 scripts/fetch_oi_changes.py MSFT
 
 # Filter for significant positions
-python3 scripts/fetch_oi_changes.py MSFT --min-premium 1000000
+python3.13 scripts/fetch_oi_changes.py MSFT --min-premium 1000000
 
 # Market-wide scan (for discover command)
-python3 scripts/fetch_oi_changes.py --market --min-premium 10000000
+python3.13 scripts/fetch_oi_changes.py --market --min-premium 10000000
 
 # Verify specific external claims
-python3 scripts/verify_options_oi.py MSFT --expiry 2027-01-15 --verify "575:50000,625:100000"
+python3.13 scripts/verify_options_oi.py MSFT --expiry 2027-01-15 --verify "575:50000,625:100000"
 ```
 
 **Signal Strength Classification:**
@@ -979,16 +979,16 @@ Uses xAI's Grok with x_search tool for high-quality analysis.
 
 ```bash
 # Scan an account
-python3 scripts/fetch_x_xai.py --account USERNAME
+python3.13 scripts/fetch_x_xai.py --account USERNAME
 
 # Look back 7 days
-python3 scripts/fetch_x_xai.py --days 7
+python3.13 scripts/fetch_x_xai.py --days 7
 
 # Dry run (don't update watchlist)
-python3 scripts/fetch_x_xai.py --dry-run
+python3.13 scripts/fetch_x_xai.py --dry-run
 
 # Raw JSON output
-python3 scripts/fetch_x_xai.py --json
+python3.13 scripts/fetch_x_xai.py --json
 ```
 
 **Requires:** `XAI_API_KEY` environment variable
@@ -1002,10 +1002,10 @@ Uses browser automation to scrape X profile pages.
 
 ```bash
 # Scan default account
-python3 scripts/fetch_x_watchlist.py
+python3.13 scripts/fetch_x_watchlist.py
 
 # Scan specific account  
-python3 scripts/fetch_x_watchlist.py --account elonmusk
+python3.13 scripts/fetch_x_watchlist.py --account elonmusk
 ```
 
 **Requires:** `agent-browser` CLI
@@ -1039,21 +1039,21 @@ Fetch options chain activity and institutional flow alerts.
 
 ```bash
 # Standard analysis
-python3 scripts/fetch_options.py RMBS
+python3.13 scripts/fetch_options.py RMBS
 
 # JSON output for programmatic use
-python3 scripts/fetch_options.py RMBS --json
+python3.13 scripts/fetch_options.py RMBS --json
 
 # Force specific data source
-python3 scripts/fetch_options.py RMBS --source uw
-python3 scripts/fetch_options.py RMBS --source ib
-python3 scripts/fetch_options.py RMBS --source yahoo
+python3.13 scripts/fetch_options.py RMBS --source uw
+python3.13 scripts/fetch_options.py RMBS --source ib
+python3.13 scripts/fetch_options.py RMBS --source yahoo
 
 # Custom IB port
-python3 scripts/fetch_options.py RMBS --port 7497
+python3.13 scripts/fetch_options.py RMBS --port 7497
 
 # Filter by DTE
-python3 scripts/fetch_options.py RMBS --dte-min 14 --dte-max 60
+python3.13 scripts/fetch_options.py RMBS --dte-min 14 --dte-max 60
 ```
 
 **Output Includes:**
@@ -1105,35 +1105,35 @@ Fetch analyst ratings, recent rating changes, and price targets.
 
 ```bash
 # Scan specific tickers (auto-detects IB, falls back to Yahoo)
-python3 scripts/fetch_analyst_ratings.py AAPL MSFT NVDA
+python3.13 scripts/fetch_analyst_ratings.py AAPL MSFT NVDA
 
 # Scan all watchlist tickers
-python3 scripts/fetch_analyst_ratings.py --watchlist
+python3.13 scripts/fetch_analyst_ratings.py --watchlist
 
 # Scan all portfolio positions
-python3 scripts/fetch_analyst_ratings.py --portfolio
+python3.13 scripts/fetch_analyst_ratings.py --portfolio
 
 # Scan both watchlist and portfolio
-python3 scripts/fetch_analyst_ratings.py --all
+python3.13 scripts/fetch_analyst_ratings.py --all
 
 # Only show tickers with recent changes (upgrades/downgrades)
-python3 scripts/fetch_analyst_ratings.py --portfolio --changes-only
+python3.13 scripts/fetch_analyst_ratings.py --portfolio --changes-only
 
 # Update watchlist.json with analyst rating data
-python3 scripts/fetch_analyst_ratings.py --watchlist --update-watchlist
+python3.13 scripts/fetch_analyst_ratings.py --watchlist --update-watchlist
 
 # Force specific data source
-python3 scripts/fetch_analyst_ratings.py AAPL --source yahoo  # LAST RESORT ONLY
-python3 scripts/fetch_analyst_ratings.py AAPL --source ib
+python3.13 scripts/fetch_analyst_ratings.py AAPL --source yahoo  # LAST RESORT ONLY
+python3.13 scripts/fetch_analyst_ratings.py AAPL --source ib
 
 # Custom IB port
-python3 scripts/fetch_analyst_ratings.py --portfolio --port 7497
+python3.13 scripts/fetch_analyst_ratings.py --portfolio --port 7497
 
 # Bypass cache
-python3 scripts/fetch_analyst_ratings.py AAPL --no-cache
+python3.13 scripts/fetch_analyst_ratings.py AAPL --no-cache
 
 # Output raw JSON
-python3 scripts/fetch_analyst_ratings.py AAPL --json
+python3.13 scripts/fetch_analyst_ratings.py AAPL --json
 ```
 
 **Output Includes:**
@@ -1195,19 +1195,19 @@ Fetch and reconcile trades from Interactive Brokers. Calculates P&L deterministi
 
 ```bash
 # Today's trades with spread grouping
-python3 scripts/blotter.py
+python3.13 scripts/blotter.py
 
 # P&L summary only
-python3 scripts/blotter.py --summary
+python3.13 scripts/blotter.py --summary
 
 # JSON output for programmatic use
-python3 scripts/blotter.py --json
+python3.13 scripts/blotter.py --json
 
 # Show execution details
-python3 scripts/blotter.py --verbose
+python3.13 scripts/blotter.py --verbose
 
 # Custom IB port
-python3 scripts/blotter.py --port 7497
+python3.13 scripts/blotter.py --port 7497
 ```
 
 **Output Includes:**
@@ -1234,7 +1234,7 @@ python3 scripts/blotter.py --port 7497
 
 **Integration Tests:**
 ```bash
-python3 scripts/trade_blotter/test_integration.py
+python3.13 scripts/trade_blotter/test_integration.py
 ```
 
 ---
@@ -1255,16 +1255,16 @@ A single extensible daemon that handles all background monitoring tasks.
 
 ```bash
 # Status
-python3 -m monitor_daemon.run --status
+python3.13 -m monitor_daemon.run --status
 
 # Run once (for testing)
-python3 -m monitor_daemon.run --once
+python3.13 -m monitor_daemon.run --once
 
 # Run as daemon
-python3 -m monitor_daemon.run --daemon
+python3.13 -m monitor_daemon.run --daemon
 
 # List available handlers
-python3 -m monitor_daemon.run --list-handlers
+python3.13 -m monitor_daemon.run --list-handlers
 ```
 
 ### Service Management
@@ -1373,19 +1373,19 @@ source ~/.zshrc
 
 ```bash
 # Fetch all historical trades
-python3 scripts/trade_blotter/flex_query.py
+python3.13 scripts/trade_blotter/flex_query.py
 
 # Filter by symbol
-python3 scripts/trade_blotter/flex_query.py --symbol EWY
+python3.13 scripts/trade_blotter/flex_query.py --symbol EWY
 
 # JSON output
-python3 scripts/trade_blotter/flex_query.py --json
+python3.13 scripts/trade_blotter/flex_query.py --json
 
 # Pass credentials directly (if not using env vars)
-python3 scripts/trade_blotter/flex_query.py --token YOUR_TOKEN --query-id YOUR_QUERY_ID
+python3.13 scripts/trade_blotter/flex_query.py --token YOUR_TOKEN --query-id YOUR_QUERY_ID
 
 # Show setup guide
-python3 scripts/trade_blotter/flex_query.py --setup
+python3.13 scripts/trade_blotter/flex_query.py --setup
 ```
 
 ### What Flex Query Provides
@@ -1405,7 +1405,7 @@ python3 scripts/trade_blotter/flex_query.py --setup
 **Interactive Brokers is the ONLY source of truth for current portfolio state.**
 
 - **NEVER claim a position exists or doesn't exist based on `docs/status.md` or `data/portfolio.json`.** These are caches that go stale.
-- **ALWAYS verify against IB** (`python3 scripts/ib_sync.py`) before making any statement about current holdings.
+- **ALWAYS verify against IB** (`python3.13 scripts/ib_sync.py`) before making any statement about current holdings.
 - `docs/status.md` is a **decision log and audit trail** — NOT a live portfolio dashboard.
 - `data/portfolio.json` is a **cache** updated by `ib_sync.py --sync`. It may be hours or days old.
 - When IB is unavailable, say so explicitly: *"Cannot verify — IB unavailable."* Do NOT fall back to status.md.
@@ -1498,7 +1498,7 @@ See `.pi/skills/html-report/SKILL.md` for full template documentation.
 
 **Any request for a GARCH convergence scan — regardless of how the user phrases it — MUST route to:**
 ```bash
-python3 scripts/garch_convergence.py --preset [PRESET]
+python3.13 scripts/garch_convergence.py --preset [PRESET]
 ```
 
 This is non-negotiable. The script fetches ALL ticker data in parallel (8 workers), computes divergence metrics, and generates the HTML report automatically.
@@ -1508,22 +1508,22 @@ This is non-negotiable. The script fetches ALL ticker data in parallel (8 worker
 **Usage:**
 ```bash
 # Built-in presets
-python3 scripts/garch_convergence.py --preset semis
-python3 scripts/garch_convergence.py --preset mega-tech
-python3 scripts/garch_convergence.py --preset energy
-python3 scripts/garch_convergence.py --preset china-etf
-python3 scripts/garch_convergence.py --preset all          # All 4 built-in presets
+python3.13 scripts/garch_convergence.py --preset semis
+python3.13 scripts/garch_convergence.py --preset mega-tech
+python3.13 scripts/garch_convergence.py --preset energy
+python3.13 scripts/garch_convergence.py --preset china-etf
+python3.13 scripts/garch_convergence.py --preset all          # All 4 built-in presets
 
 # File presets (data/presets/)
-python3 scripts/garch_convergence.py --preset sp500-semiconductors
-python3 scripts/garch_convergence.py --preset ndx100-biotech
+python3.13 scripts/garch_convergence.py --preset sp500-semiconductors
+python3.13 scripts/garch_convergence.py --preset ndx100-biotech
 
 # Ad-hoc tickers (paired consecutively)
-python3 scripts/garch_convergence.py NVDA AMD GOOGL META
+python3.13 scripts/garch_convergence.py NVDA AMD GOOGL META
 
 # Options
-python3 scripts/garch_convergence.py --preset all --json   # JSON output
-python3 scripts/garch_convergence.py --preset all --no-open # Don't open browser
+python3.13 scripts/garch_convergence.py --preset all --json   # JSON output
+python3.13 scripts/garch_convergence.py --preset all --no-open # Don't open browser
 ```
 
 **Output:** `reports/garch-convergence-{preset}-{date}.html` (auto-opens in browser)
@@ -1608,19 +1608,19 @@ This script automatically:
 ### Stock Orders
 ```bash
 # Sell stock
-python3 scripts/ib_execute.py --type stock --symbol NFLX --qty 4500 --side SELL --limit 98.70 --yes
+python3.13 scripts/ib_execute.py --type stock --symbol NFLX --qty 4500 --side SELL --limit 98.70 --yes
 
 # Buy stock
-python3 scripts/ib_execute.py --type stock --symbol AAPL --qty 100 --side BUY --limit BID --yes
+python3.13 scripts/ib_execute.py --type stock --symbol AAPL --qty 100 --side BUY --limit BID --yes
 ```
 
 ### Option Orders
 ```bash
 # Buy call at mid
-python3 scripts/ib_execute.py --type option --symbol GOOG --expiry 20260417 --strike 315 --right C --qty 10 --side BUY --limit MID --yes
+python3.13 scripts/ib_execute.py --type option --symbol GOOG --expiry 20260417 --strike 315 --right C --qty 10 --side BUY --limit MID --yes
 
 # Sell put
-python3 scripts/ib_execute.py --type option --symbol GOOG --expiry 20260417 --strike 290 --right P --qty 5 --side SELL --limit 3.50 --yes
+python3.13 scripts/ib_execute.py --type option --symbol GOOG --expiry 20260417 --strike 290 --right P --qty 5 --side SELL --limit 3.50 --yes
 ```
 
 ### Limit Price Options
@@ -1651,7 +1651,7 @@ python3 scripts/ib_execute.py --type option --symbol GOOG --expiry 20260417 --st
 - `ib_execute.py` logs automatically for single-leg orders
 - For combo/spread orders placed via inline Python, you MUST append to `data/trade_log.json` in the same script or immediately after
 - Required fields: `id`, `date`, `time`, `ticker`, `company_name`, `contract`, `structure`, `action`, `decision`, `order_id`, `quantity`, `fill_price`, `total_cost`, `max_risk`, `max_gain`, `pct_of_bankroll`, `edge_analysis`, `kelly_calculation`, `gates_passed`, `target_exit`, `stop_loss`, `notes`
-- Validate: `python3 -m json.tool data/trade_log.json`
+- Validate: `python3.13 -m json.tool data/trade_log.json`
 
 ### Step 2: docs/status.md (ALWAYS — never skip)
 Update ALL of the following sections:
@@ -1669,7 +1669,7 @@ Update ALL of the following sections:
 
 ### Step 3: Validate
 ```bash
-python3 -m json.tool data/trade_log.json
+python3.13 -m json.tool data/trade_log.json
 ```
 
 ### Trigger
@@ -1704,7 +1704,7 @@ The FastAPI server (`scripts/api/ib_gateway.py`) handles IB Gateway recovery aut
 
 ```bash
 # 1. FastAPI health check (preferred — shows Gateway + pool status)
-curl -s http://localhost:8321/health | python3 -m json.tool
+curl -s http://localhost:8321/health | python3.13 -m json.tool
 
 # 2. Gateway process running?
 ~/ibc/bin/status-secure-ibc-service.sh | grep -E "state|pid"
@@ -1767,16 +1767,16 @@ curl -X POST http://localhost:8321/ib/restart
 
 ```bash
 # Display live portfolio (requires TWS/Gateway running)
-python3 scripts/ib_sync.py
+python3.13 scripts/ib_sync.py
 
 # Sync to portfolio.json
-python3 scripts/ib_sync.py --sync
+python3.13 scripts/ib_sync.py --sync
 
 # Connect to different ports
-python3 scripts/ib_sync.py --port 7496   # TWS Live
-python3 scripts/ib_sync.py --port 7497   # TWS Paper (default)
-python3 scripts/ib_sync.py --port 4001   # IB Gateway Live
-python3 scripts/ib_sync.py --port 4002   # IB Gateway Paper
+python3.13 scripts/ib_sync.py --port 7496   # TWS Live
+python3.13 scripts/ib_sync.py --port 7497   # TWS Paper (default)
+python3.13 scripts/ib_sync.py --port 4001   # IB Gateway Live
+python3.13 scripts/ib_sync.py --port 4002   # IB Gateway Paper
 ```
 
 ### Covered Call Detection (Automatic)
@@ -1901,7 +1901,7 @@ npx tsx .pi/tests/startup-protocol.test.ts
    - Move trades to `processed_trades` array
 5. **Validate** JSON integrity:
    ```bash
-   python3 -m json.tool data/trade_log.json
+   python3.13 -m json.tool data/trade_log.json
    ```
 
 **This is automatic — do NOT wait for user to request it.**
@@ -1955,12 +1955,12 @@ When Pi starts, the startup extension automatically runs `ib_reconcile.py` **asy
 
 **Manual run:**
 ```bash
-python3 scripts/ib_reconcile.py
+python3.13 scripts/ib_reconcile.py
 ```
 
 **Reconciliation report:**
 ```bash
-cat data/reconciliation.json | python3 -m json.tool
+cat data/reconciliation.json | python3.13 -m json.tool
 ```
 
 **Actions detected:**
@@ -1989,16 +1989,16 @@ Monitors positions with pending manual exit orders and places them when IB will 
 **Manual commands:**
 ```bash
 # Check status of pending orders
-python3 scripts/exit_order_service.py --status
+python3.13 scripts/exit_order_service.py --status
 
 # Run single check (place orders if possible)
-python3 scripts/exit_order_service.py
+python3.13 scripts/exit_order_service.py
 
 # Dry run (preview without placing)
-python3 scripts/exit_order_service.py --dry-run
+python3.13 scripts/exit_order_service.py --dry-run
 
 # Run as daemon (every 5 mins during market hours)
-python3 scripts/exit_order_service.py --daemon
+python3.13 scripts/exit_order_service.py --daemon
 ```
 
 **Periodic execution (launchd):**
@@ -2040,9 +2040,9 @@ node ../web/scripts/ib_realtime_server.js
 node ../web/scripts/ib_realtime_server.js --port 8765 --ib-port 4001
 
 # Test connectivity
-python3 scripts/test_ib_realtime.py
-python3 scripts/test_ib_realtime.py --ib-only   # Test IB only
-python3 scripts/test_ib_realtime.py --ws-only   # Test WebSocket only
+python3.13 scripts/test_ib_realtime.py
+python3.13 scripts/test_ib_realtime.py --ib-only   # Test IB only
+python3.13 scripts/test_ib_realtime.py --ws-only   # Test WebSocket only
 ```
 
 **WebSocket Protocol:**
@@ -2078,21 +2078,21 @@ Identifies long-dated options where implied volatility diverges from realized vo
 
 ```bash
 # Scan specific tickers
-python3 scripts/leap_scanner_uw.py AAPL MSFT NVDA EWY
+python3.13 scripts/leap_scanner_uw.py AAPL MSFT NVDA EWY
 
 # Use presets
-python3 scripts/leap_scanner_uw.py --preset sectors    # S&P 500 sector ETFs
-python3 scripts/leap_scanner_uw.py --preset mag7       # Magnificent 7
-python3 scripts/leap_scanner_uw.py --preset semis      # Semiconductors
-python3 scripts/leap_scanner_uw.py --preset row        # Rest of World country ETFs
-python3 scripts/leap_scanner_uw.py --preset metals     # Gold, Silver, Copper, Miners
-python3 scripts/leap_scanner_uw.py --preset energy     # Oil, Gas, Refiners, MLPs
+python3.13 scripts/leap_scanner_uw.py --preset sectors    # S&P 500 sector ETFs
+python3.13 scripts/leap_scanner_uw.py --preset mag7       # Magnificent 7
+python3.13 scripts/leap_scanner_uw.py --preset semis      # Semiconductors
+python3.13 scripts/leap_scanner_uw.py --preset row        # Rest of World country ETFs
+python3.13 scripts/leap_scanner_uw.py --preset metals     # Gold, Silver, Copper, Miners
+python3.13 scripts/leap_scanner_uw.py --preset energy     # Oil, Gas, Refiners, MLPs
 
 # Custom parameters
-python3 scripts/leap_scanner_uw.py --min-gap 20
+python3.13 scripts/leap_scanner_uw.py --min-gap 20
 
 # IB version (requires TWS/Gateway)
-python3 scripts/leap_iv_scanner.py AAPL --portfolio
+python3.13 scripts/leap_iv_scanner.py AAPL --portfolio
 ```
 
 **Available Presets:**
@@ -2177,12 +2177,12 @@ File presets (`data/presets/`): Strategy-agnostic — work with `leap-scan`, `ga
 
 ```bash
 # List all 150 presets
-python3 scripts/leap_scanner_uw.py --list-presets
+python3.13 scripts/leap_scanner_uw.py --list-presets
 
 # Use any preset with leap-scan
-python3 scripts/leap_scanner_uw.py --preset sp500-semiconductors
-python3 scripts/leap_scanner_uw.py --preset ndx100-cybersecurity
-python3 scripts/leap_scanner_uw.py --preset r2k-tier-top-100
+python3.13 scripts/leap_scanner_uw.py --preset sp500-semiconductors
+python3.13 scripts/leap_scanner_uw.py --preset ndx100-cybersecurity
+python3.13 scripts/leap_scanner_uw.py --preset r2k-tier-top-100
 
 # Use any preset with garch-convergence
 garch-convergence sp500-semiconductors
@@ -2225,16 +2225,16 @@ The project uses a file-system-based context repository (`context/`) for persist
 **During/after sessions (manual):**
 ```bash
 # Save a fact (learning, rule, observation)
-python3 scripts/context_constructor.py --save-fact "key.name" "Fact content" --confidence 0.95 --source "evaluation-TICKER-DATE"
+python3.13 scripts/context_constructor.py --save-fact "key.name" "Fact content" --confidence 0.95 --source "evaluation-TICKER-DATE"
 
 # Save a session summary (episodic memory)
-python3 scripts/context_constructor.py --save-episode "What happened this session" --session-id "session-2026-03-06"
+python3.13 scripts/context_constructor.py --save-episode "What happened this session" --session-id "session-2026-03-06"
 
 # View current context
-python3 scripts/context_constructor.py
+python3.13 scripts/context_constructor.py
 
 # JSON output
-python3 scripts/context_constructor.py --json
+python3.13 scripts/context_constructor.py --json
 ```
 
 ### When to Save Facts
@@ -2473,7 +2473,7 @@ Score interpretation:
 
 ```bash
 # Find massive institutional positioning across all tickers
-python3 scripts/fetch_oi_changes.py --market --min-premium 10000000
+python3.13 scripts/fetch_oi_changes.py --market --min-premium 10000000
 ```
 
 This surfaces positions that may NOT appear in flow alerts because they don't trigger "unusual" filters. The $95M MSFT LEAP calls were discovered this way.

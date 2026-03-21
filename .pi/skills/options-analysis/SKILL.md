@@ -23,7 +23,7 @@ When fetching live options pricing, use sources in this order:
 
 | Priority | Source | Command/Method |
 |----------|--------|----------------|
-| **1** | Interactive Brokers | `python3 scripts/ib_sync.py` (requires TWS/Gateway) |
+| **1** | Interactive Brokers | `python3.13 scripts/ib_sync.py` (requires TWS/Gateway) |
 | **2** | Unusual Whales | See API reference below |
 | **3** | Exa (web search) | Company research, fallback for data not in IB/UW |
 | **4** | agent-browser | Interactive pages, JS-rendered content |

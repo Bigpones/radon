@@ -33,7 +33,7 @@ If the deployed hostname changes, update that value in Vercel so `canonical`, `r
 cd site
 npm run lint
 NEXT_DIST_DIR=.next-build npm run build
-python3 scripts/seo_audit_report.py
+python3.13 scripts/seo_audit_report.py
 ```
 
 `NEXT_DIST_DIR` is supported so local verification can build without colliding with another live Next.js process using the default `.next/` directory.
@@ -53,7 +53,7 @@ The site ships an audit script that verifies the rendered landing page, `robots.
 
 ```bash
 cd site
-python3 scripts/seo_audit_report.py
+python3.13 scripts/seo_audit_report.py
 ```
 
 Use `NEXT_PUBLIC_SITE_URL=https://radon.run` in production so canonical URLs, sitemap entries, and Open Graph/Twitter URLs resolve to the public hostname. The script writes an HTML report to `reports/` and opens it unless `--no-open` is passed.
@@ -73,7 +73,7 @@ The site publishes its crawl/share primitives through App Router metadata routes
 Generate a live HTML audit report against a running site instance:
 
 ```bash
-python3 scripts/site_seo_audit.py --url http://127.0.0.1:3333 --open
+python3.13 scripts/site_seo_audit.py --url http://127.0.0.1:3333 --open
 ```
 
 If local ports are unavailable, audit the verified static build artifacts instead:
@@ -82,7 +82,7 @@ If local ports are unavailable, audit the verified static build artifacts instea
 cd site
 NEXT_DIST_DIR=.next-build npx next build --webpack
 cd ..
-python3 scripts/site_seo_audit.py --build-dir site/.next-build/server/app --open
+python3.13 scripts/site_seo_audit.py --build-dir site/.next-build/server/app --open
 ```
 
 The script writes `reports/site-seo-audit-YYYY-MM-DD.html`, checks the homepage plus `robots.txt`, `sitemap.xml`, `manifest.webmanifest`, and the social image endpoints, then opens the report locally when `--open` is passed.

@@ -52,7 +52,7 @@ An evaluation is complete when:
 - **Interactive Brokers is the ONLY source of truth** for what positions are currently held.
 - `docs/status.md` is a decision log, NOT a live portfolio view. It goes stale.
 - `data/portfolio.json` is a cache. It may be hours or days old.
-- **ALWAYS run `python3 scripts/ib_sync.py`** before claiming a position exists or doesn't exist.
+- **ALWAYS run `python3.13 scripts/ib_sync.py`** before claiming a position exists or doesn't exist.
 - When IB is unavailable, say so — do NOT fall back to status.md or portfolio.json for current state.
 
 ### Startup Reconciliation

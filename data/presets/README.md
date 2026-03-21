@@ -56,10 +56,10 @@ sp.groups   # hierarchical sub-industry breakdown
 
 ```bash
 # leap-scan
-python3 scripts/leap_scanner_uw.py --preset sp500-semis
+python3.13 scripts/leap_scanner_uw.py --preset sp500-semis
 
 # garch-convergence
-python3 scripts/garch_convergence_scanner.py --preset sp500-semis
+python3.13 scripts/garch_convergence_scanner.py --preset sp500-semis
 ```
 
 ## Presets Index

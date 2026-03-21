@@ -4,7 +4,7 @@ Run the Crash Risk Index (CRI) scan:
 
 **STEP 1: RUN THE CRI SCANNER**
 ```bash
-python3 scripts/cri_scan.py --json
+python3.13 scripts/cri_scan.py --json
 ```
 This fetches 1Y daily bars for VIX, VVIX, SPY, and Cboe COR1M implied correlation (IB primary; official Cboe COR1M dashboard history fallback before Yahoo last resort), computes the CRI composite score, CTA exposure model, and crash trigger conditions.
 
@@ -36,7 +36,7 @@ If any condition fails, state which one and why the crash thesis is weakened.
 **STEP 5: GENERATE HTML REPORT**
 The script auto-generates `reports/cri-scan-{YYYY-MM-DD}.html`. If it didn't open automatically:
 ```bash
-python3 scripts/cri_scan.py
+python3.13 scripts/cri_scan.py
 ```
 
 **STEP 6: DECISION**

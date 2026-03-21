@@ -24,7 +24,7 @@ This script automatically:
 
 ### Sell Stock
 ```bash
-python3 scripts/ib_execute.py \
+python3.13 scripts/ib_execute.py \
   --type stock \
   --symbol NFLX \
   --qty 4500 \
@@ -35,7 +35,7 @@ python3 scripts/ib_execute.py \
 
 ### Buy Stock
 ```bash
-python3 scripts/ib_execute.py \
+python3.13 scripts/ib_execute.py \
   --type stock \
   --symbol AAPL \
   --qty 100 \
@@ -46,7 +46,7 @@ python3 scripts/ib_execute.py \
 
 ### Buy Option (at bid/mid/ask)
 ```bash
-python3 scripts/ib_execute.py \
+python3.13 scripts/ib_execute.py \
   --type option \
   --symbol GOOG \
   --expiry 20260417 \
@@ -60,7 +60,7 @@ python3 scripts/ib_execute.py \
 
 ### Sell Option
 ```bash
-python3 scripts/ib_execute.py \
+python3.13 scripts/ib_execute.py \
   --type option \
   --symbol GOOG \
   --expiry 20260417 \
@@ -77,7 +77,7 @@ python3 scripts/ib_execute.py \
 ## Full Usage
 
 ```bash
-python3 scripts/ib_execute.py \
+python3.13 scripts/ib_execute.py \
   --type stock|option \
   --symbol SYMBOL \
   --qty QUANTITY \

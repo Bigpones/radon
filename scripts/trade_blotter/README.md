@@ -14,18 +14,18 @@ Deterministic trade reconciliation and P&L calculation for Interactive Brokers.
 
 ### Today's Trades
 ```bash
-python3 scripts/blotter.py
-python3 scripts/blotter.py --summary
-python3 scripts/blotter.py --json
+python3.13 scripts/blotter.py
+python3.13 scripts/blotter.py --summary
+python3.13 scripts/blotter.py --json
 ```
 
 ### Historical Trades
 ```bash
 # First time: see setup guide
-python3 scripts/trade_blotter/flex_query.py --setup
+python3.13 scripts/trade_blotter/flex_query.py --setup
 
 # After setup:
-python3 scripts/trade_blotter/flex_query.py --symbol EWY
+python3.13 scripts/trade_blotter/flex_query.py --symbol EWY
 ```
 
 ## Setup
@@ -123,10 +123,10 @@ All calculations use Python `Decimal` for precision.
 ```bash
 # Unit tests
 cd scripts/trade_blotter
-python3 -m pytest test_blotter.py -v
+python3.13 -m pytest test_blotter.py -v
 
 # Integration tests (requires IB connection)
-python3 test_integration.py
+python3.13 test_integration.py
 ```
 
 ## CLI Reference

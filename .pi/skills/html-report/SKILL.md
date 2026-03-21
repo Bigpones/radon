@@ -315,7 +315,7 @@ The script (`portfolio_report.py`) is **self-contained**:
 
 **You do NOT need to fetch data separately.** Just run:
 ```bash
-python3 scripts/portfolio_report.py
+python3.13 scripts/portfolio_report.py
 ```
 
 ### 8 Required Sections
@@ -723,7 +723,7 @@ The script (`risk_reversal.py`) is **self-contained**:
 
 **You do NOT need to fetch data separately.** Just run:
 ```bash
-python3 scripts/risk_reversal.py IWM
+python3.13 scripts/risk_reversal.py IWM
 ```
 
 ### 8 Required Sections
@@ -806,7 +806,7 @@ The script (`cri_scan.py`) is **self-contained**:
 
 **You do NOT need to fetch data separately.** Just run:
 ```bash
-python3 scripts/cri_scan.py
+python3.13 scripts/cri_scan.py
 ```
 
 ### 7 Required Sections
@@ -1000,7 +1000,7 @@ See: `scripts/scenario_report.py` (full report generation with narratives)
 
 ### Portfolio Reports
 
-1. [ ] Run `python3 scripts/portfolio_report.py` — script is fully self-contained
+1. [ ] Run `python3.13 scripts/portfolio_report.py` — script is fully self-contained
 2. [ ] Verify IB connection succeeded (positions + live prices fetched)
 3. [ ] Verify dark pool flow fetched for all tickers **including today's date**
 4. [ ] Verify data freshness banner shows correct market status (OPEN with green dot / CLOSED with amber dot)
@@ -1021,7 +1021,7 @@ See: `scripts/scenario_report.py` (full report generation with narratives)
 
 ### Risk Reversal Reports
 
-1. [ ] Run `python3 scripts/risk_reversal.py [TICKER]` — script is fully self-contained
+1. [ ] Run `python3.13 scripts/risk_reversal.py [TICKER]` — script is fully self-contained
 2. [ ] Verify IB connection succeeded (spot price + option greeks fetched)
 3. [ ] Verify dark pool flow fetched (context for thesis section)
 4. [ ] Verify IV skew tables populated for ≥2 expirations (put IV > call IV at each delta)
@@ -1044,7 +1044,7 @@ See: `scripts/scenario_report.py` (full report generation with narratives)
 
 ### CRI Reports
 
-1. [ ] Run `python3 scripts/cri_scan.py` — script is fully self-contained
+1. [ ] Run `python3.13 scripts/cri_scan.py` — script is fully self-contained
 2. [ ] Verify data fetched for all 4 instruments (VIX, VVIX, SPY, COR1M)
 3. [ ] Verify all 7 sections present:
    - [ ] Header with CRI level pill (LOW/ELEVATED/HIGH/CRITICAL)
@@ -1065,7 +1065,7 @@ See: `scripts/scenario_report.py` (full report generation with narratives)
 1. [ ] Read template from `.pi/skills/html-report/stress-test-template.html`
 2. [ ] Parse user's scenario into quantitative parameters (SPX move, VIX, sector shocks)
 3. [ ] Update `scripts/scenario_analysis.py` with scenario-specific parameters and sensitivities
-4. [ ] Run `python3 scripts/scenario_analysis.py` to generate `/tmp/scenario_analysis.json`
+4. [ ] Run `python3.13 scripts/scenario_analysis.py` to generate `/tmp/scenario_analysis.json`
 5. [ ] Generate per-position narratives explaining oil/SPX/VIX/structure impact
 6. [ ] Build HTML body with all 10 required sections
 7. [ ] Verify all defined-risk P&L is within `[-debit, +max_width]` bounds

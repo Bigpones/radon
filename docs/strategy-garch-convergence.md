@@ -222,14 +222,14 @@ The LEAPS strategy targets 1-3 year options for maximum vega. This strategy uses
 
 ```bash
 # ALWAYS use this script for GARCH convergence scans
-python3 scripts/garch_convergence.py --preset all          # All 4 built-in presets (~3s)
-python3 scripts/garch_convergence.py --preset semis        # Just semiconductors
-python3 scripts/garch_convergence.py --preset mega-tech    # Mega-cap tech
-python3 scripts/garch_convergence.py --preset energy       # Energy
-python3 scripts/garch_convergence.py --preset china-etf    # China/Asia
-python3 scripts/garch_convergence.py --preset sp500-semiconductors  # File preset
-python3 scripts/garch_convergence.py NVDA AMD GOOGL META   # Ad-hoc ticker pairs
-python3 scripts/garch_convergence.py --preset all --json   # JSON output
+python3.13 scripts/garch_convergence.py --preset all          # All 4 built-in presets (~3s)
+python3.13 scripts/garch_convergence.py --preset semis        # Just semiconductors
+python3.13 scripts/garch_convergence.py --preset mega-tech    # Mega-cap tech
+python3.13 scripts/garch_convergence.py --preset energy       # Energy
+python3.13 scripts/garch_convergence.py --preset china-etf    # China/Asia
+python3.13 scripts/garch_convergence.py --preset sp500-semiconductors  # File preset
+python3.13 scripts/garch_convergence.py NVDA AMD GOOGL META   # Ad-hoc ticker pairs
+python3.13 scripts/garch_convergence.py --preset all --json   # JSON output
 ```
 
 **Architecture:**

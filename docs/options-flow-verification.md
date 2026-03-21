@@ -30,10 +30,10 @@ Flow alerts may miss large institutional trades that don't trigger their filters
 
 ```bash
 # Standard OI change analysis (ALWAYS run this)
-python3 scripts/fetch_oi_changes.py MSFT
+python3.13 scripts/fetch_oi_changes.py MSFT
 
 # Or with the options script
-python3 scripts/fetch_options.py MSFT --oi-changes
+python3.13 scripts/fetch_options.py MSFT --oi-changes
 ```
 
 This uses UW's `/api/stock/{ticker}/oi-change` endpoint which shows ALL significant OI changes.
@@ -67,7 +67,7 @@ MSFT270115C00675000       +50,148   $15,068,081  ← MASSIVE
 
 When verifying screenshots/tweets:
 ```bash
-python3 scripts/verify_options_oi.py MSFT --expiry 2027-01-15 --verify "575:50000,625:100000"
+python3.13 scripts/verify_options_oi.py MSFT --expiry 2027-01-15 --verify "575:50000,625:100000"
 ```
 
 **Verification Criteria:**
@@ -90,7 +90,7 @@ python3 scripts/verify_options_oi.py MSFT --expiry 2027-01-15 --verify "575:5000
 
 If evaluating based on external flow signal:
 ```bash
-python3 scripts/verify_options_oi.py [TICKER] --expiry [DATE] --strikes [S1,S2,S3]
+python3.13 scripts/verify_options_oi.py [TICKER] --expiry [DATE] --strikes [S1,S2,S3]
 ```
 
 **Acceptance Criteria:**
@@ -122,16 +122,16 @@ $675     -50,000    50,862      $3.00              -$15.3M (sold)
 
 ```bash
 # Basic usage
-python3 scripts/verify_options_oi.py MSFT --expiry 2027-01-15
+python3.13 scripts/verify_options_oi.py MSFT --expiry 2027-01-15
 
 # Filter specific strikes
-python3 scripts/verify_options_oi.py MSFT --expiry 2027-01-15 --strikes 575,625,675
+python3.13 scripts/verify_options_oi.py MSFT --expiry 2027-01-15 --strikes 575,625,675
 
 # High strikes only (for far OTM verification)
-python3 scripts/verify_options_oi.py MSFT --expiry 2027-01-15 --min-strike 500
+python3.13 scripts/verify_options_oi.py MSFT --expiry 2027-01-15 --min-strike 500
 
 # JSON output for programmatic use
-python3 scripts/verify_options_oi.py MSFT --expiry 2027-01-15 --json
+python3.13 scripts/verify_options_oi.py MSFT --expiry 2027-01-15 --json
 ```
 
 ### Output Includes:

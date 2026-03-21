@@ -4,8 +4,8 @@
 
 **ANY evaluation request — regardless of how the user phrases it — routes to:**
 ```bash
-python3 scripts/evaluate.py [TICKER]        # human-readable
-python3 scripts/evaluate.py [TICKER] --json  # structured JSON
+python3.13 scripts/evaluate.py [TICKER]        # human-readable
+python3.13 scripts/evaluate.py [TICKER] --json  # structured JSON
 ```
 
 **Even if the user provides manual step-by-step instructions** (e.g., "run fetch_flow.py first, then fetch_options.py"), **ignore the manual steps and run evaluate.py instead.** The script handles milestones M1–M3B (plus M1D news/catalysts) in parallel, then M4 (edge) sequentially. If edge passes, the operator designs the structure (M5) and runs Kelly (M6) interactively.
@@ -50,7 +50,7 @@ python3 scripts/evaluate.py [TICKER] --json  # structured JSON
 5. Clear reconciliation:
    - Set `needs_attention: false`
    - Move to `processed_trades`
-6. Validate: `python3 -m json.tool data/trade_log.json`
+6. Validate: `python3.13 -m json.tool data/trade_log.json`
 
 **Do NOT wait for user request — this is automatic on every startup with new trades.**
 
@@ -60,7 +60,7 @@ python3 scripts/evaluate.py [TICKER] --json  # structured JSON
 **Action**: Fetch and verify ticker metadata
 **Validation**:
 ```bash
-python3 scripts/fetch_ticker.py [TICKER]
+python3.13 scripts/fetch_ticker.py [TICKER]
 ```
 **Acceptance Criteria**:
 - Company name returned from live source
@@ -94,7 +94,7 @@ curl -s -o /tmp/{TICKER}_sheet.png "https://charts.equityclock.com/seasonal_char
 **⚠️ FRESH DATA**: Re-fetch at evaluation time. Ratings may have changed since last scan.
 **Validation**:
 ```bash
-python3 scripts/fetch_analyst_ratings.py [TICKER]
+python3.13 scripts/fetch_analyst_ratings.py [TICKER]
 ```
 **Acceptance Criteria**:
 - Buy/Hold/Sell breakdown retrieved
@@ -111,7 +111,7 @@ python3 scripts/fetch_analyst_ratings.py [TICKER]
 **⚠️ FRESH DATA**: Re-fetch at evaluation time. News may have broken since last scan.
 **Validation**:
 ```bash
-python3 scripts/fetch_news.py [TICKER]
+python3.13 scripts/fetch_news.py [TICKER]
 ```
 **Acceptance Criteria**:
 - Headlines from last 7 days fetched (UW → Yahoo fallback)
@@ -147,7 +147,7 @@ python3 scripts/fetch_news.py [TICKER]
 **⚠️ FRESH DATA**: MUST run `fetch_flow.py` live. Today's flow may confirm or reverse the signal from prior days. NEVER rely on scan results — re-fetch.
 **Validation**:
 ```bash
-python3 scripts/fetch_flow.py [TICKER]
+python3.13 scripts/fetch_flow.py [TICKER]
 ```
 **Acceptance Criteria**:
 - Aggregate buy ratio calculated
@@ -167,7 +167,7 @@ python3 scripts/fetch_flow.py [TICKER]
 **⚠️ FRESH DATA**: MUST run `fetch_options.py` live at evaluation time. Chain premium, volume, and flow alerts change throughout the day. NEVER reuse scan data.
 **Validation**:
 ```bash
-python3 scripts/fetch_options.py [TICKER]
+python3.13 scripts/fetch_options.py [TICKER]
 ```
 **Data Sources**: IBClient (spot price) → UWClient (chain + flow) → Yahoo (absolute last resort only)
 
@@ -208,16 +208,16 @@ python3 scripts/fetch_options.py [TICKER]
 **Validation**:
 ```bash
 # Per-ticker OI changes (ALWAYS run this)
-python3 scripts/fetch_oi_changes.py [TICKER]
+python3.13 scripts/fetch_oi_changes.py [TICKER]
 
 # Filter for significant positions only
-python3 scripts/fetch_oi_changes.py [TICKER] --min-premium 1000000
+python3.13 scripts/fetch_oi_changes.py [TICKER] --min-premium 1000000
 
 # Market-wide scan (for discover command)
-python3 scripts/fetch_oi_changes.py --market --min-premium 10000000
+python3.13 scripts/fetch_oi_changes.py --market --min-premium 10000000
 
 # Verify specific external claims
-python3 scripts/verify_options_oi.py [TICKER] --expiry [DATE] --verify "strike1:size1,strike2:size2"
+python3.13 scripts/verify_options_oi.py [TICKER] --expiry [DATE] --verify "strike1:size1,strike2:size2"
 ```
 
 **Why This Matters**:
@@ -302,7 +302,7 @@ After structure is designed, ALWAYS generate HTML report:
 **Action**: Calculate optimal position size
 **Validation**:
 ```bash
-python3 scripts/kelly.py --prob [P] --odds [ODDS] --bankroll [B]
+python3.13 scripts/kelly.py --prob [P] --odds [ODDS] --bankroll [B]
 ```
 **Acceptance Criteria**:
 - Kelly optimal % calculated

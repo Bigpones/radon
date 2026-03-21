@@ -5,11 +5,11 @@ Run portfolio scenario analysis: {{input}}
    - `delta_decay <pct>` — Delta decay with no price movement (e.g., `delta_decay 10` for 10% decay)
    - If no arguments provided, run both scenarios at -10% shock and 10% decay.
 
-2. **Get current spot prices** — Run `python3 scripts/ib_sync.py` to get fresh portfolio, then build a spots JSON dict from each ticker's current market price data.
+2. **Get current spot prices** — Run `python3.13 scripts/ib_sync.py` to get fresh portfolio, then build a spots JSON dict from each ticker's current market price data.
 
 3. **Run the scenario**:
    ```
-   python3 scripts/scenario_analysis.py <scenario_type> --shock|--decay <pct> --spots '<JSON>'
+   python3.13 scripts/scenario_analysis.py <scenario_type> --shock|--decay <pct> --spots '<JSON>'
    ```
 
 4. **Present results** in a clear table:

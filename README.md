@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="Python 3.9+" src="https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white" />
+  <img alt="Python 3.13" src="https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white" />
   <img alt="Next.js 16" src="https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white" />
   <img alt="Test stack" src="https://img.shields.io/badge/Tests-pytest%20%7C%20Vitest%20%7C%20Playwright-0A7F6F" />
 </p>
@@ -121,7 +121,7 @@ At a high level:
 
 **Prerequisites**
 
-- Python `3.9+`
+- Python `3.13` (Python 3.14 has ib_insync/eventkit incompatibility)
 - Node.js `18+`
 - [Interactive Brokers](https://ibkr.com/referral/joseph5632) TWS or Gateway running locally
 - [Unusual Whales](https://unusualwhales.com/referral#39985a64-656c-4642-a051-db89f6324d64) API access
@@ -235,7 +235,7 @@ The marketing app is intentionally separate from `web/`: it carries the Radon la
 cd site
 npm run lint
 NEXT_DIST_DIR=.next-build npm run build
-python3 scripts/seo_audit_report.py
+python3.13 scripts/seo_audit_report.py
 ```
 
 `site/scripts/seo_audit_report.py` audits the rendered page metadata plus `robots.txt`, `sitemap.xml`, `manifest.webmanifest`, and the Open Graph/Twitter image routes, then writes a branded HTML report to `reports/`.
@@ -243,7 +243,7 @@ python3 scripts/seo_audit_report.py
 To generate an operator-facing SEO report against a live local instance:
 
 ```bash
-python3 scripts/site_seo_audit.py --url http://127.0.0.1:3333 --open
+python3.13 scripts/site_seo_audit.py --url http://127.0.0.1:3333 --open
 ```
 
 If local port binding is unavailable, build the static site and point the audit at `site/.next-build/server/app` instead.
