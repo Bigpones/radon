@@ -2104,7 +2104,7 @@ export default function WorkspaceSections({ section, portfolio, portfolioLastSyn
     case "portfolio":
       return <PortfolioSections portfolio={portfolio ?? null} prices={prices} />;
     case "performance":
-      return <PerformancePanel portfolioLastSync={portfolioLastSync} />;
+      return <PerformancePanel portfolioLastSync={portfolioLastSync} marketState={marketState} />;
     case "orders":
       return <OrdersSections orders={orders ?? null} prices={prices} portfolio={portfolio} />;
     case "scanner":

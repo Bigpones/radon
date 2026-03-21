@@ -11,6 +11,7 @@ import {
 import { isPerformanceBehindPortfolioSync } from "@/lib/performanceFreshness";
 import type { PerformanceData, PerformanceSeriesPoint } from "@/lib/types";
 import { usePerformance } from "@/lib/usePerformance";
+import { MarketState } from "@/lib/useMarketHours";
 import ChartPanel from "./charts/ChartPanel";
 import MetricDefinitionModal from "./MetricDefinitionModal";
 
@@ -215,8 +216,14 @@ function drawdownLeader(series: PerformanceSeriesPoint[]): string {
   return worst?.date ?? "---";
 }
 
-export default function PerformancePanel({ portfolioLastSync = null }: { portfolioLastSync?: string | null }) {
-  const { data, loading, error, syncNow } = usePerformance(true);
+type PerformancePanelProps = {
+  portfolioLastSync?: string | null;
+  marketState?: MarketState;
+};
+
+export default function PerformancePanel({ portfolioLastSync = null, marketState }: PerformancePanelProps) {
+  const isMarketActive = marketState !== MarketState.CLOSED;
+  const { data, loading, error, syncNow } = usePerformance(isMarketActive);
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const requestedPortfolioSyncRef = useRef<string | null>(null);
 
