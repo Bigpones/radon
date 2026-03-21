@@ -304,23 +304,25 @@ If local port binding is unavailable, build the static site and point the audit 
 
 ```text
 radon/
-├── scripts/          # Python scanners, evaluators, broker integrations
-├── web/              # Next.js terminal
-├── docs/             # Strategy and implementation documentation
-├── brand/            # Radon design system
-├── data/             # Runtime data and generated artifacts
-├── config/           # launchd and service configuration
-├── requirements.txt  # Python dependencies
-├── CLAUDE.md         # Agent and workflow rules
-└── .pi/              # Command registry and agent skills
+├── scripts/              # Python scanners, evaluators, broker integrations
+│   ├── clients/          # Broker and data-provider adapters
+│   ├── monitor_daemon/   # Background fill/exit/rebalance daemon
+│   ├── benchmarks/       # Performance benchmarks (scanner timing)
+│   └── tests/            # Python test suite
+├── web/                  # Next.js terminal
+│   ├── components/       # Terminal UI components
+│   └── app/              # Next.js routes and API
+├── docs/                 # Strategy and implementation documentation
+│   └── autoresearch/     # Benchmark results and optimization notes
+├── tasks/                # Plans, progress reports, and task tracking
+├── brand/                # Radon design system and tokens
+├── data/                 # Runtime data and generated artifacts
+├── config/               # launchd and service configuration
+├── logs/                 # Daemon logs (auto-rotated, gitignored)
+├── requirements.txt      # Python dependencies
+├── CLAUDE.md             # Agent and workflow rules
+└── .pi/                  # Command registry and agent skills
 ```
-
-Important directories:
-
-- `scripts/clients/` for broker and data-provider adapters
-- `scripts/tests/` for the Python test suite
-- `web/components/` and `web/app/` for terminal UI and routes
-- `brand/` for the design system and tokens
 
 ## Data Sources
 
@@ -362,7 +364,7 @@ The repo includes background-service support for the live trading environment:
 | Secure IBC service (`local.ibc-gateway`) | Maintains the local broker session for live quotes, execution, and reports |
 | CRI scan service | Refreshes crash-risk regime data intraday and writes atomic CRI cache snapshots |
 | CTA sync service | Refreshes the latest closed-session MenthorQ CTA cache at `4:15 PM ET` and `5:00 PM ET`, with `RunAtLoad` catch-up after reboot/login/wake, and writes machine-readable health state for stale-data detection |
-| Monitor daemon | Tracks fills and manages post-entry workflows |
+| Monitor daemon | Tracks fills and manages post-entry workflows (logs auto-rotated at 10MB) |
 | Data refresh services | Keeps portfolio and order-state data current and repairs post-close CRI cache history when needed |
 
 Historical setup helpers remain in `scripts/`, and the broader implementation notes live in [docs/implement.md](docs/implement.md).

@@ -404,6 +404,8 @@ Use **interpolated values** for edge determination, but flag confidence level:
 | `scripts/utils/incremental_sync.py` | Diff-based portfolio sync |
 | `scripts/utils/price_cache.py` | Price cache — SHA-256 filenames, atomic, TTL, thread-safe prune |
 | `scripts/run_cri_scan.sh` | Holiday-aware CRI wrapper for launchd |
+| `scripts/monitor_daemon/run.py` | Monitor daemon — fills, exit orders, rebalance, Flex token check |
+| `scripts/benchmarks/autoresearch.sh` | Scanner benchmark (timing + metrics) |
 
 ## Critical Data Files
 
@@ -646,6 +648,17 @@ Global service: `local.ibc-gateway` (shared with market-data-warehouse). Install
 macOS SSH over Tailscale. Requires: Tailscale on Mac + iPhone, macOS Remote Login, SSH client (Termius/Blink/Prompt). Runbook: `docs/ibc-remote-access.md`.
 
 IB error `10358` = Reuters inactive → auto-fallback.
+
+### Log Rotation
+
+Two layers prevent log bloat in `logs/`:
+
+| Layer | Mechanism | Config |
+|-------|-----------|--------|
+| Python | `RotatingFileHandler` in `scripts/monitor_daemon/run.py` | 10MB max, 2 compressed backups |
+| System | `newsyslog` via `/etc/newsyslog.d/radon.conf` | 10MB max, 2 bzip2 backups, covers all `logs/*.log` |
+
+Python rotation handles `monitor-daemon.log` (the largest writer). System newsyslog catches launchd stdout/stderr (`*.out.log`, `*.err.log`) that Python doesn't control.
 
 ## Output Rules
 
