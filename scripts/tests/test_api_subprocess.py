@@ -145,7 +145,7 @@ class TestRunScript:
             'import time\ntime.sleep(60)\n'
         )
         result = asyncio.get_event_loop().run_until_complete(
-            _run_raw_script(script, timeout=0.5)
+            _run_raw_script(script, timeout=0.1)
         )
         assert not result.ok
         assert "timed out" in result.error.lower()
