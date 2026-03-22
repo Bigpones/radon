@@ -61,6 +61,10 @@ Optimize the Python test suite (`scripts/tests/` + `scripts/trade_blotter/test_*
    - `asyncio.get_event_loop().run_until_complete()` → `asyncio.run()` in 13 subprocess tests.
    - Python 3.13 deprecates `get_event_loop()`, causing intermittent RuntimeError in xdist workers.
 
+6. **Mock unmocked fetch_news in evaluate tests** (-0.7s, 3%)
+   - `fetch_news` was added to `evaluate.py` (M1D milestone) but never mocked in `test_evaluate.py`. 5 tests calling `run_evaluation()` spawned real UW API calls at ~0.4s each. Added `@patch("evaluate.fetch_news")` to all 5 test methods.
+   - Evaluate test file: 1.0s → 0.23s (single-process).
+
 ### Dead ends / diminishing returns
 - `-p no:warnings`, `-p no:cacheprovider` — negligible impact
 - `--import-mode=importlib` — no measurable gain
@@ -68,3 +72,24 @@ Optimize the Python test suite (`scripts/tests/` + `scripts/trade_blotter/test_*
 - `loadscope`/`loadfile`/`worksteal` distribution — all worse or noisier than default `load`
 - pyproject.toml `addopts` — conflicts with script CLI flags
 - Reducing ThreadPoolExecutor overhead in evaluate.py — would require production code changes
+
+## Final State (2026-03-22)
+
+**Result: 22.14s → ~2.0s (91% reduction)**
+
+| Scope | Time | Notes |
+|-------|------|-------|
+| Without IB integration tests (1,323) | 2.0s consistent | The real floor |
+| With IB integration tests (1,327) | 2.0-4.2s | IB Gateway latency variance |
+
+**Remaining time breakdown (~2.0s non-IB):**
+- ~0.5s pytest collection + Python startup
+- ~0.16s FastAPI/httpx/ib_insync library imports (per xdist worker)
+- ~0.11s × several tests with ThreadPoolExecutor/subprocess/async overhead
+- ~1.2s aggregate execution across 4 workers
+
+**Why further optimization requires breaking constraints:**
+- Library imports (FastAPI 145ms, ib_insync 79ms, requests 50ms) are fixed costs
+- Lazy imports would help but require production code changes (off limits)
+- No tests can be skipped or deleted
+- The 4 IB integration tests make real connections — variance is inherent
