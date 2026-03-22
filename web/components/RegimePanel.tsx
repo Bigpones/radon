@@ -161,6 +161,16 @@ export default function RegimePanel({
   } = stripState;
   const hasLive = hasLiveVix || hasLiveVvix || hasLiveSpy || hasLiveCor1m;
 
+  // When market is closed, IB still reports Friday's close as "last" for
+  // indices (VIX, VVIX).  The WS relay pushes those stale values, making
+  // hasLiveVix etc. true even on weekends.  Gate all display-level "live"
+  // indicators on the actual market state so badges read DAILY, not LIVE.
+  const effectiveHasLiveVix = marketOpen && hasLiveVix;
+  const effectiveHasLiveVvix = marketOpen && hasLiveVvix;
+  const effectiveHasLiveSpy = marketOpen && hasLiveSpy;
+  const effectiveHasLiveCor1m = marketOpen && hasLiveCor1m;
+  const effectiveHasLive = marketOpen && hasLive;
+
   // Timestamps for last live VIX / VVIX value received
   const [vixLastTs, setVixLastTs] = useState<string | null>(null);
   const [vvixLastTs, setVvixLastTs] = useState<string | null>(null);
@@ -218,7 +228,7 @@ export default function RegimePanel({
   // recompute CRI from them to avoid waiting for the scan loop.
   const liveCri: CriResult | null = useMemo(() => {
     if (!data) return null;
-    if (!hasLive) return null;
+    if (!effectiveHasLive) return null;
 
     const vix = liveVix ?? data.vix;
     const vvix = liveVvix ?? data.vvix;
@@ -236,7 +246,7 @@ export default function RegimePanel({
       corr5dChange: activeCorrChange,
       spxDistancePct,
     });
-  }, [data, hasLive, liveVix, liveVvix, liveSpy, activeCorr, activeCorrChange]);
+  }, [data, effectiveHasLive, liveVix, liveVvix, liveSpy, activeCorr, activeCorrChange]);
 
   const cri = liveCri ?? (data?.cri ? { ...data.cri, level: data.cri.level as CriLevel } : { score: 0, level: "LOW" as CriLevel, components: { vix: 0, vvix: 0, correlation: 0, momentum: 0 } });
   const color = levelColor(cri.level);
@@ -268,8 +278,8 @@ export default function RegimePanel({
           <span className="regime-level-badge" style={{ background: color, color: cri.level === "LOW" ? "#000" : "#fff" }}>
             {cri.level}
           </span>
-          <span className="regime-live-dot" style={{ background: hasLive ? "var(--positive)" : "var(--text-muted)" }} />
-          <span className="regime-hero-label">{hasLive ? "LIVE" : "CACHED"}</span>
+          <span className="regime-live-dot" style={{ background: effectiveHasLive ? "var(--positive)" : "var(--text-muted)" }} />
+          <span className="regime-hero-label">{effectiveHasLive ? "LIVE" : "CACHED"}</span>
           {lastSync && (
             <span className="regime-hero-timestamp">
               Last scan: {new Date(lastSync).toLocaleTimeString()}
@@ -311,7 +321,7 @@ export default function RegimePanel({
       <RegimeStrip>
         <RegimeStripCell
           testId="strip-vix"
-          label={<>VIX <LiveBadge live={hasLiveVix} /></>}
+          label={<>VIX <LiveBadge live={effectiveHasLiveVix} /></>}
           value={fmt(vixVal)}
           change={<DayChange last={liveVix} close={vixClose} />}
           sub={<>5d RoC: {fmtPct(data?.vix_5d_roc, 1)}</>}
@@ -319,7 +329,7 @@ export default function RegimePanel({
         />
         <RegimeStripCell
           testId="strip-vvix"
-          label={<>VVIX <LiveBadge live={hasLiveVvix} /></>}
+          label={<>VVIX <LiveBadge live={effectiveHasLiveVvix} /></>}
           value={fmt(vvixVal)}
           change={<DayChange last={liveVvix} close={vvixClose} />}
           sub={<>VVIX/VIX: {fmt(vvixVixRatio)}</>}
@@ -327,7 +337,7 @@ export default function RegimePanel({
         />
         <RegimeStripCell
           testId="strip-spy"
-          label={<>SPY <LiveBadge live={hasLiveSpy} /></>}
+          label={<>SPY <LiveBadge live={effectiveHasLiveSpy} /></>}
           value={`$${fmt(spyVal)}`}
           change={<DayChange last={liveSpy} close={spyClose} prefix="$" />}
           sub={<>vs 100d MA: {fmtPct(spxDistPct)}</>}
@@ -347,7 +357,7 @@ export default function RegimePanel({
         />
         <RegimeStripCell
           testId="strip-cor1m"
-          label={<>COR1M <LiveBadge live={hasLiveCor1m} /></>}
+          label={<>COR1M <LiveBadge live={effectiveHasLiveCor1m} /></>}
           value={fmt(activeCorr, 2)}
           change={<DayChange last={liveCor1m} close={cor1mPreviousClose} />}
           sub={<>{`5d chg: ${corr5dChange != null ? `${fmtSigned(corr5dChange)} pts` : "---"}`}</>}
@@ -371,10 +381,10 @@ export default function RegimePanel({
             CRI COMPONENTS
             <InfoTooltip text={SECTION_TOOLTIPS["CRI COMPONENTS"]} />
           </div>
-          <ComponentBar label="VIX" score={cri.components.vix} live={hasLiveVix} />
-          <ComponentBar label="VVIX" score={cri.components.vvix} live={hasLiveVvix} />
-          <ComponentBar label="CORRELATION" score={cri.components.correlation} live={hasLiveCor1m} />
-          <ComponentBar label="MOMENTUM" score={cri.components.momentum} live={hasLiveSpy} />
+          <ComponentBar label="VIX" score={cri.components.vix} live={effectiveHasLiveVix} />
+          <ComponentBar label="VVIX" score={cri.components.vvix} live={effectiveHasLiveVvix} />
+          <ComponentBar label="CORRELATION" score={cri.components.correlation} live={effectiveHasLiveCor1m} />
+          <ComponentBar label="MOMENTUM" score={cri.components.momentum} live={effectiveHasLiveSpy} />
         </div>
         <div className="regime-triggers">
           <div className="regime-panel-title">
@@ -389,7 +399,7 @@ export default function RegimePanel({
               label="SPX < 100d MA"
               met={spxBelowMa}
               value={`${fmtPct(spxDistPct)} (MA: $${fmt(ma)})`}
-              live={liveSpy != null}
+              live={effectiveHasLiveSpy}
             />
             <TriggerRow
               label="Realized Vol > 25%"
@@ -401,7 +411,7 @@ export default function RegimePanel({
               label="COR1M > 60"
               met={correlationTriggerMet}
               value={fmt(activeCorr, 2)}
-              live={hasLiveCor1m}
+              live={effectiveHasLiveCor1m}
             />
         </div>
       </div>
@@ -418,13 +428,14 @@ export default function RegimePanel({
           { key: "cor1m", label: "COR1M", color: chartSeriesColor("dislocation"), axis: "right", format: (v: number) => v.toFixed(1) },
         ];
         // Live values for today's data point (VIX/VVIX chart)
+        // Only inject live overlays when market is actually open.
         const vixVvixLive: Partial<Record<keyof CriHistoryEntry, number>> = {};
-        if (liveVix != null) vixVvixLive.vix = liveVix;
-        if (liveVvix != null) vixVvixLive.vvix = liveVvix;
+        if (marketOpen && liveVix != null) vixVvixLive.vix = liveVix;
+        if (marketOpen && liveVvix != null) vixVvixLive.vvix = liveVvix;
         // Live values for today's data point (RVOL/COR1M chart)
         const rvolCorrLive: Partial<Record<keyof CriHistoryEntry, number>> = {};
         if (intradayRvol != null) rvolCorrLive.realized_vol = intradayRvol;
-        if (liveCor1m != null) rvolCorrLive.cor1m = liveCor1m;
+        if (marketOpen && liveCor1m != null) rvolCorrLive.cor1m = liveCor1m;
 
         return (
           <>
@@ -438,7 +449,7 @@ export default function RegimePanel({
                   contentTestId="regime-history-tooltip-bubble"
                 />
               </div>
-              {hasLive && (
+              {effectiveHasLive && (
                 <span className="regime-badge" style={{ background: "var(--chart-live-badge-bg)", color: "var(--chart-live-badge-text)" }}>LIVE</span>
               )}
             </div>
