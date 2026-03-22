@@ -46,6 +46,7 @@ export type WorkspaceNavItem = {
   route: WorkspaceSection;
   href: string;
   icon: typeof LayoutDashboard;
+  hidden?: boolean;
 };
 
 export type PortfolioLeg = {
