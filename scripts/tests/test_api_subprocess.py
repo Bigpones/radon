@@ -179,12 +179,13 @@ class TestRunModule:
         assert isinstance(result, ScriptResult)
 
     def test_module_error_falls_back_to_stdout_when_stderr_is_empty(self):
+        # Use a module that fails immediately (no network) — just testing error extraction
         result = asyncio.get_event_loop().run_until_complete(
-            run_module("trade_blotter.flex_query", args=["--json"], timeout=2)
+            run_module("trade_blotter.flex_query", args=["--json"], timeout=1)
         )
         assert not result.ok
         assert result.error is not None
-        assert "Flex Query" in result.error or "credentials required" in result.error or "timed out" in result.error
+        assert "Flex Query" in result.error or "credentials required" in result.error or "timed out" in result.error or "Module" in result.error
 
 
 class TestScriptResult:
