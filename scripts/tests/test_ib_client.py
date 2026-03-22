@@ -1034,8 +1034,9 @@ class TestFastTimeout:
 class TestRetryLogic:
     """Test automatic retry for transient errors."""
 
+    @patch("time.sleep")
     @patch("clients.ib_client.IB")
-    def test_connect_retries_on_transient_error(self, MockIB):
+    def test_connect_retries_on_transient_error(self, MockIB, _mock_sleep):
         """Connection should retry on transient failures."""
         mock_ib = MockIB.return_value
 
@@ -1048,8 +1049,9 @@ class TestRetryLogic:
 
         assert mock_ib.connect.call_count == 2
 
+    @patch("time.sleep")
     @patch("clients.ib_client.IB")
-    def test_connect_exhausts_retries(self, MockIB):
+    def test_connect_exhausts_retries(self, MockIB, _mock_sleep):
         """Connection should raise after exhausting retries."""
         mock_ib = MockIB.return_value
         mock_ib.connect.side_effect = ConnectionRefusedError("refused")

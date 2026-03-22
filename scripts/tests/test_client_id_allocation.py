@@ -194,7 +194,8 @@ class TestExplicitClientId:
         called_id = mock_ib.connect.call_args[1].get("clientId") or mock_ib.connect.call_args[0][2]
         assert called_id == 99
 
-    def test_explicit_id_no_retry_on_conflict(self):
+    @patch("time.sleep")
+    def test_explicit_id_no_retry_on_conflict(self, _mock_sleep):
         """Explicit IDs should NOT auto-rotate — the caller chose that ID deliberately."""
         from clients.ib_client import IBClient, IBConnectionError
 

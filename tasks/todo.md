@@ -61,6 +61,64 @@ Update the durable docs to reflect the inactive cached-load contract for route h
 - [x] T2 Run the required repo-level verification gates for JS and Python, plus any focused browser checks needed to support the commit
 - [ ] T3 Stage only the intended source/doc/test changes, create an atomic commit, and push the current branch
 
+## Session: Ignore Generated Dead-Code And Log Artifacts (2026-03-22)
+
+### Goal
+Stop generated `.claude/hooks/dead-code.manifest` churn and rotated `logs/` artifacts from showing up in git status, while preserving the tracked `logs/.gitkeep` placeholder.
+
+### Dependency Graph
+- T1 (Inspect the current tracked/ignored state for `.claude/hooks/dead-code.manifest` and `logs/` artifacts, then capture the minimal ignore plan) depends_on: []
+- T2 (Update `.gitignore` to ignore generated log artifacts and the dead-code manifest, preserving `logs/.gitkeep`) depends_on: [T1]
+- T3 (Remove the manifest from the git index, verify the resulting worktree status, and document the outcome) depends_on: [T2]
+
+### Checklist
+- [x] T1 Inspect the current tracked/ignored state for `.claude/hooks/dead-code.manifest` and `logs/` artifacts, then capture the minimal ignore plan
+- [x] T2 Update `.gitignore` to ignore generated log artifacts and the dead-code manifest, preserving `logs/.gitkeep`
+- [x] T3 Remove the manifest from the git index, verify the resulting worktree status, and document the outcome
+
+### Review
+- Updated [.gitignore](/Users/joemccann/dev/apps/finance/radon/.gitignore) to:
+  - ignore all generated files under `logs/`
+  - preserve the tracked [logs/.gitkeep](/Users/joemccann/dev/apps/finance/radon/logs/.gitkeep) placeholder
+  - ignore the generated [dead-code.manifest](/Users/joemccann/dev/apps/finance/radon/.claude/hooks/dead-code.manifest)
+- Removed [dead-code.manifest](/Users/joemccann/dev/apps/finance/radon/.claude/hooks/dead-code.manifest) from the git index with `git rm --cached` so the new ignore rule actually takes effect for future runs.
+- Verification:
+  - `git check-ignore -v .claude/hooks/dead-code.manifest logs/monitor-daemon.log logs/monitor-daemon.log.1` now resolves through [.gitignore](/Users/joemccann/dev/apps/finance/radon/.gitignore)
+  - `logs/.gitkeep` remains unignored and tracked
+
+## Session: Hide Performance Route From Visible Navigation (2026-03-22)
+
+### Goal
+Keep the `/performance` route and its tests intact, but remove the `Performance` entry from the visible sidebar navigation and lock that behavior with regression coverage.
+
+### Dependency Graph
+- T1 (Trace how shared nav metadata feeds the sidebar and identify the minimal place to hide the `Performance` item without breaking route consumers) depends_on: []
+- T2 (Add red regression coverage for the hidden performance-nav contract, including a browser-visible sidebar check) depends_on: [T1]
+- T3 (Implement the nav-hiding change, rerun focused verification, and document the result) depends_on: [T2]
+
+### Checklist
+- [x] T1 Trace how shared nav metadata feeds the sidebar and identify the minimal place to hide the `Performance` item without breaking route consumers
+- [x] T2 Add red regression coverage for the hidden performance-nav contract, including a browser-visible sidebar check
+- [x] T3 Implement the nav-hiding change, rerun focused verification, and document the result
+
+### Review
+- Root cause:
+  - The earlier nav metadata fix reintroduced the [Performance](/Users/joemccann/dev/apps/finance/radon/web/lib/data.ts) entry directly into `navItems`, and [Sidebar.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/Sidebar.tsx) renders that array verbatim. That made the `/performance` route visible in the UI again even though the intent was to keep it hidden.
+- Fix:
+  - Added an optional `hidden` flag to [WorkspaceNavItem](/Users/joemccann/dev/apps/finance/radon/web/lib/types.ts).
+  - Marked the `performance` nav item as hidden in [data.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/data.ts), which preserves the route metadata for internal consumers and tests.
+  - Updated [Sidebar.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/Sidebar.tsx) to render only non-hidden nav items.
+- Regression coverage:
+  - Added [sidebar-navigation.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/sidebar-navigation.test.ts) to lock the hidden-nav filtering in the rendered sidebar.
+  - Added [sidebar-performance-hidden.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/sidebar-performance-hidden.spec.ts) to verify the visible sidebar no longer shows the `Performance` link in the browser.
+- Verification:
+  - Red before fix:
+    - `cd web && npx playwright test e2e/sidebar-performance-hidden.spec.ts --config playwright.no-server.config.ts` failed because the `Performance` link was present
+  - Green after fix:
+    - `npx vitest run web/tests/sidebar-navigation.test.ts`
+    - `npx vitest run web/tests/data.test.ts web/tests/sidebar-navigation.test.ts`
+    - `cd web && npx playwright test e2e/sidebar-performance-hidden.spec.ts --config playwright.no-server.config.ts`
+
 ### Review
 - Docs updated:
   - Updated [web/README.md](/Users/joemccann/dev/apps/finance/radon/web/README.md) so the market-hours section, API table, and verification checklist all reflect the actual contract: one initial cached GET on mount even when the market is closed, with background POST sync/polling paused off-hours.

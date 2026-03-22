@@ -22,7 +22,7 @@ export default function Sidebar({ activeSection, actionTone, ibConnected = true,
       </div>
 
       <nav className="sidebar-nav">
-        {navItems.map((item) => {
+        {navItems.filter((item) => !item.hidden).map((item) => {
           const Icon = item.icon;
           return (
             <Link

@@ -16,8 +16,11 @@ describe("RegimePanel — live COR1M rendering", () => {
     expect(panelSource).toContain("cor1mValue: activeCorr");
   });
 
-  it("shows a live badge for COR1M when a live COR1M value is present", () => {
-    expect(panelSource).toContain("COR1M <LiveBadge live={hasLiveCor1m} />");
+  it("shows a live badge for COR1M gated on market open state", () => {
+    // The strip uses effectiveHasLiveCor1m (marketOpen && hasLiveCor1m)
+    // so the badge shows DAILY when the market is closed, even if the
+    // WS relay returns stale Friday close values.
+    expect(panelSource).toContain("COR1M <LiveBadge live={effectiveHasLiveCor1m} />");
     expect(panelSource).not.toContain("COR1M <LiveBadge live={false} />");
   });
 

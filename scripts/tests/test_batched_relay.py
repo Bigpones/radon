@@ -34,7 +34,7 @@ async def test_ticks_buffered_and_emitted_as_batch():
     async def mock_send(msg: str):
         sent_messages.append(msg)
 
-    relay = BatchedPriceRelay(flush_interval_ms=50)
+    relay = BatchedPriceRelay(flush_interval_ms=10)
     relay.add_client(mock_send)
 
     relay.buffer_tick("AAPL", make_tick("AAPL", 175.50))
@@ -42,7 +42,7 @@ async def test_ticks_buffered_and_emitted_as_batch():
 
     # Start flushing, wait for one flush cycle
     task = asyncio.create_task(relay.start())
-    await asyncio.sleep(0.1)
+    await asyncio.sleep(0.03)
     relay.stop()
     await task
 
@@ -64,14 +64,14 @@ async def test_last_write_wins():
     async def mock_send(msg: str):
         sent_messages.append(msg)
 
-    relay = BatchedPriceRelay(flush_interval_ms=50)
+    relay = BatchedPriceRelay(flush_interval_ms=10)
     relay.add_client(mock_send)
 
     relay.buffer_tick("AAPL", make_tick("AAPL", 170.00))
     relay.buffer_tick("AAPL", make_tick("AAPL", 175.50))  # overwrites
 
     task = asyncio.create_task(relay.start())
-    await asyncio.sleep(0.1)
+    await asyncio.sleep(0.03)
     relay.stop()
     await task
 
@@ -88,12 +88,12 @@ async def test_empty_buffer_does_not_emit():
     async def mock_send(msg: str):
         sent_messages.append(msg)
 
-    relay = BatchedPriceRelay(flush_interval_ms=50)
+    relay = BatchedPriceRelay(flush_interval_ms=10)
     relay.add_client(mock_send)
 
     # Don't buffer anything
     task = asyncio.create_task(relay.start())
-    await asyncio.sleep(0.15)  # wait for 2-3 flush cycles
+    await asyncio.sleep(0.03)  # wait for 2-3 flush cycles
     relay.stop()
     await task
 
@@ -109,16 +109,16 @@ async def test_configurable_interval():
         sent_messages.append(msg)
 
     # Very short interval for fast test
-    relay = BatchedPriceRelay(flush_interval_ms=30)
+    relay = BatchedPriceRelay(flush_interval_ms=10)
     relay.add_client(mock_send)
 
     task = asyncio.create_task(relay.start())
 
     # Buffer a tick, wait, buffer another
     relay.buffer_tick("AAPL", make_tick("AAPL", 175.50))
-    await asyncio.sleep(0.05)  # should trigger first flush
+    await asyncio.sleep(0.02)  # should trigger first flush
     relay.buffer_tick("MSFT", make_tick("MSFT", 420.00))
-    await asyncio.sleep(0.05)  # should trigger second flush
+    await asyncio.sleep(0.02)  # should trigger second flush
 
     relay.stop()
     await task
@@ -141,14 +141,14 @@ async def test_multiple_clients():
     async def send2(msg: str):
         client2_msgs.append(msg)
 
-    relay = BatchedPriceRelay(flush_interval_ms=50)
+    relay = BatchedPriceRelay(flush_interval_ms=10)
     relay.add_client(send1)
     relay.add_client(send2)
 
     relay.buffer_tick("AAPL", make_tick("AAPL", 175.50))
 
     task = asyncio.create_task(relay.start())
-    await asyncio.sleep(0.1)
+    await asyncio.sleep(0.03)
     relay.stop()
     await task
 
@@ -166,14 +166,14 @@ async def test_remove_client():
     async def mock_send(msg: str):
         sent_messages.append(msg)
 
-    relay = BatchedPriceRelay(flush_interval_ms=50)
+    relay = BatchedPriceRelay(flush_interval_ms=10)
     relay.add_client(mock_send)
     relay.remove_client(mock_send)
 
     relay.buffer_tick("AAPL", make_tick("AAPL", 175.50))
 
     task = asyncio.create_task(relay.start())
-    await asyncio.sleep(0.1)
+    await asyncio.sleep(0.03)
     relay.stop()
     await task
 

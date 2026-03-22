@@ -36,12 +36,24 @@ describe("RegimePanel — market closed static fallback", () => {
     expect(source).toMatch(/MARKET CLOSED/i);
   });
 
-  it("does not gate VIX live badge on marketOpen", () => {
-    expect(source).not.toMatch(/marketOpen\s*&&\s*hasLiveVix|marketOpen\s*\?\s*hasLiveVix/);
+  it("gates live display flags on marketOpen so LIVE badges show DAILY when market is closed", () => {
+    // When market is closed, WS may still return stale "last" values (e.g.
+    // Friday's close for VIX/VVIX). All display-level "live" indicators must
+    // be gated on marketOpen so badges read DAILY, not LIVE.
+    // The component should define effectiveHasLive* flags that combine
+    // marketOpen with the raw hasLive* values.
+    expect(source).toMatch(/effectiveHasLive/);
+    expect(source).toMatch(/marketOpen\s*&&\s*hasLive/);
   });
 
-  it("does not gate VVIX live badge on marketOpen", () => {
-    expect(source).not.toMatch(/marketOpen\s*&&\s*hasLiveVvix|marketOpen\s*\?\s*hasLiveVvix/);
+  it("uses effectiveHasLive flags for LiveBadge components, not raw hasLive", () => {
+    // Strip cell LiveBadge props must reference effectiveHasLive*, not hasLiveVix etc.
+    // Hero label must use effectiveHasLive, not hasLive.
+    expect(source).toMatch(/live=\{effectiveHasLiveVix\}/);
+    expect(source).toMatch(/live=\{effectiveHasLiveVvix\}/);
+    expect(source).toMatch(/live=\{effectiveHasLiveSpy\}/);
+    expect(source).toMatch(/live=\{effectiveHasLiveCor1m\}/);
+    expect(source).toMatch(/effectiveHasLive\s*\?/);
   });
 
   it("renders COR1M as a daily field, not an intraday sector proxy", () => {

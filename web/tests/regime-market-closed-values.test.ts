@@ -76,10 +76,10 @@ describe("RegimePanel — VIX/VVIX timestamps refresh from latest WS values", ()
 });
 
 describe("RegimePanel — liveCri should recompute when live symbols stream in", () => {
-  it("liveCri useMemo returns null only when no live values are present", () => {
+  it("liveCri useMemo returns null when effectiveHasLive is false (market closed or no WS data)", () => {
     const criMemo = panelSource.match(
       /liveCri[\s\S]*?computeCri[\s\S]*?(?=\}\s*,?\s*\[)/
     )?.[0] ?? "";
-    expect(criMemo).toContain("if (!hasLive)");
+    expect(criMemo).toContain("if (!effectiveHasLive)");
   });
 });

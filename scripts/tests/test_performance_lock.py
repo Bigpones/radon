@@ -104,7 +104,7 @@ async def test_background_dedup_returns_already_running(client):
     import api.server
 
     # Simulate an in-flight task
-    never_done = asyncio.get_event_loop().create_future()
+    never_done = asyncio.get_running_loop().create_future()
     fake_task = asyncio.ensure_future(never_done)
     api.server._running_build = fake_task
 
@@ -131,7 +131,7 @@ async def test_post_piggybacks_on_inflight_task(client):
     async def slow_build(*args, **kwargs):
         nonlocal call_count
         call_count += 1
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.01)
         return ScriptResult(ok=True, data=FAKE_PERF_DATA)
 
     with patch("api.server.run_script", slow_build), \

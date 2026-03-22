@@ -109,6 +109,8 @@ data/menthorq_cache/
 data/seasonality_cache/
 data/price_history_cache/
 data/service_health/
+logs/*
+!logs/.gitkeep
 logs/menthorq_artifacts/
 web/data/
 
@@ -132,6 +134,7 @@ web/verify-regime-internals.mjs
 
 # Local agent worktrees / scratch state
 /.claude/worktrees/
+/.claude/hooks/dead-code.manifest
 
 # =============================================================================
 # Vendor (downloaded binaries, not checked in)

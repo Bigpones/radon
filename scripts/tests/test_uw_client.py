@@ -162,8 +162,9 @@ class TestRequestHandling:
 
     def test_500_raises_server_error(self, client, mock_session):
         mock_session.get.return_value = _make_response(500, {}, reason="Internal Server Error")
-        with pytest.raises(UWServerError):
-            client._get("stock/AAPL/info")
+        with patch("time.sleep"):
+            with pytest.raises(UWServerError):
+                client._get("stock/AAPL/info")
 
     def test_generic_4xx_raises_api_error(self, client, mock_session):
         mock_session.get.return_value = _make_response(418, {}, reason="I'm a teapot")

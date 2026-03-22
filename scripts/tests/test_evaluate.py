@@ -428,9 +428,10 @@ class TestRunEvaluation:
     @patch("evaluate.fetch_ticker_oi_changes")
     @patch("evaluate.fetch_analyst_ratings")
     @patch("evaluate.fetch_seasonality")
+    @patch("evaluate.fetch_news")
     @patch("evaluate.fetch_price_history")
     def test_invalid_ticker_aborts_immediately(
-        self, mock_price, mock_season, mock_analyst, mock_oi,
+        self, mock_price, mock_news, mock_season, mock_analyst, mock_oi,
         mock_options, mock_flow, mock_ticker
     ):
         mock_ticker.return_value = {
@@ -443,6 +444,7 @@ class TestRunEvaluation:
         mock_oi.return_value = []
         mock_analyst.return_value = {}
         mock_season.return_value = {}
+        mock_news.return_value = {}
         mock_price.return_value = []
 
         result = run_evaluation("ZZZZZ")
@@ -455,9 +457,10 @@ class TestRunEvaluation:
     @patch("evaluate.fetch_ticker_oi_changes")
     @patch("evaluate.fetch_analyst_ratings")
     @patch("evaluate.fetch_seasonality")
+    @patch("evaluate.fetch_news")
     @patch("evaluate.fetch_price_history")
     def test_fading_signal_stops_at_edge(
-        self, mock_price, mock_season, mock_analyst, mock_oi,
+        self, mock_price, mock_news, mock_season, mock_analyst, mock_oi,
         mock_options, mock_flow, mock_ticker,
         ticker_data, flow_data_fading, options_data_bullish,
         oi_data_massive, analyst_data_bullish, price_history,
@@ -468,6 +471,7 @@ class TestRunEvaluation:
         mock_oi.return_value = oi_data_massive
         mock_analyst.return_value = analyst_data_bullish
         mock_season.return_value = {"rating": "FAVORABLE", "win_rate": 65, "avg_return": 3.8}
+        mock_news.return_value = {}
         mock_price.return_value = price_history
 
         result = run_evaluation("AAPL")
@@ -486,9 +490,10 @@ class TestRunEvaluation:
     @patch("evaluate.fetch_ticker_oi_changes")
     @patch("evaluate.fetch_analyst_ratings")
     @patch("evaluate.fetch_seasonality")
+    @patch("evaluate.fetch_news")
     @patch("evaluate.fetch_price_history")
     def test_strong_signal_reaches_structure(
-        self, mock_price, mock_season, mock_analyst, mock_oi,
+        self, mock_price, mock_news, mock_season, mock_analyst, mock_oi,
         mock_options, mock_flow, mock_ticker,
         ticker_data, flow_data_accumulation, options_data_bullish,
         oi_data_massive, analyst_data_bullish, price_history,
@@ -499,6 +504,7 @@ class TestRunEvaluation:
         mock_oi.return_value = oi_data_massive
         mock_analyst.return_value = analyst_data_bullish
         mock_season.return_value = {"rating": "FAVORABLE", "win_rate": 65, "avg_return": 3.8}
+        mock_news.return_value = {}
         mock_price.return_value = price_history
 
         result = run_evaluation("AAPL")
@@ -512,9 +518,10 @@ class TestRunEvaluation:
     @patch("evaluate.fetch_ticker_oi_changes")
     @patch("evaluate.fetch_analyst_ratings")
     @patch("evaluate.fetch_seasonality")
+    @patch("evaluate.fetch_news")
     @patch("evaluate.fetch_price_history")
     def test_no_options_aborts(
-        self, mock_price, mock_season, mock_analyst, mock_oi,
+        self, mock_price, mock_news, mock_season, mock_analyst, mock_oi,
         mock_options, mock_flow, mock_ticker,
     ):
         mock_ticker.return_value = {
@@ -526,6 +533,7 @@ class TestRunEvaluation:
         mock_oi.return_value = []
         mock_analyst.return_value = {}
         mock_season.return_value = {}
+        mock_news.return_value = {}
         mock_price.return_value = []
 
         result = run_evaluation("XYZA")
@@ -539,9 +547,10 @@ class TestRunEvaluation:
     @patch("evaluate.fetch_ticker_oi_changes")
     @patch("evaluate.fetch_analyst_ratings")
     @patch("evaluate.fetch_seasonality")
+    @patch("evaluate.fetch_news")
     @patch("evaluate.fetch_price_history")
     def test_today_included_in_flow(
-        self, mock_price, mock_season, mock_analyst, mock_oi,
+        self, mock_price, mock_news, mock_season, mock_analyst, mock_oi,
         mock_options, mock_flow, mock_ticker, mock_datetime,
         ticker_data, flow_data_accumulation, options_data_bullish,
         oi_data_massive, analyst_data_bullish, price_history,
@@ -556,6 +565,7 @@ class TestRunEvaluation:
         mock_oi.return_value = oi_data_massive
         mock_analyst.return_value = analyst_data_bullish
         mock_season.return_value = {"rating": "FAVORABLE"}
+        mock_news.return_value = {}
         mock_price.return_value = price_history
 
         result = run_evaluation("AAPL")
