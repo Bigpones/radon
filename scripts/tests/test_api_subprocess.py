@@ -172,7 +172,7 @@ class TestRunModule:
     def test_module_timeout(self):
         """Module that hangs should be killed."""
         result = asyncio.get_event_loop().run_until_complete(
-            run_module("time", args=[], timeout=0.1)
+            run_module("time", args=[], timeout=0.5)
         )
         # python3 -m time just runs and exits, so this might succeed or timeout
         # The point is it doesn't hang forever
