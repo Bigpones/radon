@@ -1,5 +1,9 @@
 # Lessons
 
+## 2026-03-22
+
+- When a route handler gates fresh data fetches behind `isMarketOpenNow()`, any data published after market close (UW end-of-day processing, overnight batch updates) will never be picked up until market reopens. Use a data-staleness check (compare latest data-point date to today) instead of a market-hours guard. This prevents stale charts across ~17.5 hrs/day of market-closed time plus weekends.
+
 ## 2026-03-21
 
 - Never hardcode `"python3"` in subprocess calls. Use `sys.executable` so child processes inherit the same interpreter as the parent. On this machine, `python3` resolves to Homebrew Python 3.14 (missing `ib_insync`, incompatible asyncio) while the FastAPI server runs Xcode Python 3.9. The PATH order varies between shell, Node.js, and Codex environments.
@@ -143,3 +147,6 @@
 - When porting a rule from Claude-specific docs into Codex docs, translate it into Codex-native instruction style and state any runtime-dependent capability explicitly; `chrome-cdp` is available in this repo session, but Codex docs must still define a Playwright fallback because skill availability is host-dependent.
 - For `/orders` modify telemetry, never show raw IB bid/ask in isolation when a resting limit order is already working; overlay the live order onto the displayed best bid/ask so the modal reflects the actionable book the user is participating in.
 - For `/orders` combo rows, do not disable modify just because the row is a frontend grouping; if IB delivered separate leg orders, synthesize a BAG-style edit target and cancel every underlying leg before placing the replacement combo.
+- When a user asks for docs, commit, and push after a fix, verify whether repo-level unrelated failures still block the commit path before optimizing for push completion; if verification is still red, pivot immediately to resolving or explicitly triaging those failures instead of continuing toward commit.
+- For sync-based client hooks, `active=false` must mean "no polling/background sync," not "never perform the initial cached read"; otherwise closed-market pages like `/internals` can hang on their loading state forever.
+- When a route bug comes from a shared polling hook, audit every other hook that gates on the same `active` flag before stopping; `/internals` and `/portfolio` were the same class of closed-market cached-load failure split across `useSyncHook` and `usePortfolio`.

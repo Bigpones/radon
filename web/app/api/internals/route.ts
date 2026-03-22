@@ -7,6 +7,7 @@ import { isCriDataStale } from "@/lib/criStaleness";
 import { selectPreferredCriCandidate, type CriCacheCandidate } from "@/lib/criCache";
 import { backfillRealizedVolHistory, type RegimeHistoryEntry } from "@/lib/regimeHistory";
 import { radonFetch } from "@/lib/radonApi";
+import { isSkewCacheFresh } from "@/lib/internalsSkewCache";
 
 const DATA_DIR = join(process.cwd(), "..", "data");
 const CACHE_PATH = join(DATA_DIR, "cri.json");
@@ -306,19 +307,32 @@ function toSafeNumber(value: unknown): number | null {
 }
 
 async function readLongRangeSkewHistory(): Promise<MenthorqSkewHistoryPoint[]> {
-  if (!isMarketOpenNow()) {
-    return readCachedLongRangeSkewHistory();
+  const cached = await readCachedLongRangeSkewHistory();
+
+  // If the cache already has recent data, serve it without a network round-trip.
+  // "Recent" = latest data-point within 1 calendar day of today (ET).
+  if (cached.length > 0) {
+    const latestDate = cached[cached.length - 1].date;
+    if (isSkewCacheFresh(latestDate, todayET())) {
+      return cached;
+    }
   }
 
+  // Cache is stale or empty — fetch fresh from FastAPI (which has its own
+  // 15-min UW cache).  This runs even when the market is closed so that
+  // overnight / weekend UW publishes are picked up.
   try {
     const response = await radonFetch<LongRangeSkewHistoryPayload>("/internals/skew-history", {
       method: "GET",
       timeout: 90_000,
     });
-    return toLongRangeSkewPoints(response);
+    const points = toLongRangeSkewPoints(response);
+    if (points.length > 0) return points;
   } catch {
-    return readCachedLongRangeSkewHistory();
+    // fall through to stale cache
   }
+
+  return cached;
 }
 
 function findMenthorqRowAny(rows: Array<Record<string, unknown>>, groups: string[][]): Record<string, unknown> | null {
