@@ -95,9 +95,9 @@ function PortfolioComponent() {
 ```
 
 All polling hooks automatically respect market hours:
-- `usePortfolio()` - Stops sync when market is CLOSED
-- `useOrders()` - Stops sync when market is CLOSED
-- `useRegime()` - Adaptive intervals (60s OPEN / 300s EXTENDED / 0 CLOSED)
+- `usePortfolio()` - Always performs one cached `GET` on mount, then stops sync/polling when market is CLOSED
+- `useOrders()` - Always performs one cached `GET` on mount, then stops IB sync/polling when market is CLOSED
+- `useRegime()` - Always performs one cached `GET` on mount, then uses adaptive intervals (60s OPEN / 300s EXTENDED / 0 CLOSED)
 
 ### Backward Compatibility
 
@@ -212,7 +212,7 @@ function PriceDisplay() {
 
 | Route | Method | Description |
 |-------|--------|-------------|
-| `/api/portfolio` | GET, POST | Positions and exposure (GET=read, POST=IB sync). Stale-while-revalidate. **Frontend poll stops during CLOSED market.** |
+| `/api/portfolio` | GET, POST | Positions and exposure (GET=read, POST=IB sync). Stale-while-revalidate. **Frontend always does one cached GET; POST sync/polling stops during CLOSED market.** |
 | `/api/performance` | GET, POST | YTD performance metrics (hidden — see `docs/performance-reconstruction.md`) |
 | `/api/blotter` | GET, POST | Today's fills and closed trades |
 | `/api/journal` | GET | Trade log (append-only) |
@@ -234,8 +234,8 @@ function PriceDisplay() {
 |-------|--------|-------------|
 | `/api/prices` | POST | One-time price snapshot (GET deprecated) |
 | `/api/previous-close` | POST | Previous-day closing prices (IB → UW → Yahoo fallback) |
-| `/api/regime` | GET, POST | CRI regime data. **Frontend poll adaptive intervals: 1min (OPEN), 5min (EXTENDED), paused (CLOSED).** |
-| `/api/internals` | GET, POST | Market internals and skew history. **Frontend poll adaptive intervals: 1min (OPEN), 5min (EXTENDED), paused (CLOSED).** |
+| `/api/regime` | GET, POST | CRI regime data. **Frontend always does one cached GET; polling uses adaptive intervals: 1min (OPEN), 5min (EXTENDED), paused (CLOSED).** |
+| `/api/internals` | GET, POST | Market internals and skew history. **Frontend always does one cached GET; polling uses adaptive intervals: 1min (OPEN), 5min (EXTENDED), paused (CLOSED).** |
 | `/api/scanner` | GET, POST | Watchlist scan results with cache metadata |
 | `/api/discover` | GET, POST | Market-wide flow scanning |
 | `/api/flow-analysis` | GET, POST | Portfolio flow analysis (supports/against/watch) |
@@ -353,8 +353,8 @@ To verify that market-hours aware polling is working correctly:
    - Visit any page (e.g., `/portfolio`, `/orders`, `/regime`)
 
 2. **On weekends (CLOSED market):**
-   - Verify **ZERO** API calls to `/api/portfolio`, `/api/orders`, `/api/regime`, `/api/internals`
-   - All data should come from cached responses
+   - Verify one initial cached `GET` per mounted route (`/api/portfolio`, `/api/orders`, `/api/regime`, `/api/internals`) and no recurring polling/POST sync afterward
+   - Closed-market pages should render cached data instead of hanging on loading placeholders
 
 3. **On weekdays:**
    - **4:00 AM ET (premarket):** Portfolio/orders polling at 30s, regime/internals at 5min
@@ -391,4 +391,3 @@ node ../scripts/ib_realtime_server.js --ib-port 4001
 ### Rate Limiting (Yahoo Finance fallback)
 
 If IB is unavailable, some features fall back to Yahoo Finance which has aggressive rate limits. Wait a few minutes and retry, or ensure IB is connected.
-

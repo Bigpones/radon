@@ -1247,9 +1247,10 @@ A single extensible daemon that handles all background monitoring tasks.
 
 | Handler | Interval | Purpose |
 |---------|----------|---------|
-| `fill_monitor` | 60s | Detect order fills, send notifications |
-| `exit_orders` | 300s | Place pending exit orders when IB accepts them |
-| `preset_rebalance` | Weekly | Check SP500/NDX100/R2K for constituent changes, update presets |
+| `fill_monitor` | 60s | Detect order fills, send notifications (market hours only) |
+| `exit_orders` | 300s | Place pending exit orders when IB accepts them (market hours only) |
+| `preset_rebalance` | Weekly | Check SP500/NDX100/R2K for constituent changes, update presets (allowed off-hours) |
+| `flex_token_check` | Daily | Warn before the IB Flex Web Service token expires (allowed off-hours) |
 
 ### Commands
 
@@ -1270,7 +1271,8 @@ python3.13 -m monitor_daemon.run --list-handlers
 ### Service Management
 
 ```bash
-# Install launchd service (runs every 60s during market hours)
+# Install launchd service (launchd runs `--once` every 60s; each handler
+# applies its own market-hours policy)
 ./scripts/setup_monitor_daemon.sh install
 
 # Check status
@@ -1546,7 +1548,9 @@ Next.js API routes call a local FastAPI server (`scripts/api/server.py` on `loca
 
 **IB Gateway auto-recovery:** FastAPI detects Gateway down at startup and auto-restarts via `~/ibc/bin/restart-secure-ibc-service.sh`. IB-dependent endpoints detect `ECONNREFUSED`, auto-restart Gateway, reconnect pool, retry once. Manual: `POST http://localhost:8321/ib/restart`.
 
-**Health check:** `curl http://localhost:8321/health` — returns `ib_gateway`, `ib_pool`, `uw` status.
+**Health check:** `curl http://localhost:8321/health` — returns `ib_gateway`, `ib_pool`, `uw`, and `test_mode` status.
+
+**Test-mode FastAPI harness:** `web/tests/order-e2e.test.ts` uses `web/tests/fastapiHarness.ts` to launch an isolated FastAPI instance on a random local port with `RADON_API_TEST_MODE=1`. In test mode, `scripts/api/server.py` skips IB Gateway / pool startup and stubs the order endpoints. The harness must not reuse the live broker-backed `localhost:8321` server unless that server explicitly reports `test_mode: true` on `/health`.
 
 | FastAPI File | Purpose |
 |------|---------|
@@ -1554,6 +1558,7 @@ Next.js API routes call a local FastAPI server (`scripts/api/server.py` on `loca
 | `scripts/api/ib_pool.py` | Role-based IB connection pool (sync=0, orders=1, data=2) |
 | `scripts/api/ib_gateway.py` | IB Gateway health check + auto-restart via IBC launchd |
 | `scripts/api/subprocess.py` | Async subprocess helper (`run_script`, `run_module`) |
+| `web/tests/fastapiHarness.ts` | Vitest-only FastAPI launcher for isolated order-route integration tests |
 
 ---
 

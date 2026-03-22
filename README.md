@@ -193,6 +193,7 @@ Visit `http://localhost:3000`.
 - Shared quote telemetry across ticker, instrument, and modify-order views with `BID`, `MID`, `ASK`, and `SPREAD` rendered in a single layout contract; spread displays use raw quote width plus midpoint percent
 - Multi-leg position monitoring and per-leg P&L
 - YTD portfolio performance analytics with reconstructed institutional metrics that revalidate against the latest workspace portfolio sync, and a route-side ET-session refresh guard so stale prior-session `portfolio.json` snapshots do not block the current day’s reconstruction
+- Closed-market route mounts still render cached portfolio, performance, regime, and internals data immediately while background sync remains paused outside market hours
 - Shared `/regime` strip renderer with a responsive `5-up -> 3x2 -> stacked telemetry rail` contract so label, value, delta, and context remain readable on narrower viewports
 - Regime history charts with cached 20-session RVOL and COR1M context
 - RVOL/COR1M relationship view with spread, quadrant state, and normalized divergence
@@ -355,6 +356,12 @@ cd web && npx playwright test
 
 Unit tests use mocked API calls where possible, so most development work does not require a live IB or [Unusual Whales](https://unusualwhales.com/referral#39985a64-656c-4642-a051-db89f6324d64) connection.
 
+Order-route integration coverage now includes a dedicated FastAPI test harness:
+
+- `web/tests/order-e2e.test.ts` boots an isolated test-mode FastAPI instance through `web/tests/fastapiHarness.ts`
+- the harness sets `RADON_API_TEST_MODE=1`, points `RADON_API_URL` at the isolated server, and never reuses the live broker-backed `localhost:8321` process unless that server explicitly reports `test_mode: true`
+- test mode disables IB Gateway / pool startup and stubs order placement, modify, cancel, and refresh endpoints so the Vitest suite does not touch an active IBC or IB session
+
 ## Services
 
 The repo includes background-service support for the live trading environment:
@@ -364,7 +371,7 @@ The repo includes background-service support for the live trading environment:
 | Secure IBC service (`local.ibc-gateway`) | Maintains the local broker session for live quotes, execution, and reports |
 | CRI scan service | Refreshes crash-risk regime data intraday and writes atomic CRI cache snapshots |
 | CTA sync service | Refreshes the latest closed-session MenthorQ CTA cache at `4:15 PM ET` and `5:00 PM ET`, with `RunAtLoad` catch-up after reboot/login/wake, and writes machine-readable health state for stale-data detection |
-| Monitor daemon | Tracks fills and manages post-entry workflows (logs auto-rotated at 10MB) |
+| Monitor daemon | Tracks fills and exit orders during market hours, plus off-hours preset rebalance and Flex token checks (logs auto-rotated at 10MB) |
 | Data refresh services | Keeps portfolio and order-state data current and repairs post-close CRI cache history when needed |
 
 Historical setup helpers remain in `scripts/`, and the broader implementation notes live in [docs/implement.md](docs/implement.md).

@@ -5,8 +5,20 @@
  * Tests the interaction between frontend components, API routes, and backend scripts.
  */
 
-import { describe, it, expect, beforeAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { ensureTestFastApi } from "./fastapiHarness";
+
+const fastApiHarness = await ensureTestFastApi();
+const fastApiIt = fastApiHarness.available ? it : it.skip;
+
+if (!fastApiHarness.available && fastApiHarness.skipReason) {
+  console.warn(`[order-e2e] Skipping FastAPI-backed order tests: ${fastApiHarness.skipReason}`);
+}
+
+afterAll(async () => {
+  await fastApiHarness.close();
+});
 
 // ---------------------------------------------------------------------------
 // Place route — IB rejection handling
@@ -20,8 +32,7 @@ describe("POST /api/orders/place — IB rejection detection", () => {
     placePOST = mod.POST;
   });
 
-  it.skip("accepts valid stock order payload (requires FastAPI)", async () => {
-    // This will fail at the radonFetch layer (no FastAPI running), but validates structure
+  fastApiIt("accepts valid stock order payload (requires FastAPI)", async () => {
     const req = new NextRequest("http://localhost/api/orders/place", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -35,11 +46,10 @@ describe("POST /api/orders/place — IB rejection detection", () => {
       }),
     });
     const res = await placePOST(req);
-    // 500 expected because FastAPI not running, but NOT 400 (validation passed)
-    expect(res.status).not.toBe(400);
+    expect(res.status).toBe(200);
   });
 
-  it.skip("accepts valid option order payload (requires FastAPI)", async () => {
+  fastApiIt("accepts valid option order payload (requires FastAPI)", async () => {
     const req = new NextRequest("http://localhost/api/orders/place", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -56,10 +66,10 @@ describe("POST /api/orders/place — IB rejection detection", () => {
       }),
     });
     const res = await placePOST(req);
-    expect(res.status).not.toBe(400);
+    expect(res.status).toBe(200);
   });
 
-  it.skip("accepts valid combo order payload (requires FastAPI)", async () => {
+  fastApiIt("accepts valid combo order payload (requires FastAPI)", async () => {
     const req = new NextRequest("http://localhost/api/orders/place", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -77,11 +87,10 @@ describe("POST /api/orders/place — IB rejection detection", () => {
       }),
     });
     const res = await placePOST(req);
-    expect(res.status).not.toBe(400);
+    expect(res.status).toBe(200);
   });
 
-  it.skip("preserves TIF default to DAY when not specified (requires FastAPI)", async () => {
-    // The route should default tif to "DAY"
+  fastApiIt("preserves TIF default to DAY when not specified (requires FastAPI)", async () => {
     const req = new NextRequest("http://localhost/api/orders/place", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -95,8 +104,7 @@ describe("POST /api/orders/place — IB rejection detection", () => {
       }),
     });
     const res = await placePOST(req);
-    // Should not fail validation — tif defaults to DAY
-    expect(res.status).not.toBe(400);
+    expect(res.status).toBe(200);
   });
 });
 
@@ -112,7 +120,7 @@ describe("POST /api/orders/modify — combo replacement", () => {
     modifyPOST = mod.POST;
   });
 
-  it.skip("accepts valid combo replacement (requires FastAPI)", async () => {
+  fastApiIt("accepts valid combo replacement (requires FastAPI)", async () => {
     const req = new NextRequest("http://localhost/api/orders/modify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -133,8 +141,7 @@ describe("POST /api/orders/modify — combo replacement", () => {
       }),
     });
     const res = await modifyPOST(req);
-    // Should not fail validation
-    expect(res.status).not.toBe(400);
+    expect(res.status).toBe(200);
   });
 
   it("rejects combo replacement with missing limitPrice", async () => {
@@ -196,35 +203,34 @@ describe("POST /api/orders/cancel — edge cases", () => {
     cancelPOST = mod.POST;
   });
 
-  it.skip("accepts cancel by permId only (requires FastAPI)", async () => {
+  fastApiIt("accepts cancel by permId only (requires FastAPI)", async () => {
     const req = new NextRequest("http://localhost/api/orders/cancel", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ permId: 12345 }),
     });
     const res = await cancelPOST(req);
-    // Should not fail validation — only fails at FastAPI layer
-    expect(res.status).not.toBe(400);
+    expect(res.status).toBe(200);
   });
 
-  it.skip("accepts cancel by orderId only (requires FastAPI)", async () => {
+  fastApiIt("accepts cancel by orderId only (requires FastAPI)", async () => {
     const req = new NextRequest("http://localhost/api/orders/cancel", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ orderId: 42 }),
     });
     const res = await cancelPOST(req);
-    expect(res.status).not.toBe(400);
+    expect(res.status).toBe(200);
   });
 
-  it.skip("accepts cancel by both orderId and permId (requires FastAPI)", async () => {
+  fastApiIt("accepts cancel by both orderId and permId (requires FastAPI)", async () => {
     const req = new NextRequest("http://localhost/api/orders/cancel", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ orderId: 42, permId: 12345 }),
     });
     const res = await cancelPOST(req);
-    expect(res.status).not.toBe(400);
+    expect(res.status).toBe(200);
   });
 });
 

@@ -159,6 +159,7 @@ def list_handlers():
     print("  fill_monitor       - Monitor orders for fills (60s)")
     print("  exit_orders        - Place pending exit orders (300s)")
     print("  preset_rebalance   - Index constituent updates (weekly)")
+    print("  flex_token_check   - IB Flex token expiry reminders (daily)")
     print()
     print("Add new handlers by:")
     print("  1. Create scripts/monitor_daemon/handlers/my_handler.py")

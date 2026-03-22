@@ -91,8 +91,21 @@ class MonitorDaemon:
             et_now.minute,
             et_now.weekday()
         )
+
+    def _handler_can_run_now(self, handler: BaseHandler, market_hours: Optional[bool] = None) -> bool:
+        """Return True when the handler is eligible to run in the current window."""
+        if not handler.is_due():
+            return False
+
+        if not self.respect_market_hours:
+            return True
+
+        if market_hours is None:
+            market_hours = self.is_market_hours()
+
+        return market_hours or not getattr(handler, "requires_market_hours", True)
     
-    def run_once(self) -> Dict[str, Any]:
+    def run_once(self, market_hours: Optional[bool] = None) -> Dict[str, Any]:
         """
         Run all due handlers once.
         
@@ -100,9 +113,11 @@ class MonitorDaemon:
             Dict mapping handler names to their results
         """
         results = {}
+        if market_hours is None and self.respect_market_hours:
+            market_hours = self.is_market_hours()
         
         for handler in self.handlers:
-            if handler.is_due():
+            if self._handler_can_run_now(handler, market_hours=market_hours):
                 logger.info(f"Running handler: {handler.name}")
                 result = handler.run()
                 results[handler.name] = result
@@ -110,7 +125,10 @@ class MonitorDaemon:
                 if result["status"] == "error":
                     logger.error(f"Handler {handler.name} error: {result.get('error')}")
             else:
-                logger.debug(f"Handler {handler.name} not due yet")
+                if handler.is_due():
+                    logger.debug(f"Skipping handler outside market hours: {handler.name}")
+                else:
+                    logger.debug(f"Handler {handler.name} not due yet")
         
         # Save state after each run
         if self.state_file and results:
@@ -129,20 +147,19 @@ class MonitorDaemon:
         
         try:
             while self._running:
-                # Skip if outside market hours (if configured)
-                if self.respect_market_hours and not self.is_market_hours():
-                    logger.debug("Outside market hours, sleeping...")
-                    time.sleep(60)  # Check again in 1 minute
-                    continue
-                
+                market_hours = self.is_market_hours() if self.respect_market_hours else None
                 # Run handlers
-                results = self.run_once()
+                results = self.run_once(market_hours=market_hours)
                 
                 if results:
                     logger.info(f"Completed run: {list(results.keys())}")
                 
-                # Sleep until next check
-                time.sleep(self.loop_interval)
+                # Poll less aggressively when only off-hours handlers are eligible.
+                if self.respect_market_hours and market_hours is False:
+                    logger.debug("Outside market hours, sleeping...")
+                    time.sleep(60)
+                else:
+                    time.sleep(self.loop_interval)
                 
         except KeyboardInterrupt:
             logger.info("Daemon stopped by user")

@@ -22,6 +22,7 @@ class BaseHandler(ABC):
     # Subclasses must define these
     name: str = "base"
     interval_seconds: int = 60
+    requires_market_hours: bool = True
     
     def __init__(self):
         self.last_run: Optional[datetime] = None

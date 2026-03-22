@@ -32,6 +32,7 @@ class FlexTokenCheck(BaseHandler):
 
     name = "flex_token_check"
     interval_seconds = CHECK_INTERVAL
+    requires_market_hours = False
 
     def execute(self) -> Dict[str, Any]:
         if not CONFIG_PATH.exists():

@@ -20,6 +20,7 @@ class PresetRebalanceHandler(BaseHandler):
 
     name = "preset_rebalance"
     interval_seconds = WEEKLY  # Run weekly
+    requires_market_hours = False
 
     def execute(self) -> Dict[str, Any]:
         # Import here to avoid circular / slow imports at daemon startup

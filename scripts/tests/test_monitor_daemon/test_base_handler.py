@@ -49,6 +49,11 @@ class TestBaseHandlerInit:
         handler = ConcreteHandler()
         assert handler.last_run is None
 
+    def test_handler_defaults_to_market_hours_only(self):
+        """Handlers require market hours unless they opt out."""
+        handler = ConcreteHandler()
+        assert handler.requires_market_hours is True
+
 
 class TestBaseHandlerIsDue:
     """Test is_due() logic."""

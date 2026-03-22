@@ -65,12 +65,29 @@ from ib_insync import Index
 # ---------------------------------------------------------------------------
 ib_pool: Optional[IBPool] = None
 uw_available: bool = False
+test_mode: bool = os.environ.get("RADON_API_TEST_MODE", "").lower() in {"1", "true", "yes", "on"}
+test_order_counter: int = 900000
+
+
+def _next_test_order_ids() -> tuple[int, int]:
+    global test_order_counter
+    test_order_counter += 1
+    order_id = test_order_counter
+    perm_id = 8_000_000 + order_id
+    return order_id, perm_id
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Start IB pool and UW client on startup, tear down on shutdown."""
     global ib_pool, uw_available
+
+    if test_mode:
+        logger.info("Radon API starting in test mode; IB Gateway and pool startup are disabled")
+        uw_available = bool(os.environ.get("UW_TOKEN"))
+        yield
+        logger.info("Radon API test mode shut down")
+        return
 
     # Ensure IB Gateway is running before connecting pool
     gw_status = await ensure_ib_gateway()
@@ -609,6 +626,7 @@ async def health():
     gw = await check_ib_gateway()
     return {
         "status": "ok",
+        "test_mode": test_mode,
         "ib_gateway": gw,
         "ib_pool": ib_pool.status() if ib_pool else {},
         "uw": uw_available,
@@ -726,6 +744,9 @@ async def orders_refresh():
     Scripts auto-allocate client IDs from subprocess range (20-49).
     Auto-restarts IB Gateway on ECONNREFUSED and retries once.
     """
+    if test_mode:
+        return {"status": "ok", "orders": []}
+
     result = await _run_ib_script_with_recovery(
         "ib_orders.py", ["--sync", "--port", "4001"], timeout=30
     )
@@ -746,6 +767,17 @@ async def orders_refresh():
 async def orders_place(request: Request):
     """Place an order via IB (on-demand connection, client_id=26)."""
     body = await request.json()
+    if test_mode:
+        order_id, perm_id = _next_test_order_ids()
+        return {
+            "status": "ok",
+            "orderId": order_id,
+            "permId": perm_id,
+            "initialStatus": "Submitted",
+            "message": "Order accepted in test mode",
+            "echo": body,
+        }
+
     order_json = json.dumps(body)
     result = await run_script(
         "ib_place_order.py", ["--json", order_json], timeout=15
@@ -761,6 +793,13 @@ async def orders_place(request: Request):
 async def orders_cancel(request: Request):
     """Cancel an open order via IB."""
     body = await request.json()
+    if test_mode:
+        return {
+            "status": "ok",
+            "message": "Cancel accepted in test mode",
+            "echo": body,
+        }
+
     order_id = body.get("orderId", 0)
     perm_id = body.get("permId", 0)
 
@@ -782,6 +821,13 @@ async def orders_cancel(request: Request):
 async def orders_modify(request: Request):
     """Modify an open order via IB."""
     body = await request.json()
+    if test_mode:
+        return {
+            "status": "ok",
+            "message": "Modify accepted in test mode",
+            "echo": body,
+        }
+
     order_id = body.get("orderId", 0)
     perm_id = body.get("permId", 0)
     new_price = body.get("newPrice")

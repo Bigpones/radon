@@ -104,7 +104,7 @@ class TestMonitorDaemonRun:
         handler.run.return_value = {"status": "ok"}
         
         daemon.register(handler)
-        results = daemon.run_once()
+        results = daemon.run_once(market_hours=True)
         
         handler.run.assert_called_once()
         assert "test" in results
@@ -118,7 +118,7 @@ class TestMonitorDaemonRun:
         handler.is_due.return_value = False
         
         daemon.register(handler)
-        results = daemon.run_once()
+        results = daemon.run_once(market_hours=True)
         
         handler.run.assert_not_called()
         assert "test" not in results
@@ -137,8 +137,39 @@ class TestMonitorDaemonRun:
         daemon.register(handler)
         
         # Should not raise
-        results = daemon.run_once()
+        results = daemon.run_once(market_hours=True)
         assert results["failing"]["status"] == "error"
+
+    def test_run_once_skips_market_hours_handlers_outside_market_hours(self):
+        """run_once() skips due market-hours handlers outside market hours."""
+        daemon = MonitorDaemon(respect_market_hours=True)
+        handler = Mock(spec=BaseHandler)
+        handler.name = "market_only"
+        handler.interval_seconds = 60
+        handler.requires_market_hours = True
+        handler.is_due.return_value = True
+
+        daemon.register(handler)
+        results = daemon.run_once(market_hours=False)
+
+        handler.run.assert_not_called()
+        assert "market_only" not in results
+
+    def test_run_once_allows_off_hours_handlers_outside_market_hours(self):
+        """run_once() still runs due off-hours handlers outside market hours."""
+        daemon = MonitorDaemon(respect_market_hours=True)
+        handler = Mock(spec=BaseHandler)
+        handler.name = "off_hours"
+        handler.interval_seconds = 86400
+        handler.requires_market_hours = False
+        handler.is_due.return_value = True
+        handler.run.return_value = {"status": "ok"}
+
+        daemon.register(handler)
+        results = daemon.run_once(market_hours=False)
+
+        handler.run.assert_called_once()
+        assert "off_hours" in results
 
 
 class TestMonitorDaemonState:

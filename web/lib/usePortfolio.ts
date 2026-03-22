@@ -24,6 +24,9 @@ export function usePortfolio(active: boolean = true): UsePortfolioReturn {
   const syncingRef = useRef(false);
   const intervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const backoffRef = useRef(BASE_INTERVAL_MS);
+  const didInitialReadRef = useRef(false);
+  const initialLoadStartedRef = useRef(false);
+  const syncLoopArmedRef = useRef(false);
 
   const fetchPortfolio = useCallback(async () => {
     try {
@@ -37,14 +40,12 @@ export function usePortfolio(active: boolean = true): UsePortfolioReturn {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
+      didInitialReadRef.current = true;
     }
   }, []);
 
   const scheduleNext = useCallback((delay: number) => {
-    if (!active) {
-      // Don't schedule next sync when inactive
-      return;
-    }
+    if (!active) return;
     if (intervalRef.current) clearTimeout(intervalRef.current);
     intervalRef.current = setTimeout(() => {
       void doSync();
@@ -52,7 +53,7 @@ export function usePortfolio(active: boolean = true): UsePortfolioReturn {
   }, [active]);
 
   const doSync = useCallback(async () => {
-    if (syncingRef.current) return; // skip if already in-flight
+    if (syncingRef.current) return;
     syncingRef.current = true;
     setSyncing(true);
     try {
@@ -65,12 +66,10 @@ export function usePortfolio(active: boolean = true): UsePortfolioReturn {
       setData(json);
       setLastSync(json.last_sync);
       setError(null);
-      // Reset backoff on success
       backoffRef.current = BASE_INTERVAL_MS;
       scheduleNext(BASE_INTERVAL_MS);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sync failed");
-      // Exponential backoff on failure, capped at MAX
       backoffRef.current = Math.min(backoffRef.current * 2, MAX_INTERVAL_MS);
       scheduleNext(backoffRef.current);
     } finally {
@@ -80,25 +79,54 @@ export function usePortfolio(active: boolean = true): UsePortfolioReturn {
   }, [scheduleNext]);
 
   const syncNow = useCallback(() => {
-    backoffRef.current = BASE_INTERVAL_MS; // reset backoff on manual sync
+    backoffRef.current = BASE_INTERVAL_MS;
+    syncLoopArmedRef.current = true;
     void doSync();
   }, [doSync]);
 
-  // Initial fetch (GET cached file), then start sync loop
+  // Always read the cached portfolio once on mount. `active=false` only disables
+  // polling and background sync so closed-market routes can still render.
+  useEffect(() => {
+    if (initialLoadStartedRef.current) return;
+    initialLoadStartedRef.current = true;
+
+    let cancelled = false;
+
+    const init = async () => {
+      await fetchPortfolio();
+      if (cancelled) return;
+      if (active) {
+        syncLoopArmedRef.current = true;
+        scheduleNext(BASE_INTERVAL_MS);
+      }
+    };
+
+    void init();
+
+    return () => {
+      cancelled = true;
+      if (intervalRef.current) {
+        clearTimeout(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [active, fetchPortfolio, scheduleNext]);
+
+  // If the hook mounted while inactive, start syncing the first time it becomes active.
   useEffect(() => {
     if (!active) {
-      // Clear any pending sync when becoming inactive
-      if (intervalRef.current) clearTimeout(intervalRef.current);
+      if (intervalRef.current) {
+        clearTimeout(intervalRef.current);
+        intervalRef.current = null;
+      }
+      syncLoopArmedRef.current = false;
       return;
     }
 
-    void fetchPortfolio().then(() => {
-      scheduleNext(BASE_INTERVAL_MS);
-    });
-    return () => {
-      if (intervalRef.current) clearTimeout(intervalRef.current);
-    };
-  }, [active, fetchPortfolio, scheduleNext]);
+    if (!didInitialReadRef.current || syncLoopArmedRef.current) return;
+    syncLoopArmedRef.current = true;
+    void doSync();
+  }, [active, doSync]);
 
   // Reset backoff & force sync when tab becomes visible again.
   // Prevents stale data when user returns after FastAPI outage
@@ -108,7 +136,8 @@ export function usePortfolio(active: boolean = true): UsePortfolioReturn {
       if (document.visibilityState === "visible" && active) {
         backoffRef.current = BASE_INTERVAL_MS;
         if (!syncingRef.current) {
-          scheduleNext(500); // sync almost immediately
+          syncLoopArmedRef.current = true;
+          scheduleNext(500);
         }
       }
     };

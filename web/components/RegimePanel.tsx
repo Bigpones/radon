@@ -109,6 +109,25 @@ export default function RegimePanel({
   marketState,
 }: RegimePanelProps) {
   const { data, syncing, lastSync } = useRegime(marketState, { endpoint: dataEndpoint });
+  const shareModal = shareEndpoint ? (
+    <ShareReportModal
+      modalTitle={shareModalTitle}
+      shareEndpoint={shareEndpoint}
+      contentEndpoint={shareContentEndpoint}
+      buttonTitle={shareButtonTitle}
+      iconSize={11}
+      shareContentTitle={shareContentTitle}
+    />
+  ) : (
+    <ShareReportModal
+      modalTitle={shareModalTitle}
+      shareEndpoint="/api/regime/share"
+      contentEndpoint={shareContentEndpoint}
+      buttonTitle={shareButtonTitle}
+      iconSize={11}
+      shareContentTitle={shareContentTitle}
+    />
+  );
 
   // market_open flag from CRI data — controls session-close display and
   // whether intraday realized-vol is computed from live SPY ticks.
@@ -256,14 +275,7 @@ export default function RegimePanel({
               Last scan: {new Date(lastSync).toLocaleTimeString()}
             </span>
           )}
-          <ShareReportModal
-            modalTitle={shareModalTitle}
-            shareEndpoint={shareEndpoint ?? "/api/regime/share"}
-            contentEndpoint={shareContentEndpoint}
-            buttonTitle={shareButtonTitle}
-            iconSize={11}
-            shareContentTitle={shareContentTitle}
-          />
+          {shareModal}
         </div>
         <div className="regime-hero-bar">
           <div className="regime-hero-bar-fill" style={{ width: `${cri.score}%`, background: color }} />

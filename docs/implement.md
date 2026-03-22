@@ -184,11 +184,11 @@ If a script fails:
 | **Buy stock** | `python3.13 scripts/ib_execute.py --type stock --symbol X --qty N --side BUY --limit N --yes` |
 | **Buy option** | `python3.13 scripts/ib_execute.py --type option --symbol X --expiry YYYYMMDD --strike N --right C/P --qty N --side BUY --limit MID --yes` |
 | **Sell option** | `python3.13 scripts/ib_execute.py --type option --symbol X --expiry YYYYMMDD --strike N --right C/P --qty N --side SELL --limit N --yes` |
-| Check pending exits | `python3.13 scripts/exit_order_service.py --status` |
-| Run exit order check | `python3.13 scripts/exit_order_service.py` |
-| Exit service daemon | `python3.13 scripts/exit_order_service.py --daemon` |
-| Install exit service | `./scripts/setup_exit_order_service.sh install` |
-| Exit service status | `./scripts/setup_exit_order_service.sh status` |
+| Monitor daemon status | `python3.13 -m monitor_daemon.run --status` |
+| Run monitor daemon once | `python3.13 -m monitor_daemon.run --once` |
+| Monitor daemon handlers | `python3.13 -m monitor_daemon.run --list-handlers` |
+| Install monitor daemon | `./scripts/setup_monitor_daemon.sh install` |
+| Monitor daemon status (launchd) | `./scripts/setup_monitor_daemon.sh status` |
 | **IBC Gateway status** | `~/ibc/bin/status-secure-ibc-service.sh` |
 | **IBC Gateway start** | `~/ibc/bin/start-secure-ibc-service.sh` |
 | **IBC Gateway stop** | `~/ibc/bin/stop-secure-ibc-service.sh` |
@@ -364,37 +364,42 @@ After entry fill, place exit orders:
 1. **Stop Loss** — Stop-limit order at stop price
 2. **Target Profit** — Limit sell order at target
 
-**Note:** IB rejects limit orders >40% from current price. Use exit order service.
+**Note:** IB rejects limit orders >40% from current price. Use the monitor daemon's `exit_orders` handler for automated placement once the order becomes valid.
 
 ---
 
-## Exit Order Service
+## Monitor Daemon
 
-Automatically places pending target orders when IB will accept them.
+The monitor daemon is the active background service for post-entry workflows.
 
-**Check status:**
+Installed behavior:
+- launchd runs `python -m monitor_daemon.run --once` every 60 seconds
+- `fill_monitor` and `exit_orders` enforce market hours
+- `preset_rebalance` and `flex_token_check` are allowed to run off-hours
+
+**Status:**
 ```bash
-python3.13 scripts/exit_order_service.py --status
+python3.13 -m monitor_daemon.run --status
+./scripts/setup_monitor_daemon.sh status
 ```
 
-**Run single check:**
+**Run once manually:**
 ```bash
-python3.13 scripts/exit_order_service.py
+python3.13 -m monitor_daemon.run --once
 ```
 
-**Run as daemon (every 5 min during market hours):**
+**List handlers:**
 ```bash
-python3.13 scripts/exit_order_service.py --daemon
+python3.13 -m monitor_daemon.run --list-handlers
 ```
 
-**Install as launchd service:**
+**Install / logs:**
 ```bash
-./scripts/setup_exit_order_service.sh install
-./scripts/setup_exit_order_service.sh status
-./scripts/setup_exit_order_service.sh logs
+./scripts/setup_monitor_daemon.sh install
+./scripts/setup_monitor_daemon.sh logs
 ```
 
-**Logs:** `logs/exit-order-service.out.log`
+**Legacy note:** `scripts/exit_order_service.py` and `scripts/setup_exit_order_service.sh` are older standalone paths and should not be the primary scheduled service anymore.
 
 ---
 

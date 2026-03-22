@@ -45,6 +45,7 @@ export function useSyncHook<T>(config: UseSyncConfig<T>, active: boolean): UseSy
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didInitialSync = useRef(false);
+  const didInitialRead = useRef(false);
   const initialLoadKeyRef = useRef<string | null>(null);
   const requestRef = useRef<(method: RetryMethod, background?: boolean) => Promise<void>>(async () => {});
 
@@ -99,13 +100,9 @@ export function useSyncHook<T>(config: UseSyncConfig<T>, active: boolean): UseSy
     await executeRequest(method, false);
   }, [executeRequest, hasPost]);
 
-  // Initial fetch — read cached file, auto-sync if stale
+  // Initial fetch — always read the cached file once when the hook mounts.
+  // `active=false` should disable polling and background sync, not blank the page.
   useEffect(() => {
-    if (!active) {
-      initialLoadKeyRef.current = null;
-      return;
-    }
-
     if (initialLoadKeyRef.current === endpoint) return;
     initialLoadKeyRef.current = endpoint;
 
@@ -118,6 +115,7 @@ export function useSyncHook<T>(config: UseSyncConfig<T>, active: boolean): UseSy
         setLastSync(extractTimestamp ? extractTimestamp(json) : null);
         setError(null);
         setLoading(false);
+        didInitialRead.current = true;
 
         clearRetry();
         if (active && shouldRetry?.(json) && retryIntervalMs > 0) {
@@ -126,15 +124,16 @@ export function useSyncHook<T>(config: UseSyncConfig<T>, active: boolean): UseSy
           }, retryIntervalMs);
         }
 
-        // Auto-sync on first load
-        if (!didInitialSync.current) {
+        // Auto-sync on first load when the hook is active.
+        if (active && !didInitialSync.current) {
           didInitialSync.current = true;
           void triggerSync();
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unknown error");
         setLoading(false);
-        if (!didInitialSync.current) {
+        didInitialRead.current = true;
+        if (active && !didInitialSync.current) {
           didInitialSync.current = true;
           void triggerSync();
         }
@@ -144,9 +143,16 @@ export function useSyncHook<T>(config: UseSyncConfig<T>, active: boolean): UseSy
     void init();
   }, [active, clearRetry, endpoint, triggerSync, extractTimestamp, retryIntervalMs, retryMethod, shouldRetry]);
 
+  // If the hook mounted while inactive, issue the first sync when it later becomes active.
+  useEffect(() => {
+    if (!active || !didInitialRead.current || didInitialSync.current) return;
+    didInitialSync.current = true;
+    void triggerSync();
+  }, [active, triggerSync]);
+
   // Auto-sync interval (only when active)
   useEffect(() => {
-    if (!active) {
+    if (!active || interval <= 0) {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;

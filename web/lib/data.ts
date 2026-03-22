@@ -28,8 +28,7 @@ export const navItems: WorkspaceNavItem[] = [
   { label: "Dashboard", route: "dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Flow Analysis", route: "flow-analysis", href: "/flow-analysis", icon: LineChart },
   { label: "Portfolio", route: "portfolio", href: "/portfolio", icon: Circle },
-  // Performance page hidden — TWR can't match IB (see docs/performance-reconstruction.md)
-  // { label: "Performance", route: "performance", href: "/performance", icon: BarChart3 },
+  { label: "Performance", route: "performance", href: "/performance", icon: BarChart3 },
   { label: "Orders", route: "orders", href: "/orders", icon: ClipboardList },
   { label: "Scanner", route: "scanner", href: "/scanner", icon: Sparkles },
   { label: "Discover", route: "discover", href: "/discover", icon: Search },
