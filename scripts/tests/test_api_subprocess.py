@@ -180,7 +180,7 @@ class TestRunModule:
 
     def test_module_error_falls_back_to_stdout_when_stderr_is_empty(self):
         result = asyncio.get_event_loop().run_until_complete(
-            run_module("trade_blotter.flex_query", args=["--json"], timeout=5)
+            run_module("trade_blotter.flex_query", args=["--json"], timeout=2)
         )
         assert not result.ok
         assert result.error is not None
