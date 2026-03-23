@@ -152,10 +152,24 @@ class TestDetectStructureType:
         assert risk == "defined"
 
     def test_single_short_put(self):
+        """Short Put (Cash-Secured) is defined risk per options-structures.json"""
         legs = [{"secType": "OPT", "position": -1, "right": "P", "strike": 180}]
         name, risk = detect_structure_type(legs)
         assert name == "Short Put"
+        assert risk == "defined"
+
+    def test_single_short_call_is_undefined(self):
+        """Short Call (Naked) is undefined risk per options-structures.json"""
+        legs = [{"secType": "OPT", "position": -1, "right": "C", "strike": 200}]
+        name, risk = detect_structure_type(legs)
+        assert name == "Short Call"
         assert risk == "undefined"
+
+    def test_single_long_put_is_defined(self):
+        legs = [{"secType": "OPT", "position": 1, "right": "P", "strike": 100}]
+        name, risk = detect_structure_type(legs)
+        assert name == "Long Put"
+        assert risk == "defined"
 
     def test_bull_call_spread(self):
         legs = [
@@ -228,6 +242,26 @@ class TestFormatStructureDescription:
         ]
         result = format_structure_description("Straddle", legs)
         assert "$200" in result
+
+    def test_single_leg_short_put_includes_strike(self):
+        legs = [{"secType": "OPT", "right": "P", "strike": 85, "structure": ""}]
+        result = format_structure_description("Short Put", legs)
+        assert result == "Short Put $85"
+
+    def test_single_leg_short_call_includes_strike(self):
+        legs = [{"secType": "OPT", "right": "C", "strike": 150, "structure": ""}]
+        result = format_structure_description("Short Call", legs)
+        assert result == "Short Call $150"
+
+    def test_single_leg_long_put_includes_strike(self):
+        legs = [{"secType": "OPT", "right": "P", "strike": 200, "structure": ""}]
+        result = format_structure_description("Long Put", legs)
+        assert result == "Long Put $200"
+
+    def test_single_leg_long_call_includes_strike(self):
+        legs = [{"secType": "OPT", "right": "C", "strike": 300, "structure": ""}]
+        result = format_structure_description("Long Call", legs)
+        assert result == "Long Call $300"
 
     def test_stock_returns_structure_field(self):
         legs = [{"secType": "STK", "structure": "Stock (100 shares)"}]

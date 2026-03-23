@@ -303,6 +303,18 @@ export type TradeEntry = {
   notes?: string;
   rule_violation?: string;
   thesis?: string;
+  legs?: TradeLeg[];
+};
+
+export type TradeLeg = {
+  type?: string;
+  strike?: number;
+  expiry?: string;
+  open_price?: number;
+  close_price?: number;
+  leg_pnl?: number;
+  contracts?: number;
+  action?: string;
 };
 
 export type TradeLogData = {

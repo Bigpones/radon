@@ -141,7 +141,15 @@ def detect_structure_type(legs: list) -> Tuple[str, str]:
             return "Stock", "equity"
         direction = "Long" if leg['position'] > 0 else "Short"
         right = "Call" if leg.get('right') == 'C' else "Put"
-        return f"{direction} {right}", "defined" if direction == "Long" else "undefined"
+        # Per options-structures.json: Short Put = defined (cash-secured),
+        # Short Call = undefined (naked). All longs are defined.
+        if direction == "Long":
+            risk = "defined"
+        elif right == "Put":
+            risk = "defined"   # Short Put is cash-secured
+        else:
+            risk = "undefined"  # Short Call is naked
+        return f"{direction} {right}", risk
     
     # Sort legs by strike for consistent ordering
     opt_legs = [l for l in legs if l['secType'] == 'OPT']
@@ -292,6 +300,11 @@ def format_structure_description(structure_type: str, legs: list) -> str:
             return f"{structure_type} ${strikes[0]}"
         return f"{structure_type} ${min(strikes)}/${max(strikes)}"
 
+    # Single-leg options: Short Put, Short Call, Long Put, Long Call
+    if len(opt_legs) == 1:
+        strike = opt_legs[0].get('strike', '?')
+        return f"{structure_type} ${strike}"
+
     return structure_type
 
 
@@ -412,11 +425,12 @@ def collapse_positions(positions: list) -> list:
         
         # Determine net direction
         net_position = sum(l['position'] for l in legs)
+        num_legs = len(legs)
         if structure_type == "Stock":
             direction = "LONG" if net_position > 0 else "SHORT"
         elif "Spread" in structure_type:
             direction = "DEBIT" if total_entry_cost > 0 else "CREDIT"
-        elif risk_profile == "undefined":
+        elif num_legs > 1 and risk_profile == "undefined":
             direction = "COMBO"
         else:
             direction = "LONG" if net_position > 0 else "SHORT"
@@ -837,6 +851,43 @@ def convert_to_portfolio_format(account: dict, collapsed_positions: list, pnl_da
         except Exception:
             pass
 
+    # Blotter dates (from IB Flex Query — most reliable source)
+    blotter_dates: dict[str, str] = {}  # keyed by "ticker" and "ticker|expiry|right|strike"
+    blotter_path = PORTFOLIO_PATH.parent / "blotter.json"
+    if blotter_path.exists():
+        try:
+            blotter = _json.loads(blotter_path.read_text())
+            for trade in blotter.get("open_trades", []):
+                sym_raw = trade.get("symbol", "")
+                ticker_b = sym_raw.split()[0].strip()
+                execs = trade.get("executions", [])
+                # Find earliest execution date
+                earliest = None
+                for ex in execs:
+                    t_str = ex.get("time", "")
+                    if t_str:
+                        d = t_str[:10]
+                        if earliest is None or d < earliest:
+                            earliest = d
+                if not earliest or not ticker_b:
+                    continue
+                # Per-ticker fallback (earliest across all legs)
+                if ticker_b not in blotter_dates or earliest < blotter_dates[ticker_b]:
+                    blotter_dates[ticker_b] = earliest
+                # Per-contract key for options (parse OCC symbol: AAOI  260417P00085000)
+                parts = sym_raw.strip().split()
+                if len(parts) >= 2 and trade.get("sec_type") == "OPT":
+                    occ = parts[-1]  # e.g. "260417P00085000"
+                    if len(occ) >= 15:
+                        exp = f"20{occ[:6]}"  # 260417 → 20260417
+                        exp_fmt = f"{exp[:4]}-{exp[4:6]}-{exp[6:8]}"  # → 2026-04-17
+                        right = occ[6]  # P or C
+                        strike_raw = int(occ[7:]) / 1000  # 00085000 → 85.0
+                        contract_key = f"{ticker_b}|{exp_fmt}|{right}|{strike_raw}"
+                        blotter_dates[contract_key] = earliest
+        except Exception:
+            pass
+
     # Previous portfolio dates (fallback)
     prev_dates: dict[str, str] = {}
     if PORTFOLIO_PATH.exists():
@@ -856,13 +907,24 @@ def convert_to_portfolio_format(account: dict, collapsed_positions: list, pnl_da
         key = f"{pos.get('ticker')}|{pos.get('structure')}|{pos.get('expiry')}"
         ticker = pos.get("ticker", "")
         structure = pos.get("structure", "")
-        # Try: trade_log by ticker+structure → prev portfolio → "unknown" sentinel.
-        # Default to "unknown" (not today) for positions without a trade_log match.
-        # This prevents isSameDay() from incorrectly flagging old positions as
-        # opened today, which would make Today P&L = Total P&L for everything.
-        # "unknown" date is in the past so it never matches todayInET().
+        expiry = pos.get("expiry", "")
+
+        # Build per-contract blotter key from position legs
+        blotter_contract_date = None
+        legs = pos.get("legs", [])
+        if len(legs) == 1 and legs[0].get("secType") == "OPT":
+            leg = legs[0]
+            right = "C" if leg.get("right") == "C" else "P"
+            strike = leg.get("strike", 0)
+            contract_key = f"{ticker}|{expiry}|{right}|{float(strike)}"
+            blotter_contract_date = blotter_dates.get(contract_key)
+
+        # Fallback chain: trade_log → blotter (per-contract) → blotter (ticker) →
+        # prev portfolio → "unknown"
         pos['entry_date'] = (
             trade_log_dates.get(f"{ticker}|{structure}")
+            or blotter_contract_date
+            or blotter_dates.get(ticker)
             or prev_dates.get(key)
             or "unknown"
         )

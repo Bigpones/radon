@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import type { PortfolioData, AccountSummary, ExecutedOrder } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { computeExposureDetailed, type ExposureDataWithBreakdown } from "@/lib/exposureBreakdown";
@@ -83,16 +83,40 @@ function MetricCard({ card, onClick }: { card: CardDef; onClick?: () => void }) 
   );
 }
 
+/* ─── Collapsible section header ─────────────────────────── */
+
+function SectionHeader({ label, collapsed, onToggle }: { label: string; collapsed: boolean; onToggle: () => void }) {
+  return (
+    <div className="section-label-mono section-label-toggle" onClick={onToggle}>
+      <svg
+        className={`section-chevron${collapsed ? "" : " section-chevron-open"}`}
+        width="10"
+        height="10"
+        viewBox="0 0 10 10"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path d="M3 1.5L7 5L3 8.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      <span>{label}</span>
+    </div>
+  );
+}
+
 /* ─── Account row (IB authoritative) — 4 cards, no Realized duplicate ── */
 
 function AccountRow({
   acct,
+  collapsed,
+  onToggle,
   onNetLiqClick,
   onDayPnlClick,
   onUnrealizedClick,
   onDividendsClick,
 }: {
   acct: AccountSummary;
+  collapsed: boolean;
+  onToggle: () => void;
   onNetLiqClick: () => void;
   onDayPnlClick: () => void;
   onUnrealizedClick: () => void;
@@ -101,8 +125,8 @@ function AccountRow({
   const dailyAvailable = acct.daily_pnl != null;
   return (
     <>
-      <div className="section-label-mono">ACCOUNT</div>
-      <div className="metrics-grid">
+      <SectionHeader label="ACCOUNT" collapsed={collapsed} onToggle={onToggle} />
+      {!collapsed && <div className="metrics-grid">
         <MetricCard
           card={{ label: "Net Liquidation", value: fmtExact(acct.net_liquidation), change: "BANKROLL", tone: "neutral" }}
           onClick={onNetLiqClick}
@@ -119,7 +143,7 @@ function AccountRow({
           card={{ label: "Dividends", value: fmtExact(acct.dividends), change: "ACCRUED", tone: acct.dividends > 0 ? "positive" : "neutral" }}
           onClick={onDividendsClick}
         />
-      </div>
+      </div>}
     </>
   );
 }
@@ -128,12 +152,16 @@ function AccountRow({
 
 function RiskRow({
   acct,
+  collapsed,
+  onToggle,
   onBuyingPowerClick,
   onMarginClick,
   onExcessLiqClick,
   onSettledCashClick,
 }: {
   acct: AccountSummary;
+  collapsed: boolean;
+  onToggle: () => void;
   onBuyingPowerClick: () => void;
   onMarginClick: () => void;
   onExcessLiqClick: () => void;
@@ -141,8 +169,8 @@ function RiskRow({
 }) {
   return (
     <>
-      <div className="section-label-mono">RISK</div>
-      <div className="metrics-grid">
+      <SectionHeader label="RISK" collapsed={collapsed} onToggle={onToggle} />
+      {!collapsed && <div className="metrics-grid">
         <MetricCard
           card={{ label: "Buying Power", value: fmtExact(acct.buying_power), change: "AVAILABLE", tone: "neutral" }}
           onClick={onBuyingPowerClick}
@@ -159,7 +187,7 @@ function RiskRow({
           card={{ label: "Settled Cash", value: fmtSignedExact(acct.settled_cash), change: "NET CASH", tone: tone(acct.settled_cash) }}
           onClick={onSettledCashClick}
         />
-      </div>
+      </div>}
     </>
   );
 }
@@ -168,12 +196,16 @@ function RiskRow({
 
 function MarginRow({
   acct,
+  collapsed,
+  onToggle,
   onEwlClick,
   onPrevEwlClick,
   onRegTClick,
   onSmaClick,
 }: {
   acct: AccountSummary;
+  collapsed: boolean;
+  onToggle: () => void;
   onEwlClick: () => void;
   onPrevEwlClick: () => void;
   onRegTClick: () => void;
@@ -181,8 +213,8 @@ function MarginRow({
 }) {
   return (
     <>
-      <div className="section-label-mono">MARGIN</div>
-      <div className="metrics-grid">
+      <SectionHeader label="MARGIN" collapsed={collapsed} onToggle={onToggle} />
+      {!collapsed && <div className="metrics-grid">
         <MetricCard
           card={{ label: "Equity With Loan", value: acct.equity_with_loan != null ? fmtExact(acct.equity_with_loan) : "---", change: "EWL", tone: "neutral" }}
           onClick={onEwlClick}
@@ -199,7 +231,7 @@ function MarginRow({
           card={{ label: "SMA", value: acct.sma != null ? fmtExact(acct.sma) : "---", change: "SPECIAL MEMORANDUM", tone: "neutral" }}
           onClick={onSmaClick}
         />
-      </div>
+      </div>}
     </>
   );
 }
@@ -208,12 +240,16 @@ function MarginRow({
 
 function CapitalRow({
   acct,
+  collapsed,
+  onToggle,
   onCashClick,
   onAvailFundsClick,
   onInitMarginClick,
   onGrossPosClick,
 }: {
   acct: AccountSummary;
+  collapsed: boolean;
+  onToggle: () => void;
   onCashClick: () => void;
   onAvailFundsClick: () => void;
   onInitMarginClick: () => void;
@@ -221,8 +257,8 @@ function CapitalRow({
 }) {
   return (
     <>
-      <div className="section-label-mono">CAPITAL</div>
-      <div className="metrics-grid">
+      <SectionHeader label="CAPITAL" collapsed={collapsed} onToggle={onToggle} />
+      {!collapsed && <div className="metrics-grid">
         <MetricCard
           card={{ label: "Cash", value: acct.cash != null ? fmtSignedExact(acct.cash) : "---", change: "TOTAL CASH", tone: acct.cash != null ? tone(acct.cash) : "neutral" }}
           onClick={onCashClick}
@@ -239,7 +275,7 @@ function CapitalRow({
           card={{ label: "Gross Position Value", value: acct.gross_position_value != null ? fmtExact(acct.gross_position_value) : "---", change: "SECURITIES", tone: "neutral" }}
           onClick={onGrossPosClick}
         />
-      </div>
+      </div>}
     </>
   );
 }
@@ -248,15 +284,19 @@ function CapitalRow({
 
 function ExposureRow({
   exposure,
+  collapsed,
+  onToggle,
   onCardClick,
 }: {
   exposure: ExposureDataWithBreakdown | null;
+  collapsed: boolean;
+  onToggle: () => void;
   onCardClick: (metric: ExposureMetric) => void;
 }) {
   return (
     <>
-      <div className="section-label-mono">EXPOSURE</div>
-      {exposure ? (
+      <SectionHeader label="EXPOSURE" collapsed={collapsed} onToggle={onToggle} />
+      {!collapsed && exposure ? (
         <div className="metrics-grid">
           <MetricCard
             card={{ label: "Net Long", value: fmt(exposure.netLong), change: "LONG BIASED", tone: "positive" }}
@@ -275,7 +315,7 @@ function ExposureRow({
             onClick={() => onCardClick("netExposure")}
           />
         </div>
-      ) : (
+      ) : !collapsed ? (
         <div className="metrics-grid">
           {["Net Long", "Net Short", "Dollar Delta", "Net Exposure"].map((label) => (
             <div key={label} className="metric-card metric-card-loading">
@@ -285,7 +325,7 @@ function ExposureRow({
             </div>
           ))}
         </div>
-      )}
+      ) : null}
     </>
   );
 }
@@ -303,6 +343,8 @@ function TodayPnlRow({
   realized,
   total,
   realizedPnl,
+  collapsed,
+  onToggle,
   onDayMoveClick,
   onRealizedClick,
   onTotalClick,
@@ -313,14 +355,16 @@ function TodayPnlRow({
   realized: number;
   total: number;
   realizedPnl?: number;
+  collapsed: boolean;
+  onToggle: () => void;
   onDayMoveClick: () => void;
   onRealizedClick: () => void;
   onTotalClick: () => void;
 }) {
   return (
     <>
-      <div className="section-label-mono">TODAY&apos;S P&amp;L</div>
-      {hasDaily ? (
+      <SectionHeader label="TODAY'S P&L" collapsed={collapsed} onToggle={onToggle} />
+      {!collapsed && hasDaily ? (
         <div className="metrics-grid-3">
           {/* Renamed: "Unrealized" → "Day Move" — intraday change from yesterday's close */}
           <MetricCard
@@ -341,7 +385,7 @@ function TodayPnlRow({
             onClick={onTotalClick}
           />
         </div>
-      ) : (
+      ) : !collapsed ? (
         <div className="metrics-grid-3">
           <div className="metric-card">
             <div className="metric-label">Day Move</div>
@@ -361,7 +405,7 @@ function TodayPnlRow({
             <div className="metric-change neutral">MARKET CLOSED</div>
           </div>
         </div>
-      )}
+      ) : null}
     </>
   );
 }
@@ -389,6 +433,19 @@ function LegacyLeverageRow({ portfolio, pnl, pnlPct }: { portfolio: PortfolioDat
 /* ─── Main component ─────────────────────────────────────── */
 
 export default function MetricCards({ portfolio, prices, realizedPnl, executedOrders = [], section }: MetricCardsProps) {
+  // Section collapse state: Account + Today's P&L expanded by default, rest collapsed
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
+    account: false,
+    risk: true,
+    margin: true,
+    capital: true,
+    exposure: true,
+    todayPnl: false,
+  });
+  const toggle = useCallback((key: string) => {
+    setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
   const [activeMetric, setActiveMetric] = useState<ExposureMetric | null>(null);
   const [fillsModalOpen, setFillsModalOpen] = useState(false);
   const [unrealizedModalOpen, setUnrealizedModalOpen] = useState(false);
@@ -473,6 +530,8 @@ export default function MetricCards({ portfolio, prices, realizedPnl, executedOr
       {acct ? (
         <AccountRow
           acct={acct}
+          collapsed={collapsed.account}
+          onToggle={() => toggle("account")}
           onNetLiqClick={() => setNetLiqModalOpen(true)}
           onDayPnlClick={() => setDayPnlModalOpen(true)}
           onUnrealizedClick={() => setUnrealizedModalOpen(true)}
@@ -486,6 +545,8 @@ export default function MetricCards({ portfolio, prices, realizedPnl, executedOr
       {acct && (
         <RiskRow
           acct={acct}
+          collapsed={collapsed.risk}
+          onToggle={() => toggle("risk")}
           onBuyingPowerClick={() => setBuyingPowerModalOpen(true)}
           onMarginClick={() => setMarginModalOpen(true)}
           onExcessLiqClick={() => setExcessLiqModalOpen(true)}
@@ -497,6 +558,8 @@ export default function MetricCards({ portfolio, prices, realizedPnl, executedOr
       {acct && acct.equity_with_loan != null && (
         <MarginRow
           acct={acct}
+          collapsed={collapsed.margin}
+          onToggle={() => toggle("margin")}
           onEwlClick={() => setEwlModalOpen(true)}
           onPrevEwlClick={() => setPrevEwlModalOpen(true)}
           onRegTClick={() => setRegTModalOpen(true)}
@@ -508,6 +571,8 @@ export default function MetricCards({ portfolio, prices, realizedPnl, executedOr
       {acct && acct.available_funds != null && (
         <CapitalRow
           acct={acct}
+          collapsed={collapsed.capital}
+          onToggle={() => toggle("capital")}
           onCashClick={() => setCashModalOpen(true)}
           onAvailFundsClick={() => setAvailFundsModalOpen(true)}
           onInitMarginClick={() => setInitMarginModalOpen(true)}
@@ -516,9 +581,9 @@ export default function MetricCards({ portfolio, prices, realizedPnl, executedOr
       )}
 
       {/* Row 5: EXPOSURE (real-time, all 4 clickable) */}
-      <ExposureRow exposure={exposure} onCardClick={setActiveMetric} />
+      <ExposureRow exposure={exposure} collapsed={collapsed.exposure} onToggle={() => toggle("exposure")} onCardClick={setActiveMetric} />
 
-      {/* Row 4: TODAY'S P&L — renamed "Unrealized" → "Day Move" */}
+      {/* Row 6: TODAY'S P&L — renamed "Unrealized" → "Day Move" */}
       <TodayPnlRow
         todayUnrealized={todayUnrealized}
         hasDaily={hasDaily}
@@ -526,6 +591,8 @@ export default function MetricCards({ portfolio, prices, realizedPnl, executedOr
         realized={realized}
         total={total}
         realizedPnl={realizedPnl}
+        collapsed={collapsed.todayPnl}
+        onToggle={() => toggle("todayPnl")}
         onDayMoveClick={() => setDayMoveModalOpen(true)}
         onRealizedClick={() => setFillsModalOpen(true)}
         onTotalClick={() => setTotalModalOpen(true)}

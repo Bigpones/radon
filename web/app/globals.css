@@ -377,6 +377,28 @@ body {
   font-weight: 500;
 }
 
+.section-label-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.section-label-toggle:hover {
+  color: var(--text-secondary);
+}
+
+.section-chevron {
+  transition: transform 150ms ease;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.section-chevron-open {
+  transform: rotate(90deg);
+}
+
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

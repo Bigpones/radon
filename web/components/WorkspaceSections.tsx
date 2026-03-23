@@ -19,7 +19,7 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react";
-import type { BlotterTrade, DiscoverCandidate, ExecutedOrder, FlowAnalysisPosition, OpenOrder, OrdersData, PortfolioData, PortfolioPosition, ScannerSignal, WorkspaceSection } from "@/lib/types";
+import type { BlotterTrade, DiscoverCandidate, ExecutedOrder, FlowAnalysisPosition, OpenOrder, OrdersData, PortfolioData, PortfolioPosition, ScannerSignal, TradeEntry, WorkspaceSection } from "@/lib/types";
 import { useOrderActions } from "@/lib/OrderActionsContext";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { optionKey } from "@/lib/pricesProtocol";
@@ -1214,13 +1214,47 @@ function DiscoverSections() {
   );
 }
 
+type JournalSortKey = "id" | "date" | "ticker" | "structure" | "decision" | "qty" | "entry_cost" | "max_risk" | "realized_pnl" | "ror";
+
+const journalSortExtract = (t: TradeEntry, key: JournalSortKey): string | number | null => {
+  switch (key) {
+    case "id": return t.id;
+    case "date": return t.date;
+    case "ticker": return t.ticker;
+    case "structure": return t.structure;
+    case "decision": return t.decision;
+    case "qty": return t.contracts ?? t.shares ?? t.quantity ?? null;
+    case "entry_cost": return t.total_cost ?? t.entry_cost ?? null;
+    case "max_risk": return t.max_risk ?? null;
+    case "realized_pnl": return t.realized_pnl ?? null;
+    case "ror": return t.return_on_risk ?? null;
+    default: return null;
+  }
+};
+
 function JournalSections() {
   const { data, loading, error, syncWithIB, syncing, lastSyncResult } = useJournal();
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
   const trades = useMemo(() => {
     if (!data?.trades) return [];
     return [...data.trades].sort((a, b) => b.id - a.id);
   }, [data]);
+
+  const extractSearchText = useCallback(
+    (t: TradeEntry) => `${t.ticker} ${t.structure} ${t.decision} ${t.date} ${t.edge_analysis?.edge_type ?? ""}`,
+    [],
+  );
+  const { filtered, query, setQuery } = useTableFilter(trades, extractSearchText);
+  const { sorted: sortedTrades, sort, toggle } = useSort(filtered, journalSortExtract, "id" as JournalSortKey, "desc");
+
+  const toggleExpand = useCallback((id: number) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
 
   const handleSync = useCallback(async () => {
     setSyncError(null);
@@ -1279,6 +1313,15 @@ function JournalSections() {
             <span className="pill defined">{trades.length} TRADES</span>
           </div>
         </div>
+        {trades.length > 0 && (
+          <TableSearch
+            query={query}
+            setQuery={setQuery}
+            placeholder="Filter trades..."
+            resultCount={filtered.length}
+            totalCount={trades.length}
+          />
+        )}
         {error && <div className="section-body"><div className="alert-item bearish">{error}</div></div>}
         {syncError && <div className="section-body"><div className="alert-item bearish">IB Sync: {syncError}</div></div>}
         {loading && <div className="section-body p-6"><TableSkeleton rows={4} columns={6} /></div>}
@@ -1290,39 +1333,72 @@ function JournalSections() {
             <table>
               <thead>
                 <tr>
-                  <th>#</th>
-                  <th>Date</th>
-                  <th>Ticker</th>
-                  <th>Structure</th>
-                  <th>Status</th>
-                  <th className="right">Qty</th>
-                  <th className="right">Entry Cost</th>
-                  <th className="right">Max Risk</th>
-                  <th className="right">Realized P&L</th>
-                  <th className="right">RoR</th>
+                  <SortTh<JournalSortKey> label="#" sortKey="id" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<JournalSortKey> label="Date" sortKey="date" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<JournalSortKey> label="Ticker" sortKey="ticker" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<JournalSortKey> label="Structure" sortKey="structure" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<JournalSortKey> label="Status" sortKey="decision" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<JournalSortKey> label="Qty" sortKey="qty" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<JournalSortKey> label="Entry Cost" sortKey="entry_cost" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<JournalSortKey> label="Max Risk" sortKey="max_risk" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<JournalSortKey> label="Realized P&L" sortKey="realized_pnl" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
+                  <SortTh<JournalSortKey> label="RoR" sortKey="ror" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />
                   <th>Gates</th>
                   <th>Edge</th>
                 </tr>
               </thead>
               <tbody>
-                {trades.map((t) => {
+                {sortedTrades.map((t) => {
                   const qty = t.contracts ?? t.shares ?? t.quantity ?? null;
                   const cost = t.total_cost ?? t.entry_cost ?? null;
+                  const hasLegs = t.legs && t.legs.length > 0;
+                  const isExpanded = expandedIds.has(t.id);
                   return (
-                    <tr key={t.id}>
-                      <td className="cell-muted">{t.id}</td>
-                      <td>{t.date}</td>
-                      <td><TickerLink ticker={t.ticker} /></td>
-                      <td>{t.structure}</td>
-                      <td><span className={decisionClass(t.decision)}>{t.decision}</span></td>
-                      <td className="right">{qty ?? "—"}</td>
-                      <td className="right">{fmtJournalUsd(cost)}</td>
-                      <td className="right">{fmtJournalUsd(t.max_risk)}</td>
-                      <td className="right"><span className={pnlClass(t.realized_pnl)}>{fmtJournalUsd(t.realized_pnl)}{t.return_on_risk != null ? ` (${(t.return_on_risk * 100) >= 0 ? "+" : ""}${(t.return_on_risk * 100).toFixed(1)}%)` : ""}</span></td>
-                      <td className="right">{t.return_on_risk != null ? `${(t.return_on_risk * 100).toFixed(1)}%` : "—"}</td>
-                      <td className="cell-muted">{t.gates_passed?.join(", ") || t.gates_failed?.join(", ") || "—"}</td>
-                      <td className="cell-muted">{t.edge_analysis?.edge_type ?? "—"}</td>
-                    </tr>
+                    <React.Fragment key={t.id}>
+                      <tr>
+                        <td className="cell-muted">{t.id}</td>
+                        <td>{t.date}</td>
+                        <td>
+                          <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                            <TickerLink ticker={t.ticker} />
+                            {hasLegs && (
+                              <button
+                                className="expand-btn"
+                                onClick={() => toggleExpand(t.id)}
+                                title={isExpanded ? "Collapse legs" : "Expand legs"}
+                              >
+                                <ChevronDown size={12} style={{ transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 150ms ease" }} />
+                              </button>
+                            )}
+                          </span>
+                        </td>
+                        <td>{t.structure}</td>
+                        <td><span className={decisionClass(t.decision)}>{t.decision}</span></td>
+                        <td className="right">{qty ?? "—"}</td>
+                        <td className="right">{fmtJournalUsd(cost)}</td>
+                        <td className="right">{fmtJournalUsd(t.max_risk)}</td>
+                        <td className="right"><span className={pnlClass(t.realized_pnl)}>{fmtJournalUsd(t.realized_pnl)}{t.return_on_risk != null ? ` (${(t.return_on_risk * 100) >= 0 ? "+" : ""}${(t.return_on_risk * 100).toFixed(1)}%)` : ""}</span></td>
+                        <td className="right">{t.return_on_risk != null ? `${(t.return_on_risk * 100).toFixed(1)}%` : "—"}</td>
+                        <td className="cell-muted">{t.gates_passed?.join(", ") || t.gates_failed?.join(", ") || "—"}</td>
+                        <td className="cell-muted">{t.edge_analysis?.edge_type ?? "—"}</td>
+                      </tr>
+                      {hasLegs && isExpanded && t.legs!.map((leg, i) => (
+                        <tr key={`${t.id}-leg-${i}`} className="leg-row">
+                          <td />
+                          <td className="cell-muted">{leg.expiry ?? "—"}</td>
+                          <td />
+                          <td className="cell-muted">{leg.type ?? "—"}{leg.strike != null ? ` $${leg.strike}` : ""}</td>
+                          <td />
+                          <td className="right cell-muted">{leg.contracts ?? "—"}</td>
+                          <td className="right cell-muted">{leg.open_price != null ? `$${leg.open_price.toFixed(2)}` : "—"}</td>
+                          <td className="right cell-muted">{leg.close_price != null ? `$${leg.close_price.toFixed(2)}` : "—"}</td>
+                          <td className="right"><span className={pnlClass(leg.leg_pnl)}>{leg.leg_pnl != null ? fmtJournalUsd(leg.leg_pnl) : "—"}</span></td>
+                          <td />
+                          <td />
+                          <td />
+                        </tr>
+                      ))}
+                    </React.Fragment>
                   );
                 })}
               </tbody>
