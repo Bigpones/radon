@@ -484,29 +484,136 @@ def build_tweet(data: dict, ds: str) -> str:
     d = datetime.strptime(ds, "%Y-%m-%d")
     month_day = d.strftime("%b %-d")
 
-    return f"""🚨 CTAs are sitting on the most extreme short equity position in 3 months — and it's a coil ready to snap.
+    # ── Extract positioning data across asset classes ──
 
-Here's what the data shows ({month_day} thread 🧵):
+    index_table = data["tables"].get("index", [])
+    commodity_table = data["tables"].get("commodity", [])
+    currency_table = data["tables"].get("currency", [])
 
-> SPX CTA position: {spx['position_today']:+.2f} (was +{spx['position_1m_ago']:.2f} one month ago)
-> 0th percentile of 3M range · z-score {spx['z_score_3m']:.2f}
-> $90.6B in forced selling still in pipeline
+    nq = get_row(main, "nasdaq") or get_row(main, "nq")
+    bonds_10y = get_row(main, "10-year") or get_row(main, "10y")
+    gold = get_row(main, "gold") or get_row(commodity_table, "gold")
 
-> Every global equity index futures at 0–3rd pctile simultaneously:
-> SPX, NQ, Russell, MSCI World, DAX, Nikkei, Eurostoxx, FTSE
+    spx_pos = spx['position_today']
+    spx_1m = spx.get('position_1m_ago', 0)
+    spx_z = spx.get('z_score_3m', 0)
+    spx_pctile = spx.get('percentile_3m', 0)
+    flipped = spx_1m > 0 and spx_pos < 0
 
-> The stagflation trade is maxed out:
-> Cotton 98th pctile · Brent 95th · Diesel 94th · Wheat 92nd
+    # Count extreme positions across indexes
+    extreme_short_indexes = []
+    for r in (index_table or []):
+        p = r.get("percentile_3m", 50)
+        if isinstance(p, (int, float)) and p <= 0.05:
+            name = r.get("underlying", "").replace("E-Mini ", "").replace("CME ", "").replace(" Index", "").replace("ICE MSCI ", "")
+            extreme_short_indexes.append(name)
 
-> Full curve short: 2Y, 10Y, 30Y all at 0–2nd pctile
-> All flipped from long → short in 30 days
+    # Find extreme commodity longs (crowded trades)
+    extreme_long_commodities = []
+    for r in (commodity_table or []):
+        p = r.get("percentile_3m", 50)
+        if isinstance(p, (int, float)) and p >= 0.85:
+            name = r.get("underlying", "")
+            extreme_long_commodities.append((name, round(p * 100) if p <= 1 else p))
 
-The mean-reversion coil is set. Any bullish catalyst — Fed signal, macro beat, tariff relief — triggers violent CTA short-covering across equities, bonds, and commodities simultaneously.
+    # ── Build narrative based on the data ──
 
-This is not a trade call. This is a structural observation: the most crowded short in years.
+    if spx_z <= -2.0:
+        hook = (
+            f"🚨 CTAs just hit a {abs(spx_z):.1f} standard deviation short on SPX futures — "
+            f"the most extreme positioning in {'a year' if spx_pctile <= 0.01 else '3 months'}."
+        )
+    elif spx_z <= -1.5:
+        hook = (
+            f"⚠️ CTA equity positioning is at max short — SPX futures at "
+            f"{spx_pos:+.2f} (z-score {spx_z:.2f}). The coil is building."
+        )
+    elif flipped:
+        hook = (
+            f"📉 CTAs flipped from +{spx_1m:.2f} long to {spx_pos:+.2f} short on SPX "
+            f"in 30 days. That's a {abs(spx_1m - spx_pos):.2f}-point swing in systematic exposure."
+        )
+    else:
+        hook = (
+            f"📊 CTA positioning update ({month_day}): SPX at {spx_pos:+.2f}, "
+            f"z-score {spx_z:.2f}."
+        )
 
-Analyzed by Radon
-radon.run"""
+    # Thesis: what the positioning means
+    if extreme_short_indexes and len(extreme_short_indexes) >= 4:
+        index_list = ", ".join(extreme_short_indexes[:6])
+        thesis = (
+            f"This isn't just SPX — {len(extreme_short_indexes)} global equity indexes "
+            f"are simultaneously at the bottom of their 3-month range ({index_list}). "
+            f"When systematic funds are this short across every index, the next move is "
+            f"binary: either the macro deteriorates further, or we get a violent short-covering "
+            f"rally across everything."
+        )
+    elif flipped:
+        thesis = (
+            f"One month ago CTAs were long at +{spx_1m:.2f}. The vol-targeting models "
+            f"detected the regime change and mechanically reversed. This selling is "
+            f"not discretionary — it's algorithmic, and it doesn't stop until realized "
+            f"vol compresses below the lookback window."
+        )
+    else:
+        nq_pos = nq['position_today'] if nq else None
+        nq_note = f" NQ at {nq_pos:+.2f}." if nq_pos is not None else ""
+        thesis = (
+            f"SPX CTA position: {spx_pos:+.2f} (was {spx_1m:+.2f} one month ago).{nq_note} "
+            f"Vol-targeting models are adjusting exposure based on realized volatility — "
+            f"the positioning reflects the vol regime, not a directional view."
+        )
+
+    # Cross-asset context
+    cross_asset_lines = []
+    if extreme_long_commodities:
+        top_3 = sorted(extreme_long_commodities, key=lambda x: -x[1])[:3]
+        names = " · ".join([f"{n} {p}th pctile" for n, p in top_3])
+        cross_asset_lines.append(f"> Crowded commodity longs: {names}")
+
+    if bonds_10y:
+        b_pos = bonds_10y.get("position_today", 0)
+        b_z = bonds_10y.get("z_score_3m", 0)
+        if b_z <= -1.5:
+            cross_asset_lines.append(
+                f"> Bonds also max short: 10Y at {b_pos:+.2f} (z={b_z:.2f}) — full curve short"
+            )
+
+    if gold:
+        g_pos = gold.get("position_today", 0)
+        g_z = gold.get("z_score_3m", 0)
+        if abs(g_z) > 1.5:
+            direction = "long" if g_pos > 0 else "short"
+            cross_asset_lines.append(
+                f"> Gold CTAs {direction} at {g_pos:+.2f} (z={g_z:.2f})"
+            )
+
+    cross_asset = "\n".join(cross_asset_lines) if cross_asset_lines else ""
+
+    # Conclusion
+    if spx_z <= -1.5:
+        conclusion = (
+            "The mean-reversion coil is set. Any bullish catalyst — Fed signal, "
+            "macro beat, tariff relief — triggers mechanical short-covering. "
+            "This is structural, not speculative."
+        )
+    elif flipped:
+        conclusion = (
+            "The flip is mechanical but the magnitude matters. Watch realized vol — "
+            "if it compresses, CTAs reverse just as aggressively to the upside."
+        )
+    else:
+        conclusion = (
+            "No extreme positioning. CTAs are adjusting normally to the current vol regime."
+        )
+
+    parts = [hook, "", thesis]
+    if cross_asset:
+        parts.extend(["", cross_asset])
+    parts.extend(["", conclusion, "", "Analyzed by Radon · radon.run"])
+
+    return "\n".join(parts)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────

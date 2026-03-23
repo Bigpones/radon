@@ -432,22 +432,121 @@ def build_tweet(data: dict, ds: str) -> str:
         z = spx_row.get("z_score_3m", 0)
         spx_line = f"\n> SPX CTA position at {pctile_label(p)} percentile (3M) · z-score {z:.2f}"
 
-    return f"""⚠️ The Crash Risk Index is flashing {level} at {score:.0f}/100 — here's the full picture ({month_day} 🧵):
+    # ── Narrative by regime state ──
 
-> CRI: {score:.0f}/100 — {level}
-> VIX: {vix:.2f} · VVIX: {vvix:.2f} ({"above" if vvix > 110 else "below"} 110 threshold)
-> COR1M: {cor1m:.2f} · Realized Vol: {rvol:.2f}%
+    spy = data.get("spy", 0)
+    spx_dist = data.get("spx_distance_pct", 0) or 0
+    exposure = cta.get("exposure_pct", 200) or 200
+    forced_reduction = cta.get("forced_reduction_pct", 0) or 0
 
-> Crash Trigger: {"🔴 TRIGGERED" if triggered else "🟡 INACTIVE"} ({conditions_met}/3 conditions active)
-> SPX below 100d MA: {"✓" if spx_met else "✗"} · RVol > 25%: {"✓" if conditions.get("realized_vol_gt_25") else "✗"} · COR1M > 60: {"✓" if conditions.get("cor1m_gt_60") else "✗"}{spx_line}
+    spx_pos = spx_row.get("position_today", 0) if spx_row else 0
+    spx_z = spx_row.get("z_score_3m", 0) if spx_row else 0
+    spx_pctile = spx_row.get("percentile_3m", 0) if spx_row else 0
 
-> CTA vol-targeting model: ${est_selling:.0f}B in forced selling pipeline
-> Equity exposure compressing — deleveraging in progress
+    if triggered:
+        hook = (
+            f"🚨 All 3 crash trigger conditions are active simultaneously — "
+            f"this has preceded every major drawdown in the model's history."
+        )
+        thesis = (
+            f"SPX is {abs(spx_dist):.1f}% below its 100-day MA, realized vol "
+            f"has breached 25%, and implied correlation (COR1M) is above 60. "
+            f"When all three align, markets are in forced-liquidation mode — "
+            f"correlations spike because everyone is selling everything."
+        )
+        cta_note = (
+            f"CTA vol-targeting models have cut equity exposure to {exposure:.0f}% "
+            f"with ${est_selling:.0f}B in forced selling still in the pipeline. "
+            f"This is mechanical, not discretionary — it doesn't stop until vol compresses."
+        )
 
-Regime is {"elevated but not at crash threshold" if level == "ELEVATED" and not triggered else "at crash trigger threshold — all 3 conditions active" if triggered else "compressed — risk appetite recovering"}.
+    elif level == "CRITICAL":
+        hook = (
+            f"🔴 CRI at {score:.0f}/100 — the crash risk index is at critical levels. "
+            f"Here's why the next 48 hours matter."
+        )
+        thesis = (
+            f"VIX at {vix:.1f} with VVIX at {vvix:.1f} means the market is pricing "
+            f"large daily moves AND uncertainty about those moves. COR1M at {cor1m:.1f} "
+            f"shows stocks are moving in lockstep — diversification isn't working."
+        )
+        cta_note = (
+            f"Systematic funds are {forced_reduction:.0f}% through their deleveraging "
+            f"cycle — ${est_selling:.0f}B in forced equity selling remaining."
+        )
 
-Analyzed by Radon
-radon.run"""
+    elif level == "HIGH":
+        hook = (
+            f"🟠 CRI at {score:.0f}/100 — significant stress across vol, correlation, "
+            f"and CTA positioning."
+        )
+        thesis = (
+            f"VIX {vix:.1f} · VVIX {vvix:.1f} · COR1M {cor1m:.1f}. "
+            f"SPX is {abs(spx_dist):.1f}% below its 100-day moving average. "
+            f"The vol complex is elevated and implied correlation is rising — "
+            f"meaning individual stock moves are becoming market-wide moves."
+        )
+        cta_note = (
+            f"CTA equity exposure at {exposure:.0f}% with ${est_selling:.0f}B "
+            f"in forced selling queued. The mechanical bid is absent."
+        )
+
+    elif level == "ELEVATED":
+        hook = (
+            f"⚠️ CRI at {score:.0f}/100 — elevated but not crisis. "
+            f"The risk regime has shifted ({month_day})."
+        )
+        thesis = (
+            f"VIX at {vix:.1f} is above its comfort zone. COR1M at {cor1m:.1f} "
+            f"shows correlations ticking higher. SPX is {abs(spx_dist):.1f}% "
+            f"{'below' if spx_dist < 0 else 'above'} its 100-day MA — "
+            f"{'the trend has broken and institutions are adjusting.' if spx_dist < -2 else 'trend still intact but momentum fading.'}"
+        )
+        cta_note = (
+            f"CTA positioning: SPX at {spx_pos:+.2f} "
+            f"({pctile_label(round(spx_pctile * 100) if spx_pctile < 1 else int(spx_pctile))} pctile, z={spx_z:.2f}). "
+            f"{'Max short territory — any bullish catalyst triggers violent covering.' if spx_z < -1.5 else 'Reducing but not yet at extremes.'}"
+        )
+
+    else:  # LOW
+        hook = (
+            f"📊 CRI at {score:.0f}/100 — risk regime is calm. "
+            f"No structural stress detected ({month_day})."
+        )
+        thesis = (
+            f"VIX at {vix:.1f}, COR1M at {cor1m:.1f}, SPX "
+            f"{abs(spx_dist):.1f}% {'above' if spx_dist >= 0 else 'below'} "
+            f"its 100-day MA. Vol is compressed, correlations are low, "
+            f"and CTAs are not under deleveraging pressure."
+        )
+        cta_note = (
+            f"CTA equity exposure at {exposure:.0f}% — normal range, "
+            f"no forced selling in the pipeline."
+        )
+
+    # ── Assemble ──
+
+    trigger_line = ""
+    if conditions_met > 0:
+        checks = []
+        if spx_met:
+            checks.append(f"SPX below 100d MA ({spx_dist:+.1f}%)")
+        if conditions.get("realized_vol_gt_25"):
+            checks.append(f"RVol > 25% ({rvol:.1f}%)")
+        if conditions.get("cor1m_gt_60"):
+            checks.append(f"COR1M > 60 ({cor1m:.1f})")
+        trigger_line = f"\n> Crash trigger: {conditions_met}/3 active — {', '.join(checks)}"
+
+    return f"""{hook}
+
+{thesis}
+
+> CRI: {score:.0f}/100 ({level})
+> VIX: {vix:.1f} · VVIX: {vvix:.1f} · COR1M: {cor1m:.1f}{trigger_line}
+
+{cta_note}
+
+Analyzed by Radon · radon.run"""
 
 
 # ── Screenshot ────────────────────────────────────────────────────
