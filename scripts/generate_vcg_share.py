@@ -293,12 +293,12 @@ def card3_attribution(data: dict, ds: str) -> str:
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div style="background:#0f1519;border:1px solid #1e293b;border-radius:3px;padding:12px">
         <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#475569;margin-bottom:6px">β₁ (VVIX)</div>
-        <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;color:#e2e8f0">{sig.get('beta1_vvix', 0):.6f if sig.get('beta1_vvix') is not None else '---'}</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;color:#e2e8f0">{f"{sig['beta1_vvix']:.6f}" if sig.get('beta1_vvix') is not None else '---'}</div>
         <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:#475569;margin-top:4px">{"SIGN OK" if sig.get("sign_ok") else "⚠ SIGN REVERSED"}</div>
       </div>
       <div style="background:#0f1519;border:1px solid #1e293b;border-radius:3px;padding:12px">
         <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#475569;margin-bottom:6px">β₂ (VIX)</div>
-        <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;color:#e2e8f0">{sig.get('beta2_vix', 0):.6f if sig.get('beta2_vix') is not None else '---'}</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;color:#e2e8f0">{f"{sig['beta2_vix']:.6f}" if sig.get('beta2_vix') is not None else '---'}</div>
         <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:#475569;margin-top:4px">Panic π = {sig.get("pi_panic", 0):.2f}</div>
       </div>
     </div>"""
