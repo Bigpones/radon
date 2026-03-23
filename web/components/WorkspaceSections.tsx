@@ -2023,7 +2023,7 @@ const blotterExtract = (item: BlotterTrade, key: BlotterSortKey): string | numbe
     case "contract_desc": return item.contract_desc;
     case "sec_type": return item.sec_type;
     case "status": return item.is_closed ? "Closed" : "Open";
-    case "net_quantity": return item.net_quantity;
+    case "net_quantity": return item.total_quantity ?? item.net_quantity;
     case "total_commission": return item.total_commission;
     case "realized_pnl": return item.realized_pnl;
     case "cost_basis": return item.cost_basis;
@@ -2120,7 +2120,7 @@ function HistoricalTradesSection() {
                         {t.is_closed ? "Closed" : "Open"}
                       </span>
                     </td>
-                    <td className="right">{t.net_quantity}</td>
+                    <td className="right">{t.total_quantity ?? t.net_quantity}</td>
                     <td className="right">{t.total_commission != null ? fmtPrice(t.total_commission) : "---"}</td>
                     <td className={`right ${(t.realized_pnl ?? 0) >= 0 ? "positive" : "negative"}`}>
                       {t.realized_pnl != null ? (

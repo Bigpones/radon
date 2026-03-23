@@ -156,6 +156,7 @@ def blotter_to_dict(blotter: TradeBlotter) -> dict:
             "sec_type": trade.sec_type.value,
             "is_closed": trade.is_closed,
             "net_quantity": trade.net_quantity,
+            "total_quantity": trade.total_quantity,
             "total_commission": trade.total_commission,
             "realized_pnl": trade.realized_pnl,
             "cost_basis": trade.cost_basis,

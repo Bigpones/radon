@@ -85,7 +85,14 @@ class Trade:
             else:
                 total -= e.quantity
         return total
-    
+
+    @property
+    def total_quantity(self) -> Decimal:
+        """Total opening-side quantity (position size of the trade)."""
+        buys = sum((e.quantity for e in self.executions if e.side == Side.BUY), Decimal(0))
+        sells = sum((e.quantity for e in self.executions if e.side == Side.SELL), Decimal(0))
+        return max(buys, sells)
+
     @property
     def is_closed(self) -> bool:
         """True if position is fully closed."""

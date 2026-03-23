@@ -369,6 +369,7 @@ export type BlotterTrade = {
   sec_type: string;
   is_closed: boolean;
   net_quantity: number;
+  total_quantity?: number;
   total_commission: number;
   realized_pnl: number;
   cost_basis: number;
