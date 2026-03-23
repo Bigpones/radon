@@ -911,6 +911,15 @@ async def vcg_scan():
         return result.data
 
 
+@app.post("/vcg/share")
+async def vcg_share():
+    """Generate VCG X share report (4 cards + preview HTML). Returns output path."""
+    result = await run_script("generate_vcg_share.py", ["--json", "--no-open"], timeout=120)
+    if not result.ok:
+        raise HTTPException(status_code=502, detail=result.error)
+    return result.data
+
+
 @app.post("/regime/share")
 async def regime_share():
     """Generate Regime/CRI X share report (4 cards + preview HTML). Returns output path."""

@@ -2,6 +2,7 @@
 
 import { AlertTriangle, Check, Shield, X, Zap } from "lucide-react";
 import InfoTooltip from "./InfoTooltip";
+import ShareReportModal from "./ShareReportModal";
 import { useVcg, type VcgData, type VcgHistoryEntry } from "@/lib/useVcg";
 import { MarketState } from "@/lib/useMarketHours";
 import type { PriceData } from "@/lib/pricesProtocol";
@@ -133,6 +134,13 @@ export default function VcgPanel({ marketState }: VcgPanelProps) {
             <span style={{ fontFamily: "var(--font-mono)", fontSize: "9px", color: "var(--text-muted)" }}>
               {data.credit_proxy}
             </span>
+            <ShareReportModal
+              modalTitle="VCG REPORT — SHARE TO X"
+              shareEndpoint="/api/vcg/share"
+              buttonTitle="Share VCG report to X"
+              iconSize={11}
+              shareContentTitle="VCG Share Preview"
+            />
             {lastSync && (
               <span style={{ fontFamily: "var(--font-mono)", fontSize: "9px", color: "var(--text-muted)" }}>
                 {new Date(lastSync).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
