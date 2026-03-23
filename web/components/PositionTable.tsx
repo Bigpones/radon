@@ -228,7 +228,7 @@ function LegRow({
 
 /* ─── Position row ─────────────────────────────────────── */
 
-function PositionRow({ pos, showExpiry = true, showStrike = false, showUnderlying = false, realtimePrice, prices, onLegClick }: { pos: PortfolioPosition; showExpiry?: boolean; showStrike?: boolean; showUnderlying?: boolean; realtimePrice?: PriceData | null; prices?: Record<string, PriceData>; onLegClick?: (leg: PortfolioLeg, pos: PortfolioPosition) => void }) {
+function PositionRow({ pos, showExpiry = true, showUnderlying = false, realtimePrice, prices, onLegClick }: { pos: PortfolioPosition; showExpiry?: boolean; showUnderlying?: boolean; realtimePrice?: PriceData | null; prices?: Record<string, PriceData>; onLegClick?: (leg: PortfolioLeg, pos: PortfolioPosition) => void }) {
   const [legsExpanded, setLegsExpanded] = useState(false);
   const hasMultipleLegs = pos.legs.length > 1;
 
@@ -299,12 +299,8 @@ function PositionRow({ pos, showExpiry = true, showStrike = false, showUnderlyin
         : null)
     : getTodayPnlDollars(pos, prices);
 
-  // For single-leg options, show strike in structure column
-  const isSingleLegOption = pos.legs.length === 1 && pos.structure_type !== "Stock";
-  const singleLegStrike = isSingleLegOption && pos.legs[0]?.strike ? pos.legs[0].strike : null;
-  const structureDisplay = showStrike && singleLegStrike
-    ? `${pos.structure} $${singleLegStrike}`
-    : pos.structure;
+  // Structure already includes strike from ib_sync format_structure_description()
+  const structureDisplay = pos.structure;
 
   // Underlying price (for options positions)
   const underlyingPrice = realtimePrice?.last != null && realtimePrice.last !== 0 ? realtimePrice.last : null;
@@ -382,7 +378,7 @@ function PositionRow({ pos, showExpiry = true, showStrike = false, showUnderlyin
 
 /* ─── Position table ───────────────────────────────────── */
 
-export default function PositionTable({ positions, showExpiry = true, showStrike = false, showUnderlying = false, prices, showSearch = false }: { positions: PortfolioPosition[]; showExpiry?: boolean; showStrike?: boolean; showUnderlying?: boolean; prices?: Record<string, PriceData>; showSearch?: boolean }) {
+export default function PositionTable({ positions, showExpiry = true, showUnderlying = false, prices, showSearch = false }: { positions: PortfolioPosition[]; showExpiry?: boolean; showUnderlying?: boolean; prices?: Record<string, PriceData>; showSearch?: boolean }) {
   const positionExtract = useMemo(() => makePositionExtract(prices), [prices]);
   const { sorted, sort, toggle } = useSort(positions, positionExtract);
 
@@ -426,7 +422,7 @@ export default function PositionTable({ positions, showExpiry = true, showStrike
         </thead>
         <tbody>
           {filtered.map((pos) => (
-            <PositionRow key={pos.id} pos={pos} showExpiry={showExpiry} showStrike={showStrike} showUnderlying={showUnderlying} realtimePrice={prices?.[pos.ticker]} prices={prices} onLegClick={handleLegClick} />
+            <PositionRow key={pos.id} pos={pos} showExpiry={showExpiry} showUnderlying={showUnderlying} realtimePrice={prices?.[pos.ticker]} prices={prices} onLegClick={handleLegClick} />
           ))}
         </tbody>
       </table>

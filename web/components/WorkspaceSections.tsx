@@ -948,7 +948,7 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
             <span className="pill defined">{definedPositions.length} POSITIONS</span>
           </div>
           <div className="section-body">
-            <PositionTable positions={definedPositions} showStrike={true} showUnderlying={true} prices={prices} showSearch={true} />
+            <PositionTable positions={definedPositions} showUnderlying={true} prices={prices} showSearch={true} />
           </div>
         </div>
       )}
