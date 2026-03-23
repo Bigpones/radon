@@ -14,13 +14,14 @@ const EMPTY_VCG = {
   market_open: false,
   credit_proxy: "HYG",
   signal: {
-    vcg: null, vcg_div: null, residual: null,
+    vcg: null, vcg_adj: null, residual: null,
     beta1_vvix: null, beta2_vix: null, alpha: null,
     vix: 0, vvix: 0, credit_price: 0, credit_5d_return_pct: 0,
-    hdr: 0, ro: 0, sign_ok: true, sign_suppressed: false, pi_panic: 0,
+    ro: 0, edr: 0, tier: null, bounce: 0,
+    vvix_severity: "moderate",
+    sign_ok: true, sign_suppressed: false, pi_panic: 0,
     regime: "DIVERGENCE",
-    interpretation: "INSUFFICIENT_DATA",
-    hdr_conditions: { vvix_gt_110: false, credit_5d_gt_neg05pct: false, vix_lt_40: true },
+    interpretation: "NORMAL",
     attribution: { vvix_pct: 0, vix_pct: 0, vvix_component: 0, vix_component: 0, model_implied: 0 },
   },
   history: [],
@@ -52,7 +53,6 @@ async function readCachedVcg(): Promise<Record<string, unknown> | null> {
 
 function normalizeVcgPayload(raw: Record<string, unknown>): Record<string, unknown> {
   const signal = (raw.signal as Record<string, unknown>) ?? {};
-  const hdr = (signal.hdr_conditions as Record<string, unknown>) ?? {};
   const attr = (signal.attribution as Record<string, unknown>) ?? {};
 
   return {
@@ -63,7 +63,6 @@ function normalizeVcgPayload(raw: Record<string, unknown>): Record<string, unkno
     signal: {
       ...EMPTY_VCG.signal,
       ...signal,
-      hdr_conditions: { ...EMPTY_VCG.signal.hdr_conditions, ...hdr },
       attribution: { ...EMPTY_VCG.signal.attribution, ...attr },
     },
     history: Array.isArray(raw.history) ? raw.history : [],

@@ -264,9 +264,17 @@ def card3_vol_credit(data: dict, ds: str) -> str:
     cor1m_5d = data.get("cor1m_5d_change", 0) or 0
     vix_5d = data.get("vix_5d_roc", 0) or 0
 
-    # VCG signal from CRI scan — vvix elevated + credit hasn't caught up
+    # VVIX severity amplifier (replaces legacy HDR check)
     vvix_elevated = vvix > 110
-    hdr_signal = vvix_elevated  # simplified HDR check from available data
+    if vvix > 120:
+        vvix_severity = "EXTREME"
+        vvix_sev_col  = "#E85D6C"
+    elif vvix_elevated:
+        vvix_severity = "ELEVATED"
+        vvix_sev_col  = "#F5A623"
+    else:
+        vvix_severity = "MODERATE"
+        vvix_sev_col  = "#05AD98"
 
     def metric_row(label: str, value: str, sub: str, color: str = "#e2e8f0") -> str:
         return f"""
@@ -300,10 +308,10 @@ def card3_vol_credit(data: dict, ds: str) -> str:
       {metric_row("COR1M", f"{cor1m:.2f}", f"5d chg: {cor1m_5d:+.2f} pts", cor_col)}
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px">
-      <div style="background:#0f1519;border:1px solid rgba(139,92,246,0.3);border-radius:3px;padding:12px">
-        <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#8B5CF6;margin-bottom:4px">HDR SIGNAL</div>
-        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;color:{'#F5A623' if hdr_signal else '#05AD98'}">{'ACTIVE' if hdr_signal else 'INACTIVE'}</div>
-        <div style="font-size:10px;color:#475569;margin-top:3px">VVIX {'>' if hdr_signal else '<'} 110</div>
+      <div style="background:#0f1519;border:1px solid {vvix_sev_col}50;border-radius:3px;padding:12px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:{vvix_sev_col};margin-bottom:4px">VVIX SEVERITY</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;color:{vvix_sev_col}">{vvix_severity}</div>
+        <div style="font-size:10px;color:#475569;margin-top:3px">VVIX = {vvix:.2f}</div>
       </div>
       <div style="background:#0f1519;border:1px solid #1e293b;border-radius:3px;padding:12px">
         <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#475569;margin-bottom:4px">REGIME</div>

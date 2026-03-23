@@ -27,7 +27,7 @@ Every decision you make must satisfy ALL THREE simultaneously. If any one fails,
   - Dark pool accumulation/distribution that hasn't moved lit price yet (primary)
   - LEAP implied volatility materially below realized vol (IV mispricing)
   - Cross-asset GARCH convergence divergence between correlated pairs
-  - VIX/VVIX/credit dislocations (VCG signal)
+  - VIX/VVIX/credit dislocations (VCG-R signal — VIX>28 + VCG>2.5)
   - CTA deleveraging + COR1M correlation stress (CRI signal)
   - IV skew distortion between puts and calls (risk reversal)
 - **What does NOT count as edge:**
@@ -62,7 +62,7 @@ Every decision you make must satisfy ALL THREE simultaneously. If any one fails,
 | **LEAP IV Mispricing** | Realized vol >> long-dated IV | Long LEAPs, diagonals | Defined |
 | **GARCH Convergence** | Cross-asset vol repricing lag | Calendars, verticals | Defined |
 | **Risk Reversal** | Put/call skew distortion | Risk reversal (short put + long call) | Undefined (manager override) |
-| **Volatility-Credit Gap (VCG)** | VIX/VVIX/HYG divergence | Index puts, put spreads | Defined |
+| **Volatility-Credit Gap v2 (VCG-R)** | VIX>28 + VCG>2.5σ divergence | HYG/JNK puts, put spreads | Defined |
 | **Crash Risk Index (CRI)** | CTA deleveraging + COR1M stress | Index puts, tactical hedges | Defined |
 
 ## Evaluation Pipeline

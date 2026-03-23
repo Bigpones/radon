@@ -86,7 +86,7 @@ Six active strategies drive the system.
 | **LEAP IV Mispricing** | Realized vol materially above long-dated IV | Long-dated volatility underpricing | Long LEAPs, diagonals | Weeks-9 months | Defined |
 | **GARCH Convergence** | Cross-asset vol repricing lag | Surface adjustment is slower than regime change | Calendars, verticals | 2-8 weeks | Defined |
 | **Risk Reversal** | Skew distortion between puts and calls | Put demand richer than equivalent call demand | Risk reversal | 2-8 weeks | Undefined |
-| **Volatility-Credit Gap (VCG)** | VIX/VVIX/HYG divergence | Credit markets are lagging vol stress | Index puts, put spreads | 1-5 days | Defined |
+| **Volatility-Credit Gap v2 (VCG-R)** | VIX>28 + VCG>2.5σ divergence | Credit is lagging elevated vol stress | HYG/JNK puts, bear put spreads | 1-5 days | Defined |
 | **Crash Risk Index (CRI)** | CTA deleveraging plus COR1M implied-correlation stress | Systematic positioning unwind | Index puts, tactical hedges | 3-5 days | Defined |
 
 Full strategy specs live in [docs/strategies.md](docs/strategies.md). VCG research notes live in [docs/cross_asset_volatility_credit_gap_spec_(VCG).md](docs/cross_asset_volatility_credit_gap_spec_(VCG).md).
@@ -277,7 +277,7 @@ If local port binding is unavailable, build the static site and point the audit 
 | `evaluate [TICKER]` | Full seven-milestone trade evaluation |
 | `stress-test` | Interactive bear/base/bull scenario report for the current portfolio |
 | `risk-reversal [TICKER]` | IV-skew analysis for directional risk-reversal structures |
-| `vcg` | Cross-asset volatility-credit gap scan |
+| `vcg` | VCG-R v2 scan — VIX/VVIX/HYG regression, risk-off (VIX>28+VCG>2.5), severity tiers |
 | `cri-scan` | Crash Risk Index with CTA exposure model |
 
 ### Portfolio And Operations
@@ -420,4 +420,4 @@ ssh joemccann@macbook-pro '~/ibc/bin/status-secure-ibc-service.sh'
 | **Dark Pool** | Private off-exchange venue used for institutional trading |
 | **Edge** | A specific reason the market is mispricing an outcome |
 | **Kelly Criterion** | Position-sizing framework used to scale exposure to edge and odds |
-| **VCG** | Volatility-Credit Gap, a divergence model across VIX, VVIX, and credit |
+| **VCG-R** | Volatility-Credit Gap v2, a divergence model — VIX>28 + VCG>2.5σ triggers risk-off |

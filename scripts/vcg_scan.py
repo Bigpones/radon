@@ -47,11 +47,16 @@ if str(_SCRIPT_DIR) not in sys.path:
 OLS_WINDOW = 21        # Rolling regression window (business days)
 Z_WINDOW = 63          # Standardisation lookback (business days)
 MIN_BARS = OLS_WINDOW + Z_WINDOW + 10   # Minimum price history needed
-VVIX_HDR_THRESHOLD = 110.0
-HYG_5D_THRESHOLD = -0.005   # -0.5%
-VIX_PANIC_LOW = 40.0
-VIX_PANIC_HIGH = 48.0
-VCG_TRIGGER = 2.0
+VIX_PANIC_LOW = 40.0   # Panic overlay lower bound (Pi clamp)
+VIX_PANIC_HIGH = 48.0  # Panic overlay upper bound (Pi clamp)
+# VCG-R (v2) signal thresholds — VIX gate is now a FLOOR (elevated stress), not a ceiling
+VIX_FLOOR = 28.0       # RO gate: VIX must be ABOVE this (overrideable via --vix-floor)
+VIX_EDR = 25.0         # EDR watch gate: VIX must be above this
+VCG_TRIGGER = 2.0      # EDR / Watch VCG z-score threshold
+VCG_RO_TRIGGER = 2.5   # RO VCG z-score threshold (overrideable via --vcg-trigger)
+BOUNCE_TRIGGER = -3.5  # Counter-signal (tactical long) VCG threshold
+VVIX_EXTREME = 120.0   # VVIX severity amplifier: extreme
+VVIX_ELEVATED = 100.0  # VVIX severity amplifier: elevated (below = moderate)
 
 # Yahoo-to-IB ticker map
 YAHOO_TICKERS = {
@@ -355,8 +360,14 @@ def compute_vcg(
 def evaluate_signal(
     model: Dict[str, np.ndarray],
     credit_prices: np.ndarray,
+    vix_floor: float = VIX_FLOOR,
+    vcg_trigger: float = VCG_RO_TRIGGER,
 ) -> Dict[str, Any]:
-    """Evaluate the binary HDR/RO signal for the most recent bar."""
+    """Evaluate the VCG-R signal for the most recent bar.
+
+    VIX gate is now a FLOOR (stress must be elevated), not a ceiling.
+    HDR has been removed; replaced by RO/EDR/tier/bounce/vvix_severity.
+    """
     idx = -1  # latest bar
     vcg_val = model["vcg"][idx]
     vcg_div_val = model["vcg_div"][idx]
@@ -369,27 +380,50 @@ def evaluate_signal(
     residual = model["residuals"][idx]
     pi_val = model["pi"][idx]
 
-    # 5-day credit return
-    credit_all = credit_prices  # original series
+    # 5-day credit return (retained for display / context only)
+    credit_all = credit_prices
     if len(credit_all) >= 6:
         credit_5d_ret = (credit_all[-1] / credit_all[-6]) - 1
     else:
         credit_5d_ret = 0.0
 
-    # HDR conditions
-    vvix_cond = vvix > VVIX_HDR_THRESHOLD
-    credit_5d_cond = credit_5d_ret > HYG_5D_THRESHOLD
-    vix_cond = vix < VIX_PANIC_LOW
-    hdr = int(vvix_cond) * int(credit_5d_cond) * int(vix_cond)
-
     # Sign discipline
     sign_ok = (beta1 <= 0) and (beta2 <= 0)
     sign_suppressed = not sign_ok
 
-    # RO trigger
-    ro = int(not np.isnan(vcg_val) and vcg_val > VCG_TRIGGER) * hdr
-    if sign_suppressed:
-        ro = 0
+    # VVIX severity amplifier (informational, not a gate)
+    if vvix > VVIX_EXTREME:
+        vvix_severity = "extreme"
+    elif vvix >= VVIX_ELEVATED:
+        vvix_severity = "elevated"
+    else:
+        vvix_severity = "moderate"
+
+    # Primary signal: Risk-Off (RO) — VIX is a FLOOR (elevated stress required)
+    ro = bool(
+        not np.isnan(vcg_val)
+        and vix > vix_floor
+        and vcg_val > vcg_trigger
+        and sign_ok
+    )
+
+    # Watch state: Elevated Divergence Risk (EDR)
+    edr = bool(
+        not np.isnan(vcg_val)
+        and vix > VIX_EDR
+        and vcg_val > VCG_TRIGGER
+        and sign_ok
+    )
+
+    # Severity tier (only when ro or edr)
+    tier: Optional[int] = None
+    if ro:
+        tier = 1 if vix > 30 else 2   # 1 = Severe, 2 = High
+    elif edr and not np.isnan(vcg_val) and vcg_val > vcg_trigger:
+        tier = 3                        # 3 = Elevated
+
+    # Counter-signal: Bounce (tactical long)
+    bounce = bool(not np.isnan(vcg_val) and vcg_val < BOUNCE_TRIGGER)
 
     # Attribution split
     vvix_component = beta1 * model["vvix_ret"][idx] if not np.isnan(beta1) else 0.0
@@ -407,19 +441,27 @@ def evaluate_signal(
     else:
         regime = "DIVERGENCE"
 
-    # VCG interpretation
+    # Interpretation
     if np.isnan(vcg_val):
         interpretation = "INSUFFICIENT_DATA"
-    elif vcg_val > VCG_TRIGGER:
-        interpretation = "CREDIT_ARTIFICIALLY_CALM"
-    elif vcg_val < -VCG_TRIGGER:
-        interpretation = "CREDIT_OVERSHOT"
+    elif not sign_ok:
+        interpretation = "SUPPRESSED"
+    elif pi_val >= 1.0:
+        interpretation = "PANIC"
+    elif ro:
+        interpretation = "RISK_OFF"
+    elif edr:
+        interpretation = "EDR"
+    elif bounce:
+        interpretation = "BOUNCE"
+    elif not np.isnan(vcg_val) and vcg_val > VCG_TRIGGER:
+        interpretation = "WATCH"
     else:
         interpretation = "NORMAL"
 
     return {
         "vcg": round(float(vcg_val), 4) if not np.isnan(vcg_val) else None,
-        "vcg_div": round(float(vcg_div_val), 4) if not np.isnan(vcg_div_val) else None,
+        "vcg_adj": round(float(vcg_div_val), 4) if not np.isnan(vcg_div_val) else None,
         "residual": round(float(residual), 6) if not np.isnan(residual) else None,
         "beta1_vvix": round(float(beta1), 6) if not np.isnan(beta1) else None,
         "beta2_vix": round(float(beta2), 6) if not np.isnan(beta2) else None,
@@ -428,13 +470,11 @@ def evaluate_signal(
         "vvix": round(float(vvix), 2),
         "credit_price": round(float(credit), 2),
         "credit_5d_return_pct": round(float(credit_5d_ret * 100), 3),
-        "hdr": hdr,
-        "hdr_conditions": {
-            "vvix_gt_110": bool(vvix_cond),
-            "credit_5d_gt_neg05pct": bool(credit_5d_cond),
-            "vix_lt_40": bool(vix_cond),
-        },
-        "ro": ro,
+        "ro": int(ro),
+        "edr": int(edr),
+        "tier": tier,
+        "bounce": int(bounce),
+        "vvix_severity": vvix_severity,
         "sign_ok": bool(sign_ok),
         "sign_suppressed": bool(sign_suppressed),
         "pi_panic": round(float(pi_val), 4),
@@ -454,8 +494,10 @@ def backtest_signals(
     model: Dict[str, np.ndarray],
     credit_prices: np.ndarray,
     days: int = 252,
+    vix_floor: float = VIX_FLOOR,
+    vcg_trigger: float = VCG_RO_TRIGGER,
 ) -> List[Dict[str, Any]]:
-    """Run the VCG signal evaluation over the last N trading days."""
+    """Run the VCG-R signal evaluation over the last N trading days."""
     n = len(model["vcg"])
     start = max(0, n - days)
     results = []
@@ -469,32 +511,39 @@ def backtest_signals(
         credit = model["credit_levels"][i]
         pi_val = model["pi"][i]
 
-        # 5-day credit return (need offset for the prices array)
-        # credit_prices is 1 longer than model arrays
-        price_idx = i + 1  # since model arrays are returns (len - 1)
-        if price_idx >= 5:
-            c5d = (credit_prices[price_idx] / credit_prices[price_idx - 5]) - 1
-        else:
-            c5d = 0.0
-
-        vvix_cond = vvix > VVIX_HDR_THRESHOLD
-        credit_5d_cond = c5d > HYG_5D_THRESHOLD
-        vix_cond = vix < VIX_PANIC_LOW
-        hdr = int(vvix_cond) * int(credit_5d_cond) * int(vix_cond)
         sign_ok = (not np.isnan(beta1) and beta1 <= 0) and (not np.isnan(beta2) and beta2 <= 0)
-        ro = int(not np.isnan(vcg_val) and vcg_val > VCG_TRIGGER) * hdr
-        if not sign_ok:
-            ro = 0
+
+        ro = bool(
+            not np.isnan(vcg_val)
+            and vix > vix_floor
+            and vcg_val > vcg_trigger
+            and sign_ok
+        )
+        edr = bool(
+            not np.isnan(vcg_val)
+            and vix > VIX_EDR
+            and vcg_val > VCG_TRIGGER
+            and sign_ok
+        )
+        tier: Optional[int] = None
+        if ro:
+            tier = 1 if vix > 30 else 2
+        elif edr and not np.isnan(vcg_val) and vcg_val > vcg_trigger:
+            tier = 3
+
+        bounce = bool(not np.isnan(vcg_val) and vcg_val < BOUNCE_TRIGGER)
 
         results.append({
             "idx": int(i),
             "vcg": round(float(vcg_val), 4) if not np.isnan(vcg_val) else None,
-            "vcg_div": round(float(vcg_div_val), 4) if not np.isnan(vcg_div_val) else None,
+            "vcg_adj": round(float(vcg_div_val), 4) if not np.isnan(vcg_div_val) else None,
             "vix": round(float(vix), 2),
             "vvix": round(float(vvix), 2),
             "credit": round(float(credit), 2),
-            "hdr": hdr,
-            "ro": ro,
+            "ro": int(ro),
+            "edr": int(edr),
+            "tier": tier,
+            "bounce": int(bounce),
             "beta1": round(float(beta1), 6) if not np.isnan(beta1) else None,
             "beta2": round(float(beta2), 6) if not np.isnan(beta2) else None,
             "sign_ok": bool(sign_ok),
@@ -528,9 +577,9 @@ def print_summary(
 
     # VCG
     vcg_str = f"{signal['vcg']:.4f}" if signal['vcg'] is not None else "N/A"
-    vcg_div_str = f"{signal['vcg_div']:.4f}" if signal['vcg_div'] is not None else "N/A"
+    vcg_adj_str = f"{signal['vcg_adj']:.4f}" if signal['vcg_adj'] is not None else "N/A"
     print(f"\n  VCG          : {vcg_str}", file=sys.stderr)
-    print(f"  VCG (panic)  : {vcg_div_str}", file=sys.stderr)
+    print(f"  VCG (adj)    : {vcg_adj_str}", file=sys.stderr)
     print(f"  Regime       : {signal['regime']} (Pi={signal['pi_panic']:.2f})", file=sys.stderr)
     print(f"  Interpretation: {signal['interpretation']}", file=sys.stderr)
 
@@ -546,21 +595,24 @@ def print_summary(
     attr = signal['attribution']
     print(f"\n  Attribution  : VVIX {attr['vvix_pct']:.1f}% | VIX {attr['vix_pct']:.1f}%", file=sys.stderr)
 
-    # HDR / RO
-    hdr_conds = signal['hdr_conditions']
-    print(f"\n  HDR Conditions:", file=sys.stderr)
-    print(f"    VVIX > 110    : {'PASS' if hdr_conds['vvix_gt_110'] else 'FAIL'} ({signal['vvix']:.2f})", file=sys.stderr)
-    print(f"    5d Ret > -0.5%: {'PASS' if hdr_conds['credit_5d_gt_neg05pct'] else 'FAIL'} ({signal['credit_5d_return_pct']:+.3f}%)", file=sys.stderr)
-    print(f"    VIX < 40      : {'PASS' if hdr_conds['vix_lt_40'] else 'FAIL'} ({signal['vix']:.2f})", file=sys.stderr)
-    print(f"  HDR = {signal['hdr']}", file=sys.stderr)
-    print(f"  RO  = {signal['ro']}", file=sys.stderr)
+    # Signal state
+    tier_str = f"Tier {signal['tier']}" if signal['tier'] is not None else "None"
+    print(f"\n  VVIX Severity : {signal['vvix_severity'].upper()} ({signal['vvix']:.2f})", file=sys.stderr)
+    print(f"  EDR           : {signal['edr']}  (VIX>{VIX_EDR}, VCG>{VCG_TRIGGER})", file=sys.stderr)
+    print(f"  RO            : {signal['ro']}  (VIX>{VIX_FLOOR}, VCG>{VCG_RO_TRIGGER})", file=sys.stderr)
+    print(f"  Tier          : {tier_str}", file=sys.stderr)
+    print(f"  Bounce        : {signal['bounce']}  (VCG<{BOUNCE_TRIGGER})", file=sys.stderr)
 
     if signal['ro'] == 1:
-        print(f"\n  *** RISK-OFF SIGNAL ACTIVE ***", file=sys.stderr)
+        severity_name = "SEVERE" if signal['tier'] == 1 else "HIGH"
+        tier_label = f"Tier {signal['tier']} — {severity_name}" if signal['tier'] is not None else ""
+        print(f"\n  *** RISK-OFF SIGNAL ACTIVE ({tier_label}) ***", file=sys.stderr)
         print(f"  Credit divergence is statistically significant.", file=sys.stderr)
         print(f"  Action: Reduce credit beta, raise quality, add convex hedges.", file=sys.stderr)
-    elif signal['hdr'] == 1:
-        print(f"\n  HDR active but VCG < {VCG_TRIGGER} — monitor closely.", file=sys.stderr)
+    elif signal['edr'] == 1:
+        print(f"\n  EDR active — elevated divergence risk. Monitor for VCG escalation above {VCG_RO_TRIGGER}.", file=sys.stderr)
+    elif signal['bounce'] == 1:
+        print(f"\n  BOUNCE signal — VCG deeply negative ({signal['vcg']}), potential tactical long.", file=sys.stderr)
     else:
         print(f"\n  No signal. Market in normal regime.", file=sys.stderr)
 
@@ -594,24 +646,57 @@ def build_json_output(
     proxy: str,
     market_open: bool,
     backtest_results: Optional[List[Dict]] = None,
+    vix_floor: float = VIX_FLOOR,
+    vcg_trigger: float = VCG_RO_TRIGGER,
 ) -> Dict:
     """Build JSON output dict."""
-    # Recent history (last 20 sessions)
+    # Recent history (last 20 sessions) — include per-day signal fields
     n = len(model["residuals"])
     history = []
     for i in range(max(0, n - 20), n):
         date_idx = i + 1
         d = dates[date_idx] if date_idx < len(dates) else None
+        vcg_i = model["vcg"][i]
+        vix_i = model["vix_levels"][i]
+        beta1_i = model["beta1"][i]
+        beta2_i = model["beta2"][i]
+        sign_ok_i = (
+            not np.isnan(beta1_i) and beta1_i <= 0
+            and not np.isnan(beta2_i) and beta2_i <= 0
+        )
+        ro_i = bool(
+            not np.isnan(vcg_i)
+            and vix_i > vix_floor
+            and vcg_i > vcg_trigger
+            and sign_ok_i
+        )
+        edr_i = bool(
+            not np.isnan(vcg_i)
+            and vix_i > VIX_EDR
+            and vcg_i > VCG_TRIGGER
+            and sign_ok_i
+        )
+        tier_i: Optional[int] = None
+        if ro_i:
+            tier_i = 1 if vix_i > 30 else 2
+        elif edr_i and not np.isnan(vcg_i) and vcg_i > vcg_trigger:
+            tier_i = 3
+        bounce_i = bool(not np.isnan(vcg_i) and vcg_i < BOUNCE_TRIGGER)
+
         history.append({
             "date": d,
             "residual": round(float(model["residuals"][i]), 6) if not np.isnan(model["residuals"][i]) else None,
-            "vcg": round(float(model["vcg"][i]), 4) if not np.isnan(model["vcg"][i]) else None,
-            "vcg_div": round(float(model["vcg_div"][i]), 4) if not np.isnan(model["vcg_div"][i]) else None,
-            "beta1": round(float(model["beta1"][i]), 6) if not np.isnan(model["beta1"][i]) else None,
+            "vcg": round(float(vcg_i), 4) if not np.isnan(vcg_i) else None,
+            "vcg_adj": round(float(model["vcg_div"][i]), 4) if not np.isnan(model["vcg_div"][i]) else None,
+            "beta1": round(float(beta1_i), 6) if not np.isnan(beta1_i) else None,
             "beta2": round(float(model["beta2"][i]), 6) if not np.isnan(model["beta2"][i]) else None,
-            "vix": round(float(model["vix_levels"][i]), 2),
+            "vix": round(float(vix_i), 2),
             "vvix": round(float(model["vvix_levels"][i]), 2),
             "credit": round(float(model["credit_levels"][i]), 2),
+            "ro": int(ro_i),
+            "edr": int(edr_i),
+            "tier": tier_i,
+            "bounce": int(bounce_i),
         })
 
     result = {
@@ -624,11 +709,13 @@ def build_json_output(
     if backtest_results is not None:
         # Summarise backtest
         ro_days = sum(1 for r in backtest_results if r["ro"] == 1)
-        hdr_days = sum(1 for r in backtest_results if r["hdr"] == 1)
+        edr_days = sum(1 for r in backtest_results if r.get("edr", 0) == 1)
+        bounce_days = sum(1 for r in backtest_results if r.get("bounce", 0) == 1)
         result["backtest"] = {
             "days": len(backtest_results),
             "ro_signals": ro_days,
-            "hdr_days": hdr_days,
+            "edr_days": edr_days,
+            "bounce_days": bounce_days,
             "ro_pct": round(ro_days / len(backtest_results) * 100, 2) if backtest_results else 0,
             "daily": backtest_results,
         }
@@ -657,17 +744,21 @@ def generate_html_report(
 
     # Signal status
     if signal["ro"] == 1:
-        signal_label = "RISK-OFF"
+        tier_suffix = f" T{signal['tier']}" if signal["tier"] is not None else ""
+        signal_label = f"RISK-OFF{tier_suffix}"
         signal_cls = "pill-negative"
-    elif signal["hdr"] == 1:
-        signal_label = "HDR ACTIVE"
+    elif signal["edr"] == 1:
+        signal_label = "EDR"
         signal_cls = "pill-warning"
+    elif signal["bounce"] == 1:
+        signal_label = "BOUNCE"
+        signal_cls = "pill-positive"
     else:
         signal_label = "NORMAL"
         signal_cls = "pill-positive"
 
     vcg_val = f"{signal['vcg']:.4f}" if signal['vcg'] is not None else "N/A"
-    vcg_div_val = f"{signal['vcg_div']:.4f}" if signal['vcg_div'] is not None else "N/A"
+    vcg_adj_val = f"{signal['vcg_adj']:.4f}" if signal['vcg_adj'] is not None else "N/A"
     beta1_val = f"{signal['beta1_vvix']:.6f}" if signal['beta1_vvix'] is not None else "N/A"
     beta2_val = f"{signal['beta2_vix']:.6f}" if signal['beta2_vix'] is not None else "N/A"
     alpha_val = f"{signal['alpha']:.6f}" if signal['alpha'] is not None else "N/A"
@@ -692,12 +783,14 @@ def generate_html_report(
 
     # Metrics row
     vcg_cls = "text-negative" if signal['vcg'] is not None and signal['vcg'] > VCG_TRIGGER else "text-positive" if signal['vcg'] is not None and signal['vcg'] < -VCG_TRIGGER else ""
+    vvix_cls = "text-warning" if signal['vvix_severity'] != 'moderate' else ""
+    tier_display = str(signal['tier']) if signal['tier'] is not None else "—"
     body_parts.append(f"""
 <div class="metrics">
   <div class="metric">
     <div class="metric-label">VCG (z-score)</div>
     <div class="metric-value {vcg_cls}">{vcg_val}</div>
-    <div class="metric-change">Panic-adjusted: {vcg_div_val}</div>
+    <div class="metric-change">Panic-adj: {vcg_adj_val}</div>
   </div>
   <div class="metric">
     <div class="metric-label">VIX</div>
@@ -706,8 +799,8 @@ def generate_html_report(
   </div>
   <div class="metric">
     <div class="metric-label">VVIX</div>
-    <div class="metric-value {"text-warning" if signal['vvix'] > VVIX_HDR_THRESHOLD else ""}">{signal['vvix']:.2f}</div>
-    <div class="metric-change">Threshold: {VVIX_HDR_THRESHOLD}</div>
+    <div class="metric-value {vvix_cls}">{signal['vvix']:.2f}</div>
+    <div class="metric-change">Severity: {signal['vvix_severity'].upper()}</div>
   </div>
   <div class="metric">
     <div class="metric-label">{proxy}</div>
@@ -715,32 +808,76 @@ def generate_html_report(
     <div class="metric-change">5d return: {signal['credit_5d_return_pct']:+.3f}%</div>
   </div>
   <div class="metric">
-    <div class="metric-label">HDR</div>
-    <div class="metric-value {"text-warning" if signal['hdr'] else ""}">{signal['hdr']}</div>
+    <div class="metric-label">EDR</div>
+    <div class="metric-value {"text-warning" if signal['edr'] else ""}">{signal['edr']}</div>
+    <div class="metric-change">Tier: {tier_display}</div>
   </div>
   <div class="metric">
     <div class="metric-label">Risk-Off</div>
     <div class="metric-value {"text-negative" if signal['ro'] else "text-positive"}">{signal['ro']}</div>
+    <div class="metric-change">Bounce: {signal['bounce']}</div>
   </div>
 </div>""")
 
-    # HDR conditions panel
-    hdr = signal['hdr_conditions']
-    body_parts.append("""<div class="section-header">High Divergence Risk (HDR) Conditions</div>""")
+    # Signal conditions panel (VCG-R v2 — VIX is now a floor, not a ceiling)
+    ro_vix_pass = signal['vix'] > VIX_FLOOR
+    ro_vcg_pass = signal['vcg'] is not None and signal['vcg'] > VCG_RO_TRIGGER
+    edr_vix_pass = signal['vix'] > VIX_EDR
+    edr_vcg_pass = signal['vcg'] is not None and signal['vcg'] > VCG_TRIGGER
+    vvix_sev = signal['vvix_severity'].upper()
+    body_parts.append("""<div class="section-header">VCG-R Signal Conditions</div>""")
     body_parts.append("""<div class="panel"><table>
-<thead><tr><th>Condition</th><th class="text-center">Required</th><th class="text-center">Actual</th><th class="text-center">Status</th></tr></thead><tbody>""")
+<thead><tr><th>Condition</th><th class="text-center">Required</th><th class="text-center">Actual</th>"""
+                      """<th class="text-center">RO</th><th class="text-center">EDR</th></tr></thead><tbody>""")
 
-    hdr_rows = [
-        ("VVIX > 110", "> 110", f"{signal['vvix']:.2f}", hdr['vvix_gt_110']),
-        (f"{proxy} 5d Return > -0.5%", "> -0.5%", f"{signal['credit_5d_return_pct']:+.3f}%", hdr['credit_5d_gt_neg05pct']),
-        ("VIX < 40", "< 40", f"{signal['vix']:.2f}", hdr['vix_lt_40']),
+    signal_rows = [
+        (
+            "VIX floor (stress required)",
+            f"&gt; {VIX_FLOOR:.0f} (RO) / &gt; {VIX_EDR:.0f} (EDR)",
+            f"{signal['vix']:.2f}",
+            ro_vix_pass,
+            edr_vix_pass,
+        ),
+        (
+            "VCG z-score",
+            f"&gt; {VCG_RO_TRIGGER:.1f} (RO) / &gt; {VCG_TRIGGER:.1f} (EDR)",
+            vcg_val,
+            ro_vcg_pass,
+            edr_vcg_pass,
+        ),
+        (
+            "&beta;&#8321; &le; 0 and &beta;&#8322; &le; 0 (sign discipline)",
+            "Both &le; 0",
+            "OK" if signal['sign_ok'] else "FAIL",
+            signal['sign_ok'],
+            signal['sign_ok'],
+        ),
     ]
-    for label, req, actual, passed in hdr_rows:
-        icon = '<span class="text-positive">PASS</span>' if passed else '<span class="text-negative">FAIL</span>'
+    for label, req, actual, ro_pass, edr_pass in signal_rows:
+        ro_icon = '<span class="text-positive">&#10003;</span>' if ro_pass else '<span class="text-negative">&#10007;</span>'
+        edr_icon = '<span class="text-positive">&#10003;</span>' if edr_pass else '<span class="text-negative">&#10007;</span>'
         body_parts.append(
             f'<tr><td>{label}</td><td class="text-center">{req}</td>'
-            f'<td class="text-center">{actual}</td><td class="text-center">{icon}</td></tr>'
+            f'<td class="text-center">{actual}</td>'
+            f'<td class="text-center">{ro_icon}</td>'
+            f'<td class="text-center">{edr_icon}</td></tr>'
         )
+    # VVIX severity row (amplifier, not a gate)
+    body_parts.append(
+        f'<tr><td>VVIX severity (amplifier, not a gate)</td>'
+        f'<td class="text-center">—</td>'
+        f'<td class="text-center">{signal["vvix"]:.2f} &rarr; {vvix_sev}</td>'
+        f'<td class="text-center">—</td><td class="text-center">—</td></tr>'
+    )
+    # Bounce counter-signal row
+    bounce_pass = signal['vcg'] is not None and signal['vcg'] < BOUNCE_TRIGGER
+    bounce_icon = '<span class="text-positive">&#10003;</span>' if bounce_pass else '—'
+    body_parts.append(
+        f'<tr><td>Bounce counter-signal (tactical long)</td>'
+        f'<td class="text-center">&lt; {BOUNCE_TRIGGER:.1f}</td>'
+        f'<td class="text-center">{vcg_val}</td>'
+        f'<td class="text-center">—</td><td class="text-center">{bounce_icon}</td></tr>'
+    )
     body_parts.append("</tbody></table></div>")
 
     # Model coefficients panel
@@ -780,26 +917,37 @@ def generate_html_report(
 </div>""")
 
     # Interpretation callout
+    _tier = signal["tier"]
+    _tier_severity = "SEVERE" if _tier == 1 else ("HIGH" if _tier == 2 else "ELEVATED")
+    _tier_label = f" (Tier {_tier} &mdash; {_tier_severity})" if _tier is not None else ""
     if signal["ro"] == 1:
         body_parts.append(f"""
 <div class="callout negative">
-  <div class="callout-title">RISK-OFF SIGNAL ACTIVE</div>
-  VCG = {vcg_val} exceeds +{VCG_TRIGGER:.0f}&sigma; threshold while HDR conditions are met.
-  Credit ({proxy}) is artificially calm relative to what the volatility complex implies.
+  <div class="callout-title">RISK-OFF SIGNAL ACTIVE{_tier_label}</div>
+  VCG = {vcg_val} exceeds +{VCG_RO_TRIGGER:.1f}&sigma; while VIX = {signal['vix']:.2f} &gt; {VIX_FLOOR:.0f} floor.
+  VVIX severity: {signal['vvix_severity'].upper()}. Credit ({proxy}) is artificially calm relative to the volatility complex.
   <br><br>
   <strong>Recommended action:</strong> Reduce credit beta, raise quality, add convex hedges (HYG puts, bear put spreads).
 </div>""")
-    elif signal["hdr"] == 1:
+    elif signal["edr"] == 1:
         body_parts.append(f"""
 <div class="callout warning">
-  <div class="callout-title">HIGH DIVERGENCE RISK — MONITORING</div>
-  HDR conditions are met (VVIX &gt; 110, credit stable, VIX &lt; 40) but VCG = {vcg_val} has not breached +{VCG_TRIGGER:.0f}&sigma;.
-  Market structure is consistent with unresolved divergence. Monitor for VCG escalation.
+  <div class="callout-title">ELEVATED DIVERGENCE RISK (EDR){_tier_label}</div>
+  EDR conditions met: VIX = {signal['vix']:.2f} &gt; {VIX_EDR:.0f} and VCG = {vcg_val} &gt; {VCG_TRIGGER:.1f}&sigma;.
+  Not yet at RO trigger (needs VIX &gt; {VIX_FLOOR:.0f} and VCG &gt; {VCG_RO_TRIGGER:.1f}&sigma;). Monitor for escalation.
+  VVIX severity: {signal['vvix_severity'].upper()}.
+</div>""")
+    elif signal["bounce"] == 1:
+        body_parts.append(f"""
+<div class="callout positive">
+  <div class="callout-title">BOUNCE SIGNAL &mdash; TACTICAL LONG</div>
+  VCG = {vcg_val} has breached the {BOUNCE_TRIGGER:.1f}&sigma; floor.
+  Credit has over-adjusted relative to the volatility complex &mdash; potential mean-reversion long in credit.
 </div>""")
     else:
         body_parts.append(f"""
 <div class="callout positive">
-  <div class="callout-title">NO SIGNAL — NORMAL REGIME</div>
+  <div class="callout-title">NO SIGNAL &mdash; NORMAL REGIME</div>
   The volatility complex and credit markets are in alignment. No actionable divergence detected.
   VCG = {vcg_val}. Interpretation: {signal['interpretation'].replace('_', ' ').title()}.
 </div>""")
@@ -814,7 +962,7 @@ def generate_html_report(
   <th class="text-right">Credit</th>
   <th class="text-right">Residual</th>
   <th class="text-right">VCG</th>
-  <th class="text-right">VCG div</th>
+  <th class="text-right">VCG adj</th>
   <th class="text-right">&beta;&#8321;</th>
   <th class="text-right">&beta;&#8322;</th>
 </tr></thead><tbody>""")
@@ -867,7 +1015,7 @@ def generate_html_report(
 <div class="footer">
   <strong>VCG Scan — Volatility-Credit Gap</strong><br>
   Model: &Delta;{proxy} = &alpha; + &beta;&#8321;&middot;&Delta;VVIX + &beta;&#8322;&middot;&Delta;VIX + &epsilon;<br>
-  OLS window: {OLS_WINDOW}d | Z-score window: {Z_WINDOW}d | Trigger: VCG &gt; {VCG_TRIGGER:.0f}&sigma;<br>
+  OLS window: {OLS_WINDOW}d | Z-score window: {Z_WINDOW}d | RO trigger: VIX &gt; {VIX_FLOOR:.0f}, VCG &gt; {VCG_RO_TRIGGER:.1f}&sigma; | EDR: VIX &gt; {VIX_EDR:.0f}, VCG &gt; {VCG_TRIGGER:.1f}&sigma;<br>
   Data: {"IB (primary)" if True else "Yahoo Finance (fallback)"} | {now}<br>
   Strategy spec: <code>docs/strategies.md</code> (Strategy 5) | Math: <code>docs/VCG_institutional_research_note.md</code>
 </div>""")
@@ -929,6 +1077,14 @@ Examples:
     parser.add_argument("--days", type=int, default=252, help="Backtest lookback days (default: 252)")
     parser.add_argument("--no-open", action="store_true", help="Don't open HTML report in browser")
     parser.add_argument("--output", "-o", help="Custom output path for HTML")
+    parser.add_argument(
+        "--vix-floor", type=float, default=VIX_FLOOR,
+        help=f"VIX floor for RO trigger — VIX must be ABOVE this (default: {VIX_FLOOR})",
+    )
+    parser.add_argument(
+        "--vcg-trigger", type=float, default=VCG_RO_TRIGGER,
+        help=f"VCG z-score threshold for RO trigger (default: {VCG_RO_TRIGGER})",
+    )
 
     args = parser.parse_args()
     proxy = args.proxy.upper()
@@ -957,21 +1113,26 @@ Examples:
     model = compute_vcg(vix_prices, vvix_prices, credit_prices)
 
     # Evaluate current signal
-    signal = evaluate_signal(model, credit_prices)
+    signal = evaluate_signal(model, credit_prices, vix_floor=args.vix_floor, vcg_trigger=args.vcg_trigger)
 
     # Optional backtest
     bt = None
     if args.backtest:
-        bt = backtest_signals(model, credit_prices, args.days)
+        bt = backtest_signals(model, credit_prices, args.days, vix_floor=args.vix_floor, vcg_trigger=args.vcg_trigger)
         ro_days = sum(1 for r in bt if r["ro"] == 1)
-        hdr_days = sum(1 for r in bt if r["hdr"] == 1)
-        print(f"\n  Backtest ({args.days}d): {ro_days} RO signals, {hdr_days} HDR days", file=sys.stderr)
+        edr_days = sum(1 for r in bt if r.get("edr", 0) == 1)
+        bounce_days = sum(1 for r in bt if r.get("bounce", 0) == 1)
+        print(
+            f"\n  Backtest ({args.days}d): {ro_days} RO signals, "
+            f"{edr_days} EDR days, {bounce_days} bounce days",
+            file=sys.stderr,
+        )
 
     elapsed = time.time() - t_start
 
     # Output
     if args.json:
-        result = build_json_output(signal, model, common_dates, proxy, market_open, bt)
+        result = build_json_output(signal, model, common_dates, proxy, market_open, bt, vix_floor=args.vix_floor, vcg_trigger=args.vcg_trigger)
         print(json.dumps(result, indent=2))
     else:
         # Print summary

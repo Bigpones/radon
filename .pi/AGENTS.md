@@ -411,7 +411,7 @@ Volume Pace: 1.28x (Above average — signal is real)
 | `sync` | Pull live portfolio from Interactive Brokers |
 | `blotter` | Trade blotter - today's fills, P&L, spread grouping |
 | `risk-reversal [TICKER]` | **Run `python3.13 scripts/risk_reversal.py [TICKER]`** — IV skew risk reversal analysis + HTML report |
-| `vcg` | **VCG scan — call `vcg_scan` tool (registered Pi tool).** Do NOT re-read strategy docs. |
+| `vcg` | **VCG-R scan — call `vcg_scan` tool (registered Pi tool).** Do NOT re-read strategy docs. VIX>28+VCG>2.5=RO, VIX>25+VCG>2.0=EDR, VCG<-3.5=BOUNCE. |
 | `strategies` | List available trading strategies (reads `data/strategies.json`) |
 | `stress-test` | **Interactive scenario stress test — asks for market scenario, runs portfolio P&L analysis, generates HTML report** |
 | `tweet-it` | **Generate tweet copy + infographic card for sharing a trade on X — preview page with copy button** |
@@ -849,39 +849,45 @@ python3.13 scripts/risk_reversal.py IWM --json
 
 **When user runs `vcg`, ALWAYS call the `vcg_scan` Pi tool. Do NOT read `docs/strategies.md` or `docs/cross_asset_volatility_credit_gap_spec_(VCG).md`. The tool returns all data needed.**
 
-The `vcg_scan` tool runs `scripts/vcg_scan.py --json` which fetches 1Y daily bars for VIX, VVIX, HYG (IB → UW → Yahoo LAST RESORT), computes the rolling 21-day OLS regression, and returns the full signal.
+The `vcg_scan` tool runs `scripts/vcg_scan.py --json` which fetches 1Y daily bars for VIX, VVIX, HYG (IB → UW → Yahoo LAST RESORT), computes the rolling 21-day OLS regression, and returns the full VCG-R v2 signal.
 
 **Interpretation rules (memorize — do not look up):**
 
 | Field | Interpretation |
 |-------|---------------|
-| `signal.vcg > +2` | Credit artificially calm — RISK-OFF if HDR=1 |
-| `signal.vcg < -2` | Credit overshot vol signal — tactical exhaustion |
+| `signal.ro = 1` | **RISK-OFF TRIGGER** — VIX>28 AND VCG>2.5 AND sign_ok |
+| `signal.edr = 1` | **EARLY DIVERGENCE RISK** — VIX>25 AND VCG 2.0–2.5 (half-Kelly watch) |
+| `signal.bounce = 1` | **COUNTER-SIGNAL** — VCG<-3.5, credit overshot vol, close puts |
+| `signal.tier` | 1=Severe (VIX>30, VVIX>120), 2=High (VIX>28), 3=Elevated (EDR) |
+| `signal.vvix_severity` | EXTREME/VERY_HIGH/HIGH/ELEVATED/NORMAL (amplifier, not gate) |
+| `signal.vcg > +2.5` | Credit below vol-implied — divergence actionable |
+| `signal.vcg < -3.5` | Credit overshot — BOUNCE signal |
 | `signal.vcg` in ±2 | Normal — no signal |
-| `signal.hdr = 1` | All 3 conditions met: VVIX>110, credit 5d>-0.5%, VIX<40 |
-| `signal.ro = 1` | **RISK-OFF TRIGGER** — HDR=1 AND VCG>2 |
-| `signal.sign_suppressed = true` | β₁ positive (wrong sign) — model unreliable, do not trade |
-| `signal.regime` | DIVERGENCE (VIX<40), TRANSITION (40-48), PANIC (≥48) |
+| `signal.sign_suppressed = true` | β positive (wrong sign) — model unreliable, do not trade |
+| `signal.regime` | DIVERGENCE (VIX<25), WATCH (25-28), ACTIVE (28-40), TRANSITION (40-48), PANIC (≥48) |
 
-**HDR conditions (all 3 must PASS):**
-- VVIX > 110 (vol-of-vol elevated)
-- Credit 5d return > -0.5% (credit hasn't caught down yet)
-- VIX < 40 (not in panic)
+**Signal gates (VCG-R v2 — NO HDR, NO credit 5d gate, VIX gate INVERTED):**
+- RO trigger: VIX > 28 + VCG > 2.5 + sign_ok
+- EDR trigger: VIX > 25 + VCG 2.0–2.5 + sign_ok
+- BOUNCE: VCG < -3.5 + sign_ok
+- Panic suppression: VIX ≥ 48 → VCG adj = 0
 
 **Decision matrix:**
-- `RO=1` → RISK-OFF: reduce credit beta, preserve hedges, consider HYG puts
-- `HDR=1, VCG<2` → ELEVATED: monitor, divergence conditions met but gap not extreme
-- `HDR=0` → NORMAL: at least one gate fails, no action
-- `sign_suppressed=true` → UNRELIABLE: wrong beta signs, skip
+- `RO=1, Tier 1` → RISK-OFF Tier 1 (Severe): max hedging, full Kelly, all instruments
+- `RO=1, Tier 2` → RISK-OFF Tier 2 (High): standard hedging, full Kelly, HYG puts
+- `EDR=1` → EARLY DIVERGENCE: half-Kelly position, monitor for tier promotion
+- `BOUNCE=1` → COUNTER-SIGNAL: close HYG puts, optional small tactical credit long
+- `sign_suppressed=true` → UNRELIABLE: wrong beta signs, no trade regardless of VCG
+- No RO/EDR/BOUNCE → NORMAL: no signal
 
 **Present results as:**
 ```
-VCG SCAN — {date}
-VCG: {vcg} | VCG div: {vcg_div} | Regime: {regime}
-HDR: {hdr} (VVIX={vvix}, Credit 5d={credit_5d}%, VIX={vix})
-Model: β₁={beta1} β₂={beta2} | Sign: {OK/SUPPRESSED}
+VCG-R SCAN — {date}
+VCG: {vcg} | VCG adj: {vcg_adj} | Regime: {regime}
+VIX: {vix} | VVIX: {vvix} ({vvix_severity})
+Tier: {tier} | Sign: {OK/SUPPRESSED}
 Attribution: VVIX {vvix_pct}% / VIX {vix_pct}%
-SIGNAL: {RO/HDR/NORMAL/UNRELIABLE}
+SIGNAL: {RISK_OFF Tier N / EDR / WATCH / BOUNCE / NORMAL}
 ```
 
 **To also generate HTML report:** `python3.13 scripts/vcg_scan.py` (without --json).

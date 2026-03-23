@@ -7,7 +7,7 @@ import { MarketState } from "./useMarketHours";
 
 export type VcgSignal = {
   vcg: number | null;
-  vcg_div: number | null;
+  vcg_adj: number | null;      // was vcg_div — panic-adjusted z-score
   residual: number | null;
   beta1_vvix: number | null;
   beta2_vix: number | null;
@@ -16,18 +16,16 @@ export type VcgSignal = {
   vvix: number;
   credit_price: number;
   credit_5d_return_pct: number;
-  hdr: 0 | 1;
   ro: 0 | 1;
+  edr: 0 | 1;                  // Early Divergence Risk
+  tier: 1 | 2 | 3 | null;      // severity tier (1=critical, 2=high, 3=elevated)
+  bounce: 0 | 1;               // counter-signal bounce detected
+  vvix_severity: "extreme" | "elevated" | "moderate";
   sign_ok: boolean;
   sign_suppressed: boolean;
   pi_panic: number;
   regime: "PANIC" | "TRANSITION" | "DIVERGENCE";
-  interpretation: "CREDIT_ARTIFICIALLY_CALM" | "CREDIT_OVERSHOT" | "NORMAL" | "INSUFFICIENT_DATA";
-  hdr_conditions: {
-    vvix_gt_110: boolean;
-    credit_5d_gt_neg05pct: boolean;
-    vix_lt_40: boolean;
-  };
+  interpretation: "RISK_OFF" | "EDR" | "WATCH" | "BOUNCE" | "NORMAL" | "SUPPRESSED" | "PANIC";
   attribution: {
     vvix_pct: number;
     vix_pct: number;
@@ -41,7 +39,7 @@ export type VcgHistoryEntry = {
   date: string;
   residual: number | null;
   vcg: number | null;
-  vcg_div: number | null;
+  vcg_adj: number | null;      // was vcg_div
   beta1: number | null;
   beta2: number | null;
   vix: number;

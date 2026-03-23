@@ -63,26 +63,37 @@ def load_vcg() -> dict:
 
 def interp_color(interpretation: str) -> str:
     return {
-        "CREDIT_ARTIFICIALLY_CALM": "#E85D6C",
-        "CREDIT_OVERSHOT": "#F5A623",
-        "NORMAL": "#05AD98",
+        "RISK_OFF":   "#E85D6C",
+        "EDR":        "#F5A623",
+        "WATCH":      "#F5A623",
+        "BOUNCE":     "#05AD98",
+        "NORMAL":     "#05AD98",
+        "PANIC":      "#8B5CF6",
+        "SUPPRESSED": "#94a3b8",
     }.get(interpretation, "#94a3b8")
 
 
 def interp_bg(interpretation: str) -> str:
     return {
-        "CREDIT_ARTIFICIALLY_CALM": "rgba(232,93,108,0.12)",
-        "CREDIT_OVERSHOT": "rgba(245,166,35,0.12)",
-        "NORMAL": "rgba(5,173,152,0.12)",
+        "RISK_OFF":   "rgba(232,93,108,0.12)",
+        "EDR":        "rgba(245,166,35,0.12)",
+        "WATCH":      "rgba(245,166,35,0.08)",
+        "BOUNCE":     "rgba(5,173,152,0.12)",
+        "NORMAL":     "rgba(5,173,152,0.12)",
+        "PANIC":      "rgba(139,92,246,0.12)",
+        "SUPPRESSED": "rgba(100,116,139,0.1)",
     }.get(interpretation, "rgba(100,116,139,0.1)")
 
 
 def interp_label(interpretation: str) -> str:
     return {
-        "CREDIT_ARTIFICIALLY_CALM": "CREDIT ARTIFICIALLY CALM",
-        "CREDIT_OVERSHOT": "CREDIT OVERSHOT",
-        "NORMAL": "NORMAL",
-        "INSUFFICIENT_DATA": "INSUFFICIENT DATA",
+        "RISK_OFF":   "RISK-OFF",
+        "EDR":        "EARLY DIVERGENCE RISK",
+        "WATCH":      "WATCH",
+        "BOUNCE":     "BOUNCE",
+        "NORMAL":     "NORMAL",
+        "PANIC":      "PANIC",
+        "SUPPRESSED": "SUPPRESSED",
     }.get(interpretation, interpretation)
 
 
@@ -128,8 +139,8 @@ def card_wrap(title: str, body: str, card_n: int, total: int, ds: str) -> str:
 def card1_signal(data: dict, ds: str) -> str:
     sig = data.get("signal", {})
     vcg = sig.get("vcg")
-    vcg_div = sig.get("vcg_div")
-    interp = sig.get("interpretation", "INSUFFICIENT_DATA")
+    vcg_adj = sig.get("vcg_adj")
+    interp = sig.get("interpretation", "NORMAL")
     col = interp_color(interp)
     bg = interp_bg(interp)
     proxy = data.get("credit_proxy", "HYG")
@@ -148,8 +159,8 @@ def card1_signal(data: dict, ds: str) -> str:
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:20px">
       <div style="background:#0f1519;border:1px solid #1e293b;border-radius:3px;padding:12px">
-        <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#475569;margin-bottom:6px">VCG Div (Panic-Adj)</div>
-        <div style="font-size:24px;font-weight:700;color:#e2e8f0">{fmt_z(vcg_div)}</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#475569;margin-bottom:6px">VCG Adj (Panic-Adj)</div>
+        <div style="font-size:24px;font-weight:700;color:#e2e8f0">{fmt_z(vcg_adj)}</div>
         <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:#475569;margin-top:4px">{"π = " + f"{sig.get('pi_panic', 0):.2f}" + " SUPPRESSED" if sig.get("pi_panic", 0) > 0 else "NO SUPPRESSION"}</div>
       </div>
       <div style="background:#0f1519;border:1px solid #1e293b;border-radius:3px;padding:12px">
@@ -161,46 +172,88 @@ def card1_signal(data: dict, ds: str) -> str:
     return card_wrap("VCG Signal", body, 1, 4, ds)
 
 
-# ── Card 2: HDR Conditions ──────────────────────────────────────
+# ── Card 2: Signal Detail (Tier + VVIX Severity + EDR/Bounce) ───
 
-def card2_hdr(data: dict, ds: str) -> str:
+def card2_tier(data: dict, ds: str) -> str:
     sig = data.get("signal", {})
-    hdr = sig.get("hdr", 0)
-    ro = sig.get("ro", 0)
-    conds = sig.get("hdr_conditions", {})
+    ro   = sig.get("ro", 0)
+    edr  = sig.get("edr", 0)
+    bounce = sig.get("bounce", 0)
+    tier = sig.get("tier")
+    vvix_severity = sig.get("vvix_severity", "moderate")
+    vvix = sig.get("vvix", 0)
+    credit_5d = sig.get("credit_5d_return_pct")
 
-    status_col = "#E85D6C" if ro else ("#F5A623" if hdr else "#05AD98")
-    status_label = "RISK-OFF" if ro else ("HDR ACTIVE" if hdr else "NORMAL")
+    # Primary status colour
+    if ro:
+        status_col   = "#E85D6C"
+        status_label = "RISK-OFF"
+    elif edr:
+        status_col   = "#F5A623"
+        status_label = "EARLY DIVERGENCE RISK"
+    elif bounce:
+        status_col   = "#05AD98"
+        status_label = "BOUNCE"
+    else:
+        status_col   = "#94a3b8"
+        status_label = "NORMAL"
 
-    def cond_row(label: str, met: bool, val: str) -> str:
-        icon = "✓" if met else "✗"
-        icon_col = "#05AD98" if met else "#E85D6C"
-        return f"""
-        <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #1e293b">
-          <div style="width:24px;height:24px;border-radius:50%;background:{'rgba(5,173,152,0.15)' if met else 'rgba(232,93,108,0.15)'};display:flex;align-items:center;justify-content:center;font-size:14px;color:{icon_col}">{icon}</div>
-          <div style="flex:1">
-            <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;color:#e2e8f0">{label}</div>
-            <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:#64748b;margin-top:2px">{val}</div>
-          </div>
+    # Tier display
+    tier_colors = {1: "#E85D6C", 2: "#E85D6C", 3: "#F5A623"}
+    tier_labels = {1: "TIER 1 — CRITICAL", 2: "TIER 2 — HIGH", 3: "TIER 3 — ELEVATED"}
+    tier_color = tier_colors.get(tier, "#475569") if tier else "#475569"
+    tier_lbl   = tier_labels.get(tier, "NO ACTIVE TIER") if tier else "NO ACTIVE TIER"
+
+    # VVIX severity
+    sev_colors = {"extreme": "#E85D6C", "elevated": "#F5A623", "moderate": "#05AD98"}
+    sev_descs  = {
+        "extreme":  "VVIX far above 120 — maximum vol-of-vol stress",
+        "elevated": "VVIX above 110 — second-order stress signal",
+        "moderate": "VVIX below 110 — vol regime stable",
+    }
+    sev_color = sev_colors.get(vvix_severity, "#94a3b8")
+    sev_desc  = sev_descs.get(vvix_severity, "")
+    sev_label = vvix_severity.upper()
+
+    bounce_row = ""
+    if bounce:
+        bounce_row = f"""
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(5,173,152,0.08);border:1px solid rgba(5,173,152,0.25);border-radius:3px;margin-top:12px">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:#05AD98">↩ BOUNCE</span>
+          <span style="font-size:10px;color:#64748b">Counter-signal — credit rebounding vs vol divergence</span>
         </div>"""
-
-    conds_met = sum([conds.get("vvix_gt_110", False), conds.get("credit_5d_gt_neg05pct", False), conds.get("vix_lt_40", False)])
 
     body = f"""
     <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:{status_col};margin-bottom:16px;display:flex;align-items:center;gap:8px">
       <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:{status_col}"></span>
-      HIGH DIVERGENCE RISK · {conds_met}/3 CONDITIONS
+      SIGNAL DETAIL · {ds}
     </div>
     <div style="display:inline-block;background:{status_col}20;color:{status_col};border:1px solid {status_col}40;border-radius:999px;padding:4px 14px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;letter-spacing:.06em;margin-bottom:16px">{status_label}</div>
-    {cond_row("VVIX > 110", conds.get("vvix_gt_110", False), f"VVIX = {sig.get('vvix', 0):.2f}")}
-    {cond_row("Credit 5d > -0.5%", conds.get("credit_5d_gt_neg05pct", False), f"5d Return = {fmt_pct(sig.get('credit_5d_return_pct'))}")}
-    {cond_row("VIX < 40 (non-panic)", conds.get("vix_lt_40", False), f"VIX = {sig.get('vix', 0):.2f}")}
-    <div style="background:#0f1519;border:1px solid #1e293b;border-left:2px solid {status_col};border-radius:0 3px 3px 0;padding:10px 12px;margin-top:16px">
-      <div style="font-size:11px;color:#94a3b8;line-height:1.55">
-        {"All 3 HDR conditions met AND VCG > +2.0 → <span style='color:#E85D6C;font-weight:700'>RISK-OFF signal active</span>." if ro else "HDR " + ("active" if hdr else "inactive") + " — " + ("VCG below +2.0 threshold." if hdr else "conditions not fully met.")}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+      <div style="background:#0f1519;border:1px solid {tier_color}50;border-radius:3px;padding:12px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:{tier_color};margin-bottom:6px">SEVERITY TIER</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:{tier_color}">{tier_lbl}</div>
+        <div style="font-size:10px;color:#475569;margin-top:4px">{"ro=1 active" if ro else "edr=1 active" if edr else "No active tier"}</div>
+      </div>
+      <div style="background:#0f1519;border:1px solid {sev_color}50;border-radius:3px;padding:12px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:{sev_color};margin-bottom:6px">VVIX SEVERITY</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;color:{sev_color}">{sev_label}</div>
+        <div style="font-size:10px;color:#475569;margin-top:3px">VVIX = {vvix:.2f}</div>
+      </div>
+    </div>
+    <div style="background:#0f1519;border:1px solid #1e293b;border-left:2px solid {sev_color};border-radius:0 3px 3px 0;padding:10px 12px;font-size:11px;color:#94a3b8;line-height:1.55">{sev_desc}</div>
+    {bounce_row}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
+      <div style="background:#0f1519;border:1px solid #1e293b;border-radius:3px;padding:10px 12px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:#475569;margin-bottom:4px">VIX</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;color:#e2e8f0">{sig.get('vix', 0):.2f}</div>
+      </div>
+      <div style="background:#0f1519;border:1px solid #1e293b;border-radius:3px;padding:10px 12px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:#475569;margin-bottom:4px">Credit 5d</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;color:{'#05AD98' if (credit_5d or 0) >= 0 else '#E85D6C'}">{fmt_pct(credit_5d)}</div>
       </div>
     </div>"""
-    return card_wrap("HDR Conditions", body, 2, 4, ds)
+    return card_wrap("Signal Detail", body, 2, 4, ds)
 
 
 # ── Card 3: Regime & Attribution ─────────────────────────────────
@@ -265,7 +318,7 @@ def card4_history(data: dict, ds: str) -> str:
         <tr>
           <td style="padding:6px 8px;font-size:10px;color:#64748b">{h.get('date','')}</td>
           <td style="padding:6px 8px;font-size:11px;font-weight:600;color:{vcg_col};text-align:right">{fmt_z(vcg)}</td>
-          <td style="padding:6px 8px;font-size:10px;color:#94a3b8;text-align:right">{fmt_z(h.get('vcg_div'))}</td>
+          <td style="padding:6px 8px;font-size:10px;color:#94a3b8;text-align:right">{fmt_z(h.get('vcg_adj'))}</td>
           <td style="padding:6px 8px;font-size:10px;color:#64748b;text-align:right">{h.get('vix', 0):.2f}</td>
           <td style="padding:6px 8px;font-size:10px;color:#64748b;text-align:right">{h.get('vvix', 0):.2f}</td>
           <td style="padding:6px 8px;font-size:10px;color:#64748b;text-align:right">{h.get('credit', 0):.2f}</td>
@@ -280,7 +333,7 @@ def card4_history(data: dict, ds: str) -> str:
         <tr style="border-bottom:1px solid #1e293b">
           <th style="padding:6px 8px;font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#334155;text-align:left">Date</th>
           <th style="padding:6px 8px;font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#334155;text-align:right">VCG</th>
-          <th style="padding:6px 8px;font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#334155;text-align:right">Div</th>
+          <th style="padding:6px 8px;font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#334155;text-align:right">Adj</th>
           <th style="padding:6px 8px;font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#334155;text-align:right">VIX</th>
           <th style="padding:6px 8px;font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#334155;text-align:right">VVIX</th>
           <th style="padding:6px 8px;font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#334155;text-align:right">{data.get('credit_proxy', 'HYG')}</th>
@@ -296,26 +349,40 @@ def card4_history(data: dict, ds: str) -> str:
 def build_tweet(data: dict, ds: str) -> str:
     sig = data.get("signal", {})
     vcg = sig.get("vcg")
-    interp = sig.get("interpretation", "INSUFFICIENT_DATA")
+    interp = sig.get("interpretation", "NORMAL")
     regime = sig.get("regime", "DIVERGENCE")
-    hdr = sig.get("hdr", 0)
     ro = sig.get("ro", 0)
+    edr = sig.get("edr", 0)
+    tier = sig.get("tier")
+    bounce = sig.get("bounce", 0)
+    vvix_severity = sig.get("vvix_severity", "moderate")
     proxy = data.get("credit_proxy", "HYG")
 
     vcg_str = fmt_z(vcg) if vcg is not None else "N/A"
     interp_str = interp_label(interp)
+    tier_str = f"Tier {tier}" if tier else "—"
+
+    if ro:
+        signal_note = "⚠ RISK-OFF active — credit artificially calm vs vol complex."
+    elif edr:
+        signal_note = "Early Divergence Risk detected — vol complex elevated, credit lagging."
+    elif bounce:
+        signal_note = "↩ Bounce signal — credit rebounding against vol divergence."
+    else:
+        signal_note = "No active signal. Vol-credit relationship within normal bounds."
 
     return f"""Radon VCG Scan — {ds}
 
 > Volatility-Credit Gap: {vcg_str} ({interp_str})
-> Regime: {regime} · HDR: {"ACTIVE" if hdr else "INACTIVE"} · RO: {"⚠ TRIGGERED" if ro else "CLEAR"}
+> Regime: {regime} · EDR: {"ACTIVE" if edr else "INACTIVE"} · RO: {"⚠ TRIGGERED" if ro else "CLEAR"}
 
+> Tier: {tier_str} · VVIX Severity: {vvix_severity.upper()}
 > VIX: {sig.get('vix', 0):.2f} · VVIX: {sig.get('vvix', 0):.2f}
 > {proxy}: ${sig.get('credit_price', 0):.2f} ({fmt_pct(sig.get('credit_5d_return_pct'))} 5d)
 
 > Attribution: VVIX {sig.get('attribution', {}).get('vvix_pct', 0):.0f}% / VIX {sig.get('attribution', {}).get('vix_pct', 0):.0f}%
 
-{"⚠ RISK-OFF signal active — credit artificially calm relative to vol complex." if ro else "No risk-off signal. Vol-credit relationship within normal bounds." if interp == "NORMAL" else "Monitoring divergence."}
+{signal_note}
 
 Analyzed by Radon
 radon.run"""
@@ -345,7 +412,7 @@ def screenshot_card(html_path: str, png_path: str) -> bool:
 def build_preview(cards_b64: list, tweet_text: str, ds: str) -> str:
     labels = [
         ("VCG Signal", "vcg-card-1-signal.png"),
-        ("HDR Conditions", "vcg-card-2-hdr.png"),
+        ("Signal Detail", "vcg-card-2-tier.png"),
         ("Regime & Attribution", "vcg-card-3-attribution.png"),
         ("VCG History", "vcg-card-4-history.png"),
     ]
@@ -433,7 +500,7 @@ def main():
     data = load_vcg()
     ds = date.today().strftime("%Y-%m-%d")
 
-    generators = [card1_signal, card2_hdr, card3_attribution, card4_history]
+    generators = [card1_signal, card2_tier, card3_attribution, card4_history]
     card_html_paths = []
     png_paths = []
 
