@@ -205,8 +205,27 @@ function todayInET(): string {
 
 /** True when the position was opened today. Yesterday's close is
  *  meaningless as a baseline because the position didn't exist. */
+function parseDateOnly(rawDate: string | undefined): string | null {
+  if (!rawDate) return null;
+  const trimmed = rawDate.trim();
+  const inlineMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (inlineMatch) return inlineMatch[1];
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(parsed);
+  const get = (type: string) => parts.find((p) => p.type === type)!.value;
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+/** True when the position was opened today. Yesterday's close is
+ *  meaningless as a baseline because the position didn't exist. */
 function isSameDay(pos: PortfolioPosition): boolean {
-  return pos.entry_date === todayInET();
+  const entryDate = parseDateOnly(pos.entry_date);
+  return entryDate != null && entryDate === todayInET();
 }
 
 /** Compute real-time market value from WS prices for option positions. */
@@ -276,8 +295,7 @@ export function getTodayPnlDollars(pos: PortfolioPosition, prices?: Record<strin
     if (!p || p.last == null || p.last <= 0 || p.close == null || p.close <= 0) return null;
     return (p.last - p.close) * pos.contracts;
   }
-  // Prefer IB's per-position daily P&L (handles intraday additions correctly)
-  if (pos.ib_daily_pnl != null) return pos.ib_daily_pnl;
+
   // Same-day position: Today's P&L = Total P&L (position didn't exist yesterday)
   if (isSameDay(pos)) {
     const rtMv = computeRtMv(pos, prices);
@@ -285,6 +303,10 @@ export function getTodayPnlDollars(pos: PortfolioPosition, prices?: Record<strin
     if (mv == null) return null;
     return mv - resolveEntryCost(pos);
   }
+
+  // Prefer IB's per-position daily P&L for overnight positions
+  if (pos.ib_daily_pnl != null) return pos.ib_daily_pnl;
+
   // Fall back to WS close-based calculation (overnight positions)
   let pnl = 0;
   let hasClose = false;

@@ -901,21 +901,34 @@ def convert_to_portfolio_format(account: dict, collapsed_positions: list, pnl_da
         structure = pos.get("structure", "")
         expiry = pos.get("expiry", "")
 
-        # Build per-contract blotter key from position legs
+        # Build per-contract blotter keys from collapsed option legs.
+        # Collapsed portfolio legs use the UI-facing `type` field ("Call"/"Put"),
+        # not the raw IB `secType`/`right` shape, so derive the contract keys
+        # from those normalized fields.
         blotter_contract_date = None
         legs = pos.get("legs", [])
-        if len(legs) == 1 and legs[0].get("secType") == "OPT":
-            leg = legs[0]
-            right = "C" if leg.get("right") == "C" else "P"
-            strike = leg.get("strike", 0)
+        contract_dates = []
+        for leg in legs:
+            leg_type = leg.get("type")
+            strike = leg.get("strike")
+            if leg_type not in ("Call", "Put") or strike in (None, 0):
+                continue
+            right = "C" if leg_type == "Call" else "P"
             contract_key = f"{ticker}|{expiry}|{right}|{float(strike)}"
-            blotter_contract_date = blotter_dates.get(contract_key)
+            contract_date = blotter_dates.get(contract_key)
+            if contract_date:
+                contract_dates.append(contract_date)
+        if contract_dates and len(contract_dates) == len([
+            leg for leg in legs
+            if leg.get("type") in ("Call", "Put") and leg.get("strike") not in (None, 0)
+        ]):
+            blotter_contract_date = min(contract_dates)
 
-        # Fallback chain: trade_log → blotter (per-contract) → blotter (ticker) →
+        # Fallback chain: blotter (per-contract) → trade_log → blotter (ticker) →
         # prev portfolio → "unknown"
         pos['entry_date'] = (
-            trade_log_dates.get(f"{ticker}|{structure}")
-            or blotter_contract_date
+            blotter_contract_date
+            or trade_log_dates.get(f"{ticker}|{structure}")
             or blotter_dates.get(ticker)
             or prev_dates.get(key)
             or "unknown"

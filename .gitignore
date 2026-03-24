@@ -151,3 +151,6 @@ vendor/
 
 # Autoresearch
 autoresearch.*
+
+# Firecrawl
+.firecrawl/

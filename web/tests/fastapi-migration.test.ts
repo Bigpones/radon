@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * - Orders POST: coalescing, success → data, failure → cached fallback
  * - Cancel/Modify: input validation preserved, error propagation
  * - Attribution GET: success → data, failure → 500
- * - Blotter POST: success → data, failure → 502
+ * - Blotter POST: success → data, failure → cached data when available
  * - Options chain/expirations: success → data, missing symbol → 400
  */
 
@@ -586,8 +586,41 @@ describe("POST /api/blotter (via radonFetch)", () => {
     expect(body.summary.closed_trades).toBe(5);
   });
 
-  it("returns 502 on failure", async () => {
+  it("falls back to cached blotter on failure", async () => {
     mockRadonFetch.mockRejectedValue(new Error("Flex query timed out"));
+    mockReadFile.mockResolvedValue(JSON.stringify({
+      as_of: "2026-03-13",
+      summary: { closed_trades: 2 },
+      closed_trades: [
+        {
+          symbol: "AAPL",
+          contract_desc: "AAPL 240315C00200000",
+          sec_type: "OPT",
+          is_closed: true,
+          net_quantity: 0,
+          total_commission: 1,
+          realized_pnl: 200,
+          cost_basis: 1000,
+          proceeds: 1200,
+          total_cash_flow: 200,
+          executions: [],
+        },
+      ],
+      open_trades: [],
+    }));
+
+    const { POST } = await import("../app/api/blotter/route");
+    const res = await POST();
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-Sync-Warning")).toContain("cached data");
+    const body = await res.json();
+    expect(body.summary.closed_trades).toBe(2);
+    expect(body.closed_trades[0].symbol).toBe("AAPL");
+  });
+
+  it("returns 502 on failure when cache unavailable", async () => {
+    mockRadonFetch.mockRejectedValue(new Error("Flex query timed out"));
+    mockReadFile.mockRejectedValue(new Error("ENOENT"));
 
     const { POST } = await import("../app/api/blotter/route");
     const res = await POST();

@@ -1,7 +1,7 @@
 # Status & Decision Log
 
 ## Last Updated
-2026-03-24T06:05:00-07:00
+2026-03-24T06:59:00-07:00
 
 ## Recent Commits
 - 2026-03-24 — **fix: preserve literal MenthorQ credentials in CTA launchd sync wrapper.** `scripts/run_cta_sync.sh` no longer `source`s `.env` through `bash`, which was expanding shell metacharacters inside `MENTHORQ_PASS` and breaking background/API CTA auth while direct Python fetches still worked. The wrapper now parses `.env` literally, added a regression test for passwords containing `$HOME`, and CTA cache/health recovered to `2026-03-23`.
@@ -233,6 +233,24 @@
 ---
 
 ## Recent Evaluations
+
+### GOOGL — 2026-03-24 ⛔ NO_TRADE
+- **Decision**: NO_TRADE
+- **Failing Gate**: EDGE (Milestone 4)
+- **📊 Data as of**: 2026-03-24 06:53 AM PT
+- **Reason**: Aggregate flow strength 46.3 below threshold (need >50), despite 4 sustained days and sustained recent strength 69.5.
+- **Dark Pool**: Aggregate 73.1% buy, 46.3 strength; 4-day sustained accumulation (73.1%
+  aggregate).
+- **Signal Detail (5-day)**:
+  - 2026-03-24: ACCUMULATION 84.7% buy / 69.5 strength
+  - 2026-03-23: ACCUMULATION 83.4% buy / 66.8 strength
+  - 2026-03-20: ACCUMULATION 55.4% buy / 10.8 strength
+  - 2026-03-19: ACCUMULATION 86.8% buy / 73.5 strength
+  - 2026-03-18: DISTRIBUTION 19.8% buy / 60.5 strength
+- **Options Flow/Conflict**: CONFLICT false, options flow did not veto edge
+- **OI Changes**: MASSIVE 1, LARGE 1, SIGNIFICANT 12 (total $73.69M)
+- **News**: 20 headlines, sentiment BEARISH (score -0.25), with AI_CATALYST/PRODUCT_LAUNCH/REGULATORY/catalyst mix
+- **Action**: WATCHlist retained, monitor for sustained strength above 50 and cleaner signal-price alignment before re-evaluation.
 
 ### TSLA — 2026-03-18 ✅ EXECUTED ⚠️ OVERSIZE
 - **Decision**: TRADE

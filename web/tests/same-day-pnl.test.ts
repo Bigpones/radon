@@ -71,6 +71,47 @@ const overnightPos: PortfolioPosition = {
   entry_date: "2026-03-14",
 };
 
+const pltrRiskReversal: PortfolioPosition = {
+  id: 16,
+  ticker: "PLTR",
+  structure: "Risk Reversal (P$152.5/C$155.0)",
+  structure_type: "Risk Reversal",
+  risk_profile: "undefined",
+  expiry: "2026-03-27",
+  contracts: 20,
+  direction: "COMBO",
+  entry_cost: -1571.92,
+  max_risk: null,
+  market_value: -1760.0,
+  ib_daily_pnl: null,
+  kelly_optimal: null,
+  target: null,
+  stop: null,
+  entry_date: todayET(),
+  legs: [
+    {
+      direction: "LONG" as const,
+      contracts: 20,
+      type: "Call" as const,
+      strike: 155,
+      entry_cost: 5034.01,
+      avg_cost: 5034.01,
+      market_price: 2.48,
+      market_value: 4960,
+    },
+    {
+      direction: "SHORT" as const,
+      contracts: 20,
+      type: "Put" as const,
+      strike: 152.5,
+      entry_cost: 6605.93,
+      avg_cost: 6605.93,
+      market_price: 3.36,
+      market_value: 6720,
+    },
+  ],
+};
+
 describe("Same-day position — Today's P&L ($)", () => {
   it("same-day position: Today's P&L equals Total P&L when ib_daily_pnl is null", () => {
     const todayPnl = getTodayPnlDollars(btuPut, btuPrices);
@@ -80,13 +121,32 @@ describe("Same-day position — Today's P&L ($)", () => {
     expect(todayPnl).toBeCloseTo(3000, 0);
   });
 
-  it("same-day position: prefers ib_daily_pnl when available", () => {
+  it("same-day position ignores ib_daily_pnl and uses entry-cost-based total P&L", () => {
     const posWithIbPnl = { ...btuPut, ib_daily_pnl: 2500 };
     const todayPnl = getTodayPnlDollars(posWithIbPnl, btuPrices);
-    expect(todayPnl).toBe(2500);
+    // Same-day positions must use total P&L (entry-adjusted), not IB daily
+    // to avoid stale/incorrect intraday IB daily values.
+    expect(todayPnl).toBeCloseTo(3000, 0);
   });
 
-  it("overnight position: uses close-based fallback (existing behavior)", () => {
+
+  it("same-day combo: Today's P&L equals net combo pnl instead of close-based leg math", () => {
+    const todayPnl = getTodayPnlDollars(pltrRiskReversal, {});
+    expect(todayPnl).not.toBeNull();
+    expect(todayPnl).toBeCloseTo(-188.08, 2);
+  });
+
+  it("same-day combo with timestamp entry_date uses total P&L", () => {
+    const todayCombo = {
+      ...pltrRiskReversal,
+      ib_daily_pnl: -5000,
+      entry_date: `${todayET()}T16:15:00-05:00`,
+    };
+    const todayPnl = getTodayPnlDollars(todayCombo, {});
+    expect(todayPnl).toBeCloseTo(-188.08, 2);
+  });
+
+  it("overnight position: uses close-based fallback when ib_daily_pnl is null", () => {
     const todayPnl = getTodayPnlDollars(overnightPos, btuPrices);
     // (3.10 - 5.17) * 100 * 100 = -$20,700 — correct for overnight
     expect(todayPnl).not.toBeNull();
