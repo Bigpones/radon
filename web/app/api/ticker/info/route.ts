@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
+import {
+  getRequestId,
+  jsonApiError,
+  setCacheResponseHeaders,
+} from "@/lib/apiContracts";
 
 export const runtime = "nodejs";
 
@@ -104,7 +109,7 @@ async function fetchUWStockInfo(ticker: string, token: string): Promise<Record<s
   try {
     const res = await fetch(
       `https://api.unusualwhales.com/api/stock/${encodeURIComponent(ticker)}/info`,
-      { headers: { Authorization: `Bearer ${token}` } },
+      { cache: "no-store", headers: { Authorization: `Bearer ${token}` } },
     );
     if (!res.ok) return {};
     const json = await res.json();
@@ -118,7 +123,7 @@ async function fetchUWStockState(ticker: string, token: string): Promise<Record<
   try {
     const res = await fetch(
       `https://api.unusualwhales.com/api/stock/${encodeURIComponent(ticker)}/stock-state`,
-      { headers: { Authorization: `Bearer ${token}` } },
+      { cache: "no-store", headers: { Authorization: `Bearer ${token}` } },
     );
     if (!res.ok) return {};
     const json = await res.json();
@@ -137,6 +142,7 @@ async function fetchExaData(ticker: string): Promise<{ profile: Record<string, u
   try {
     const res = await fetch("https://api.exa.ai/search", {
       method: "POST",
+      cache: "no-store",
       headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
       body: JSON.stringify({
         query: `${ticker} stock key statistics`,
@@ -164,6 +170,7 @@ async function fetchYahooStats(ticker: string): Promise<Record<string, unknown>>
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1d&interval=1d`;
     const res = await fetch(url, {
+      cache: "no-store",
       headers: { "User-Agent": "Mozilla/5.0" },
       signal: AbortSignal.timeout(5000),
     });
@@ -181,14 +188,22 @@ async function fetchYahooStats(ticker: string): Promise<Record<string, unknown>>
   }
 }
 
+const CACHE_TTL_SECONDS = 20;
+
 /* ─── Route handler ─── */
 
 export async function GET(request: Request): Promise<Response> {
+  const requestId = getRequestId();
   const { searchParams } = new URL(request.url);
   const ticker = searchParams.get("ticker");
 
   if (!ticker) {
-    return NextResponse.json({ error: "ticker parameter required" }, { status: 400 });
+    return jsonApiError({
+      message: "ticker parameter required",
+      status: 400,
+      code: "BAD_REQUEST",
+      requestId,
+    });
   }
 
   const symbol = ticker.toUpperCase();
@@ -211,16 +226,29 @@ export async function GET(request: Request): Promise<Response> {
         await writeCache(cached);
       }
     }
-    return NextResponse.json({
+
+    const response = NextResponse.json({
       uw_info: cached.uw_info,
       stock_state: stockState,
       profile: cached.exa_profile,
       stats: cached.exa_stats,
     });
+    return setCacheResponseHeaders(response, {
+      maxAgeSeconds: CACHE_TTL_SECONDS,
+      staleWhileRevalidateSeconds: 60,
+      requestId,
+      cacheState: "HIT",
+      tags: [`ticker-info.${symbol}`],
+    });
   }
 
   if (!token) {
-    return NextResponse.json({ error: "UW_TOKEN not configured" }, { status: 500 });
+    return jsonApiError({
+      message: "UW_TOKEN not configured",
+      status: 500,
+      code: "CONFIG_ERROR",
+      requestId,
+    });
   }
 
   try {
@@ -264,14 +292,27 @@ export async function GET(request: Request): Promise<Response> {
     };
     await writeCache(entry);
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       uw_info: uwInfo,
       stock_state: stockState,
       profile: exaProfile,
       stats: exaStats,
     });
+    return setCacheResponseHeaders(response, {
+      maxAgeSeconds: CACHE_TTL_SECONDS,
+      staleWhileRevalidateSeconds: 60,
+      requestId,
+      cacheState: cached ? "STALE" : "MISS",
+      tags: [`ticker-info.${symbol}`],
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch company info";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return jsonApiError({
+      message,
+      status: 500,
+      code: "UPSTREAM_ERROR",
+      detail: "ticker-info failed",
+      requestId,
+    });
   }
 }

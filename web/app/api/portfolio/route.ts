@@ -4,6 +4,11 @@ import { join } from "path";
 import { readDataFile } from "@tools/data-reader";
 import { PortfolioData } from "@tools/schemas/ib-sync";
 import { radonFetch } from "@/lib/radonApi";
+import {
+  getRequestId,
+  jsonApiError,
+  setNoStoreResponseHeaders,
+} from "@/lib/apiContracts";
 
 export const runtime = "nodejs";
 
@@ -66,6 +71,7 @@ function triggerBackgroundSync(): void {
 }
 
 export async function GET(): Promise<Response> {
+  const requestId = getRequestId();
   // Stale-while-revalidate: kick off background sync if data is >60 s old,
   // but always return the current cached file immediately (non-blocking).
   const stale = await isPortfolioStale();
@@ -76,22 +82,41 @@ export async function GET(): Promise<Response> {
   try {
     const result = await readDataFile("data/portfolio.json", PortfolioData);
     if (!result.ok) {
-      return NextResponse.json({ error: result.error }, { status: 404 });
+      return setNoStoreResponseHeaders(
+        jsonApiError({
+          message: result.error ?? "Portfolio data not found",
+          status: 404,
+          code: "NOT_FOUND",
+          requestId,
+        }),
+        requestId,
+      );
     }
     // Inject trade_log dates for share PnL entry timestamps
     const tradeLogDates = await loadTradeLogDates();
-    return NextResponse.json({ ...result.data, trade_log_dates: tradeLogDates });
+    const response = NextResponse.json({ ...result.data, trade_log_dates: tradeLogDates });
+    return setNoStoreResponseHeaders(response, requestId);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to read portfolio";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return setNoStoreResponseHeaders(
+      jsonApiError({
+        message,
+        status: 500,
+        code: "INTERNAL_ERROR",
+        requestId,
+      }),
+      requestId,
+    );
   }
 }
 
 export async function POST(): Promise<Response> {
+  const requestId = getRequestId();
   try {
     const data = await radonFetch("/portfolio/sync", { method: "POST", timeout: 35_000 });
     const tradeLogDates = await loadTradeLogDates();
-    return NextResponse.json({ ...data, trade_log_dates: tradeLogDates });
+    const response = NextResponse.json({ ...data, trade_log_dates: tradeLogDates });
+    return setNoStoreResponseHeaders(response, requestId);
   } catch {
     // Sync failed — fall back to cached data file
     const cached = await readDataFile("data/portfolio.json", PortfolioData);
@@ -100,12 +125,17 @@ export async function POST(): Promise<Response> {
       const tradeLogDates = await loadTradeLogDates();
       const res = NextResponse.json({ ...cached.data, trade_log_dates: tradeLogDates });
       res.headers.set("X-Sync-Warning", "IB sync failed - serving cached data");
-      return res;
+      return setNoStoreResponseHeaders(res, requestId);
     }
     // No cached data either — genuine failure
-    return NextResponse.json(
-      { error: "Sync failed and no cached data available" },
-      { status: 502 },
+    return setNoStoreResponseHeaders(
+      jsonApiError({
+        message: "Sync failed and no cached data available",
+        status: 502,
+        code: "UPSTREAM_ERROR",
+        requestId,
+      }),
+      requestId,
     );
   }
 }

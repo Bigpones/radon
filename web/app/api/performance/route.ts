@@ -3,6 +3,7 @@ import { readFile, stat } from "fs/promises";
 import { join } from "path";
 import { isPerformanceBehindPortfolioSync, isPortfolioBehindCurrentEtSession } from "@/lib/performanceFreshness";
 import { radonFetch } from "@/lib/radonApi";
+import { getRequestId, setNoStoreResponseHeaders } from "@/lib/apiContracts";
 
 export const runtime = "nodejs";
 
@@ -58,6 +59,7 @@ function triggerBackgroundRebuild(): void {
 }
 
 export async function GET(): Promise<Response> {
+  const requestId = getRequestId();
   const [stale, cachedPerformance, initialPortfolioSnapshot] = await Promise.all([
     isPerformanceStale(),
     readJsonFile(PERFORMANCE_PATH),
@@ -77,7 +79,7 @@ export async function GET(): Promise<Response> {
     } catch {
       // Portfolio sync failed — if we have fresh-enough perf cache, return it
       if (cachedPerformance && !isCacheBehindPortfolio(cachedPerformance, portfolioSnapshot)) {
-        return NextResponse.json(cachedPerformance);
+        return setNoStoreResponseHeaders(NextResponse.json(cachedPerformance), requestId);
       }
       // Otherwise fall through to rebuild evaluation
     }
@@ -86,31 +88,38 @@ export async function GET(): Promise<Response> {
   const shouldRebuild = !cachedPerformance || stale || isCacheBehindPortfolio(cachedPerformance, portfolioSnapshot);
 
   if (!shouldRebuild && cachedPerformance) {
-    return NextResponse.json(cachedPerformance);
+    return setNoStoreResponseHeaders(NextResponse.json(cachedPerformance), requestId);
   }
 
   // SWR: if we have stale cache, return it immediately + trigger background rebuild
   if (cachedPerformance) {
     triggerBackgroundRebuild();
-    return NextResponse.json(cachedPerformance);
+    return setNoStoreResponseHeaders(NextResponse.json(cachedPerformance), requestId);
   }
 
   // Cold start: no cache at all — must block on full rebuild
   try {
     const data = await radonFetch("/performance", { method: "POST", timeout: 180_000 });
-    return NextResponse.json(data);
+    return setNoStoreResponseHeaders(NextResponse.json(data), requestId);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to generate performance metrics";
-    return NextResponse.json({ error: message }, { status: 502 });
+    return setNoStoreResponseHeaders(
+      NextResponse.json({ error: message }, { status: 502 }),
+      requestId,
+    );
   }
 }
 
 export async function POST(): Promise<Response> {
+  const requestId = getRequestId();
   try {
     const data = await radonFetch("/performance", { method: "POST", timeout: 190_000 });
-    return NextResponse.json(data);
+    return setNoStoreResponseHeaders(NextResponse.json(data), requestId);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to generate performance metrics";
-    return NextResponse.json({ error: message }, { status: 502 });
+    return setNoStoreResponseHeaders(
+      NextResponse.json({ error: message }, { status: 502 }),
+      requestId,
+    );
   }
 }

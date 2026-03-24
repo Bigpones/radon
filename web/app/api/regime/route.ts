@@ -5,6 +5,7 @@ import { isCriDataStale } from "@/lib/criStaleness";
 import { selectPreferredCriCandidate, type CriCacheCandidate } from "@/lib/criCache";
 import { backfillRealizedVolHistory, type RegimeHistoryEntry } from "@/lib/regimeHistory";
 import { radonFetch } from "@/lib/radonApi";
+import { getRequestId, setCacheResponseHeaders } from "@/lib/apiContracts";
 
 export const runtime = "nodejs";
 
@@ -241,6 +242,7 @@ function triggerBackgroundScan(): void {
 }
 
 export async function GET(): Promise<Response> {
+  const requestId = getRequestId();
   const result = await readLatestCri();
   const data = normalizeCriPayload((result?.data ?? EMPTY_CRI) as Record<string, unknown>);
   const currentMarketOpen = isMarketOpenNow();
@@ -254,7 +256,14 @@ export async function GET(): Promise<Response> {
     triggerBackgroundScan();
   }
 
-  return NextResponse.json(data);
+  const response = NextResponse.json(data);
+  return setCacheResponseHeaders(response, {
+    maxAgeSeconds: 15,
+    staleWhileRevalidateSeconds: 120,
+    requestId,
+    cacheState: "HIT",
+    tags: ["regime"],
+  });
 }
 
 export async function POST(): Promise<Response> {

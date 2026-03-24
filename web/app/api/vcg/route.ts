@@ -3,6 +3,7 @@ import { readFile, stat } from "fs/promises";
 import { join } from "path";
 import { isVcgDataStale } from "@/lib/vcgStaleness";
 import { radonFetch } from "@/lib/radonApi";
+import { getRequestId, setCacheResponseHeaders } from "@/lib/apiContracts";
 
 export const runtime = "nodejs";
 
@@ -83,6 +84,7 @@ function triggerBackgroundScan(): void {
 }
 
 export async function GET(): Promise<Response> {
+  const requestId = getRequestId();
   const cached = await readCachedVcg();
   const data = normalizeVcgPayload(cached ?? {});
   const currentMarketOpen = isMarketOpenNow();
@@ -98,5 +100,12 @@ export async function GET(): Promise<Response> {
     triggerBackgroundScan();
   }
 
-  return NextResponse.json(data);
+  const response = NextResponse.json(data);
+  return setCacheResponseHeaders(response, {
+    maxAgeSeconds: 15,
+    staleWhileRevalidateSeconds: 120,
+    requestId,
+    cacheState: "HIT",
+    tags: ["vcg"],
+  });
 }

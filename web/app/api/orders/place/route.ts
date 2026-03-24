@@ -4,6 +4,12 @@ import { OrdersData } from "@tools/schemas/ib-orders";
 import { radonFetch } from "@/lib/radonApi";
 import { checkNakedShortRisk } from "@/lib/nakedShortGuard";
 import type { NakedShortPortfolio } from "@/lib/nakedShortGuard";
+import {
+  getRequestId,
+  jsonApiError,
+  setNoStoreResponseHeaders,
+} from "@/lib/apiContracts";
+import { firstPlaceOrderSchemaErrorMessage } from "@/lib/placeOrderBodySchema";
 
 export const runtime = "nodejs";
 
@@ -30,22 +36,74 @@ type PlaceBody = {
 };
 
 export async function POST(request: Request): Promise<Response> {
+  const requestId = getRequestId();
   try {
-    const body = (await request.json()) as PlaceBody;
+    let parsed: unknown;
+    try {
+      parsed = await request.json();
+    } catch {
+      return setNoStoreResponseHeaders(
+        jsonApiError({
+          message: "Invalid JSON body",
+          status: 400,
+          code: "BAD_REQUEST",
+          requestId,
+        }),
+        requestId,
+      );
+    }
 
-    // Required fields
-    if (!body.symbol || !body.action) {
-      return NextResponse.json(
-        { error: "Required: symbol, action, quantity, limitPrice" },
-        { status: 400 },
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return setNoStoreResponseHeaders(
+        jsonApiError({
+          message: "Request body must be a JSON object",
+          status: 400,
+          code: "BAD_REQUEST",
+          requestId,
+        }),
+        requestId,
+      );
+    }
+
+    const schemaErr = firstPlaceOrderSchemaErrorMessage(parsed);
+    if (schemaErr) {
+      return setNoStoreResponseHeaders(
+        jsonApiError({
+          message: schemaErr,
+          status: 400,
+          code: "VALIDATION_ERROR",
+          requestId,
+        }),
+        requestId,
+      );
+    }
+
+    const body = parsed as PlaceBody;
+    body.type = body.type ?? "stock";
+
+    // Required fields (schema ensures presence; trim rejects whitespace-only symbol)
+    if (!body.symbol?.trim() || !body.action) {
+      return setNoStoreResponseHeaders(
+        jsonApiError({
+          message: "Required: symbol, action, quantity, limitPrice",
+          status: 400,
+          code: "BAD_REQUEST",
+          requestId,
+        }),
+        requestId,
       );
     }
 
     // Validate quantity: must be positive integer
     if (body.quantity == null || body.quantity <= 0 || !Number.isFinite(body.quantity)) {
-      return NextResponse.json(
-        { error: "quantity must be a positive number" },
-        { status: 400 },
+      return setNoStoreResponseHeaders(
+        jsonApiError({
+          message: "quantity must be a positive number",
+          status: 400,
+          code: "BAD_REQUEST",
+          requestId,
+        }),
+        requestId,
       );
     }
 
@@ -56,23 +114,40 @@ export async function POST(request: Request): Promise<Response> {
       ? body.limitPrice == null || body.limitPrice === 0 || !Number.isFinite(body.limitPrice)
       : body.limitPrice == null || body.limitPrice <= 0 || !Number.isFinite(body.limitPrice);
     if (limitPriceInvalid) {
-      return NextResponse.json(
-        { error: comboSignedPrice ? "combo limitPrice must be a non-zero number" : "limitPrice must be a positive number" },
-        { status: 400 },
+      return setNoStoreResponseHeaders(
+        jsonApiError({
+          message: comboSignedPrice
+            ? "combo limitPrice must be a non-zero number"
+            : "limitPrice must be a positive number",
+          status: 400,
+          code: "BAD_REQUEST",
+          requestId,
+        }),
+        requestId,
       );
     }
 
     if (body.type === "option" && (!body.expiry || !body.strike || !body.right)) {
-      return NextResponse.json(
-        { error: "Options require: expiry, strike, right" },
-        { status: 400 },
+      return setNoStoreResponseHeaders(
+        jsonApiError({
+          message: "Options require: expiry, strike, right",
+          status: 400,
+          code: "BAD_REQUEST",
+          requestId,
+        }),
+        requestId,
       );
     }
 
     if (body.type === "combo" && (!body.legs || body.legs.length < 2)) {
-      return NextResponse.json(
-        { error: "Combo orders require 'legs' array with 2+ entries" },
-        { status: 400 },
+      return setNoStoreResponseHeaders(
+        jsonApiError({
+          message: "Combo orders require 'legs' array with 2+ entries",
+          status: 400,
+          code: "BAD_REQUEST",
+          requestId,
+        }),
+        requestId,
       );
     }
 
@@ -81,9 +156,14 @@ export async function POST(request: Request): Promise<Response> {
     if (portfolioResult?.ok) {
       const guard = checkNakedShortRisk(body, portfolioResult.data as NakedShortPortfolio);
       if (!guard.allowed) {
-        return NextResponse.json(
-          { error: `Naked short blocked: ${guard.reason}` },
-          { status: 403 },
+        return setNoStoreResponseHeaders(
+          jsonApiError({
+            message: `Naked short blocked: ${guard.reason}`,
+            status: 403,
+            code: "VALIDATION_ERROR",
+            requestId,
+          }),
+          requestId,
         );
       }
     } else {
@@ -115,9 +195,15 @@ export async function POST(request: Request): Promise<Response> {
       const reason = initialStatus === "Unknown"
         ? `no acknowledgement (${initialStatus}) — order may not have reached IB`
         : initialStatus;
-      return NextResponse.json(
-        { error: `Order rejected by IB: ${reason}`, detail: orderResult },
-        { status: 502 },
+      return setNoStoreResponseHeaders(
+        jsonApiError({
+          message: `Order rejected by IB: ${reason}`,
+          status: 502,
+          code: "UPSTREAM_ERROR",
+          detail: JSON.stringify(orderResult),
+          requestId,
+        }),
+        requestId,
       );
     }
 
@@ -129,16 +215,26 @@ export async function POST(request: Request): Promise<Response> {
     }
     const ordersResult = await readDataFile("data/orders.json", OrdersData);
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       status: "ok",
       orderId: orderResult.orderId,
       permId: orderResult.permId,
       initialStatus: orderResult.initialStatus,
       message: orderResult.message,
       orders: ordersResult.ok ? ordersResult.data : null,
+      requestId,
     });
+    return setNoStoreResponseHeaders(response, requestId);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Order placement failed";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return setNoStoreResponseHeaders(
+      jsonApiError({
+        message,
+        status: 500,
+        code: "INTERNAL_ERROR",
+        requestId,
+      }),
+      requestId,
+    );
   }
 }

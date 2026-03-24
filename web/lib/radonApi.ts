@@ -24,6 +24,7 @@ export async function radonFetch<T = Record<string, unknown>>(
   const { timeout = 30_000, ...fetchOpts } = opts ?? {};
   const res = await fetch(`${RADON_API}${path}`, {
     ...fetchOpts,
+    cache: fetchOpts.cache ?? "no-store",
     signal: AbortSignal.timeout(timeout),
   });
   if (!res.ok) {

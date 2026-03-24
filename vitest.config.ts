@@ -2,6 +2,8 @@ import { defineConfig } from "vitest/config";
 import { resolve } from "path";
 
 export default defineConfig({
+  // Repo root so `web/tests/**` includes match when `npm run test` runs from `web/`.
+  root: resolve(__dirname),
   resolve: {
     alias: {
       "@tools": resolve(__dirname, "lib/tools"),
@@ -14,6 +16,7 @@ export default defineConfig({
       "lib/tools/__tests__/**/*.test.ts",
       "site/lib/**/*.test.ts",
       "web/tests/**/*.test.ts",
+      "web/tests/**/*.test.tsx",
     ],
     environment: "node",
     coverage: {

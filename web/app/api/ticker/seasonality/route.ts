@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
+import {
+  getRequestId,
+  jsonApiError,
+  setCacheResponseHeaders,
+  setNoStoreResponseHeaders,
+} from "@/lib/apiContracts";
 
 export const runtime = "nodejs";
 
@@ -77,7 +83,7 @@ Rules:
 - years = sample size
 - Return ONLY the JSON array, no markdown, no explanation`;
 
-async function extractViaVision(ticker: string): Promise<MonthData[] | null> {
+async function extractViaVision(ticker: string, requestId: string): Promise<MonthData[] | null> {
   const apiKey = resolveApiKey();
   if (!apiKey) return null;
 
@@ -85,7 +91,7 @@ async function extractViaVision(ticker: string): Promise<MonthData[] | null> {
 
   // Verify the image exists before sending to Vision
   try {
-    const headRes = await fetch(imageUrl, { method: "HEAD" });
+    const headRes = await fetch(imageUrl, { method: "HEAD", cache: "no-store" });
     if (!headRes.ok) return null;
   } catch {
     return null;
@@ -94,6 +100,7 @@ async function extractViaVision(ticker: string): Promise<MonthData[] | null> {
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
+      cache: "no-store",
       headers: {
         "x-api-key": apiKey,
         "anthropic-version": "2023-06-01",
@@ -131,16 +138,26 @@ async function extractViaVision(ticker: string): Promise<MonthData[] | null> {
 
     return parsed as MonthData[];
   } catch {
+    console.warn("[ticker/seasonality] Vision extraction failed", { ticker, requestId });
     return null;
   }
 }
 
+const SEASONALITY_CACHE_SECONDS = 900;
+const STALE_REVALIDATE_SECONDS = 3600;
+
 export async function GET(request: Request): Promise<Response> {
+  const requestId = getRequestId();
   const { searchParams } = new URL(request.url);
   const ticker = searchParams.get("ticker");
 
   if (!ticker) {
-    return NextResponse.json({ error: "ticker parameter required" }, { status: 400 });
+    return jsonApiError({
+      message: "ticker parameter required",
+      status: 400,
+      code: "BAD_REQUEST",
+      requestId,
+    });
   }
 
   const symbol = ticker.toUpperCase();
@@ -148,19 +165,31 @@ export async function GET(request: Request): Promise<Response> {
   // 1. Check cache
   const cached = await readCache(symbol);
   if (cached) {
-    return NextResponse.json({ data: cached.data, source: cached.source });
+    const response = NextResponse.json({ data: cached.data, source: cached.source, requestId });
+    return setCacheResponseHeaders(response, {
+      maxAgeSeconds: SEASONALITY_CACHE_SECONDS,
+      staleWhileRevalidateSeconds: STALE_REVALIDATE_SECONDS,
+      requestId,
+      cacheState: "HIT",
+      tags: [`ticker-seasonality.${symbol}`],
+    });
   }
 
   const token = process.env.UW_TOKEN;
   if (!token) {
-    return NextResponse.json({ error: "UW_TOKEN not configured" }, { status: 500 });
+    return jsonApiError({
+      message: "UW_TOKEN not configured",
+      status: 500,
+      code: "CONFIG_ERROR",
+      requestId,
+    });
   }
 
   try {
     // 2. Fetch UW API
     const res = await fetch(
       `https://api.unusualwhales.com/api/seasonality/${encodeURIComponent(symbol)}/monthly`,
-      { headers: { Authorization: `Bearer ${token}` } },
+      { cache: "no-store", headers: { Authorization: `Bearer ${token}` } },
     );
 
     let uwData: MonthData[] = [];
@@ -182,11 +211,18 @@ export async function GET(request: Request): Promise<Response> {
         data: uwData,
       };
       await writeCache(entry);
-      return NextResponse.json({ data: uwData, source: "uw" });
+      const response = NextResponse.json({ data: uwData, source: "uw", requestId });
+      return setCacheResponseHeaders(response, {
+        maxAgeSeconds: SEASONALITY_CACHE_SECONDS,
+        staleWhileRevalidateSeconds: STALE_REVALIDATE_SECONDS,
+        requestId,
+        cacheState: "MISS",
+        tags: [`ticker-seasonality.${symbol}`],
+      });
     }
 
     // 4. Missing months — try EquityClock Vision fallback
-    const visionData = await extractViaVision(symbol);
+    const visionData = await extractViaVision(symbol, requestId);
 
     if (visionData) {
       // Build a map of UW data by month
@@ -198,7 +234,7 @@ export async function GET(request: Request): Promise<Response> {
       // Merge: UW takes priority, Vision fills gaps
       const merged: MonthData[] = [];
       for (let month = 1; month <= 12; month++) {
-        merged.push(uwByMonth.get(month) ?? visionData.find(v => v.month === month) ?? {
+        merged.push(uwByMonth.get(month) ?? visionData.find((v) => v.month === month) ?? {
           month,
           avg_change: 0,
           median_change: 0,
@@ -217,7 +253,14 @@ export async function GET(request: Request): Promise<Response> {
         data: merged,
       };
       await writeCache(entry);
-      return NextResponse.json({ data: merged, source });
+      const response = NextResponse.json({ data: merged, source, requestId });
+      return setCacheResponseHeaders(response, {
+        maxAgeSeconds: SEASONALITY_CACHE_SECONDS,
+        staleWhileRevalidateSeconds: STALE_REVALIDATE_SECONDS,
+        requestId,
+        cacheState: "MISS",
+        tags: [`ticker-seasonality.${symbol}`],
+      });
     }
 
     // 5. Vision also failed — return UW data as-is (may be partial)
@@ -229,12 +272,32 @@ export async function GET(request: Request): Promise<Response> {
         data: uwData,
       };
       await writeCache(entry);
-      return NextResponse.json({ data: uwData, source: "uw" });
+      const response = NextResponse.json({ data: uwData, source: "uw", requestId });
+      return setCacheResponseHeaders(response, {
+        maxAgeSeconds: SEASONALITY_CACHE_SECONDS,
+        staleWhileRevalidateSeconds: STALE_REVALIDATE_SECONDS,
+        requestId,
+        cacheState: "MISS",
+        tags: [`ticker-seasonality.${symbol}`],
+      });
     }
 
-    return NextResponse.json({ data: [], source: "uw" });
+    const response = NextResponse.json({ data: [], source: "uw", requestId });
+    return setCacheResponseHeaders(response, {
+      maxAgeSeconds: 30,
+      staleWhileRevalidateSeconds: 120,
+      requestId,
+      cacheState: "MISS",
+      tags: [`ticker-seasonality.${symbol}`],
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch seasonality";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return jsonApiError({
+      message,
+      status: 500,
+      code: "UPSTREAM_ERROR",
+      detail: "ticker/seasonality failed",
+      requestId,
+    });
   }
 }

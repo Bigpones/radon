@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { RefreshCw } from "lucide-react";
@@ -19,8 +20,11 @@ import Sidebar from "@/components/Sidebar";
 import Header from "@/components/Header";
 import ChatPanel from "@/components/ChatPanel";
 import MetricCards from "@/components/MetricCards";
-import WorkspaceSections from "@/components/WorkspaceSections";
 import ToastContainer from "@/components/Toast";
+
+const WorkspaceSections = dynamic(() => import("@/components/WorkspaceSections"), {
+  loading: () => null,
+});
 import ConnectionBanner from "@/components/ConnectionBanner";
 import FlexTokenBanner from "@/components/FlexTokenBanner";
 import { useTickerDetail } from "@/lib/TickerDetailContext";

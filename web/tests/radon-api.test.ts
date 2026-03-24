@@ -72,6 +72,7 @@ describe("radonFetch — success", () => {
 
     const [, opts] = mockFetch.mock.calls[0];
     expect(opts.method).toBe("POST");
+    expect(opts.cache).toBe("no-store");
     expect(opts.headers).toEqual({ "Content-Type": "application/json" });
     expect(opts.body).toContain("AAPL");
   });
