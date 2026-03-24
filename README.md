@@ -350,10 +350,14 @@ Radon includes Python, frontend, and end-to-end test coverage.
 - **E2E**: `Playwright` for browser workflows
 
 ```bash
+python3.13 scripts/run_pytest_affected.py
+python3.13 scripts/run_pytest_affected.py --files scripts/ib_sync.py scripts/tests/test_combo_entry_date.py -- -q
 python -m pytest scripts/tests/ -v
 cd web && npm test
 cd web && npx playwright test
 ```
+
+For scoped Python work, prefer `scripts/run_pytest_affected.py` over a full repo `pytest` run. The helper resolves changed Python files to the matching affected tests under `scripts/tests/` and `scripts/trade_blotter/`, and skips pytest entirely when the current change set has no Python impact.
 
 Unit tests use mocked API calls where possible, so most development work does not require a live IB or [Unusual Whales](https://unusualwhales.com/referral#39985a64-656c-4642-a051-db89f6324d64) connection.
 

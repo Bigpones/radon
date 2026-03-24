@@ -252,4 +252,29 @@ test.describe("SPXU combo order — rejection surfaces as error (RED → GREEN)"
     await expect(errorMsg).toBeVisible();
     await expect(page.locator(".order-success")).not.toBeVisible();
   });
+
+  test("GREEN: noisy upstream margin rejection is rendered as concise operator copy", async ({ page }) => {
+    await page.route("**/api/orders/place", (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error:
+            "Radon API 502: IB error 201: Order rejected - reason:YOUR ORDER IS NOT ACCEPTED. IN ORDER TO OBTAIN THE DESIRED POSITION YOUR PREVIOUS DAY EQUITY WITH LOAN VALUE <E> [644770.54 USD] MUST EXCEED THE INITIAL MARGIN [677243.00 USD].",
+        }),
+      }),
+    );
+
+    await openSpxuOrderTab(page);
+    await fillComboForm(page, "2.25");
+
+    const errorMsg = page.locator(".order-error");
+    await errorMsg.waitFor({ timeout: 5_000 });
+    await expect(errorMsg).toBeVisible();
+    await expect(errorMsg).toContainText("Order rejected by IB: insufficient margin.");
+    await expect(errorMsg).toContainText("$644,770.54");
+    await expect(errorMsg).toContainText("$677,243.00");
+    await expect(errorMsg).not.toContainText("Radon API 502");
+    await expect(errorMsg).not.toContainText("YOUR ORDER IS NOT ACCEPTED");
+  });
 });

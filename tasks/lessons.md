@@ -2,6 +2,9 @@
 
 ## 2026-03-24
 
+- Do not default to `python3.13 -m pytest -q` for every scoped fix in this repo. Use an affected-file runner first so Python verification tracks only the changed surfaces, then escalate to broader pytest only when the change genuinely crosses many Python modules.
+- When a user explicitly names a skill and asks for a separate agent, use that skill in a dedicated subagent and integrate its result instead of handling the work only in the main thread.
+- For order-placement failures, never dump transport-layer strings like `Radon API 502: ...` into the UI. Preserve upstream status/detail at the Next route boundary, then convert broker prose into short operator-facing summary/detail copy in a shared banner.
 - When UI verification guidance prefers `chrome-cdp`, check whether that skill is actually available in the current Codex runtime before planning around it. If it is unavailable, explicitly reuse any already-running dev server and fall back cleanly instead of trying to boot a duplicate app instance.
 
 ## 2026-03-22

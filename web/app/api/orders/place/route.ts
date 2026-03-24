@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readDataFile } from "@tools/data-reader";
 import { OrdersData } from "@tools/schemas/ib-orders";
-import { radonFetch } from "@/lib/radonApi";
+import { RadonApiError, radonFetch } from "@/lib/radonApi";
 import { checkNakedShortRisk } from "@/lib/nakedShortGuard";
 import type { NakedShortPortfolio } from "@/lib/nakedShortGuard";
 import {
@@ -251,6 +251,17 @@ export async function POST(request: Request): Promise<Response> {
     });
     return setNoStoreResponseHeaders(response, requestId);
   } catch (error) {
+    if (error instanceof RadonApiError) {
+      return setNoStoreResponseHeaders(
+        jsonApiError({
+          message: error.detail,
+          status: error.status,
+          code: error.status >= 500 ? "UPSTREAM_ERROR" : undefined,
+          requestId,
+        }),
+        requestId,
+      );
+    }
     const message = error instanceof Error ? error.message : "Order placement failed";
     return setNoStoreResponseHeaders(
       jsonApiError({

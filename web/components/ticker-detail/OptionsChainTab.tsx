@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PriceData, OptionContract } from "@/lib/pricesProtocol";
 import { optionKey, normalizeOptionExpiry } from "@/lib/pricesProtocol";
+import type { PortfolioPosition } from "@/lib/types";
 import { fmtPrice } from "@/lib/positionUtils";
+import OrderErrorBanner from "@/components/OrderErrorBanner";
 import { useTickerDetail } from "@/lib/TickerDetailContext";
 import { useChainPrefetch } from "@/lib/useChainPrefetch";
 import {
@@ -27,6 +29,8 @@ type OptionsChainTabProps = {
   ticker: string;
   prices: Record<string, PriceData>;
   tickerPriceData: PriceData | null;
+  focusPosition?: PortfolioPosition | null;
+  focusPositionRequested?: boolean;
 };
 
 type ChainStrike = {
@@ -602,7 +606,7 @@ function OrderBuilder({
         </div>
       </div>
 
-      {error && <div className="order-error">{error}</div>}
+      <OrderErrorBanner error={error} />
       {success && <div className="order-success">{success}</div>}
 
       {/* Order Summary (shown in confirm step) */}
@@ -650,6 +654,8 @@ export default function OptionsChainTab({
   ticker,
   prices,
   tickerPriceData,
+  focusPosition = null,
+  focusPositionRequested = false,
 }: OptionsChainTabProps) {
   const [expirations, setExpirations] = useState<string[]>([]);
   const [selectedExpiry, setSelectedExpiry] = useState<string | null>(null);
@@ -661,6 +667,12 @@ export default function OptionsChainTab({
   const [strikesPerSide, setStrikesPerSide] = useState(15);
   const [sideFilter, setSideFilter] = useState<"both" | "calls" | "puts">("both");
   const atmRef = useRef<HTMLTableRowElement>(null);
+  const initialFocusAppliedRef = useRef(false);
+
+  const focusedExpiry = useMemo(
+    () => (focusPosition ? normalizeOptionExpiry(focusPosition.expiry) : null),
+    [focusPosition],
+  );
 
   // Background prefetch of all expirations for instant switching
   const { cacheStrikes, getCachedStrikes } = useChainPrefetch(
@@ -672,6 +684,7 @@ export default function OptionsChainTab({
   // Fetch expirations on mount
   useEffect(() => {
     let cancelled = false;
+    initialFocusAppliedRef.current = false;
     setLoadingExpiries(true);
     setError(null);
 
@@ -686,9 +699,6 @@ export default function OptionsChainTab({
         }
         const exps: string[] = data.expirations ?? [];
         setExpirations(exps);
-        // Default to first expiry that is at least 7 days out
-        const defaultExp = exps.find((e) => daysToExpiry(e) >= 7) ?? exps[0] ?? null;
-        setSelectedExpiry(defaultExp);
         setLoadingExpiries(false);
       })
       .catch(() => {
@@ -700,6 +710,21 @@ export default function OptionsChainTab({
 
     return () => { cancelled = true; };
   }, [ticker]);
+
+  useEffect(() => {
+    if (initialFocusAppliedRef.current) return;
+    if (expirations.length === 0) return;
+    if (focusPositionRequested && !focusedExpiry) return;
+
+    const nextExpiry = focusedExpiry && expirations.includes(focusedExpiry)
+      ? focusedExpiry
+      : expirations.find((expiry) => daysToExpiry(expiry) >= 7) ?? expirations[0] ?? null;
+
+    if (nextExpiry) {
+      setSelectedExpiry(nextExpiry);
+    }
+    initialFocusAppliedRef.current = true;
+  }, [expirations, focusedExpiry]);
 
   // Fetch strikes when expiry changes — check prefetch cache first
   useEffect(() => {
@@ -775,16 +800,30 @@ export default function OptionsChainTab({
     return findAtmStrike(strikes, currentPrice);
   }, [currentPrice, strikes]);
 
+  const focusedStrike = useMemo(() => {
+    if (!focusPosition || !focusedExpiry || focusedExpiry !== selectedExpiry) return null;
+    const positionStrikes = focusPosition.legs
+      .map((leg) => leg.strike)
+      .filter((strike): strike is number => Number.isFinite(strike) && strike > 0);
+    if (positionStrikes.length === 0) return null;
+    if (currentPrice == null) return positionStrikes[0];
+
+    return positionStrikes.reduce((closest, strike) => (
+      Math.abs(strike - currentPrice) < Math.abs(closest - currentPrice) ? strike : closest
+    ));
+  }, [focusPosition, focusedExpiry, selectedExpiry, currentPrice]);
+
   // Filter strikes around ATM
   const visibleStrikes = useMemo<ChainStrike[]>(() => {
     if (!selectedExpiry || strikes.length === 0) return [];
-    const visible = getVisibleStrikes(strikes, atmStrike, strikesPerSide);
+    const anchorStrike = focusedStrike ?? atmStrike;
+    const visible = getVisibleStrikes(strikes, anchorStrike, strikesPerSide);
     return visible.map((strike) => ({
       strike,
       callKey: optionKey({ symbol: ticker, expiry: selectedExpiry, strike, right: "C" }),
       putKey: optionKey({ symbol: ticker, expiry: selectedExpiry, strike, right: "P" }),
     }));
-  }, [ticker, selectedExpiry, strikes, atmStrike, strikesPerSide]);
+  }, [ticker, selectedExpiry, strikes, focusedStrike, atmStrike, strikesPerSide]);
 
   // Subscribe visible chain contracts for WS price streaming
   const { setChainContracts } = useTickerDetail();

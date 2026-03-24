@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import type { OpenOrder, PortfolioPosition } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { fmtPrice } from "@/lib/positionUtils";
+import OrderErrorBanner from "@/components/OrderErrorBanner";
 import { OrderConfirmSummary, type OrderSummary } from "@/lib/order";
 
 /* ─── Types ─── */
@@ -505,7 +506,7 @@ function StockOrderForm({
         </div>
       </div>
 
-      {error && <div className="order-error">{error}</div>}
+      <OrderErrorBanner error={error} />
       {success && <div className="order-success">{success}</div>}
 
       {/* Order Summary (shown in confirm step) */}

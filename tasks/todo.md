@@ -1,5 +1,120 @@
 # TODO
 
+## Session: Add Affected-File Pytest Runner (2026-03-24)
+
+### Goal
+Replace the slow default `pytest -q` habit for scoped Python changes with a deterministic affected-files runner that resolves only the relevant Python tests for the changed files and documents that workflow for future tasks.
+
+### Dependency Graph
+- T1 (Inspect the current pytest layout and define deterministic mapping rules from changed Python source files to affected test targets) depends_on: []
+- T2 (Implement an affected-files pytest helper with unit coverage for the target-resolution logic) depends_on: [T1]
+- T3 (Document the new Python verification workflow so future work uses the affected runner by default for scoped changes) depends_on: [T2]
+- T4 (Use the new runner for the current worktree, then proceed with the scoped commit/push once verification is satisfied) depends_on: [T3]
+
+### Checklist
+- [x] T1 Inspect the current pytest layout and define deterministic mapping rules from changed Python source files to affected test targets
+- [x] T2 Implement an affected-files pytest helper with unit coverage for the target-resolution logic
+- [x] T3 Document the new Python verification workflow so future work uses the affected runner by default for scoped changes
+- [ ] T4 Use the new runner for the current worktree, then proceed with the scoped commit/push once verification is satisfied
+
+### Review
+- Added [scripts/run_pytest_affected.py](/Users/joemccann/dev/apps/finance/radon/scripts/run_pytest_affected.py), which:
+  - reads changed files from `git diff --name-only HEAD` by default or accepts explicit `--files`
+  - filters to repo-local Python files only
+  - maps changed modules to affected tests under `scripts/tests/` and `scripts/trade_blotter/`
+  - expands `conftest.py` changes to the sibling test tree
+  - exits cleanly without invoking pytest when the current change set has no Python impact
+- Added [test_run_pytest_affected.py](/Users/joemccann/dev/apps/finance/radon/scripts/tests/test_run_pytest_affected.py) to lock the mapping behavior for:
+  - direct source-to-test resolution
+  - changed test files
+  - `conftest.py` expansion
+- Documented the workflow in [README.md](/Users/joemccann/dev/apps/finance/radon/README.md) so scoped Python verification uses the affected runner first instead of defaulting to the full suite.
+- Verification:
+  - `python3.13 -m py_compile scripts/run_pytest_affected.py`
+  - `python3.13 scripts/run_pytest_affected.py --files scripts/run_pytest_affected.py scripts/tests/test_run_pytest_affected.py -- -q`
+  - `python3.13 scripts/run_pytest_affected.py --files web/app/api/orders/place/route.ts web/lib/orderError.ts web/components/OrderErrorBanner.tsx -- -q`
+
+## Session: Restore PLTR Chain Strike Visibility For Position Deep Links (2026-03-24)
+
+### Goal
+Make `/PLTR?posId=16&tab=chain` reliably surface the intended strike region instead of dropping the operator into a generic ATM-centered chain view where the relevant strike row can appear missing or blank.
+
+### Dependency Graph
+- T1 (Trace the `/ticker?posId=...&tab=chain` code path and confirm whether the missing `$150` row comes from ignored position context, strike-window filtering, or quote-key/subscription mismatch) depends_on: []
+- T2 (Add red regression coverage for the broken chain behavior, including a browser test for the rendered strike row on the chain page) depends_on: [T1]
+- T3 (Patch the minimal frontend path so position-driven chain deep links select the correct expiry/strike context and preserve row visibility) depends_on: [T2]
+- T4 (Run focused verification, browser verification against the already-running dev server, and the required full repo suites before any commit) depends_on: [T3]
+- T5 (Update docs/task review, then commit and push only the scoped bug-fix changes) depends_on: [T4]
+
+### Checklist
+- [x] T1 Trace the `/ticker?posId=...&tab=chain` code path and confirm whether the missing `$150` row comes from ignored position context, strike-window filtering, or quote-key/subscription mismatch
+- [x] T2 Add red regression coverage for the broken chain behavior, including a browser test for the rendered strike row on the chain page
+- [x] T3 Patch the minimal frontend path so position-driven chain deep links select the correct expiry/strike context and preserve row visibility
+- [x] T4 Run focused verification, browser verification against the already-running dev server, and the required full repo suites before any commit
+- [ ] T5 Update docs/task review, then commit and push only the scoped bug-fix changes
+
+### Review
+- Root cause:
+  - The chain tab ignored deep-linked position context and always defaulted to the first expiry at least seven days out, then centered the visible strike window around ATM.
+  - For `/PLTR?posId=16&tab=chain`, that dropped the operator into a generic ATM-centered chain view instead of the held risk-reversal expiry/strike region, which made the intended `$150` row appear missing or blank.
+- Fix:
+  - Updated [TickerDetailContent.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/TickerDetailContent.tsx) to pass the deep-linked position into [OptionsChainTab.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ticker-detail/OptionsChainTab.tsx).
+  - Updated [OptionsChainTab.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ticker-detail/OptionsChainTab.tsx) to:
+    - prefer the deep-linked position expiry when the chain tab is opened from `?posId=...`
+    - anchor the visible strike window to the position’s nearby strike instead of generic ATM centering
+    - keep the existing ATM behavior when no position deep link is present
+- Regression coverage:
+  - Added [ticker-chain-position-focus.test.tsx](/Users/joemccann/dev/apps/finance/radon/web/tests/ticker-chain-position-focus.test.tsx)
+  - Added [pltr-chain-position-focus.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/pltr-chain-position-focus.spec.ts)
+- Verification:
+  - `npx vitest run web/tests/ticker-chain-position-focus.test.tsx`
+  - `cd web && PLAYWRIGHT_PORT=3000 npx playwright test e2e/pltr-chain-position-focus.spec.ts --config playwright.config.ts`
+
+## Session: Clean Order Rejection Messages In UI (2026-03-24)
+
+### Goal
+Preserve upstream order-placement rejection detail through the Next route and render concise, operator-friendly rejection copy in the chain/order UI instead of the raw `Radon API 502: ...` wrapper.
+
+### Dependency Graph
+- T1 (Trace the `/api/orders/place` failure path from FastAPI through the Next route into the chain/order UI and confirm where the noisy wrapper is introduced) depends_on: []
+- T2 (Add red regression coverage for preserved upstream order detail plus cleaned UI rendering on the chain/order surfaces) depends_on: [T1]
+- T3 (Patch the route and UI error formatting with the minimal scoped fix) depends_on: [T2]
+- T4 (Run focused verification, browser verification against the already-running dev server, and full required suites) depends_on: [T3]
+- T5 (Update docs/task tracking, capture any lessons, then commit and push the scoped fix) depends_on: [T4]
+
+### Checklist
+- [x] T1 Trace the `/api/orders/place` failure path from FastAPI through the Next route into the chain/order UI and confirm where the noisy wrapper is introduced
+- [x] T2 Add red regression coverage for preserved upstream order detail plus cleaned UI rendering on the chain/order surfaces
+- [x] T3 Patch the route and UI error formatting with the minimal scoped fix
+- [x] T4 Run focused verification, browser verification against the already-running dev server, and full required suites
+- [ ] T5 Update docs/task tracking, capture any lessons, then commit and push the scoped fix
+
+### Review
+- Root cause:
+  - [web/app/api/orders/place/route.ts](/Users/joemccann/dev/apps/finance/radon/web/app/api/orders/place/route.ts) still collapsed `RadonApiError` failures into a generic `500` and surfaced the full `Radon API 502: ...` wrapper instead of preserving the upstream rejection detail.
+  - The order-entry surfaces in [OptionsChainTab.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ticker-detail/OptionsChainTab.tsx), [OrderTab.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ticker-detail/OrderTab.tsx), [BookTab.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/ticker-detail/BookTab.tsx), and [InstrumentDetailModal.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/InstrumentDetailModal.tsx) rendered broker failures as raw strings, so transport prefixes and all-caps IB prose leaked straight into the UI.
+- Fix:
+  - Preserved upstream status/detail in [web/app/api/orders/place/route.ts](/Users/joemccann/dev/apps/finance/radon/web/app/api/orders/place/route.ts) by handling `RadonApiError` explicitly instead of rewriting it to an internal `500`.
+  - Added structured order-error parsing in [web/lib/orderError.ts](/Users/joemccann/dev/apps/finance/radon/web/lib/orderError.ts) so noisy broker text is converted into concise operator copy with parsed numeric detail where possible.
+  - Added [web/components/OrderErrorBanner.tsx](/Users/joemccann/dev/apps/finance/radon/web/components/OrderErrorBanner.tsx) and updated the shared `.order-error` styles in [web/app/globals.css](/Users/joemccann/dev/apps/finance/radon/web/app/globals.css) to render a clear summary line plus muted detail line.
+  - Replaced raw string error rendering with the shared banner across the order-entry surfaces named above.
+- Regression coverage:
+  - Added [web/tests/order-place-route-error-propagation.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/order-place-route-error-propagation.test.ts) to lock route-level upstream status/detail preservation.
+  - Added/expanded [web/tests/order-error-format.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/order-error-format.test.ts) to cover wrapper stripping, margin rejection rewriting, and cancellation/no-ack normalization.
+  - Added browser coverage in:
+    - [web/e2e/ticker-search-chain.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/ticker-search-chain.spec.ts) for the `/chain` order builder
+    - [web/e2e/order-combo.spec.ts](/Users/joemccann/dev/apps/finance/radon/web/e2e/order-combo.spec.ts) for the order tab combo flow
+- Verification:
+  - Focused unit/route tests:
+    - `npx vitest run web/tests/order-error-format.test.ts web/tests/order-place-route-error-propagation.test.ts`
+  - Focused browser tests against the already-running dev server:
+    - `cd web && PLAYWRIGHT_PORT=3000 npx playwright test e2e/ticker-search-chain.spec.ts --config playwright.config.ts --grep "rewrites noisy IB margin rejections"`
+    - `cd web && PLAYWRIGHT_PORT=3000 npx playwright test e2e/order-combo.spec.ts --config playwright.config.ts --grep "noisy upstream margin rejection is rendered as concise operator copy"`
+  - Full JS suite:
+    - `npx vitest run --config vitest.config.ts` passed (`156` files, `1432` tests)
+  - Visual verification:
+    - Captured and reviewed `/tmp/radon-order-error-chain.png` from the running `:3000` app. The rendered chain UI now shows a concise rejection summary plus a muted detail line, without the raw `Radon API 502` wrapper or the original all-caps IB dump.
+
 ## Session: Restore Visible VCG EDR Badge (2026-03-24)
 
 ### Goal

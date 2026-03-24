@@ -8,6 +8,7 @@ import { optionKey } from "@/lib/pricesProtocol";
 import { useOrderActions } from "@/lib/OrderActionsContext";
 import { fmtPrice, legPriceKey, resolveEntryCost } from "@/lib/positionUtils";
 import ModifyOrderModal from "@/components/ModifyOrderModal";
+import OrderErrorBanner from "@/components/OrderErrorBanner";
 import type { ModifyOrderRequest } from "@/lib/orderModify";
 import { checkNakedShortRisk, type NakedShortPortfolio, type OrderPayload } from "@/lib/nakedShortGuard";
 import { OrderConfirmSummary, type OrderSummary } from "@/lib/order";
@@ -412,7 +413,7 @@ function NewOrderForm({
         </div>
       )}
 
-      {error && <div className="order-error">{error}</div>}
+      <OrderErrorBanner error={error} />
       {success && <div className="order-success">{success}</div>}
 
       {/* Order Summary (shown in confirm step) */}
@@ -786,7 +787,7 @@ function ComboOrderForm({
         </div>
       )}
 
-      {error && <div className="order-error">{error}</div>}
+      <OrderErrorBanner error={error} />
       {success && <div className="order-success">{success}</div>}
 
       {/* Order Summary (shown in confirm step) */}

@@ -2696,7 +2696,27 @@ tr.leg-row td {
 .order-action-active { color: var(--text-primary); border-color: var(--text-primary); }
 .order-action-buy.order-action-active { color: var(--positive); border-color: var(--positive); }
 .order-action-sell.order-action-active { color: var(--negative); border-color: var(--negative); }
-.order-error { font-family: var(--font-mono); font-size: 11px; color: var(--negative); padding: 8px 10px; border: 1px solid var(--negative); background: rgba(239, 68, 68, 0.05); }
+.order-error {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--negative);
+  background: rgba(239, 68, 68, 0.05);
+  color: var(--negative);
+}
+.order-error-summary {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+.order-error-detail {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
 .order-success { font-family: var(--font-mono); font-size: 11px; color: var(--positive); padding: 8px 10px; border: 1px solid var(--positive); background: rgba(34, 197, 94, 0.05); }
 .order-submit { margin-top: 4px; }
 .order-confirm-row { display: flex; gap: 8px; }

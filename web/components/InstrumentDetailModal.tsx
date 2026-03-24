@@ -5,6 +5,7 @@ import type { PortfolioLeg } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { fmtPrice, fmtUsd, legPriceKey } from "@/lib/positionUtils";
 import Modal from "./Modal";
+import OrderErrorBanner from "./OrderErrorBanner";
 import { InstrumentOrderQuoteTelemetry } from "./QuoteTelemetry";
 import { OrderConfirmSummary, type OrderSummary } from "@/lib/order";
 
@@ -252,7 +253,7 @@ function LegOrderForm({
         </div>
       </div>
 
-      {error && <div className="order-error">{error}</div>}
+      <OrderErrorBanner error={error} />
       {success && <div className="order-success">{success}</div>}
 
       {/* Order Summary (shown in confirm step) */}

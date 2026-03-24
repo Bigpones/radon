@@ -167,6 +167,8 @@ export default function TickerDetailContent({
             ticker={ticker}
             prices={prices}
             tickerPriceData={prices[ticker] ?? null}
+            focusPosition={positionId != null ? position : null}
+            focusPositionRequested={positionId != null}
           />
         )}
         {resolvedTab === "position" && position && (

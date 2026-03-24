@@ -214,7 +214,7 @@ test.describe("Ticker Search → Detail Page → Chain", () => {
     // Navigate directly to ticker detail page
     await page.goto("/AAPL?tab=book");
 
-    const detail = page.locator(".ticker-detail-page");
+    const detail = page.locator(".ticker-detail-page").last();
     await detail.waitFor({ timeout: 5_000 });
 
     // Verify L1 order book section exists
@@ -236,7 +236,7 @@ test.describe("Ticker Search → Detail Page → Chain", () => {
     // Navigate directly to ticker detail page with chain tab
     await page.goto("http://127.0.0.1:3000/AAPL?tab=chain");
 
-    const detail = page.locator(".ticker-detail-page");
+    const detail = page.locator(".ticker-detail-page").last();
     await detail.waitFor({ timeout: 5_000 });
 
     // Should show expiry selector
@@ -316,7 +316,7 @@ test.describe("Ticker Search → Detail Page → Chain", () => {
 
     await page.goto("http://127.0.0.1:3000/AAPL?tab=chain");
 
-    const detail = page.locator(".ticker-detail-page");
+    const detail = page.locator(".ticker-detail-page").last();
     await detail.waitFor({ timeout: 5_000 });
     await detail.locator(".chain-grid").waitFor();
 
@@ -406,5 +406,48 @@ test.describe("Ticker Search → Detail Page → Chain", () => {
 
     const comboLegs = Array.isArray(placedBody?.legs) ? placedBody.legs as Array<Record<string, unknown>> : [];
     expect(comboLegs.map((leg) => leg.action)).toEqual(["SELL", "BUY"]);
+  });
+
+  test("chain order builder rewrites noisy IB margin rejections into concise UI copy", async ({ page }) => {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    stubApis(page);
+    await installMockWebSocket(page, {
+      AAPL: makePriceData("AAPL", 205.5, 205.4, 205.6),
+      AAPL_20260417_200_P: makePriceData("AAPL_20260417_200_P", 4.8, 4.6, 5.0),
+    });
+
+    await page.route("**/api/orders/place", async (route) => {
+      await route.fulfill({
+        status: 502,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: "Radon API 502: IB error 201: Order rejected - reason:YOUR ORDER IS NOT ACCEPTED. IN ORDER TO OBTAIN THE DESIRED POSITION YOUR PREVIOUS DAY EQUITY WITH LOAN VALUE <E> (644770.54 USD) MUST EXCEED THE INITIAL MARGIN (67243.00 USD).",
+        }),
+      });
+    });
+
+    await page.goto("http://127.0.0.1:3000/AAPL?tab=chain");
+
+    const detail = page.locator(".ticker-detail-page").last();
+    await detail.waitFor({ timeout: 5_000 });
+    await detail.locator(".chain-grid").waitFor();
+
+    const putRow = detail.getByRole("row", { name: /\$200\.00/ }).first();
+    await putRow.locator(".chain-bid.chain-clickable").last().click();
+
+    const orderBuilder = detail.locator(".order-builder");
+    await expect(orderBuilder).toBeVisible();
+
+    await orderBuilder.locator(".modify-price-input").fill("4.60");
+    await orderBuilder.getByRole("button", { name: /Place Short Put/i }).click();
+    await orderBuilder.getByRole("button", { name: /^Confirm Order$/i }).click();
+
+    const error = orderBuilder.locator(".order-error");
+    await expect(error).toBeVisible();
+    await expect(error).toContainText("Order rejected by IB: insufficient margin.");
+    await expect(error).toContainText("Previous-day equity with loan value is $644,770.54");
+    await expect(error).toContainText("initial margin required is $67,243.00");
+    await expect(error).not.toContainText("Radon API 502:");
+    await expect(error).not.toContainText("YOUR ORDER IS NOT ACCEPTED");
   });
 });
