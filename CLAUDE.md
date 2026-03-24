@@ -199,15 +199,23 @@ curl http://localhost:8321/health
 
 ## Cancel / Modify Failure Propagation
 
-1. **Do not trust the original IB `Trade` object as the only confirmation source.**
+1. **Cancel and modify MUST use subprocess with original clientId.**
+   - IB scopes both `cancelOrder` and `placeOrder` (modify) by clientId.
+   - Master client (clientId=0) can SEE all orders via `reqAllOpenOrders()` but CANNOT cancel/modify them (Error 10147 for cancel, Error 103 for modify).
+   - The subprocess (`ib_order_manage.py`) detects the original clientId from `trade.order.clientId` and reconnects as that client before executing.
+   - Pool-based cancel/modify does NOT work because orders are placed by subprocess clientIds (range 20-49), not pool clientIds (0-2).
+2. **Clear VOL fields before modify.**
+   - IB open-order snapshots may contain stale `volatility` and `volatilityType` values. Re-submitting on a non-VOL order causes Error 321.
+   - Reset both to IB sentinel values (`1.7976931348623157e+308` and `2147483647`) before `placeOrder`.
+3. **Do not trust the original IB `Trade` object as the only confirmation source.**
    - IB can confirm a cancel by removing the order from refreshed open orders without mutating the original `Trade` instance in place.
    - Cancel/modify flows must confirm against a refreshed open-order snapshot, not just the stale object reference.
-2. **Treat disappearance after cancel as success.**
+4. **Treat disappearance after cancel as success.**
    - If the target order no longer appears in refreshed open orders after the cancel request, that is a valid IB acknowledgement.
-3. **Preserve the real upstream error detail end to end.**
+5. **Preserve the real upstream error detail end to end.**
    - If a subprocess script exits non-zero with JSON on stdout, FastAPI must surface the human-readable `detail` / `message` / `error` field.
    - Next order routes must preserve upstream HTTP status/detail instead of collapsing provider failures to generic `500`s.
-4. **Required regressions for cancel/modify bugs:**
+6. **Required regressions for cancel/modify bugs:**
    - Python/unit coverage for refreshed open-order confirmation semantics
    - route coverage for upstream status/detail propagation
    - browser coverage for the visible toast/error state
@@ -219,7 +227,8 @@ curl http://localhost:8321/health
 | Scenario | Rule | Action |
 |----------|------|--------|
 | SELL stock, no long shares | Naked short stock | BLOCK |
-| SELL call, no long shares | Naked short call | BLOCK |
+| SELL call, no long shares or long calls | Naked short call | BLOCK |
+| SELL call, long calls at same expiry (any strike) | Vertical spread | ALLOW |
 | SELL N call contracts, shares < N × 100 | Short a tail | BLOCK |
 | SELL put (cash-secured) | Defined risk | ALLOW |
 | Vertical spread (BUY C + SELL C) | Long call covers short | ALLOW |
