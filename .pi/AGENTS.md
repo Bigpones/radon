@@ -1552,9 +1552,9 @@ Next.js API routes call a local FastAPI server (`scripts/api/server.py` on `loca
 
 **Graceful degradation:** FastAPI down → Next.js serves cached files with `is_stale: true`. No spawn fallback.
 
-**IB Gateway auto-recovery:** FastAPI detects Gateway down at startup and auto-restarts via `~/ibc/bin/restart-secure-ibc-service.sh`. IB-dependent endpoints detect `ECONNREFUSED`, auto-restart Gateway, reconnect pool, retry once. Manual: `POST http://localhost:8321/ib/restart`.
+**IB Gateway auto-recovery:** FastAPI detects Gateway down OR CLOSE_WAIT (upstream dead) at startup and auto-restarts via `~/ibc/bin/restart-secure-ibc-service.sh`. IB-dependent endpoints detect `ECONNREFUSED`, `TimeoutError`, and `API connection failed` — auto-restart Gateway, reconnect pool, retry once. Restart script kills lingering IB/IBC Java processes before restarting. Manual: `POST http://localhost:8321/ib/restart`.
 
-**Health check:** `curl http://localhost:8321/health` — returns `ib_gateway`, `ib_pool`, `uw`, and `test_mode` status.
+**Health check:** `curl http://localhost:8321/health` — returns `ib_gateway` (including `upstream_dead` for CLOSE_WAIT detection), `ib_pool`, `uw`, and `test_mode` status.
 
 **Test-mode FastAPI harness:** `web/tests/order-e2e.test.ts` uses `web/tests/fastapiHarness.ts` to launch an isolated FastAPI instance on a random local port with `RADON_API_TEST_MODE=1`. In test mode, `scripts/api/server.py` skips IB Gateway / pool startup and stubs the order endpoints. The harness must not reuse the live broker-backed `localhost:8321` server unless that server explicitly reports `test_mode: true` on `/health`.
 
@@ -1562,7 +1562,7 @@ Next.js API routes call a local FastAPI server (`scripts/api/server.py` on `loca
 |------|---------|
 | `scripts/api/server.py` | FastAPI app — 17 endpoints, CORS, IB pool, health check |
 | `scripts/api/ib_pool.py` | Role-based IB connection pool (sync=0, orders=1, data=2) |
-| `scripts/api/ib_gateway.py` | IB Gateway health check + auto-restart via IBC launchd |
+| `scripts/api/ib_gateway.py` | IB Gateway health check + auto-restart via IBC launchd. Detects CLOSE_WAIT (upstream dead) |
 | `scripts/api/subprocess.py` | Async subprocess helper (`run_script`, `run_module`) |
 | `web/tests/fastapiHarness.ts` | Vitest-only FastAPI launcher for isolated order-route integration tests |
 
@@ -1700,10 +1700,10 @@ This workflow triggers on ANY of these events:
 
 The FastAPI server (`scripts/api/ib_gateway.py`) handles IB Gateway recovery automatically:
 
-1. **Startup:** Checks port 4001 → if down, runs `~/ibc/bin/restart-secure-ibc-service.sh`, polls up to 45s
-2. **Runtime:** IB-dependent endpoints detect `ECONNREFUSED` → auto-restart Gateway → reconnect pool → retry once
+1. **Startup:** Checks port 4001 + CLOSE_WAIT detection (`lsof`) → if down or upstream dead, runs `~/ibc/bin/restart-secure-ibc-service.sh` (kills lingering processes first), polls up to 45s
+2. **Runtime:** IB-dependent endpoints detect `ECONNREFUSED`, `TimeoutError`, `API connection failed` → auto-restart Gateway → reconnect pool → retry once
 3. **Manual:** `curl -X POST http://localhost:8321/ib/restart` or `POST /ib/restart`
-4. **Health:** `curl http://localhost:8321/health` → shows `ib_gateway.port_listening` + `ib_pool` status
+4. **Health:** `curl http://localhost:8321/health` → shows `ib_gateway.port_listening`, `ib_gateway.upstream_dead` + `ib_pool` status
 
 **2FA requirement:** Cold starts (Gateway was fully stopped) require approving push notification on IBKR Mobile. Warm restarts (IBC nightly 11:58 PM) reuse auth session — no 2FA needed.
 
@@ -1732,11 +1732,11 @@ curl -X POST http://localhost:8321/ib/restart
 | Scenario | Process? | Port listening? | Connects? | Fix |
 |----------|----------|----------------|-----------|-----|
 | Gateway down | No | No | No | `~/ibc/bin/start-secure-ibc-service.sh` + approve 2FA |
-| **Zombie state** | Yes | Yes | **No** | `~/ibc/bin/restart-secure-ibc-service.sh` + approve 2FA |
+| **Zombie/CLOSE_WAIT** | Yes | Yes | **No** | `~/ibc/bin/restart-secure-ibc-service.sh` (kills lingering processes) + approve 2FA |
 | Client ID collision | Yes | Yes | Yes | Kill stale script holding the client ID |
 | 2FA pending | Yes | Yes | No | Approve push notification on IBKR Mobile |
 
-**Zombie state is the most common failure.** The Java process is alive and the socket is bound, but the API layer stopped accepting connections (session expired, 2FA timeout, IBC nightly restart failed).
+**Zombie/CLOSE_WAIT state is the most common failure.** The Java process is alive and the socket is bound, but the API layer stopped accepting connections (session expired, 2FA timeout, IBC nightly restart failed, upstream IB connection dropped with CLOSE_WAIT). Auto-detected at startup and runtime via `lsof` CLOSE_WAIT check and `TimeoutError` pattern matching.
 
 **Timeout budget when Gateway is unreachable:**
 
@@ -1746,7 +1746,7 @@ curl -X POST http://localhost:8321/ib/restart
 | Cached fallback read | <50ms | Serves `data/portfolio.json` or `data/orders.json` |
 | **Total API response** | **~3.5s** | Returns 200 with `X-Sync-Warning` header |
 
-**Automated recovery layers:** FastAPI Gateway auto-restart on ECONNREFUSED (retry once) > IBClient reconnect (5 attempts, exponential backoff) > WS server reconnect (5s interval, client ID rotation) > cached fallback (serve stale data as 200 with `is_stale: true`) > IBC auto-restart (nightly 11:58 PM) > 2FA retry (`TWOFA_TIMEOUT_ACTION=restart`).
+**Automated recovery layers:** FastAPI Gateway auto-restart on ECONNREFUSED/TimeoutError/CLOSE_WAIT (kill lingering processes, retry once) > IBClient reconnect (5 attempts, exponential backoff) > WS server reconnect (5s interval, client ID rotation) > WS stale tick detection (45s no data → restart Gateway) > cached fallback (serve stale data as 200 with `is_stale: true`) > IBC auto-restart (nightly 11:58 PM) > 2FA retry (`TWOFA_TIMEOUT_ACTION=restart`).
 
 ### Client ID Strategy
 
@@ -2438,6 +2438,7 @@ Skills are loaded on-demand when tasks match their descriptions.
 | `html-report` | `.pi/skills/html-report/SKILL.md` | Generate styled HTML reports (Terminal theme) |
 | `context-engineering` | `.pi/skills/context-engineering/SKILL.md` | Persistent memory, context pipelines, token budget management |
 | `tweet-it` | `.pi/skills/tweet-it/SKILL.md` | Generate tweet copy + infographic card for sharing trades on X |
+| `fast-regex-search` | `.pi/skills/fast-regex-search/SKILL.md` | Sparse n-gram indexed regex search — pre-filter for large codebase grep (auto-loaded) |
 
 ### Web Fetch Quick Reference
 

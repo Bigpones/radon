@@ -69,46 +69,41 @@ tail -50 ~/ibc/logs/ibc-gateway-service.log
 - `python3` connect test times out or returns ECONNREFUSED
 - Web logs: `TimeoutError(60, "Connect call failed ('127.0.0.1', 4001)")`
 
-**Root cause:** Gateway is in a zombie state -- Java process is alive and the socket is bound, but the API layer is not accepting connections. This happens when:
+**Root cause:** Gateway is in a zombie/CLOSE_WAIT state -- Java process is alive and the socket is bound, but the API layer is not accepting connections. This happens when:
 1. **2FA expired** -- IB session timed out, Gateway needs re-authentication
-2. **IB server-side disconnect** -- IB's servers terminated the session (maintenance, compliance)
+2. **IB server-side disconnect** -- IB's servers terminated the session (maintenance, compliance), leaving CLOSE_WAIT sockets
 3. **IBC auto-restart failed** -- The 11:58 PM nightly restart left Gateway in a bad state
 4. **Memory/GC pressure** -- Java process is alive but unresponsive
 
 **This is the most common failure mode.**
 
-**Fix:**
+**Automated detection:** FastAPI detects this at startup and runtime:
+- Startup: `ensure_ib_gateway()` checks for CLOSE_WAIT via `lsof` — auto-restarts if found
+- Runtime: `_is_ib_connection_error()` matches `TimeoutError` and `API connection failed` — triggers auto-restart + retry
+- Health: `GET /health` returns `ib_gateway.upstream_dead: true` when CLOSE_WAIT detected
+- WS relay: stale tick detection (45s no data during market hours) triggers restart
+
+**Manual fix (if auto-recovery fails):**
 ```bash
-# Restart the Gateway
+# Restart the Gateway (kills lingering IB/IBC Java processes first)
 ~/ibc/bin/restart-secure-ibc-service.sh
 
 # Wait 30-60s for Java startup + IBC login sequence
 # Approve 2FA push notification on IBKR Mobile
 
 # Verify recovery
-lsof -iTCP:4001 -sTCP:LISTEN
-python3.13 -c "
-import socket
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.settimeout(5)
-try:
-    s.connect(('127.0.0.1', 4001))
-    print('OK - accepting connections')
-except Exception as e:
-    print(f'STILL FAILING: {e}')
-finally:
-    s.close()
-"
+curl -s http://localhost:8321/health | python3.13 -m json.tool
+# Check: ib_gateway.port_listening=true, ib_gateway.upstream_dead=false
 ```
 
-**If restart doesn't help:** Force kill and cold start:
+**If restart doesn't help:** The restart script already kills lingering processes, but if needed:
 ```bash
 ~/ibc/bin/stop-secure-ibc-service.sh
 sleep 5
 # Verify no Java process lingering
-ps aux | grep -i gateway | grep -v grep
-# If still running, note the PID and:
-# kill <PID>
+pgrep -f 'ibgateway|IBC|ibcontroller'
+# If still running:
+# pkill -9 -f 'ibgateway|IBC|ibcontroller'
 ~/ibc/bin/start-secure-ibc-service.sh
 ```
 
@@ -231,7 +226,11 @@ These mechanisms handle transient failures without intervention:
 
 | Mechanism | Where | Behavior |
 |-----------|-------|----------|
+| CLOSE_WAIT detection | `ib_gateway.py` | `lsof` detects dead upstream at startup + health checks; auto-restart |
+| TimeoutError recovery | `server.py` | Detects `TimeoutError`/`API connection failed` → restart Gateway + retry once |
+| Process cleanup | `restart-secure-ibc-service.sh` | Kills lingering IB/IBC Java processes (`kill -9`) before restart |
 | `_on_disconnect()` | `IBClient` (Python) | 5 attempts, exponential backoff (2^n, cap 30s), restores subscriptions |
+| Stale tick detection | `ib_realtime_server.js` | No ticks for 45s during market hours → restart Gateway (120s cooldown) |
 | Reconnect loop | `ib_realtime_server.js` | 5s interval, client ID rotation on collision, subscription restoration |
 | `syncMutex` | API routes | Coalesces concurrent sync calls, prevents stampede |
 | Cached fallback | API routes | Serves `data/*.json` when sync fails, returns 200 not 502 |

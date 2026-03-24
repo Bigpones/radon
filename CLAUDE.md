@@ -172,7 +172,7 @@ Next.js routes call FastAPI (`localhost:8321`) via `radonFetch()` (`web/lib/rado
 |------|---------|
 | `server.py` | 21 endpoints, CORS, IB pool, health, auto-restart. `POST /performance/background` = fire-and-forget, 202, dedup |
 | `ib_pool.py` | Role-based IB pool (sync/orders/data), auto-reconnect |
-| `ib_gateway.py` | Health check + auto-restart via IBC launchd |
+| `ib_gateway.py` | Health check + auto-restart via IBC launchd. Detects CLOSE_WAIT (upstream dead) |
 | `subprocess.py` | Async `run_script()`, `run_module()` — uses `sys.executable` (not `python3`) to match server interpreter |
 
 ### Graceful Degradation
@@ -181,13 +181,14 @@ Next.js routes call FastAPI (`localhost:8321`) via `radonFetch()` (`web/lib/rado
 |----------|----------|
 | FastAPI + IB up | Normal |
 | FastAPI up, IB down | Auto-restart Gateway, retry once, else 503 + cached |
+| FastAPI up, IB CLOSE_WAIT | Detected at startup + script errors; auto-restart + kill lingering processes |
 | FastAPI down | Cached from disk, `is_stale: true` |
 
 No spawn fallback. Always try FastAPI first.
 
 ### IB Gateway Auto-Recovery
 
-Startup: check port 4001, restart if needed, poll 45s. Runtime: IB endpoints detect `ECONNREFUSED`, auto-restart + retry once. Manual: `POST /ib/restart`.
+Startup: check port 4001 + CLOSE_WAIT detection (`lsof`), restart if needed, poll 45s. Runtime: IB endpoints detect `ECONNREFUSED`, `TimeoutError`, and `API connection failed` — auto-restart + retry once. Restart script (`~/ibc/bin/restart-secure-ibc-service.sh`) kills lingering IB/IBC Java processes (`kill -9`) before restarting to handle CLOSE_WAIT state. Manual: `POST /ib/restart`. Health: `GET /health` returns `upstream_dead: true` when CLOSE_WAIT detected.
 
 ### Health Check
 

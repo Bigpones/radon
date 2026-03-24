@@ -247,3 +247,86 @@ class TestExistingErrorHandling:
 
         client._on_error(99, 999, "Some unknown error")
         assert client._last_error == (999, "Some unknown error")
+
+
+# ---------------------------------------------------------------------------
+# Auto-recovery: connection error pattern matching
+# ---------------------------------------------------------------------------
+
+
+class TestConnectionErrorPatterns:
+    """Test that _is_ib_connection_error detects all failure modes."""
+
+    def test_econnrefused_detected(self):
+        from api.server import _is_ib_connection_error
+        assert _is_ib_connection_error("Connect call failed: ECONNREFUSED")
+
+    def test_connection_refused_detected(self):
+        from api.server import _is_ib_connection_error
+        assert _is_ib_connection_error("Connection refused on 127.0.0.1:4001")
+
+    def test_timeout_error_detected(self):
+        from api.server import _is_ib_connection_error
+        assert _is_ib_connection_error("API connection failed: TimeoutError()")
+
+    def test_api_connection_failed_detected(self):
+        from api.server import _is_ib_connection_error
+        assert _is_ib_connection_error("API connection failed: some reason")
+
+    def test_failed_to_connect_detected(self):
+        from api.server import _is_ib_connection_error
+        assert _is_ib_connection_error(
+            "Failed to connect to IB on 127.0.0.1:4001 after 1 attempt(s): "
+        )
+
+    def test_ib_connection_error_class_detected(self):
+        from api.server import _is_ib_connection_error
+        assert _is_ib_connection_error(
+            "clients.ib_client.IBConnectionError: Failed to connect"
+        )
+
+    def test_unrelated_error_not_detected(self):
+        from api.server import _is_ib_connection_error
+        assert not _is_ib_connection_error("No security definition found")
+
+    def test_none_safe(self):
+        from api.server import _is_ib_connection_error
+        assert not _is_ib_connection_error(None)
+
+    def test_empty_safe(self):
+        from api.server import _is_ib_connection_error
+        assert not _is_ib_connection_error("")
+
+
+# ---------------------------------------------------------------------------
+# CLOSE_WAIT detection
+# ---------------------------------------------------------------------------
+
+
+class TestCloseWaitDetection:
+    """Test _has_close_wait detection of dead upstream IB sessions."""
+
+    @patch("api.ib_gateway.subprocess.check_output")
+    def test_close_wait_detected(self, mock_lsof):
+        from api.ib_gateway import _has_close_wait
+        mock_lsof.return_value = (
+            "java 62381 user 50u IPv6 0xce TCP 10.0.0.215:52097->8.17.22.31:4001 (CLOSE_WAIT)\n"
+            "java 62381 user 41u IPv6 0xa9 TCP *:4001 (LISTEN)\n"
+        )
+        assert _has_close_wait() is True
+
+    @patch("api.ib_gateway.subprocess.check_output")
+    def test_healthy_no_close_wait(self, mock_lsof):
+        from api.ib_gateway import _has_close_wait
+        mock_lsof.return_value = (
+            "java 62381 user 41u IPv6 0xa9 TCP *:4001 (LISTEN)\n"
+            "java 62381 user 56u IPv6 0xf8 TCP localhost:4001->localhost:52132 (ESTABLISHED)\n"
+        )
+        assert _has_close_wait() is False
+
+    @patch("api.ib_gateway.subprocess.check_output")
+    def test_lsof_failure_returns_false(self, mock_lsof):
+        import subprocess
+        from api.ib_gateway import _has_close_wait
+        mock_lsof.side_effect = subprocess.SubprocessError("lsof not found")
+        assert _has_close_wait() is False

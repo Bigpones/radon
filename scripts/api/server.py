@@ -38,6 +38,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 from api.ib_pool import IBPool
 from api.subprocess import run_script, run_module, ScriptResult
 from api.ib_gateway import check_ib_gateway, ensure_ib_gateway, restart_ib_gateway
+from api.pool_order_manage import pool_cancel_order, pool_modify_order
 
 # Load .env from project root for Python scripts
 try:
@@ -779,7 +780,7 @@ async def orders_place(request: Request):
         }
 
     order_json = json.dumps(body)
-    result = await run_script(
+    result = await _run_ib_script_with_recovery(
         "ib_place_order.py", ["--json", order_json], timeout=15
     )
     if not result.ok:
@@ -791,7 +792,11 @@ async def orders_place(request: Request):
 
 @app.post("/orders/cancel")
 async def orders_cancel(request: Request):
-    """Cancel an open order via IB."""
+    """Cancel an open order via IB pool (no subprocess).
+
+    Uses sync role (clientId=0, master) which can cancel ANY order
+    regardless of which clientId placed it.
+    """
     body = await request.json()
     if test_mode:
         return {
@@ -803,23 +808,24 @@ async def orders_cancel(request: Request):
     order_id = body.get("orderId", 0)
     perm_id = body.get("permId", 0)
 
-    args = ["cancel"]
-    if order_id:
-        args.extend(["--order-id", str(order_id)])
-    if perm_id:
-        args.extend(["--perm-id", str(perm_id)])
+    if not ib_pool or not ib_pool.is_connected("sync"):
+        raise HTTPException(status_code=503, detail="IB pool sync connection unavailable")
 
-    result = await run_script("ib_order_manage.py", args, timeout=15)
-    if not result.ok:
-        raise HTTPException(status_code=502, detail=result.error)
-    if result.data and result.data.get("status") == "error":
-        raise HTTPException(status_code=502, detail=result.data.get("message", "Cancel failed"))
-    return result.data
+    async with ib_pool.acquire("sync") as client:
+        result = await pool_cancel_order(client, order_id=order_id, perm_id=perm_id)
+
+    if result["status"] == "error":
+        raise HTTPException(status_code=502, detail=result["message"])
+    return result
 
 
 @app.post("/orders/modify")
 async def orders_modify(request: Request):
-    """Modify an open order via IB."""
+    """Modify an open order via IB pool (no subprocess).
+
+    Uses sync role (clientId=0, master) which can modify ANY order
+    regardless of which clientId placed it.
+    """
     body = await request.json()
     if test_mode:
         return {
@@ -834,26 +840,19 @@ async def orders_modify(request: Request):
     new_quantity = body.get("newQuantity")
     outside_rth = body.get("outsideRth")
 
-    args = ["modify"]
-    if order_id:
-        args.extend(["--order-id", str(order_id)])
-    if perm_id:
-        args.extend(["--perm-id", str(perm_id)])
-    if new_price is not None:
-        args.extend(["--new-price", str(new_price)])
-    if new_quantity is not None:
-        args.extend(["--new-quantity", str(new_quantity)])
-    if outside_rth is True:
-        args.append("--outside-rth")
-    elif outside_rth is False:
-        args.append("--no-outside-rth")
+    if not ib_pool or not ib_pool.is_connected("sync"):
+        raise HTTPException(status_code=503, detail="IB pool sync connection unavailable")
 
-    result = await run_script("ib_order_manage.py", args, timeout=15)
-    if not result.ok:
-        raise HTTPException(status_code=502, detail=result.error)
-    if result.data and result.data.get("status") == "error":
-        raise HTTPException(status_code=502, detail=result.data.get("message", "Modify failed"))
-    return result.data
+    async with ib_pool.acquire("sync") as client:
+        result = await pool_modify_order(
+            client, order_id=order_id, perm_id=perm_id,
+            new_price=new_price, new_quantity=new_quantity,
+            outside_rth=outside_rth,
+        )
+
+    if result["status"] == "error":
+        raise HTTPException(status_code=502, detail=result["message"])
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -1061,7 +1060,7 @@ async def options_chain(symbol: str, expiry: Optional[str] = None):
     args = ["--symbol", symbol.upper()]
     if expiry:
         args.extend(["--expiry", expiry])
-    result = await run_script("ib_option_chain.py", args, timeout=15)
+    result = await _run_ib_script_with_recovery("ib_option_chain.py", args, timeout=15)
     if not result.ok:
         raise HTTPException(status_code=502, detail=result.error)
     if result.data and result.data.get("error"):
@@ -1086,7 +1085,15 @@ async def options_expirations(symbol: str):
 # IB Gateway auto-recovery
 # ---------------------------------------------------------------------------
 
-_IB_CONN_REFUSED_PATTERNS = ("Connect call failed", "ECONNREFUSED", "Connection refused")
+_IB_CONN_REFUSED_PATTERNS = (
+    "Connect call failed",
+    "ECONNREFUSED",
+    "Connection refused",
+    "TimeoutError",
+    "API connection failed",
+    "Failed to connect to IB",
+    "IBConnectionError",
+)
 
 
 def _is_ib_connection_error(error_msg: str) -> bool:
@@ -1097,7 +1104,7 @@ def _is_ib_connection_error(error_msg: str) -> bool:
 async def _run_ib_script_with_recovery(
     script: str, args: list, timeout: float = 30
 ) -> ScriptResult:
-    """Run an IB-dependent script. On ECONNREFUSED, restart Gateway and retry once."""
+    """Run an IB-dependent script. On connection error or timeout, restart Gateway and retry once."""
     result = await run_script(script, args, timeout=timeout)
 
     if not result.ok and _is_ib_connection_error(result.error):

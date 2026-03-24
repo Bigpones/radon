@@ -107,6 +107,28 @@ function normalizeExpiry(expiry: string | null | undefined): string | null {
   return clean.length === 8 ? clean : null;
 }
 
+/** Count long call contracts at the same expiry (any strike) that can form a vertical spread. */
+function countLongCallsAtExpiry(
+  ticker: string,
+  expiry: string | null | undefined,
+  portfolio: NakedShortPortfolio,
+): number {
+  const normalizedExpiry = normalizeExpiry(expiry);
+  if (!normalizedExpiry) return 0;
+
+  let contracts = 0;
+  for (const pos of portfolio.positions) {
+    if (pos.ticker !== ticker) continue;
+    if (normalizeExpiry(pos.expiry) !== normalizedExpiry) continue;
+    for (const leg of pos.legs) {
+      if (leg.direction === "LONG" && leg.type === "Call") {
+        contracts += leg.contracts;
+      }
+    }
+  }
+  return contracts;
+}
+
 /** Count long option contracts that match the exact option being sold to close. */
 function countMatchingLongOptionContracts(
   ticker: string,
@@ -213,8 +235,9 @@ export function checkNakedShortRisk(
       return { allowed: true };
     }
 
-    // SELL call → need long shares to cover
+    // SELL call → need long calls (vertical spread) or long shares to cover
     if (order.right === "C") {
+      // 1. Check if selling to close exact same option (same strike + expiry)
       const closingLongCalls = countMatchingLongOptionContracts(
         sym,
         order.expiry,
@@ -222,30 +245,40 @@ export function checkNakedShortRisk(
         order.right,
         portfolio,
       );
-      const remainingShortContracts = Math.max(order.quantity - closingLongCalls, 0);
-      if (remainingShortContracts === 0) {
+      const remainingAfterClose = Math.max(order.quantity - closingLongCalls, 0);
+      if (remainingAfterClose === 0) {
         return { allowed: true };
       }
 
+      // 2. Check if long calls at same expiry (any strike) form a vertical spread
+      const longCallsAtExpiry = countLongCallsAtExpiry(sym, order.expiry, portfolio);
+      // Subtract exact-strike matches already counted (avoid double-counting)
+      const spreadCoverage = Math.max(longCallsAtExpiry - closingLongCalls, 0);
+      const remainingAfterSpread = Math.max(remainingAfterClose - spreadCoverage, 0);
+      if (remainingAfterSpread === 0) {
+        return { allowed: true };
+      }
+
+      // 3. Fall back to stock coverage for remaining uncovered calls
       const shares = countLongShares(sym, portfolio);
-      if (shares === 0) {
+      if (shares === 0 && spreadCoverage === 0) {
         return {
           allowed: false,
           reason: closingLongCalls > 0
-            ? `Naked short call: selling ${order.quantity} calls closes ${closingLongCalls} long contracts but leaves ${remainingShortContracts} uncovered for ${sym}`
+            ? `Naked short call: selling ${order.quantity} calls closes ${closingLongCalls} long contracts but leaves ${remainingAfterSpread} uncovered for ${sym}`
             : `Naked short call: no long shares held to cover ${sym} calls`,
         };
       }
 
       const existingShortCalls = countExistingShortCalls(sym, portfolio);
-      const totalShortContracts = existingShortCalls + remainingShortContracts;
+      const totalShortContracts = existingShortCalls + remainingAfterSpread;
       const coveredContracts = Math.floor(shares / 100);
 
       if (totalShortContracts > coveredContracts) {
         return {
           allowed: false,
-          reason: closingLongCalls > 0
-            ? `Short a tail: selling ${order.quantity} calls closes ${closingLongCalls} long contracts but still opens ${remainingShortContracts} uncovered calls for ${sym}; ${shares} shares cover ${coveredContracts} contracts`
+          reason: spreadCoverage > 0
+            ? `Naked short call: selling ${order.quantity} ${sym} calls but only ${spreadCoverage} covered by long calls and ${coveredContracts} by shares`
             : `Short a tail: selling ${order.quantity} calls but only ${shares} shares cover ${coveredContracts} contracts for ${sym}`,
         };
       }

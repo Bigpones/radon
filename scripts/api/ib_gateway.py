@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import socket
+import subprocess
 from pathlib import Path
 from typing import Dict
 
@@ -37,6 +38,25 @@ def _port_listening(host: str = IB_HOST, port: int = IB_PORT, timeout: float = 2
         with socket.create_connection((host, port), timeout=timeout):
             return True
     except (ConnectionRefusedError, OSError, socket.timeout):
+        return False
+
+
+def _has_close_wait(port: int = IB_PORT) -> bool:
+    """Detect CLOSE_WAIT sockets on IB Gateway port.
+
+    CLOSE_WAIT means the Gateway process is alive but the upstream IB
+    session has dropped. The port appears listening to TCP checks, but
+    API calls will hang/timeout. Needs a full restart to recover.
+    """
+    try:
+        out = subprocess.check_output(
+            ["lsof", "-i", f":{port}", "-n", "-P"],
+            timeout=5,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        return "CLOSE_WAIT" in out
+    except (subprocess.SubprocessError, OSError):
         return False
 
 
@@ -65,6 +85,7 @@ async def _run_shell(script: Path, timeout: float = 10.0) -> tuple:
 async def check_ib_gateway() -> Dict:
     """Check IB Gateway health. Returns status dict for /health endpoint."""
     port_ok = await asyncio.to_thread(_port_listening)
+    close_wait = await asyncio.to_thread(_has_close_wait) if port_ok else False
 
     # Parse launchd service state
     service_state = "unknown"
@@ -79,6 +100,7 @@ async def check_ib_gateway() -> Dict:
 
     return {
         "port_listening": port_ok,
+        "upstream_dead": close_wait,
         "service_state": service_state,
         "host": IB_HOST,
         "port": IB_PORT,
@@ -86,11 +108,22 @@ async def check_ib_gateway() -> Dict:
 
 
 async def ensure_ib_gateway() -> Dict:
-    """Ensure IB Gateway is running. Start/restart if needed.
+    """Ensure IB Gateway is running and upstream is healthy.
 
-    Called at FastAPI startup. Returns status dict.
+    Called at FastAPI startup. Detects both port-down and CLOSE_WAIT
+    (port listening but upstream IB session dead). Returns status dict.
     """
-    if await asyncio.to_thread(_port_listening):
+    port_ok = await asyncio.to_thread(_port_listening)
+
+    if port_ok:
+        # Port is listening — check if upstream IB session is alive
+        close_wait = await asyncio.to_thread(_has_close_wait)
+        if close_wait:
+            logger.warning(
+                "IB Gateway on %s:%d has CLOSE_WAIT (upstream dead) — restarting",
+                IB_HOST, IB_PORT,
+            )
+            return await restart_ib_gateway()
         return {"status": "already_running", "port_listening": True}
 
     logger.warning("IB Gateway not listening on %s:%d — attempting start", IB_HOST, IB_PORT)

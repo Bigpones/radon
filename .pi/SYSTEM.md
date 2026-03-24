@@ -105,7 +105,7 @@ Strict order — never skip ahead:
 ### Execution
 - **`ib_execute.py`** — Unified order placement + fill monitoring + trade logging
 - **Exit order service** — Auto-places target exits when IB will accept them
-- **IBC Gateway** (`local.ibc-gateway`) — Automated IB Gateway lifecycle (2FA, daily restart, session recovery)
+- **IBC Gateway** (`local.ibc-gateway`) — Automated IB Gateway lifecycle (2FA, daily restart, session recovery, CLOSE_WAIT detection, lingering process cleanup)
 
 ### Monitoring & Reporting
 - **Radon Terminal** (`web/`) — Next.js 16 real-time trading dashboard with live greeks, flow analysis, regime views
@@ -119,6 +119,9 @@ Strict order — never skip ahead:
 - **Incremental sync** — Diff-based portfolio sync (skip full sync when nothing changed)
 - **IB is source of truth** — `portfolio.json` and `status.md` are caches. Always verify against IB.
 - **Position classification** — `ib_sync.py` auto-detects: covered calls, verticals, synthetics, risk reversals, straddles/strangles, all-long combos. Unrecognized structures classified as "complex" and surfaced in undefined risk bucket (never silently dropped).
+
+### Search Optimization
+- **Fast Regex Search** (`.pi/skills/fast-regex-search/SKILL.md`) — Sparse n-gram indexed search for large codebases. Pre-indexes source files using frequency-weighted variable-length n-grams so regex queries hit a posting-list lookup (binary search on mmap'd table) instead of scanning every file. Reduces search latency by 90-99% on repos with >10k files. Algorithm: decompose regex into covering n-grams → intersect posting lists → verify candidates with ripgrep. Always load this skill when performing codebase search operations.
 
 ### Persistent Memory
 - **Context Constructor** — Loads facts, episodes, and human annotations at startup

@@ -333,7 +333,61 @@ describe("checkNakedShortRisk", () => {
     expect(result.allowed).toBe(true);
   });
 
-  it("10c. SELL call matching an existing long call contract → allowed (sell to close)", () => {
+  it("10c. SELL call covered by existing long call at different strike (vertical spread) → allowed", () => {
+    // User is LONG 125 AAOI $115 calls, wants to SELL 125 AAOI $125 calls → bull call spread
+    const order = makeOrder({
+      action: "SELL",
+      type: "option",
+      symbol: "AAOI",
+      right: "C",
+      strike: 125,
+      expiry: "20260402",
+      quantity: 125,
+    });
+    const portfolio = makePortfolio([
+      longOption("AAOI", "2026-04-02", "Call", 115, 125),
+    ]);
+    const result = checkNakedShortRisk(order, portfolio);
+    expect(result.allowed).toBe(true);
+  });
+
+  it("10d. SELL more calls than long calls at same expiry → blocked (uncovered portion)", () => {
+    // LONG 50 calls, trying to SELL 125 → 75 uncovered
+    const order = makeOrder({
+      action: "SELL",
+      type: "option",
+      symbol: "AAOI",
+      right: "C",
+      strike: 125,
+      expiry: "20260402",
+      quantity: 125,
+    });
+    const portfolio = makePortfolio([
+      longOption("AAOI", "2026-04-02", "Call", 115, 50),
+    ]);
+    const result = checkNakedShortRisk(order, portfolio);
+    expect(result.allowed).toBe(false);
+  });
+
+  it("10e. SELL call at different expiry than long calls → blocked (no spread)", () => {
+    // LONG calls at April expiry, SELL calls at June expiry → not a spread
+    const order = makeOrder({
+      action: "SELL",
+      type: "option",
+      symbol: "AAOI",
+      right: "C",
+      strike: 125,
+      expiry: "20260620",
+      quantity: 125,
+    });
+    const portfolio = makePortfolio([
+      longOption("AAOI", "2026-04-02", "Call", 115, 125),
+    ]);
+    const result = checkNakedShortRisk(order, portfolio);
+    expect(result.allowed).toBe(false);
+  });
+
+  it("10f. SELL call matching an existing long call contract → allowed (sell to close)", () => {
     const order = makeOrder({
       action: "SELL",
       type: "option",
