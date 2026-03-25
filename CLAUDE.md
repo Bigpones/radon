@@ -667,7 +667,7 @@ Global service: `local.ibc-gateway` (shared with market-data-warehouse). Install
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `IB_GATEWAY_MODE` | `launchd` | `docker` or `launchd` |
+| `IB_GATEWAY_MODE` | `docker` | `docker` or `launchd` |
 | `IB_GATEWAY_HOST` | `127.0.0.1` | Gateway host |
 | `IB_GATEWAY_PORT` | `4001` | Gateway port |
 

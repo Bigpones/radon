@@ -26,7 +26,7 @@ logger = logging.getLogger("radon.ib_gateway")
 
 IB_HOST = os.environ.get("IB_GATEWAY_HOST", "127.0.0.1")
 IB_PORT = int(os.environ.get("IB_GATEWAY_PORT", "4001"))
-GATEWAY_MODE = os.environ.get("IB_GATEWAY_MODE", "launchd")  # "docker" or "launchd"
+GATEWAY_MODE = os.environ.get("IB_GATEWAY_MODE", "docker")  # "docker" or "launchd"
 
 # LaunchD paths
 IBC_HOME = Path.home() / "ibc" / "bin"
