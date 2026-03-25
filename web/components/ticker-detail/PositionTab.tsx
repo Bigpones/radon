@@ -138,7 +138,7 @@ export default function PositionTab({ position, prices }: PositionTabProps) {
         </div>
         <div className="pos-stat">
           <span className="pos-stat-label">Entry Date</span>
-          <span className="pos-stat-value">{position.entry_date || "---"}</span>
+          <span className="pos-stat-value">{position.entry_date && position.entry_date !== "unknown" ? position.entry_date : "---"}</span>
         </div>
         <div className="pos-stat">
           <span className="pos-stat-label">Avg Entry</span>

@@ -135,6 +135,13 @@ async def pool_modify_order(
         trade.order.volatility = 1.7976931348623157e+308  # IB sentinel = unset
         trade.order.volatilityType = 2147483647            # IB sentinel = unset
 
+    # Ensure NonGuaranteed is set for combo/BAG orders.
+    # IB's open order snapshot may strip smartComboRoutingParams;
+    # re-submitting without it causes "Missing or invalid NonGuaranteed value".
+    if trade.contract.secType == "BAG":
+        from ib_insync import TagValue
+        trade.order.smartComboRoutingParams = [TagValue("NonGuaranteed", "1")]
+
     await asyncio.to_thread(client.place_order, trade.contract, trade.order)
 
     # Poll for confirmation

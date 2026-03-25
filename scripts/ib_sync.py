@@ -809,7 +809,48 @@ def build_account_summary(account: dict, pnl_data: dict) -> dict:
     }
 
 
-def convert_to_portfolio_format(account: dict, collapsed_positions: list, pnl_data: Optional[dict] = None) -> dict:
+def build_fill_dates(client) -> dict:
+    """Extract earliest execution date per contract from IB session fills.
+
+    Returns dict keyed by "TICKER|EXPIRY|RIGHT|STRIKE" → "YYYY-MM-DD".
+    Covers same-session trades that haven't appeared in Flex Query (blotter) yet.
+    """
+    fill_dates: dict[str, str] = {}
+    try:
+        fills = client.get_fills()
+    except Exception:
+        return fill_dates
+
+    for fill in fills:
+        contract = fill.contract
+        if contract.secType != "OPT":
+            continue
+        ticker = contract.symbol
+        expiry_raw = getattr(contract, "lastTradeDateOrContractMonth", "")
+        if not expiry_raw or len(expiry_raw) < 8:
+            continue
+        expiry = f"{expiry_raw[:4]}-{expiry_raw[4:6]}-{expiry_raw[6:8]}"
+        right = getattr(contract, "right", "")
+        strike = getattr(contract, "strike", None)
+        if not right or strike is None:
+            continue
+        key = f"{ticker}|{expiry}|{right}|{float(strike)}"
+
+        exec_time = getattr(fill.execution, "time", None)
+        if exec_time is None:
+            continue
+        if hasattr(exec_time, "strftime"):
+            date_str = exec_time.strftime("%Y-%m-%d")
+        else:
+            date_str = str(exec_time)[:10]
+
+        if key not in fill_dates or date_str < fill_dates[key]:
+            fill_dates[key] = date_str
+
+    return fill_dates
+
+
+def convert_to_portfolio_format(account: dict, collapsed_positions: list, pnl_data: Optional[dict] = None, fill_dates: Optional[dict] = None) -> dict:
     """Convert IB data to portfolio.json format using collapsed positions"""
 
     bankroll = account.get('NetLiquidation', account.get('TotalCashValue', 0))
@@ -924,12 +965,27 @@ def convert_to_portfolio_format(account: dict, collapsed_positions: list, pnl_da
         ]):
             blotter_contract_date = min(contract_dates)
 
+        # IB fill dates (same-session trades not yet in blotter/trade_log)
+        fill_contract_date = None
+        if fill_dates:
+            for leg in legs:
+                leg_type = leg.get("type")
+                strike = leg.get("strike")
+                if leg_type not in ("Call", "Put") or strike in (None, 0):
+                    continue
+                right = "C" if leg_type == "Call" else "P"
+                fill_key = f"{ticker}|{expiry}|{right}|{float(strike)}"
+                fd = fill_dates.get(fill_key)
+                if fd:
+                    fill_contract_date = min(fill_contract_date, fd) if fill_contract_date else fd
+
         # Fallback chain: blotter (per-contract) → trade_log → blotter (ticker) →
-        # prev portfolio → "unknown"
+        # IB fills → prev portfolio → "unknown"
         pos['entry_date'] = (
             blotter_contract_date
             or trade_log_dates.get(f"{ticker}|{structure}")
             or blotter_dates.get(ticker)
+            or fill_contract_date
             or prev_dates.get(key)
             or "unknown"
         )
@@ -1162,7 +1218,8 @@ def main():
 
         # Sync if requested
         if args.sync:
-            portfolio = convert_to_portfolio_format(account, collapsed, pnl_data)
+            fill_dates = build_fill_dates(client)
+            portfolio = convert_to_portfolio_format(account, collapsed, pnl_data, fill_dates=fill_dates)
             save_portfolio(portfolio)
 
             # ── Naked Short Audit (post-sync) ──

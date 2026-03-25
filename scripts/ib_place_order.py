@@ -130,6 +130,7 @@ def place_order(params: dict) -> dict:
 
         if order_type == "combo":
             order.smartComboRoutingParams = [TagValue("NonGuaranteed", "1")]
+            print(f"  Combo order: {len(legs_data)} legs, NonGuaranteed=1, ratios={[int(l.get('ratio',1)) for l in legs_data]}")
 
         # Place
         trade = client.place_order(contract, order)

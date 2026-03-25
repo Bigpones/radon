@@ -218,6 +218,13 @@ def modify_order(client: IBClient, order_id: int, perm_id: int, new_price: Optio
         trade.order.volatility = 1.7976931348623157e+308  # IB sentinel = unset
         trade.order.volatilityType = 2147483647            # IB sentinel = unset
 
+    # Ensure NonGuaranteed is set for combo/BAG orders.
+    # IB's open order snapshot may strip smartComboRoutingParams;
+    # re-submitting without it causes "Missing or invalid NonGuaranteed value".
+    if trade.contract.secType == "BAG":
+        from ib_insync import TagValue
+        trade.order.smartComboRoutingParams = [TagValue("NonGuaranteed", "1")]
+
     client.place_order(trade.contract, trade.order)
 
     # Wait for refreshed IB state to reflect the requested modify.

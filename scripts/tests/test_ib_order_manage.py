@@ -312,6 +312,38 @@ class TestModifyOrder:
         assert exc.value.code == 0
         assert t.order.outsideRth is False
 
+    def test_modify_bag_order_sets_non_guaranteed(self):
+        """Modifying a BAG/combo order must set NonGuaranteed to prevent IB rejection."""
+        from ib_insync import TagValue
+        t = make_trade(status="Submitted", order_type="LMT", lmt_price=20.00)
+        t.contract.secType = "BAG"
+        t.order.smartComboRoutingParams = None  # IB snapshot may strip this
+        confirmed = make_trade(status="Submitted", order_type="LMT", lmt_price=22.50)
+        confirmed.contract.secType = "BAG"
+        client = make_client()
+        client.get_open_orders.side_effect = [[t], [confirmed]]
+        client.place_order = MagicMock()
+
+        with pytest.raises(SystemExit) as exc:
+            modify_order(client, 10, 12345, 22.50, "127.0.0.1", 4001)
+        assert exc.value.code == 0
+        assert t.order.smartComboRoutingParams == [TagValue("NonGuaranteed", "1")]
+
+    def test_modify_non_bag_order_does_not_set_non_guaranteed(self):
+        """Non-BAG orders should not get NonGuaranteed params."""
+        t = make_trade(status="Submitted", order_type="LMT", lmt_price=20.00)
+        t.contract.secType = "OPT"
+        t.order.smartComboRoutingParams = None
+        confirmed = make_trade(status="Submitted", order_type="LMT", lmt_price=22.50)
+        client = make_client()
+        client.get_open_orders.side_effect = [[t], [confirmed]]
+        client.place_order = MagicMock()
+
+        with pytest.raises(SystemExit) as exc:
+            modify_order(client, 10, 12345, 22.50, "127.0.0.1", 4001)
+        assert exc.value.code == 0
+        assert t.order.smartComboRoutingParams is None
+
 
 # ─── output ─────────────────────────────────────────────
 
