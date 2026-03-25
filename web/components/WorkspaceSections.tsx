@@ -2068,7 +2068,7 @@ const blotterExtract = (item: BlotterTrade, key: BlotterSortKey): string | numbe
   }
 };
 
-function HistoricalTradesSection() {
+export function HistoricalTradesSection() {
   const { data, loading, syncing, error, syncNow } = useBlotter(true);
   const [page, setPage] = useState(0);
 
@@ -2084,14 +2084,20 @@ function HistoricalTradesSection() {
     return merged;
   }, [data]);
 
-  const { sorted, sort, toggle } = useSort(allTrades, blotterExtract);
+  const extractSearchText = useCallback((item: BlotterTrade) => {
+    const latestExecTime = getTradeDate(item);
+    return `${item.symbol} ${item.contract_desc} ${item.sec_type} ${item.is_closed ? "closed" : "open"} ${latestExecTime}`;
+  }, []);
+
+  const { filtered, query, setQuery } = useTableFilter(allTrades, extractSearchText);
+  const { sorted, sort, toggle } = useSort(filtered, blotterExtract);
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / BLOTTER_PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
   const pageRows = sorted.slice(safePage * BLOTTER_PAGE_SIZE, (safePage + 1) * BLOTTER_PAGE_SIZE);
 
   // Reset page when data changes
-  useEffect(() => { setPage(0); }, [data]);
+  useEffect(() => { setPage(0); }, [data, query]);
 
   const totalCount = allTrades.length;
   const hasData = data && (data.as_of || totalCount > 0);
@@ -2110,6 +2116,15 @@ function HistoricalTradesSection() {
               {new Date(data.as_of).toLocaleDateString()}
             </span>
           )}
+          {allTrades.length > 0 ? (
+            <TableSearch
+              query={query}
+              setQuery={setQuery}
+              placeholder="Filter historical trades..."
+              resultCount={filtered.length}
+              totalCount={allTrades.length}
+            />
+          ) : null}
           <span className="pill neutral">{totalCount} TRADES</span>
           <button
             className="sync-button"
