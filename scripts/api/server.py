@@ -37,7 +37,8 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 from api.ib_pool import IBPool
 from api.subprocess import run_script, run_module, ScriptResult
-from api.ib_gateway import check_ib_gateway, ensure_ib_gateway, restart_ib_gateway
+from api.ib_gateway import check_ib_gateway, ensure_ib_gateway, restart_ib_gateway, is_docker_mode
+from clients.ib_client import DEFAULT_GATEWAY_PORT
 from api.pool_order_manage import pool_cancel_order, pool_modify_order
 
 # Load .env from project root for Python scripts
@@ -707,7 +708,7 @@ async def portfolio_sync():
     Auto-restarts IB Gateway on ECONNREFUSED and retries once.
     """
     result = await _run_ib_script_with_recovery(
-        "ib_sync.py", ["--sync", "--port", "4001"], timeout=30
+        "ib_sync.py", ["--sync", "--port", str(DEFAULT_GATEWAY_PORT)], timeout=30
     )
     if not result.ok:
         raise HTTPException(status_code=502, detail=result.error)
@@ -730,7 +731,7 @@ async def portfolio_background_sync(bg: BackgroundTasks):
 async def _bg_sync_via_subprocess():
     """Background task: run ib_sync.py as subprocess with auto-recovery."""
     result = await _run_ib_script_with_recovery(
-        "ib_sync.py", ["--sync", "--port", "4001"], timeout=30
+        "ib_sync.py", ["--sync", "--port", str(DEFAULT_GATEWAY_PORT)], timeout=30
     )
     if result.ok:
         logger.info("Background portfolio sync complete")
@@ -749,7 +750,7 @@ async def orders_refresh():
         return {"status": "ok", "orders": []}
 
     result = await _run_ib_script_with_recovery(
-        "ib_orders.py", ["--sync", "--port", "4001"], timeout=30
+        "ib_orders.py", ["--sync", "--port", str(DEFAULT_GATEWAY_PORT)], timeout=30
     )
     if not result.ok:
         raise HTTPException(status_code=502, detail=result.error)

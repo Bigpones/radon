@@ -23,6 +23,7 @@ Usage::
 from __future__ import annotations
 
 import logging
+import os
 import time
 from typing import Any, Dict, List, Optional, Sequence, Set, Union
 
@@ -98,8 +99,8 @@ CLIENT_IDS: dict = {
     "ib_realtime_server": 10,  # relay range
 }
 
-DEFAULT_HOST = "127.0.0.1"
-DEFAULT_GATEWAY_PORT = 4001
+DEFAULT_HOST = os.environ.get("IB_GATEWAY_HOST", "127.0.0.1")
+DEFAULT_GATEWAY_PORT = int(os.environ.get("IB_GATEWAY_PORT", "4001"))
 DEFAULT_TWS_PORT = 7497
 
 # IB error codes that are informational / non-critical

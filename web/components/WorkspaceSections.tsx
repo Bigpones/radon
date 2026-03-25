@@ -1023,7 +1023,7 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
 
       <div className="section">
         <div className="report-meta">
-          Last Sync: {new Date(portfolio.last_sync).toLocaleString()} • Source: IB Gateway (4001)
+          Last Sync: {new Date(portfolio.last_sync).toLocaleString()} • Source: IB Gateway
         </div>
       </div>
     </>
@@ -2031,7 +2031,7 @@ function OrdersSections({
       {orders.last_sync && (
         <div className="section">
           <div className="report-meta">
-            Last Sync: {new Date(orders.last_sync).toLocaleString()} • Source: IB Gateway (4001)
+            Last Sync: {new Date(orders.last_sync).toLocaleString()} • Source: IB Gateway
           </div>
         </div>
       )}

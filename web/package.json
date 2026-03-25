@@ -1,7 +1,7 @@
 {
   "name": "radon-web",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Radon Terminal — market structure reconstruction instrument with real-time IB streaming and AI chat.",
   "type": "module",
   "scripts": {
@@ -16,7 +16,10 @@
     "lint": "eslint app components lib",
     "test": "NODE_ENV=test ASSISTANT_MOCK=1 vitest run --config ../vitest.config.ts web/tests",
     "test:e2e": "npx playwright test --config playwright.no-server.config.ts",
-    "test:ib": "python3.13 ../scripts/test_ib_realtime.py"
+    "test:ib": "python3.13 ../scripts/test_ib_realtime.py",
+    "ib:start": "bash ../scripts/docker_ib_gateway.sh start",
+    "ib:stop": "bash ../scripts/docker_ib_gateway.sh stop",
+    "ib:status": "bash ../scripts/docker_ib_gateway.sh status"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.7",

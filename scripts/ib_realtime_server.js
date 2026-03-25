@@ -24,8 +24,8 @@ import { LRUCache } from "./lib/lru-cache.js";
 import { RateLimiter } from "./lib/rate-limiter.js";
 
 const DEFAULT_WS_PORT = 8765;
-const DEFAULT_IB_HOST = "127.0.0.1";
-const DEFAULT_IB_PORT = 4001;
+const DEFAULT_IB_HOST = process.env.IB_GATEWAY_HOST || "127.0.0.1";
+const DEFAULT_IB_PORT = parseInt(process.env.IB_GATEWAY_PORT || "4001", 10);
 const RECONNECT_MS = 5000;
 const SNAPSHOT_TIMEOUT_MS = 5000;
 
@@ -325,24 +325,35 @@ function isUSMarketHours() {
   return timeMinutes >= 9 * 60 + 30 && timeMinutes <= 16 * 60;
 }
 
+const GATEWAY_MODE = process.env.IB_GATEWAY_MODE || "launchd";
+
 async function restartIBGateway() {
   if (ibGatewayRestarting) return;
   ibGatewayRestarting = true;
-  console.log("\x1b[31m[stale-data] No ticks received during market hours — restarting IB Gateway\x1b[0m");
-  try {
-    const { execSync } = require("child_process");
-    const homeDir = require("os").homedir();
-    execSync(`${homeDir}/ibc/bin/restart-secure-ibc-service.sh`, {
-      timeout: 60_000,
-      stdio: "pipe",
-    });
-    console.log("[stale-data] IB Gateway restart initiated — waiting for reconnect");
-  } catch (err) {
-    console.error("[stale-data] Failed to restart IB Gateway:", err.message);
-  } finally {
-    // Allow another restart attempt after 120s cooldown
-    setTimeout(() => { ibGatewayRestarting = false; }, 120_000);
+  console.log("\x1b[31m[stale-data] No ticks received during market hours — handling stale data\x1b[0m");
+
+  if (GATEWAY_MODE === "docker") {
+    // Docker manages Gateway reliability — just reconnect the IB socket
+    console.log("[stale-data] Docker mode — disconnecting and scheduling reconnect");
+    try { ib.disconnect(); } catch { /* ignore */ }
+    scheduleReconnect();
+  } else {
+    // LaunchD mode — shell out to restart IBC service
+    try {
+      const { execSync } = require("child_process");
+      const homeDir = require("os").homedir();
+      execSync(`${homeDir}/ibc/bin/restart-secure-ibc-service.sh`, {
+        timeout: 60_000,
+        stdio: "pipe",
+      });
+      console.log("[stale-data] IB Gateway restart initiated — waiting for reconnect");
+    } catch (err) {
+      console.error("[stale-data] Failed to restart IB Gateway:", err.message);
+    }
   }
+
+  // Allow another attempt after 120s cooldown
+  setTimeout(() => { ibGatewayRestarting = false; }, 120_000);
 }
 
 /* ─── Batched Price Relay ──────────────────────────────────────────────────

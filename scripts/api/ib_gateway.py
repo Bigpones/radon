@@ -1,18 +1,18 @@
-"""IB Gateway health check and auto-restart via IBC launchd service.
+"""IB Gateway health check and lifecycle management.
 
-Detects when IB Gateway is down (port 4001 not listening) and restarts
-the secure IBC service. Requires 2FA approval on IBKR Mobile after restart.
+Supports two modes controlled by IB_GATEWAY_MODE env var:
+  - "docker"  — manages Gateway via Docker Compose
+  - "launchd" — manages Gateway via IBC launchd service (legacy)
 
-IBC service scripts:
-  ~/ibc/bin/status-secure-ibc-service.sh
-  ~/ibc/bin/start-secure-ibc-service.sh
-  ~/ibc/bin/restart-secure-ibc-service.sh
+Default: "launchd" (zero-risk migration — existing behavior preserved).
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 import socket
 import subprocess
 from pathlib import Path
@@ -20,16 +20,33 @@ from typing import Dict
 
 logger = logging.getLogger("radon.ib_gateway")
 
-IB_HOST = "127.0.0.1"
-IB_PORT = 4001
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+IB_HOST = os.environ.get("IB_GATEWAY_HOST", "127.0.0.1")
+IB_PORT = int(os.environ.get("IB_GATEWAY_PORT", "4001"))
+GATEWAY_MODE = os.environ.get("IB_GATEWAY_MODE", "launchd")  # "docker" or "launchd"
+
+# LaunchD paths
 IBC_HOME = Path.home() / "ibc" / "bin"
 STATUS_SCRIPT = IBC_HOME / "status-secure-ibc-service.sh"
 START_SCRIPT = IBC_HOME / "start-secure-ibc-service.sh"
 RESTART_SCRIPT = IBC_HOME / "restart-secure-ibc-service.sh"
 
-# How long to wait after restart for Gateway to accept connections
+# Docker paths
+COMPOSE_DIR = Path(__file__).parent.parent.parent / "docker" / "ib-gateway"
+
+# Timing
 RESTART_WAIT_SECS = 45
 PORT_POLL_INTERVAL = 3
+
+# Prevent concurrent restart races
+_restart_lock = asyncio.Lock()
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
 
 
 def _port_listening(host: str = IB_HOST, port: int = IB_PORT, timeout: float = 2.0) -> bool:
@@ -41,12 +58,30 @@ def _port_listening(host: str = IB_HOST, port: int = IB_PORT, timeout: float = 2
         return False
 
 
+async def _poll_port(wait_secs: int = RESTART_WAIT_SECS) -> tuple:
+    """Poll port until listening or timeout. Returns (port_ok, elapsed)."""
+    elapsed = 0
+    while elapsed < wait_secs:
+        await asyncio.sleep(PORT_POLL_INTERVAL)
+        elapsed += PORT_POLL_INTERVAL
+        if await asyncio.to_thread(_port_listening):
+            logger.info("IB Gateway accepting connections after %ds", elapsed)
+            return True, elapsed
+        logger.info("Waiting for IB Gateway... (%d/%ds)", elapsed, wait_secs)
+    return False, elapsed
+
+
+# ---------------------------------------------------------------------------
+# LaunchD mode
+# ---------------------------------------------------------------------------
+
+
 def _has_close_wait(port: int = IB_PORT) -> bool:
     """Detect CLOSE_WAIT sockets on IB Gateway port.
 
     CLOSE_WAIT means the Gateway process is alive but the upstream IB
-    session has dropped. The port appears listening to TCP checks, but
-    API calls will hang/timeout. Needs a full restart to recover.
+    session has dropped. Only relevant in launchd mode where we see
+    the host-level TCP state directly.
     """
     try:
         out = subprocess.check_output(
@@ -82,12 +117,11 @@ async def _run_shell(script: Path, timeout: float = 10.0) -> tuple:
         return ("", "Script timed out", -1)
 
 
-async def check_ib_gateway() -> Dict:
-    """Check IB Gateway health. Returns status dict for /health endpoint."""
+async def _check_launchd() -> Dict:
+    """Check Gateway health via launchd service state."""
     port_ok = await asyncio.to_thread(_port_listening)
     close_wait = await asyncio.to_thread(_has_close_wait) if port_ok else False
 
-    # Parse launchd service state
     service_state = "unknown"
     if STATUS_SCRIPT.exists():
         stdout, _, rc = await _run_shell(STATUS_SCRIPT)
@@ -104,54 +138,42 @@ async def check_ib_gateway() -> Dict:
         "service_state": service_state,
         "host": IB_HOST,
         "port": IB_PORT,
+        "gateway_mode": "launchd",
     }
 
 
-async def ensure_ib_gateway() -> Dict:
-    """Ensure IB Gateway is running and upstream is healthy.
-
-    Called at FastAPI startup. Detects both port-down and CLOSE_WAIT
-    (port listening but upstream IB session dead). Returns status dict.
-    """
+async def _ensure_launchd() -> Dict:
+    """Ensure Gateway is running via launchd. Handles CLOSE_WAIT detection."""
     port_ok = await asyncio.to_thread(_port_listening)
 
     if port_ok:
-        # Port is listening — check if upstream IB session is alive
         close_wait = await asyncio.to_thread(_has_close_wait)
         if close_wait:
             logger.warning(
                 "IB Gateway on %s:%d has CLOSE_WAIT (upstream dead) — restarting",
                 IB_HOST, IB_PORT,
             )
-            return await restart_ib_gateway()
-        return {"status": "already_running", "port_listening": True}
+            return await _restart_launchd()
+        return {"status": "already_running", "port_listening": True, "gateway_mode": "launchd"}
 
     logger.warning("IB Gateway not listening on %s:%d — attempting start", IB_HOST, IB_PORT)
-    return await restart_ib_gateway()
+    return await _restart_launchd()
 
 
-async def restart_ib_gateway() -> Dict:
-    """Restart IB Gateway via IBC service.
-
-    1. Run restart script (or start if restart fails)
-    2. Poll port for up to RESTART_WAIT_SECS
-    3. Return result with port status
-
-    Note: Fresh starts require 2FA approval on IBKR Mobile.
-    """
+async def _restart_launchd() -> Dict:
+    """Restart Gateway via IBC launchd service scripts."""
     if not RESTART_SCRIPT.exists():
         return {
             "restarted": False,
             "error": f"IBC restart script not found at {RESTART_SCRIPT}",
             "port_listening": False,
+            "gateway_mode": "launchd",
         }
 
-    # Try restart first (handles both running and stopped states)
     logger.info("Running IBC restart script...")
     stdout, stderr, rc = await _run_shell(RESTART_SCRIPT, timeout=60.0)
 
     if rc != 0:
-        # Fall back to start script
         logger.warning("Restart script failed (rc=%d), trying start script...", rc)
         if START_SCRIPT.exists():
             stdout, stderr, rc = await _run_shell(START_SCRIPT, timeout=60.0)
@@ -160,25 +182,17 @@ async def restart_ib_gateway() -> Dict:
                 "restarted": False,
                 "error": f"Both restart and start scripts failed. stderr: {stderr[:200]}",
                 "port_listening": False,
+                "gateway_mode": "launchd",
             }
 
-    # Poll for port to come up
-    logger.info("IBC script finished, waiting for Gateway to accept connections (up to %ds)...", RESTART_WAIT_SECS)
-    port_ok = False
-    elapsed = 0
-    while elapsed < RESTART_WAIT_SECS:
-        await asyncio.sleep(PORT_POLL_INTERVAL)
-        elapsed += PORT_POLL_INTERVAL
-        if await asyncio.to_thread(_port_listening):
-            port_ok = True
-            logger.info("IB Gateway accepting connections after %ds", elapsed)
-            break
-        logger.info("Waiting for IB Gateway... (%d/%ds)", elapsed, RESTART_WAIT_SECS)
+    logger.info("IBC script finished, waiting for Gateway (up to %ds)...", RESTART_WAIT_SECS)
+    port_ok, elapsed = await _poll_port()
 
     if not port_ok:
         return {
             "restarted": True,
             "port_listening": False,
+            "gateway_mode": "launchd",
             "error": (
                 f"IBC service started but Gateway not accepting connections after {RESTART_WAIT_SECS}s. "
                 "Check IBKR Mobile for 2FA approval."
@@ -189,4 +203,213 @@ async def restart_ib_gateway() -> Dict:
         "restarted": True,
         "port_listening": True,
         "wait_seconds": elapsed,
+        "gateway_mode": "launchd",
     }
+
+
+# ---------------------------------------------------------------------------
+# Docker mode
+# ---------------------------------------------------------------------------
+
+
+async def _docker_compose(*args: str, timeout: float = 30.0) -> tuple:
+    """Run docker compose command in the ib-gateway directory."""
+    compose_file = COMPOSE_DIR / "docker-compose.yml"
+    env_file = COMPOSE_DIR / ".env"
+
+    if not compose_file.exists():
+        return ("", f"Docker compose file not found at {compose_file}", 1)
+
+    cmd = ["docker", "compose", "-f", str(compose_file)]
+    if env_file.exists():
+        cmd.extend(["--env-file", str(env_file)])
+    cmd.extend(args)
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        return (
+            stdout.decode("utf-8", errors="replace").strip(),
+            stderr.decode("utf-8", errors="replace").strip(),
+            proc.returncode,
+        )
+    except asyncio.TimeoutError:
+        proc.kill()
+        return ("", "Docker compose command timed out", -1)
+
+
+async def _docker_container_state() -> str:
+    """Get Docker container state: running, exited, restarting, not_found."""
+    stdout, _, rc = await _docker_compose("ps", "--format", "json", timeout=10.0)
+    if rc != 0 or not stdout:
+        return "not_found"
+
+    try:
+        # docker compose ps --format json can return one JSON object per line
+        for line in stdout.strip().split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            entry = json.loads(line)
+            if entry.get("Service") == "ib-gateway" or "ib-gateway" in entry.get("Name", ""):
+                state = entry.get("State", "unknown").lower()
+                return state
+    except (json.JSONDecodeError, KeyError):
+        pass
+
+    return "not_found"
+
+
+async def _check_docker() -> Dict:
+    """Check Gateway health via Docker container status."""
+    port_ok = await asyncio.to_thread(_port_listening)
+    container_state = await _docker_container_state()
+
+    # Map container health status
+    health = "unknown"
+    if container_state == "running":
+        health = "healthy" if port_ok else "starting"
+    elif container_state == "restarting":
+        health = "restarting"
+    elif container_state in ("exited", "not_found"):
+        health = "stopped"
+
+    return {
+        "port_listening": port_ok,
+        "upstream_dead": False,  # Docker isolation — CLOSE_WAIT not applicable
+        "service_state": health,
+        "container_state": container_state,
+        "host": IB_HOST,
+        "port": IB_PORT,
+        "gateway_mode": "docker",
+    }
+
+
+async def _ensure_docker_container() -> Dict:
+    """Ensure Docker container is running. Start if stopped, wait if restarting."""
+    port_ok = await asyncio.to_thread(_port_listening)
+
+    if port_ok:
+        return {"status": "already_running", "port_listening": True, "gateway_mode": "docker"}
+
+    container_state = await _docker_container_state()
+
+    if container_state == "restarting":
+        logger.info("Docker container is restarting, waiting for port...")
+        port_ok, elapsed = await _poll_port()
+        return {
+            "status": "waited_for_restart",
+            "port_listening": port_ok,
+            "wait_seconds": elapsed,
+            "gateway_mode": "docker",
+        }
+
+    if container_state in ("exited", "not_found"):
+        logger.warning("Docker container %s — starting with docker compose up -d", container_state)
+        _, stderr, rc = await _docker_compose("up", "-d", timeout=60.0)
+        if rc != 0:
+            return {
+                "restarted": False,
+                "error": f"docker compose up failed: {stderr[:200]}",
+                "port_listening": False,
+                "gateway_mode": "docker",
+            }
+
+    # Container running but port not yet ready — wait
+    logger.info("Waiting for Gateway port (up to %ds)...", RESTART_WAIT_SECS)
+    port_ok, elapsed = await _poll_port()
+
+    if not port_ok:
+        return {
+            "restarted": True,
+            "port_listening": False,
+            "gateway_mode": "docker",
+            "error": (
+                f"Container started but Gateway not accepting connections after {RESTART_WAIT_SECS}s. "
+                "Check 2FA approval or container logs: scripts/docker_ib_gateway.sh logs"
+            ),
+        }
+
+    return {
+        "restarted": True,
+        "port_listening": True,
+        "wait_seconds": elapsed,
+        "gateway_mode": "docker",
+    }
+
+
+async def _restart_docker() -> Dict:
+    """Restart Gateway via Docker Compose."""
+    container_state = await _docker_container_state()
+
+    if container_state in ("exited", "not_found"):
+        return await _ensure_docker_container()
+
+    logger.info("Restarting Docker ib-gateway container...")
+    _, stderr, rc = await _docker_compose("restart", "ib-gateway", timeout=60.0)
+
+    if rc != 0:
+        return {
+            "restarted": False,
+            "error": f"docker compose restart failed: {stderr[:200]}",
+            "port_listening": False,
+            "gateway_mode": "docker",
+        }
+
+    logger.info("Docker restart issued, waiting for Gateway (up to %ds)...", RESTART_WAIT_SECS)
+    port_ok, elapsed = await _poll_port()
+
+    if not port_ok:
+        return {
+            "restarted": True,
+            "port_listening": False,
+            "gateway_mode": "docker",
+            "error": (
+                f"Container restarted but Gateway not accepting connections after {RESTART_WAIT_SECS}s. "
+                "Check 2FA or container logs."
+            ),
+        }
+
+    return {
+        "restarted": True,
+        "port_listening": True,
+        "wait_seconds": elapsed,
+        "gateway_mode": "docker",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Public API — dispatches by GATEWAY_MODE
+# ---------------------------------------------------------------------------
+
+
+def is_docker_mode() -> bool:
+    """Return True if Gateway is managed by Docker."""
+    return GATEWAY_MODE == "docker"
+
+
+async def check_ib_gateway() -> Dict:
+    """Check IB Gateway health. Returns status dict for /health endpoint."""
+    if is_docker_mode():
+        return await _check_docker()
+    return await _check_launchd()
+
+
+async def ensure_ib_gateway() -> Dict:
+    """Ensure IB Gateway is running. Called at FastAPI startup."""
+    async with _restart_lock:
+        if is_docker_mode():
+            return await _ensure_docker_container()
+        return await _ensure_launchd()
+
+
+async def restart_ib_gateway() -> Dict:
+    """Restart IB Gateway. Used by POST /ib/restart and recovery paths."""
+    async with _restart_lock:
+        if is_docker_mode():
+            return await _restart_docker()
+        return await _restart_launchd()

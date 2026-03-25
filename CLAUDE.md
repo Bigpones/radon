@@ -632,7 +632,25 @@ Full spec: `docs/unusual_whales_api.md`
 
 > Seasonality/ratings = context, not gates. Strong flow overrides weak seasonality.
 
-## IB Gateway & IBC
+## IB Gateway
+
+Two modes controlled by `IB_GATEWAY_MODE` env var (default: `launchd`):
+
+### Docker Mode (Primary)
+
+Image: `ghcr.io/gnzsnz/ib-gateway` (pinned to digest). Config: `docker/ib-gateway/`.
+
+| Command | Action |
+|---------|--------|
+| `scripts/docker_ib_gateway.sh start` | Start (validates secrets, checks launchd not running) |
+| `scripts/docker_ib_gateway.sh stop` | Stop |
+| `scripts/docker_ib_gateway.sh restart` | Restart |
+| `scripts/docker_ib_gateway.sh status` | Status |
+| `npm run ib:start` (from web/) | Convenience alias |
+
+Docker handles reliability via `restart: unless-stopped` + healthcheck. `READ_ONLY_API=no` (Radon places orders). Password via Docker secrets (`docker/ib-gateway/secrets/ib_password.txt`, chmod 600).
+
+### LaunchD Mode (Legacy Fallback)
 
 Global service: `local.ibc-gateway` (shared with market-data-warehouse). Install: `~/ibc-install/`, config: `~/ibc/`. Credentials in macOS Keychain.
 
@@ -645,7 +663,13 @@ Global service: `local.ibc-gateway` (shared with market-data-warehouse). Install
 
 **Lifecycle:** Mon-Fri 00:00 start → 2FA approve on IBKR Mobile → 11:58 PM daily restart (no 2FA) → Sunday 07:05 cold restart (2FA).
 
-**Key config:** `ExistingSessionDetectedAction=primary`, `AcceptIncomingConnectionAction=accept`, `CommandServerPort=7462`.
+### Gateway Environment Variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `IB_GATEWAY_MODE` | `launchd` | `docker` or `launchd` |
+| `IB_GATEWAY_HOST` | `127.0.0.1` | Gateway host |
+| `IB_GATEWAY_PORT` | `4001` | Gateway port |
 
 ### Ports
 

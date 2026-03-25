@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -166,7 +167,7 @@ def fetch_price_history(ticker: str, days: int = 10) -> List[Dict]:
         asyncio.set_event_loop(loop)
 
         ib = IB()
-        ib.connect("127.0.0.1", 4001, clientId=18, timeout=8)
+        ib.connect(os.environ.get("IB_GATEWAY_HOST", "127.0.0.1"), int(os.environ.get("IB_GATEWAY_PORT", "4001")), clientId=18, timeout=8)
         ib.reqMarketDataType(4)  # frozen+delayed if market closed
 
         contract = Stock(ticker, "SMART", "USD")
@@ -520,7 +521,7 @@ def _fetch_all_prices(tickers: List[str], days: int = 10) -> Dict[str, List[Dict
         asyncio.set_event_loop(loop)
 
         ib = IB()
-        ib.connect("127.0.0.1", 4001, clientId=18, timeout=8)
+        ib.connect(os.environ.get("IB_GATEWAY_HOST", "127.0.0.1"), int(os.environ.get("IB_GATEWAY_PORT", "4001")), clientId=18, timeout=8)
         ib.reqMarketDataType(4)
 
         results = {}

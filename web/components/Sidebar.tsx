@@ -52,8 +52,8 @@ export default function Sidebar({ activeSection, actionTone, ibConnected = true,
           <span>{syncTime}</span>
         </div>
         <div className="status-row">
-          <span>Port</span>
-          <span>4001</span>
+          <span>Source</span>
+          <span>IB Gateway</span>
         </div>
       </div>
     </aside>
