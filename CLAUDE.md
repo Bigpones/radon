@@ -94,7 +94,7 @@ Tabbed into `/regime` page alongside CRI. Detects divergence between vol complex
 | FastAPI | `POST /vcg/scan` (60s cooldown), `POST /vcg/share` |
 | Cache | `data/vcg.json` |
 
-**VCG-R v2 thresholds:** RO = VIX > 28 + VCG > 2.5 + sign_ok. EDR = VIX > 25 + VCG 2.0–2.5. BOUNCE = VCG < -3.5. VVIX is severity amplifier (Tier 1/2/3), not a gate. HDR removed. Credit 5d gate removed. VCG adj replaces vcg_div.
+**VCG-R thresholds:** RO = VIX > 28 + VCG > 2.5 + sign_ok. EDR = VIX > 25 + VCG 2.0–2.5. BOUNCE = VCG < -3.5. VVIX is severity amplifier (Tier 1/2/3), not a gate. HDR removed. Credit 5d gate removed. VCG adj replaces vcg_div.
 
 ### RegimePanel Market-Closed Rules
 

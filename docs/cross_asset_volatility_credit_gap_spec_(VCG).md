@@ -1,4 +1,4 @@
-# Strategy: Volatility-Credit Gap v2 (VCG-R)
+# Strategy: Volatility-Credit Gap (VCG-R)
 
 *Revised specification — supersedes the original VCG spec. Changelog at bottom.*
 
@@ -53,7 +53,7 @@ VCG > 2.0σ with a 21-day residual window produced too many one-day noise spikes
 
 ### 2.4 Backtest Evidence
 
-| Episode | Period | VIX Peak | HYG 5d Return | VCG v1 | VCG-R v2 |
+| Episode | Period | VIX Peak | HYG 5d Return | VCG v1 | VCG-R (Current) |
 |---------|--------|----------|---------------|--------|----------|
 | Dec 2018 growth scare | Dec 14–24 | 36 | -3.8% | MISS (VVIX ~104) | ✅ HIT (Tier 2) |
 | COVID early warning | Feb 21–28 2020 | 49 | -5.1% | MISS (VIX > 40 by day 6) | ✅ HIT (EDR → RO) |
@@ -63,9 +63,9 @@ VCG > 2.0σ with a 21-day residual window produced too many one-day noise spikes
 | Aug 2024 carry unwind | Aug 2–5 2024 | 65 | -1.7% | MISS (VIX > 40) | ✅ HIT (EDR before spike) |
 | Mar 2025 tariff stress | Mar 10–17 2025 | 45 | -3.2% | PARTIAL (borderline) | ✅ HIT (Tier 1) |
 
-**Capture rate: VCG v1 = 2/7 (29%) vs VCG-R v2 = 5/7 (71%)** *(Mar 2020 peak excluded — panic regime suppressed both versions).*
+**Capture rate: VCG v1 = 2/7 (29%) vs VCG-R (Current) = 5/7 (71%)** *(Mar 2020 peak excluded — panic regime suppressed both versions).*
 
-| Metric | VCG v1 | VCG-R v2 | Passive HYG put (monthly roll) |
+| Metric | VCG v1 | VCG-R (Current) | Passive HYG put (monthly roll) |
 |--------|--------|----------|-----------------------------|
 | Avg signals/year | 0.12 | 0.26 | N/A (constant) |
 | Event capture rate | 29% | 71% | 100% (but expensive) |
@@ -308,9 +308,9 @@ For LQD, use the Treasury-hedged excess return:
 
 ---
 
-## 10. Model Parameters: v1 vs VCG-R v2
+## 10. Model Parameters: v1 vs VCG-R
 
-| Parameter | VCG v1 (Original) | VCG-R v2 (Revised) | Rationale |
+| Parameter | VCG v1 (Original) | VCG-R (Current) | Rationale |
 |-----------|-------------------|---------------------|-----------|
 | OLS window | 21 trading days | 21 trading days | Unchanged — month of data balances responsiveness vs stability |
 | Z-score window | 63 trading days | 63 trading days | Unchanged — 3 months for stable standardization |
@@ -338,7 +338,7 @@ For LQD, use the Treasury-hedged excess return:
 
 | Strategy | Signals/Year | Hit Rate | Avg 5d HYG Δ After Signal | Event Capture | False Pos/Year |
 |----------|-------------|----------|--------------------------|---------------|---------------|
-| **VCG-R v2** | 0.26 | 71% | -1.3% | 71% (5/7) | 0.07 |
+| **VCG-R (Current)** | 0.26 | 71% | -1.3% | 71% (5/7) | 0.07 |
 | VCG v1 | 0.12 | 67% | -1.8% | 29% (2/7) | 0.04 |
 | Passive HYG put (monthly) | N/A (constant) | 42% | -0.1% | 100% (expensive) | N/A |
 | Buy & Hold SPY puts | N/A (constant) | 58% | — | N/A | N/A |
@@ -429,5 +429,5 @@ python3.13 scripts/vcg_scan.py --backtest --days 252
 
 | Version | Date | Change |
 |---------|------|--------|
-| v2.0 (VCG-R) | 2026-03-23 | **Major revision.** Inverted VIX gate (`< 40` → `> 28`). Raised VCG trigger (`> 2.0` → `> 2.5`). Removed VVIX hard gate (now severity amplifier). Removed credit 5d gate. Removed HDR concept. Added severity tiers (1/2/3). Added EDR watch state. Added BOUNCE counter-signal. Renamed `vcg_div` → `vcg_adj`. |
+| VCG-R (current) | 2026-03-23 | **Major revision.** Inverted VIX gate (`< 40` → `> 28`). Raised VCG trigger (`> 2.0` → `> 2.5`). Removed VVIX hard gate (now severity amplifier). Removed credit 5d gate. Removed HDR concept. Added severity tiers (1/2/3). Added EDR watch state. Added BOUNCE counter-signal. Renamed `vcg_div` → `vcg_adj`. |
 | v1.0 | 2026-03-06 | Initial specification. Rolling 21-day OLS, HDR three-gate state flag, VCG > 2.0 trigger, VCG div panic suppression. |

@@ -849,7 +849,7 @@ python3.13 scripts/risk_reversal.py IWM --json
 
 **When user runs `vcg`, ALWAYS call the `vcg_scan` Pi tool. Do NOT read `docs/strategies.md` or `docs/cross_asset_volatility_credit_gap_spec_(VCG).md`. The tool returns all data needed.**
 
-The `vcg_scan` tool runs `scripts/vcg_scan.py --json` which fetches 1Y daily bars for VIX, VVIX, HYG (IB → UW → Yahoo LAST RESORT), computes the rolling 21-day OLS regression, and returns the full VCG-R v2 signal.
+The `vcg_scan` tool runs `scripts/vcg_scan.py --json` which fetches 1Y daily bars for VIX, VVIX, HYG (IB → UW → Yahoo LAST RESORT), computes the rolling 21-day OLS regression, and returns the full VCG-R signal.
 
 **Interpretation rules (memorize — do not look up):**
 
@@ -866,7 +866,7 @@ The `vcg_scan` tool runs `scripts/vcg_scan.py --json` which fetches 1Y daily bar
 | `signal.sign_suppressed = true` | β positive (wrong sign) — model unreliable, do not trade |
 | `signal.regime` | DIVERGENCE (VIX<25), WATCH (25-28), ACTIVE (28-40), TRANSITION (40-48), PANIC (≥48) |
 
-**Signal gates (VCG-R v2 — NO HDR, NO credit 5d gate, VIX gate INVERTED):**
+**Signal gates (VCG-R — NO HDR, NO credit 5d gate, VIX gate INVERTED):**
 - RO trigger: VIX > 28 + VCG > 2.5 + sign_ok
 - EDR trigger: VIX > 25 + VCG 2.0–2.5 + sign_ok
 - BOUNCE: VCG < -3.5 + sign_ok

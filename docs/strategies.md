@@ -12,7 +12,7 @@ The Radon employs six strategies, each exploiting informational or structural ad
 | **LEAP IV Mispricing** | Volatility regime change | Long-dated calls | 1-3 years | Defined (long options) |
 | **GARCH Convergence** | Cross-asset repricing lag | Medium-dated options | 2-8 weeks | Defined (long options/spreads) |
 | **Risk Reversal** | IV skew exploitation | Sell put + Buy call | 2-8 weeks | **Undefined** (manager override) |
-| **Volatility-Credit Gap v2 (VCG-R)** | Vol/credit divergence (VIX>28 + VCG>2.5) | HY puts, CDX protection | 1-5 days | Defined (long puts/spreads) |
+| **Volatility-Credit Gap (VCG-R)** | Vol/credit divergence (VIX>28 + VCG>2.5) | HY puts, CDX protection | 1-5 days | Defined (long puts/spreads) |
 | **Crash Risk Index** | CTA deleveraging | SPY puts, tail hedges | 3-5 days | Defined (long puts/spreads) |
 
 See also: [`strategy-garch-convergence.md`](strategy-garch-convergence.md) for the full GARCH Convergence Spreads specification.
@@ -464,7 +464,7 @@ python3.13 scripts/risk_reversal.py IWM --json
 
 ---
 
-## Strategy 5: Volatility-Credit Gap v2 (VCG-R)
+## Strategy 5: Volatility-Credit Gap (VCG-R)
 
 *Strategy overhauled 2026-03-23. VIX gate inverted, HDR removed, severity tiers added. See full spec: [`cross_asset_volatility_credit_gap_spec_(VCG).md`](cross_asset_volatility_credit_gap_spec_(VCG).md)*
 
@@ -645,7 +645,7 @@ Every field in the VCG-R scan JSON output (`--json`) and HTML report is defined 
 | **VVIX** | `signal.vvix` | CBOE VVIX — vol-of-vol. Severity amplifier (not a gate). |
 | **VVIX Severity** | `signal.vvix_severity` | EXTREME (>140) / VERY_HIGH (120–140) / HIGH (100–120) / ELEVATED (90–100) / NORMAL (<90) |
 | **Credit Price** | `signal.credit_price` | Last close of the credit proxy ETF. |
-| **5d Return** | `signal.credit_5d_return_pct` | 5-day simple return on credit proxy. Context only — no longer a gate in VCG-R v2. |
+| **5d Return** | `signal.credit_5d_return_pct` | 5-day simple return on credit proxy. Context only — no longer a gate in VCG-R. |
 | **Risk-Off (RO)** | `signal.ro` | Trade trigger. VIX > 28 AND VCG > 2.5 AND sign_ok. |
 | **EDR** | `signal.edr` | Early Divergence Risk. VIX > 25 AND 2.0 < VCG ≤ 2.5 AND sign_ok. |
 | **BOUNCE** | `signal.bounce` | Counter-signal: VCG < -3.5 AND sign_ok. Credit overshot. |
@@ -693,7 +693,7 @@ Every field in the VCG-R scan JSON output (`--json`) and HTML report is defined 
 
 #### Model Parameters
 
-| Parameter | v1 Value | **VCG-R v2 Value** | Why Changed |
+| Parameter | v1 Value | **VCG-R Value** | Why Changed |
 |-----------|----------|---------------------|-------------|
 | OLS window | 21 days | 21 days | Unchanged |
 | Z-score window | 63 days | 63 days | Unchanged |

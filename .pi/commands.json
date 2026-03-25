@@ -46,7 +46,7 @@
     },
     {
       "command": "vcg",
-      "description": "Volatility-Credit Gap v2 (VCG-R) scan \u2014 VIX/VVIX/HYG regression, risk-off (VIX>28+VCG>2.5), EDR watch (VIX>25+VCG>2.0), BOUNCE counter-signal (VCG<-3.5), severity tiers 1\u20133"
+      "description": "Volatility-Credit Gap (VCG-R) scan \u2014 VIX/VVIX/HYG regression, risk-off (VIX>28+VCG>2.5), EDR watch (VIX>25+VCG>2.0), BOUNCE counter-signal (VCG<-3.5), severity tiers 1\u20133"
     },
     {
       "command": "cri-scan",

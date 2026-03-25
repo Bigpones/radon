@@ -1,4 +1,4 @@
-Run the Cross-Asset Volatility-Credit Gap v2 (VCG-R) scan:
+Run the Cross-Asset Volatility-Credit Gap (VCG-R) scan:
 
 **Full strategy spec:** `docs/strategies.md` (Strategy 5)
 **Math spec:** `docs/cross_asset_volatility_credit_gap_spec_(VCG).md`
@@ -7,7 +7,7 @@ Run the Cross-Asset Volatility-Credit Gap v2 (VCG-R) scan:
 ```bash
 python3.13 scripts/vcg_scan.py --json
 ```
-This fetches 1Y daily bars for VIX, VVIX, and HYG (IB primary, Yahoo fallback), runs the rolling 21-day OLS regression, computes the VCG z-score, and evaluates the VCG-R v2 binary signals (RO, EDR, BOUNCE).
+This fetches 1Y daily bars for VIX, VVIX, and HYG (IB primary, Yahoo fallback), runs the rolling 21-day OLS regression, computes the VCG z-score, and evaluates the VCG-R binary signals (RO, EDR, BOUNCE).
 
 **STEP 2: PARSE THE SIGNAL**
 From the JSON output, extract and present:
@@ -25,7 +25,7 @@ From the JSON output, extract and present:
 | `signal.sign_suppressed` | If true, beta signs wrong — signal suppressed regardless of VCG |
 
 **STEP 3: EVALUATE SIGNAL STATE**
-VCG-R v2 uses TWO conditions (not three like v1):
+VCG-R uses TWO conditions (not three like v1):
 - `signal.vix > 28` — VIX is in stress zone (INVERTED from v1's VIX < 40)
 - `signal.vcg > 2.5` — Statistical divergence confirmed (raised from v1's 2.0)
 
