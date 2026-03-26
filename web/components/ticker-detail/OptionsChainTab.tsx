@@ -194,7 +194,7 @@ function OrderBuilder({
   const totalQty = normalizedOrder?.quantity ?? (legs.length > 0 ? legs[0].quantity : 1);
 
   const parsedPrice = parseFloat(limitPrice);
-  const isValidPrice = !isNaN(parsedPrice) && parsedPrice > 0;
+  const isValidPrice = !isNaN(parsedPrice) && (isCombo ? parsedPrice !== 0 : parsedPrice > 0);
   const signedLimitPrice = Number.isFinite(parsedPrice)
     ? isDebit === null
       ? parsedPrice
@@ -215,6 +215,20 @@ function OrderBuilder({
     return computeNetOptionQuote(quotingLegs, prices, ticker);
   }, [quotingLegs, prices, ticker]);
 
+  const signedNetPrice = useCallback((value: number | null) => {
+    if (value == null) return null;
+    if (isDebit === null) return value;
+    return isDebit ? Math.abs(value) : -Math.abs(value);
+  }, [isDebit]);
+
+  const signedNetPrices = useMemo(() => {
+    return {
+      bid: signedNetPrice(netPrices.bid),
+      mid: signedNetPrice(netPrices.mid),
+      ask: signedNetPrice(netPrices.ask),
+    };
+  }, [netPrices.bid, netPrices.mid, netPrices.ask, signedNetPrice]);
+
   useEffect(() => {
     if (structureKey === lastStructureKeyRef.current) return;
     lastStructureKeyRef.current = structureKey;
@@ -226,10 +240,10 @@ function OrderBuilder({
 
   // Auto-populate limit price to mid when prices first become available
   useEffect(() => {
-    if (!priceManuallySet && netPrices.mid != null) {
-      setLimitPrice(netPrices.mid.toFixed(2));
+    if (!priceManuallySet && signedNetPrices.mid != null) {
+      setLimitPrice(signedNetPrices.mid.toFixed(2));
     }
-  }, [netPrices.mid, priceManuallySet, structureKey]);
+  }, [signedNetPrices.mid, priceManuallySet, structureKey]);
 
   // Calculate order summary for confirmation
   const orderSummary: OrderSummary | null = useMemo(() => {
@@ -370,14 +384,14 @@ function OrderBuilder({
 
   // OrderPriceStrip prices
   const stripPrices = useMemo(() => {
-    const { bid, ask, mid } = netPrices;
+    const { bid, ask, mid } = signedNetPrices;
     if (bid == null || ask == null || mid == null) {
       return { bid: null, mid: null, ask: null, spread: null, spreadPct: null, available: false };
     }
     const spread = ask - bid;
     const spreadPct = mid > 0 ? (spread / mid) * 100 : null;
     return { bid, mid, ask, spread, spreadPct, available: true };
-  }, [netPrices]);
+  }, [signedNetPrices]);
 
   if (legs.length === 0) return null;
 
@@ -558,42 +572,42 @@ function OrderBuilder({
           <div className="modify-quick-buttons">
             <button
               className="btn-quick"
-              disabled={netPrices.bid == null}
+              disabled={signedNetPrices.bid == null}
               onClick={() => {
-                if (netPrices.bid != null) {
-                  setLimitPrice(netPrices.bid.toFixed(2));
+                if (signedNetPrices.bid != null) {
+                  setLimitPrice(signedNetPrices.bid.toFixed(2));
                   setPriceManuallySet(true);
                   setConfirmStep(false);
                 }
               }}
             >
-              BID{netPrices.bid != null ? ` ${netPrices.bid.toFixed(2)}` : ""}
+              BID{signedNetPrices.bid != null ? ` ${signedNetPrices.bid.toFixed(2)}` : ""}
             </button>
             <button
               className="btn-quick"
-              disabled={netPrices.mid == null}
+              disabled={signedNetPrices.mid == null}
               onClick={() => {
-                if (netPrices.mid != null) {
-                  setLimitPrice(netPrices.mid.toFixed(2));
+                if (signedNetPrices.mid != null) {
+                  setLimitPrice(signedNetPrices.mid.toFixed(2));
                   setPriceManuallySet(true);
                   setConfirmStep(false);
                 }
               }}
             >
-              MID{netPrices.mid != null ? ` ${netPrices.mid.toFixed(2)}` : ""}
+              MID{signedNetPrices.mid != null ? ` ${signedNetPrices.mid.toFixed(2)}` : ""}
             </button>
             <button
               className="btn-quick"
-              disabled={netPrices.ask == null}
+              disabled={signedNetPrices.ask == null}
               onClick={() => {
-                if (netPrices.ask != null) {
-                  setLimitPrice(netPrices.ask.toFixed(2));
+                if (signedNetPrices.ask != null) {
+                  setLimitPrice(signedNetPrices.ask.toFixed(2));
                   setPriceManuallySet(true);
                   setConfirmStep(false);
                 }
               }}
             >
-              ASK{netPrices.ask != null ? ` ${netPrices.ask.toFixed(2)}` : ""}
+              ASK{signedNetPrices.ask != null ? ` ${signedNetPrices.ask.toFixed(2)}` : ""}
             </button>
           </div>
           {isValidPrice && (
@@ -643,7 +657,7 @@ function OrderBuilder({
               Back
             </button>
             <button
-              className={`btn-primary ${!isDebit ? "btn-danger" : ""}`}
+              className={`btn-primary ${isDebit === false ? "btn-danger" : ""}`}
               onClick={handlePlace}
               disabled={!isValidPrice || loading}
             >
