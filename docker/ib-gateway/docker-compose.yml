@@ -22,7 +22,7 @@ services:
     volumes:
       - ib-gateway-settings:/home/ibgateway/Jts
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "4003"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/4001'"]
       interval: 30s
       timeout: 10s
       retries: 5
