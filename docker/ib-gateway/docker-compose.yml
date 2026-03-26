@@ -2,6 +2,8 @@ services:
   ib-gateway:
     image: ghcr.io/gnzsnz/ib-gateway@sha256:22d5bf5e6699b3c28cb806c21e2cc46c6337df3599f758d9ae685ad3aa9eb0d5
     restart: unless-stopped
+    labels:
+      - "autoheal=true"
     environment:
       TWS_USERID: ${TWS_USERID}
       TWS_PASSWORD_FILE: /run/secrets/ib_password
@@ -25,6 +27,20 @@ services:
       timeout: 10s
       retries: 5
       start_period: 120s
+
+  # Auto-restart unhealthy containers.
+  # Docker's restart: unless-stopped only restarts on exit, not on
+  # unhealthy status. Autoheal watches healthcheck and restarts
+  # containers labeled autoheal=true when they go unhealthy.
+  autoheal:
+    image: willfarrell/autoheal
+    restart: unless-stopped
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: "autoheal"
+      AUTOHEAL_INTERVAL: 30
+      AUTOHEAL_START_PERIOD: 180
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
 secrets:
   ib_password:
