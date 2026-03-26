@@ -6,7 +6,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="$(cd "$SCRIPT_DIR/../docker/ib-gateway" && pwd)"
-COMPOSE_CMD="docker compose -f $COMPOSE_DIR/docker-compose.yml --env-file $COMPOSE_DIR/.env"
+COMPOSE_OVERRIDE=""
+if [[ -f "$COMPOSE_DIR/docker-compose.override.yml" ]]; then
+    COMPOSE_OVERRIDE="-f $COMPOSE_DIR/docker-compose.override.yml"
+fi
+COMPOSE_CMD="docker compose -f $COMPOSE_DIR/docker-compose.yml $COMPOSE_OVERRIDE --env-file $COMPOSE_DIR/.env"
 
 ensure_docker_running() {
     if ! docker info >/dev/null 2>&1; then
