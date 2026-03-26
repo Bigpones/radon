@@ -249,15 +249,12 @@ export function getOptionDailyChg(pos: PortfolioPosition, prices?: Record<string
   if (pos.structure_type === "Stock" || !prices) return null;
 
   // Same-day position: the position didn't exist yesterday, so yesterday's
-  // close is meaningless. Use entry cost as both baseline and denominator.
-  // This applies whether or not IB daily P&L is available — for % calc the
-  // denominator must reflect the position's actual starting value (entry cost).
+  // close is meaningless. Use entry cost as baseline and denominator.
+  // Ignore IB daily P&L for same-day positions, which can be stale/inaccurate
+  // when the entire position was opened today.
   if (isSameDay(pos)) {
     const ec = resolveEntryCost(pos);
     if (ec === 0) return null;
-    if (pos.ib_daily_pnl != null) {
-      return (pos.ib_daily_pnl / Math.abs(ec)) * 100;
-    }
     const rtMv = computeRtMv(pos, prices);
     const mv = rtMv ?? resolveMarketValue(pos);
     if (mv == null) return null;
