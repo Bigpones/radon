@@ -120,8 +120,11 @@ function deriveSqueezeRisk(spx: CtaRow | undefined): { label: string; cssColor: 
 /** Derive active signal tags from full dataset */
 function deriveSignalTags(tables: CtaTables): Array<{ label: string; cssColor: string; borderColor: string; bgColor: string }> {
   const tags: Array<{ label: string; cssColor: string; borderColor: string; bgColor: string }> = [];
+  const main = tables.main ?? [];
+  const commodity = tables.commodity ?? [];
+  const currency = tables.currency ?? [];
 
-  const spx = getSpxRow(tables.main);
+  const spx = getSpxRow(main);
   if (spx && (pctile(spx.percentile_3m) ?? 101) <= 15) {
     tags.push({
       label: "SHORT EQUITIES",
@@ -140,7 +143,7 @@ function deriveSignalTags(tables: CtaTables): Array<{ label: string; cssColor: s
   }
 
   // Bond posture
-  const bonds = tables.main.filter((r) =>
+  const bonds = main.filter((r) =>
     r.underlying.toLowerCase().includes("t-note") ||
     r.underlying.toLowerCase().includes("treasury")
   );
@@ -155,7 +158,7 @@ function deriveSignalTags(tables: CtaTables): Array<{ label: string; cssColor: s
   }
 
   // Crowded commodity longs
-  const crowdedEnergy = tables.commodity.filter(
+  const crowdedEnergy = commodity.filter(
     (r) => (pctile(r.percentile_3m) ?? -1) >= 85 && r.position_today > 0 &&
       (r.underlying.toLowerCase().includes("brent") ||
         r.underlying.toLowerCase().includes("diesel") ||
@@ -180,7 +183,7 @@ function deriveSignalTags(tables: CtaTables): Array<{ label: string; cssColor: s
     });
   }
 
-  const fx = getCurrencyExtremes(tables.currency);
+  const fx = getCurrencyExtremes(currency);
   if (fx.shorts.length > 0 && fx.longs.length > 0) {
     tags.push({
       label: "FX DISPERSION",
@@ -209,10 +212,13 @@ function deriveSignalTags(tables: CtaTables): Array<{ label: string; cssColor: s
 
 /** Build narrative prose from data */
 function buildNarrative(tables: CtaTables, estSellingBn: number | null): string {
-  const spx = getSpxRow(tables.main);
-  const nq = tables.main.find((r) => r.underlying.toLowerCase().includes("nasdaq"));
-  const crowded = getCrowdedCommodityLongs(tables.commodity);
-  const fx = getCurrencyExtremes(tables.currency);
+  const main = tables.main ?? [];
+  const commodity = tables.commodity ?? [];
+  const currency = tables.currency ?? [];
+  const spx = getSpxRow(main);
+  const nq = main.find((r) => r.underlying.toLowerCase().includes("nasdaq"));
+  const crowded = getCrowdedCommodityLongs(commodity);
+  const fx = getCurrencyExtremes(currency);
 
   const parts: string[] = [];
 
@@ -257,7 +263,7 @@ function buildNarrative(tables: CtaTables, estSellingBn: number | null): string 
     parts.push(`Crowded FX longs: ${labels}.`);
   }
 
-  const spxShort = getSpxRow(tables.main);
+  const spxShort = getSpxRow(main);
   if (spxShort && (pctile(spxShort.percentile_3m) ?? 101) <= 10 && spxShort.position_1m_ago > 0) {
     parts.push(
       "Positioning is a mean-reversion coil — any bullish catalyst risks violent CTA short-covering across all equity classes."
@@ -274,12 +280,14 @@ function buildNarrative(tables: CtaTables, estSellingBn: number | null): string 
 /* ─── Component ──────────────────────────────────────── */
 
 export default function CtaBriefing({ tables, estSellingBn }: CtaBriefingProps) {
-  const spx = getSpxRow(tables.main);
-  const posture = deriveEquityPosture(tables.main);
+  const main = tables.main ?? [];
+  const commodity = tables.commodity ?? [];
+  const spx = getSpxRow(main);
+  const posture = deriveEquityPosture(main);
   const squeezeRisk = deriveSqueezeRisk(spx);
   const tags = deriveSignalTags(tables);
   const narrative = buildNarrative(tables, estSellingBn);
-  const crowded = getCrowdedCommodityLongs(tables.commodity);
+  const crowded = getCrowdedCommodityLongs(commodity);
 
   return (
     <div
