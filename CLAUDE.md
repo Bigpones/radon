@@ -642,6 +642,19 @@ Gateway runs on a Hetzner VM accessible via Tailscale MagicDNS at `ib-gateway:40
 
 **Cloud mode behavior:** Health check = TCP port probe only. No local restart, no CLOSE_WAIT detection, no docker/launchd lifecycle management. `POST /ib/restart` returns 503 with "manage it on the remote host". Stale tick detection in the WS relay disconnects and reconnects (no restart attempt).
 
+**Management commands** (local Mac via Tailscale SSH, or directly on VPS):
+
+| Command | Action |
+|---------|--------|
+| `ibstart` | Start container, wait for port 4001 |
+| `ibstop` | Stop and remove container |
+| `ibrestart` | Restart, wait for port 4001 |
+| `ibstatus` | Container state, port, connections |
+| `iblogs` | Last 50 lines (`iblogs 100`) |
+| `ibhealth` | Docker healthcheck status |
+
+VPS script: `/usr/local/bin/ibgw`. Local: `ibgw()` in `~/.zshrc` wraps SSH.
+
 ### Docker Mode (Primary)
 
 Image: `ghcr.io/gnzsnz/ib-gateway` (pinned to digest). Config: `docker/ib-gateway/`.

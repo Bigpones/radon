@@ -429,6 +429,19 @@ ssh root@ib-gateway "ss -tnp | grep 4001"
 python3.13 -c "from ib_insync import IB; ib=IB(); ib.connect('ib-gateway',4001,clientId=99,timeout=10); print('OK'); ib.disconnect()"
 ```
 
+**Management commands:** Available locally (via Tailscale SSH) and on the VPS:
+
+| Local (Mac) | On VPS | Action |
+|-------------|--------|--------|
+| `ibstart` | `ibstart` | Start container, wait for port 4001 |
+| `ibstop` | `ibstop` | Stop and remove container |
+| `ibrestart` | `ibrestart` | Restart container, wait for port 4001 |
+| `ibstatus` | `ibstatus` | Container state, port check, active connections |
+| `iblogs` | `iblogs` | Last 50 log lines (`iblogs 100` for more) |
+| `ibhealth` | `ibhealth` | Docker healthcheck status |
+
+Local commands are shell aliases that SSH into the VPS via `ibgw()` in `~/.zshrc`. The VPS has `ibgw` at `/usr/local/bin/ibgw` with short aliases in `.bashrc` for both `root` and `mdw` users.
+
 **Rollback to local:** Set `IB_GATEWAY_HOST=127.0.0.1` and `IB_GATEWAY_MODE=docker` (or `launchd`) in `.env`.
 
 ## Glossary
