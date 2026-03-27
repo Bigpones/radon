@@ -333,16 +333,16 @@ function isUSMarketHours() {
   return timeMinutes >= 9 * 60 + 30 && timeMinutes <= 16 * 60;
 }
 
-const GATEWAY_MODE = process.env.IB_GATEWAY_MODE || "docker";
+const GATEWAY_MODE = process.env.IB_GATEWAY_MODE || "cloud";
 
 async function restartIBGateway() {
   if (ibGatewayRestarting) return;
   ibGatewayRestarting = true;
   console.log("\x1b[31m[stale-data] No ticks received during market hours — handling stale data\x1b[0m");
 
-  if (GATEWAY_MODE === "docker") {
-    // Docker manages Gateway reliability — just reconnect the IB socket
-    console.log("[stale-data] Docker mode — disconnecting and scheduling reconnect");
+  if (GATEWAY_MODE === "cloud" || GATEWAY_MODE === "docker") {
+    // Cloud/Docker — no local restart capability. Just reconnect the IB socket.
+    console.log(`[stale-data] ${GATEWAY_MODE} mode — disconnecting and scheduling reconnect`);
     try { ib.disconnect(); } catch { /* ignore */ }
     scheduleReconnect();
   } else {

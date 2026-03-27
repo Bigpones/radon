@@ -37,7 +37,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 from api.ib_pool import IBPool
 from api.subprocess import run_script, run_module, ScriptResult
-from api.ib_gateway import check_ib_gateway, ensure_ib_gateway, restart_ib_gateway, is_docker_mode
+from api.ib_gateway import check_ib_gateway, ensure_ib_gateway, restart_ib_gateway, is_docker_mode, is_cloud_mode
 from clients.ib_client import DEFAULT_GATEWAY_PORT
 from api.pool_order_manage import pool_cancel_order, pool_modify_order
 
@@ -1202,17 +1202,19 @@ async def _run_ib_script_with_recovery(
             )
             return result
 
-        if is_docker_mode():
-            # Docker manages Gateway reliability — don't attempt restart.
-            # Return 503 and let Docker's restart: unless-stopped handle it.
+        if is_cloud_mode() or is_docker_mode():
+            # Cloud/Docker manages Gateway reliability — don't attempt restart.
+            mode = "cloud" if is_cloud_mode() else "Docker"
             logger.warning(
-                "IB Gateway unreachable in Docker mode (port=%s, upstream_dead=%s) — not restarting (Docker handles it)",
-                port_ok, upstream_dead,
+                "IB Gateway unreachable in %s mode (port=%s, upstream_dead=%s) — not restarting (%s handles it)",
+                mode, port_ok, upstream_dead, mode,
             )
-            result = ScriptResult(
-                ok=False,
-                error="IB Gateway is not responding. Docker will auto-restart the container. Check IBKR Mobile for 2FA approval.",
+            msg = (
+                f"IB Gateway is not responding ({mode} mode). "
+                + ("Check remote host and Tailscale." if is_cloud_mode()
+                   else "Docker will auto-restart the container. Check IBKR Mobile for 2FA approval.")
             )
+            result = ScriptResult(ok=False, error=msg)
         else:
             logger.warning(
                 "IB Gateway unreachable (port=%s, upstream_dead=%s), attempting auto-restart...",

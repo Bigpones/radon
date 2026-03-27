@@ -1,10 +1,11 @@
 """IB Gateway health check and lifecycle management.
 
-Supports two modes controlled by IB_GATEWAY_MODE env var:
+Supports three modes controlled by IB_GATEWAY_MODE env var:
+  - "cloud"   — remote Gateway (e.g. Hetzner via Tailscale). No local restart.
   - "docker"  — manages Gateway via Docker Compose
   - "launchd" — manages Gateway via IBC launchd service (legacy)
 
-Default: "launchd" (zero-risk migration — existing behavior preserved).
+Default: "docker".
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ logger = logging.getLogger("radon.ib_gateway")
 
 IB_HOST = os.environ.get("IB_GATEWAY_HOST", "127.0.0.1")
 IB_PORT = int(os.environ.get("IB_GATEWAY_PORT", "4001"))
-GATEWAY_MODE = os.environ.get("IB_GATEWAY_MODE", "docker")  # "docker" or "launchd"
+GATEWAY_MODE = os.environ.get("IB_GATEWAY_MODE", "cloud")  # "cloud", "docker", or "launchd"
 
 # LaunchD paths
 IBC_HOME = Path.home() / "ibc" / "bin"
@@ -417,8 +418,48 @@ async def _restart_docker() -> Dict:
 
 
 # ---------------------------------------------------------------------------
+# Cloud mode — remote Gateway, no local lifecycle management
+# ---------------------------------------------------------------------------
+
+
+async def _check_cloud() -> Dict:
+    """Check remote Gateway health via TCP port probe only."""
+    port_ok = await asyncio.to_thread(_port_listening)
+    return {
+        "port_listening": port_ok,
+        "upstream_dead": False,
+        "service_state": "reachable" if port_ok else "unreachable",
+        "host": IB_HOST,
+        "port": IB_PORT,
+        "gateway_mode": "cloud",
+    }
+
+
+async def _ensure_cloud() -> Dict:
+    """Verify remote Gateway is reachable. No restart capability."""
+    port_ok = await asyncio.to_thread(_port_listening)
+    if port_ok:
+        return {"status": "already_running", "port_listening": True, "gateway_mode": "cloud"}
+    logger.warning(
+        "Cloud IB Gateway not reachable at %s:%d — check remote host",
+        IB_HOST, IB_PORT,
+    )
+    return {
+        "status": "unreachable",
+        "port_listening": False,
+        "gateway_mode": "cloud",
+        "error": f"Cloud IB Gateway at {IB_HOST}:{IB_PORT} is not reachable. Check remote host and Tailscale.",
+    }
+
+
+# ---------------------------------------------------------------------------
 # Public API — dispatches by GATEWAY_MODE
 # ---------------------------------------------------------------------------
+
+
+def is_cloud_mode() -> bool:
+    """Return True if Gateway runs on a remote host (no local lifecycle)."""
+    return GATEWAY_MODE == "cloud"
 
 
 def is_docker_mode() -> bool:
@@ -428,6 +469,8 @@ def is_docker_mode() -> bool:
 
 async def check_ib_gateway() -> Dict:
     """Check IB Gateway health. Returns status dict for /health endpoint."""
+    if is_cloud_mode():
+        return await _check_cloud()
     if is_docker_mode():
         return await _check_docker()
     return await _check_launchd()
@@ -436,6 +479,8 @@ async def check_ib_gateway() -> Dict:
 async def ensure_ib_gateway() -> Dict:
     """Ensure IB Gateway is running. Called at FastAPI startup."""
     async with _restart_lock:
+        if is_cloud_mode():
+            return await _ensure_cloud()
         if is_docker_mode():
             return await _ensure_docker_container()
         return await _ensure_launchd()
@@ -444,6 +489,12 @@ async def ensure_ib_gateway() -> Dict:
 async def restart_ib_gateway() -> Dict:
     """Restart IB Gateway. Used by POST /ib/restart and recovery paths."""
     async with _restart_lock:
+        if is_cloud_mode():
+            return {
+                "restarted": False,
+                "gateway_mode": "cloud",
+                "error": f"Cannot restart remote Gateway at {IB_HOST}:{IB_PORT}. Manage it on the remote host.",
+            }
         if is_docker_mode():
             return await _restart_docker()
         return await _restart_launchd()

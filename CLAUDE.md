@@ -634,11 +634,13 @@ Full spec: `docs/unusual_whales_api.md`
 
 ## IB Gateway
 
-Three modes controlled by `IB_GATEWAY_MODE` env var (default: `docker`):
+Three modes controlled by `IB_GATEWAY_MODE` env var (default: `cloud`):
 
 ### Cloud Mode (Primary — Tailscale)
 
-Gateway runs on a cloud VM accessible via Tailscale MagicDNS at `ib-gateway:4001`. Set `IB_GATEWAY_HOST=ib-gateway` in root `.env`. Both Python (`ib_client.py` loads dotenv at import) and Node (`ib_realtime_server.js` loads dotenv at startup) read this automatically. All scripts import `DEFAULT_HOST` from `ib_client` — no hardcoded `127.0.0.1` in IB connection code.
+Gateway runs on a Hetzner VM accessible via Tailscale MagicDNS at `ib-gateway:4001`. Set `IB_GATEWAY_HOST=ib-gateway` and `IB_GATEWAY_MODE=cloud` in root `.env`. Both Python (`ib_client.py` loads dotenv at import) and Node (`ib_realtime_server.js` loads dotenv at startup) read this automatically. All scripts import `DEFAULT_HOST` from `ib_client` — no hardcoded `127.0.0.1` in IB connection code.
+
+**Cloud mode behavior:** Health check = TCP port probe only. No local restart, no CLOSE_WAIT detection, no docker/launchd lifecycle management. `POST /ib/restart` returns 503 with "manage it on the remote host". Stale tick detection in the WS relay disconnects and reconnects (no restart attempt).
 
 ### Docker Mode (Primary)
 
@@ -671,7 +673,7 @@ Global service: `local.ibc-gateway` (shared with market-data-warehouse). Install
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `IB_GATEWAY_MODE` | `docker` | `docker` or `launchd` |
+| `IB_GATEWAY_MODE` | `cloud` | `cloud` (remote, no restart), `docker`, or `launchd` |
 | `IB_GATEWAY_HOST` | `127.0.0.1` (fallback), `ib-gateway` (cloud, in `.env`) | Gateway host |
 | `IB_GATEWAY_PORT` | `4001` | Gateway port |
 
