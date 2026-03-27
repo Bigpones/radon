@@ -42,6 +42,8 @@ def check_ib_connection(port: int) -> bool:
     try:
         result = sock.connect_ex((DEFAULT_HOST, port))
         return result == 0
+    except socket.gaierror:
+        return False
     finally:
         sock.close()
 

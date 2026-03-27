@@ -1,11 +1,13 @@
 """Tests for fetch_options.py — options chain + flow analysis."""
 import pytest
+import socket
 from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 
 from clients.uw_client import UWAPIError
 
 from fetch_options import (
+    check_ib_connection,
     fetch_uw_chain,
     fetch_uw_flow,
     fetch_options,
@@ -14,6 +16,28 @@ from fetch_options import (
 
 def _recent_alert_iso(hours_ago: int = 1) -> str:
     return (datetime.utcnow() - timedelta(hours=hours_ago)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# ── check_ib_connection ────────────────────────────────────────────
+
+class TestCheckIbConnection:
+    @patch("socket.socket")
+    def test_resolution_failure_returns_false(self, mock_socket_cls):
+        mock_sock = MagicMock()
+        mock_sock.connect_ex.side_effect = socket.gaierror(-2, "Name or service not known")
+        mock_socket_cls.return_value = mock_sock
+
+        assert check_ib_connection(4001) is False
+        mock_sock.close.assert_called_once()
+
+    @patch("socket.socket")
+    def test_success_returns_true(self, mock_socket_cls):
+        mock_sock = MagicMock()
+        mock_sock.connect_ex.return_value = 0
+        mock_socket_cls.return_value = mock_sock
+
+        assert check_ib_connection(4001) is True
+        mock_sock.close.assert_called_once()
 
 
 # ── fetch_uw_chain ──────────────────────────────────────────────────

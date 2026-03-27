@@ -3451,3 +3451,64 @@ Restore the 31 skipped skills under `/Users/joemccann/.agents/skills/` by adding
 - [ ] T2 Add failing regression coverage for the remaining affected closed-market cached-load paths
 - [ ] T3 Patch the affected hooks so inactive routes still perform their first cached read without enabling polling
 - [ ] T4 Verify targeted tests, run the full JS and Python suites, and confirm the affected routes in-browser
+
+---
+
+## Session: Review Latest IB Gateway Host Routing Changes (2026-03-26)
+
+### Dependency Graph
+- T1 (Inspect git state, identify the latest commit scope, and record the review task) depends_on: []
+- T2 (Review the touched IB gateway host/env-loading code paths and health-check surfaces for regressions or missing coverage) depends_on: [T1]
+- T3 (Summarize findings and provide the simplest curl-based Hetzner health check for the IB gateway service) depends_on: [T2]
+
+### Checklist
+- [x] T1 Inspect git state, identify the latest commit scope, and record the review task
+- [x] T2 Review the touched IB gateway host/env-loading code paths and health-check surfaces for regressions or missing coverage
+- [x] T3 Summarize findings and provide the simplest curl-based Hetzner health check for the IB gateway service
+
+### Review
+- Findings:
+  - `scripts/tests/test_env_loading.py` is broken under a normal repo-root pytest run because it imports `from scripts.clients import ib_client` even though the test harness adds `scripts/` to `sys.path` and the rest of the suite imports `clients...`. The targeted run failed with `ModuleNotFoundError: No module named 'scripts'`.
+  - The same test file is non-hermetic because it asserts the ignored local `.env` contains `IB_GATEWAY_HOST=ib-gateway`, which bakes a developer-specific machine state into the test.
+  - `scripts/fetch_options.py` now probes `DEFAULT_HOST` via `socket.AF_INET` + `connect_ex()` with no `gaierror` handling. With a Tailscale/MagicDNS hostname, a transient name-resolution failure raises instead of falling back cleanly when IB is unavailable.
+- Verification:
+  - `git show --stat --summary --find-renames 7ef89f5`
+    - Result: reviewed the latest commit scope (`feat: connect all IB entrypoints to cloud gateway via Tailscale`).
+  - `pytest -q scripts/tests/test_env_loading.py scripts/tests/test_ib_client.py scripts/tests/test_cri_scan.py scripts/tests/test_utils.py`
+    - Result: `3 failed, 174 passed`; all three failures came from `scripts/tests/test_env_loading.py` import-path errors.
+- `python3.13` socket probe against an invalid hostname
+    - Result: `socket.gaierror`, confirming `fetch_options.py` can raise during hostname resolution instead of returning `False`.
+
+---
+
+## Session: Fix IB Gateway Host-Routing Review Findings (2026-03-26)
+
+### Dependency Graph
+- T1 (Record the remediation plan, confirm affected files, and assign disjoint work to subagents) depends_on: []
+- T2 (Fix the env-loading regression tests so they run under the repo pytest harness and do not depend on a local `.env`) depends_on: [T1]
+- T3 (Fix hostname-based IB probing in `fetch_options.py` and add regression coverage for resolution failures) depends_on: [T1]
+- T4 (Fix cloud-mode stale-data handling in `ib_realtime_server.js` so remote mode does not attempt invalid local restarts, and add regression coverage if practical) depends_on: [T1]
+- T5 (Integrate, run targeted tests plus the full relevant suites, and document review results and the Hetzner health-check command) depends_on: [T2, T3, T4]
+
+### Checklist
+- [x] T1 Record the remediation plan, confirm affected files, and assign disjoint work to subagents
+- [x] T2 Fix the env-loading regression tests so they run under the repo pytest harness and do not depend on a local `.env`
+- [x] T3 Fix hostname-based IB probing in `fetch_options.py` and add regression coverage for resolution failures
+- [x] T4 Fix cloud-mode stale-data handling in `ib_realtime_server.js` so remote mode does not attempt invalid local restarts, and add regression coverage if practical
+- [x] T5 Integrate, run targeted tests plus the full relevant suites, and document review results and the Hetzner health-check command
+
+### Review
+- Fixes:
+  - Reworked [scripts/tests/test_env_loading.py](/Users/joemccann/dev/apps/finance/radon/scripts/tests/test_env_loading.py) so it uses the repo test harness import path and loads `ib_client.py` into isolated temporary module names. That keeps the tests hermetic and avoids mutating the shared `clients.ib_client` module during the full suite.
+  - Patched [scripts/fetch_options.py](/Users/joemccann/dev/apps/finance/radon/scripts/fetch_options.py) so `check_ib_connection()` returns `False` on `socket.gaierror` instead of aborting when `IB_GATEWAY_HOST` briefly fails to resolve.
+  - Patched [scripts/ib_realtime_server.js](/Users/joemccann/dev/apps/finance/radon/scripts/ib_realtime_server.js) to use ESM-safe imports for launchd restarts while keeping cloud/docker modes on reconnect-only behavior.
+  - Added regression coverage in [scripts/tests/test_fetch_options.py](/Users/joemccann/dev/apps/finance/radon/scripts/tests/test_fetch_options.py) and [web/tests/ib-realtime-restart-modes.test.ts](/Users/joemccann/dev/apps/finance/radon/web/tests/ib-realtime-restart-modes.test.ts).
+- Verification:
+  - `python3.13 -m pytest -q scripts/tests/test_env_loading.py scripts/tests/test_fetch_options.py`
+    - Result: `20 passed`
+  - `npx vitest run web/tests/ib-realtime-restart-modes.test.ts`
+    - Result: `1 file passed`, `2 tests passed`
+  - `cd web && npm test`
+    - Result: `150` files passed, `1385` tests passed
+  - `python3.13 -m pytest -x -q`
+    - Result: first failure is unrelated to this change set after `894 passed`: [scripts/tests/test_menthorq_integration.py](/Users/joemccann/dev/apps/finance/radon/scripts/tests/test_menthorq_integration.py) fails in `TestMenthorQIntegrationHTML.test_eod_spx` with `MenthorQExtractionError` from [scripts/clients/menthorq_client.py](/Users/joemccann/dev/apps/finance/radon/scripts/clients/menthorq_client.py).

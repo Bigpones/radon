@@ -18,6 +18,8 @@ import process from "node:process";
 import fs from "node:fs";
 import path from "node:path";
 import net from "node:net";
+import { execSync } from "node:child_process";
+import { homedir } from "node:os";
 import { WebSocketServer } from "ws";
 import IB from "ib";
 import { classifyIBConnectionError } from "./ib_connection_status.js";
@@ -348,9 +350,7 @@ async function restartIBGateway() {
   } else {
     // LaunchD mode — shell out to restart IBC service
     try {
-      const { execSync } = require("child_process");
-      const homeDir = require("os").homedir();
-      execSync(`${homeDir}/ibc/bin/restart-secure-ibc-service.sh`, {
+      execSync(`${homedir()}/ibc/bin/restart-secure-ibc-service.sh`, {
         timeout: 60_000,
         stdio: "pipe",
       });
