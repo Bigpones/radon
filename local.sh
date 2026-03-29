@@ -16,8 +16,16 @@ log_warn()  { echo -e "${YELLOW}[local]${NC} $*"; }
 log_error() { echo -e "${RED}[local]${NC} $*"; }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ENV_FILE="$SCRIPT_DIR/.env"
 
-# -- Step 1: Stop VPS gateway ------------------------------------------------
+# -- Step 1: Switch .env to local Docker mode --------------------------------
+
+log_info "Switching .env to local Docker mode..."
+sed -i '' 's/^IB_GATEWAY_HOST=.*/IB_GATEWAY_HOST=127.0.0.1/' "$ENV_FILE"
+sed -i '' 's/^IB_GATEWAY_MODE=.*/IB_GATEWAY_MODE=docker/' "$ENV_FILE"
+log_info ".env → IB_GATEWAY_HOST=127.0.0.1, IB_GATEWAY_MODE=docker"
+
+# -- Step 2: Stop VPS gateway ------------------------------------------------
 
 log_info "Stopping IB Gateway on Hetzner..."
 if ssh -o ConnectTimeout=5 ib-gateway "cd /home/radon/radon-cloud && docker compose down" 2>/dev/null; then
@@ -26,7 +34,7 @@ else
   log_warn "Could not reach VPS (offline or already stopped). Continuing."
 fi
 
-# -- Step 2: Start local Docker gateway --------------------------------------
+# -- Step 3: Start local Docker gateway --------------------------------------
 
 log_info "Starting local Docker IB Gateway..."
 "$SCRIPT_DIR/scripts/docker_ib_gateway.sh" start
@@ -48,7 +56,7 @@ for i in $(seq 1 24); do
   sleep 5
 done
 
-# -- Step 3: Start dev services -----------------------------------------------
+# -- Step 4: Start dev services -----------------------------------------------
 
 log_info "Starting dev services (Next.js + FastAPI + WS relay)..."
 cd "$SCRIPT_DIR/web"
