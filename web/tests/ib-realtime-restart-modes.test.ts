@@ -8,6 +8,22 @@ const webDir = resolve(__dirname, "..");
 const projectRoot = resolve(webDir, "..");
 const source = readFileSync(resolve(projectRoot, "scripts", "ib_realtime_server.js"), "utf8");
 
+describe("ib_realtime_server.js localhost auth bypass", () => {
+  it("skips ticket validation for localhost connections", () => {
+    // The upgrade handler must bypass auth for localhost remoteAddress
+    expect(source).toContain('remoteAddr === "127.0.0.1"');
+    expect(source).toContain('remoteAddr === "::1"');
+    expect(source).toContain('remoteAddr === "::ffff:127.0.0.1"');
+  });
+
+  it("still validates tickets for non-localhost when CLERK_JWKS_URL is set", () => {
+    // Ticket validation block must exist after the localhost bypass
+    expect(source).toContain('const ticket = url.searchParams.get("ticket")');
+    expect(source).toContain("TICKET_VALIDATE_URL");
+    expect(source).toContain("401 Unauthorized");
+  });
+});
+
 describe("ib_realtime_server.js stale-data restart modes", () => {
   it("keeps cloud and docker on reconnect-only recovery", () => {
     const cloudDockerBlock = source.match(

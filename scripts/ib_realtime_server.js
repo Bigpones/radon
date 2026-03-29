@@ -224,7 +224,11 @@ const wss = new WebSocketServer({ noServer: true });
 
 httpServer.on("upgrade", async (req, socket, head) => {
   // Skip ticket validation if Clerk is not configured (local dev)
-  if (!process.env.CLERK_JWKS_URL) {
+  // or if the connection is from localhost (server-to-server / local browser)
+  const remoteAddr = socket.remoteAddress || "";
+  const isLocalhost = !process.env.CLERK_JWKS_URL ||
+    remoteAddr === "127.0.0.1" || remoteAddr === "::1" || remoteAddr === "::ffff:127.0.0.1";
+  if (isLocalhost) {
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit("connection", ws, req);
     });
