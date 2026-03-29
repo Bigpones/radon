@@ -135,11 +135,14 @@ pip install -r requirements.txt
 cd web && npm install && cd ..
 ```
 
-**Local development** (stops VPS gateway, starts local Docker, launches dev):
+**Development** (two modes):
 
 ```bash
-./local.sh
+./cloud.sh    # Default — local dev services + VPS IB Gateway via Tailscale
+./local.sh    # Fully local — local Docker gateway + local dev services
 ```
+
+`cloud.sh` is the typical workflow: IB Gateway stays running on the VPS, you develop locally against it. `local.sh` is for offline dev or when the VPS is unavailable.
 
 Or manually:
 
