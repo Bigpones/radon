@@ -790,6 +790,18 @@ When deployed on the Hetzner VPS via radon-cloud:
 - **`@sinclair/typebox`**: Pinned to exact `0.34.48` in both root and web `package.json` to prevent version mismatch build failures.
 - **Production Clerk**: Uses different user IDs than dev. `ALLOWED_USER_IDS` must be updated. Requires own Google/GitHub OAuth credentials and 5 CNAME DNS records.
 
+### Historical Data API
+
+Machine-to-machine endpoints for headless clients (e.g., market-data-warehouse):
+
+- `POST /contract/qualify` — resolve contract details (conId, exchange, etc.)
+- `POST /historical/head-timestamp` — earliest available data date (ISO 8601)
+- `POST /historical/bars` — fetch OHLCV bars (ISO `YYYY-MM-DD` dates)
+
+Auth: `X-API-Key` header checked against `MDW_API_KEY` env var. Scoped to these 3 paths only — trading routes (orders, portfolio) remain Clerk JWT-only. Uses `hmac.compare_digest` for constant-time comparison.
+
+Endpoints live in `scripts/api/routes/historical.py` and use the "data" pool role from `IBPool`.
+
 ## Output Rules
 
 - Always: `signal → structure → Kelly math → decision`
