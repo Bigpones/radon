@@ -100,6 +100,7 @@ async def lifespan(app: FastAPI):
 
     # IB pool — starts degraded if Gateway is still down after restart attempt
     ib_pool = IBPool()
+    app.state.ib_pool = ib_pool
     pool_status = await ib_pool.connect_all()
     logger.info("IB pool status: %s", pool_status)
 

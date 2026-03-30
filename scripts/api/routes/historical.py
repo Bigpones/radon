@@ -14,7 +14,7 @@ import logging
 from datetime import date, datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 logger = logging.getLogger("radon.historical")
@@ -66,12 +66,12 @@ class BarResponse(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _get_pool():
-    """Import ib_pool from server module (avoids circular imports)."""
-    from api.server import ib_pool
-    if ib_pool is None:
+def _get_pool(request: Request):
+    """Retrieve ib_pool from app state (set during lifespan)."""
+    pool = getattr(request.app.state, "ib_pool", None)
+    if pool is None:
         raise HTTPException(status_code=503, detail="IB pool not initialized")
-    return ib_pool
+    return pool
 
 
 def make_ib_contract(spec: ContractSpec):
@@ -133,9 +133,9 @@ def _head_timestamp_to_iso(ts) -> str:
 # ---------------------------------------------------------------------------
 
 @router.post("/contract/qualify")
-async def qualify_contracts(req: QualifyRequest):
+async def qualify_contracts(req: QualifyRequest, request: Request):
     """Qualify one or more contracts against IB."""
-    pool = _get_pool()
+    pool = _get_pool(request)
     contracts = [make_ib_contract(spec) for spec in req.contracts]
 
     try:
@@ -150,9 +150,9 @@ async def qualify_contracts(req: QualifyRequest):
 
 
 @router.post("/historical/head-timestamp")
-async def head_timestamp(req: HeadTimestampRequest):
+async def head_timestamp(req: HeadTimestampRequest, request: Request):
     """Get earliest available data date for a contract."""
-    pool = _get_pool()
+    pool = _get_pool(request)
     contract = make_ib_contract(req.contract)
 
     try:
@@ -174,9 +174,9 @@ async def head_timestamp(req: HeadTimestampRequest):
 
 
 @router.post("/historical/bars")
-async def historical_bars(req: HistoricalBarsRequest):
+async def historical_bars(req: HistoricalBarsRequest, request: Request):
     """Fetch historical OHLCV bars for a contract."""
-    pool = _get_pool()
+    pool = _get_pool(request)
     contract = make_ib_contract(req.contract)
 
     try:
