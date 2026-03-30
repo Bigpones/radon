@@ -789,6 +789,7 @@ When deployed on the Hetzner VPS via radon-cloud:
 - **`requirements.txt`**: Includes `cryptography` (needed by PyJWT for RS256), `fastapi`, `uvicorn`, `python-dotenv`, `numpy`, `pytz`, `playwright`.
 - **`@sinclair/typebox`**: Pinned to exact `0.34.48` in both root and web `package.json` to prevent version mismatch build failures.
 - **Production Clerk**: Uses different user IDs than dev. `ALLOWED_USER_IDS` must be updated. Requires own Google/GitHub OAuth credentials and 5 CNAME DNS records.
+- **CI/CD**: Push to `main` triggers GitHub Actions → SSH → `deploy.sh` on VPS. Restarts Next.js, FastAPI, WebSocket relay, and monitor. IB Gateway is not restarted. Auto-rollback on health check failure. Requires `VPS_HOST` and `VPS_SSH_KEY` secrets in repo settings.
 
 ### Historical Data API
 
