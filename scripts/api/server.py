@@ -41,7 +41,7 @@ from api.subprocess import run_script, run_module, ScriptResult
 from api.ib_gateway import check_ib_gateway, ensure_ib_gateway, restart_ib_gateway, is_docker_mode, is_cloud_mode, is_launchd_mode
 from clients.ib_client import DEFAULT_GATEWAY_PORT
 from api.pool_order_manage import pool_cancel_order, pool_modify_order
-from api.auth import verify_clerk_jwt, verify_api_key
+from api.auth import verify_clerk_jwt, verify_api_key, is_local_or_tailnet
 from api.ws_ticket import create_ticket, validate_ticket
 from api.routes.historical import router as historical_router
 
@@ -153,9 +153,10 @@ async def auth_middleware(request: Request, call_next):
     if not os.environ.get("CLERK_JWKS_URL"):
         return await call_next(request)
 
-    # Skip auth for server-to-server calls from localhost (Next.js → FastAPI)
+    # Skip auth for server-to-server calls from localhost or tailnet
+    # (Next.js → FastAPI; cloud-thin laptop dev → Hetzner FastAPI over Tailscale)
     client_host = request.client.host if request.client else None
-    if client_host in ("127.0.0.1", "::1"):
+    if is_local_or_tailnet(client_host):
         return await call_next(request)
 
     # API key auth — scoped to historical/contract endpoints only

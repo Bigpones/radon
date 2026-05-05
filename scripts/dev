@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # scripts/dev — Radon dev-stack launcher with optional --only <service> filter.
 #
-# Always starts all four services (next, ib, api, scraper). With --only NAME,
+# Default: starts all four services (next, ib, api, scraper). With --only NAME,
 # concurrently hides the output of every service except NAME — the hidden
 # services keep running, only their log lines are suppressed.
+#
+# Profile RADON_DEV_PROFILE=cloud-thin (set by scripts/cloud.sh): laptop runs
+# only Next.js. FastAPI / IB relay / newsfeed scraper run on Hetzner; the
+# laptop reaches them at $RADON_API_URL / $IB_REALTIME_WS_URL over Tailscale.
 #
 # Usage:
 #   npm run dev                       # all four streams (default)
@@ -19,6 +23,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 ALL_NAMES=(next ib api scraper)
 ONLY=""
+PROFILE="${RADON_DEV_PROFILE:-full}"
 
 usage() {
   cat <<EOF
@@ -27,6 +32,10 @@ Usage: npm run dev [-- --only <next|ib|api|scraper>]
   npm run dev                       Run all four services with full logs.
   npm run dev -- --only <name>      Show only that service's logs.
                                     Other three keep running silently.
+
+  RADON_DEV_PROFILE=cloud-thin      Run only Next.js; reach FastAPI / IB relay
+                                    / scraper on Hetzner via Tailscale. Set by
+                                    scripts/cloud.sh.
 EOF
 }
 
@@ -72,6 +81,17 @@ if [[ -n "$ONLY" ]]; then
 fi
 
 cd "$PROJECT_ROOT/web"
+
+if [[ "$PROFILE" == "cloud-thin" ]]; then
+  if [[ -n "$ONLY" && "$ONLY" != "next" ]]; then
+    echo "[dev] cloud-thin profile only runs next; ignoring --only=$ONLY" >&2
+  fi
+  echo "[dev] profile=cloud-thin — laptop = Next.js only"
+  echo "[dev]   RADON_API_URL=${RADON_API_URL:-(unset, defaulting to localhost)}"
+  echo "[dev]   IB_REALTIME_WS_URL=${IB_REALTIME_WS_URL:-(unset, defaulting to localhost)}"
+  echo "[dev]   NEXT_PUBLIC_IB_REALTIME_WS_URL=${NEXT_PUBLIC_IB_REALTIME_WS_URL:-(unset)}"
+  exec next dev
+fi
 
 exec npx concurrently "${HIDE_ARGS[@]}" \
   -n next,ib,api,scraper \

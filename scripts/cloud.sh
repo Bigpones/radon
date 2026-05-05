@@ -135,13 +135,44 @@ else
   log_warn "Port 4001 not responding yet. Gateway may still be starting (2FA pending)."
 fi
 
-# -- Step 6: Start dev services ----------------------------------------------
+# -- Step 6: Start cloud-thin dev (Next.js only) -----------------------------
 #
-# Phase 6: the legacy `_post_start_*.sh` warmers (journal rehydrate, CTA
-# cache refresh) are no longer invoked here. In Hetzner mode the
-# radon-services container's systemd timers do the periodic refresh;
-# warming on every laptop boot is redundant.
+# Post Phase 5 (cloud-services migration, 2026-05-03) the Hetzner VPS owns
+# the full stack: radon-api (clientIds 3/4/5), radon-relay (10/11/12),
+# radon-newsfeed (Turso writer), plus radon-monitor and radon-nextjs. If the
+# laptop also launched FastAPI / IB relay / scraper, every shared resource
+# would double-book — IB Gateway returns Error 326 (clientId in use) and
+# Turso emits WalConflict on every dual-write.
+#
+# So in cloud mode the laptop runs only Next.js, pointing radonFetch at
+# Hetzner FastAPI and the WS relay URL at Hetzner relay over Tailscale. The
+# tailnet bypass added to scripts/api/auth.py + server.py treats laptop's
+# 100.64/10 IP as 'local' for server-to-server calls.
 
-log_info "Starting dev services (Next.js + FastAPI + WS relay)..."
+# Preflight: if any dev port is already bound, the user has a stale stack
+# from a prior session. Bail with guidance instead of stomping on it.
+busy=""
+for port in 3000 8321 8765; do
+  if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+    busy="${busy:+$busy }$port"
+  fi
+done
+if [[ -n "$busy" ]]; then
+  log_warn "Dev stack already running on port(s): $busy"
+  log_warn "Mode persisted to .env.ib-mode. Existing services keep their"
+  log_warn "current connection; restart dev manually to apply (Ctrl-C the"
+  log_warn "running 'npm run dev' and re-run scripts/cloud.sh)."
+  exit 0
+fi
+
+log_info "Starting cloud-thin dev (laptop = Next.js only)..."
+log_info "  → FastAPI:  http://ib-gateway:8321 (Tailscale)"
+log_info "  → WS relay: ws://ib-gateway:8765  (Tailscale)"
+
+export RADON_API_URL="http://ib-gateway:8321"
+export IB_REALTIME_WS_URL="ws://ib-gateway:8765"
+export NEXT_PUBLIC_IB_REALTIME_WS_URL="ws://ib-gateway:8765"
+export RADON_DEV_PROFILE="cloud-thin"
+
 cd "$PROJECT_ROOT/web"
 exec npm run dev

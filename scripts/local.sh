@@ -77,6 +77,23 @@ done
 # scheduled refreshes (CRI scan, CTA sync, etc.) on the same cadence
 # that the Hetzner systemd timers use in cloud mode.
 
+# Preflight: see scripts/cloud.sh for the full rationale. A duplicate
+# launch leaves uvicorn dead and a second newsfeed scraper racing the
+# original on the Turso replica.
+busy=""
+for port in 3000 8321 8765; do
+  if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+    busy="${busy:+$busy }$port"
+  fi
+done
+if [[ -n "$busy" ]]; then
+  log_warn "Dev stack already running on port(s): $busy"
+  log_warn "Mode persisted to .env.ib-mode. Existing services keep their"
+  log_warn "current connection; restart dev manually to apply (Ctrl-C the"
+  log_warn "running 'npm run dev' and re-run scripts/local.sh)."
+  exit 0
+fi
+
 log_info "Starting dev services (Next.js + FastAPI + WS relay)..."
 cd "$PROJECT_ROOT/web"
 exec npm run dev

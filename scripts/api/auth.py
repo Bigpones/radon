@@ -6,12 +6,33 @@ Supports two auth methods:
 """
 
 import hmac
+import ipaddress
 import os
 import logging
 
 from fastapi import Request, HTTPException, Depends
 
 logger = logging.getLogger("radon.auth")
+
+_TAILNET = ipaddress.ip_network("100.64.0.0/10")
+
+
+def is_local_or_tailnet(host: str | None) -> bool:
+    """True for loopback or Tailscale CGNAT (RFC 6598) addresses.
+
+    Tailnet membership is itself an authenticated channel, so tailnet peers
+    are treated as 'local' for server-to-server calls — this is what lets
+    the laptop's Next.js (in cloud-thin mode) reach the Hetzner FastAPI
+    without forwarding a Clerk JWT.
+    """
+    if host in ("127.0.0.1", "::1"):
+        return True
+    if not host:
+        return False
+    try:
+        return ipaddress.ip_address(host) in _TAILNET
+    except ValueError:
+        return False
 
 _jwks_client = None
 _algorithms = ["RS256"]
@@ -48,9 +69,10 @@ async def verify_clerk_jwt(request: Request) -> dict:
     Raises HTTPException(403) for non-allowlisted users.
     Bypasses validation for localhost requests (server-to-server).
     """
-    # Skip auth for server-to-server calls from localhost (Next.js → FastAPI)
+    # Skip auth for server-to-server calls from localhost or tailnet
+    # (Next.js → FastAPI; cloud-thin laptop dev → Hetzner FastAPI)
     client_host = request.client.host if request.client else None
-    if client_host in ("127.0.0.1", "::1"):
+    if is_local_or_tailnet(client_host):
         return {"sub": "localhost", "local": True}
 
     import jwt as pyjwt
