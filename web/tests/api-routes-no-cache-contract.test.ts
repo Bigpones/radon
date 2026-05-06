@@ -24,6 +24,7 @@ const DYNAMIC_ROUTES = [
   "app/api/regime/route.ts",
   "app/api/gex/route.ts",
   "app/api/cash-flows/route.ts",
+  "app/api/service-health/route.ts",
 ];
 
 // Client-side fetch sites that hit a disk-backed dynamic route. Each fetch
@@ -42,6 +43,7 @@ const NO_STORE_HOOKS = [
   "lib/useDiscover.ts",
   "lib/useOrders.ts",
   "lib/useCashFlows.ts",
+  "lib/useServiceHealth.ts",
 ];
 
 describe("API route handlers — must export dynamic = 'force-dynamic'", () => {

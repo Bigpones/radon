@@ -30,6 +30,7 @@ const WorkspaceSections = dynamic(() => import("@/components/WorkspaceSections")
 });
 import ConnectionBanner from "@/components/ConnectionBanner";
 import FlexTokenBanner from "@/components/FlexTokenBanner";
+import ServiceHealthBanner from "@/components/ServiceHealthBanner";
 import { useTickerDetail } from "@/lib/TickerDetailContext";
 import { assessMargin, rankOf, type MarginLevel } from "@/lib/marginWarning";
 
@@ -382,6 +383,7 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
           ibStatusMessage={ibStatusMessage}
         />
         <FlexTokenBanner />
+        <ServiceHealthBanner />
 
         <div className="content">
           {activeSection === "dashboard" ? (

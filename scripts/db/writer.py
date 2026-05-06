@@ -12,6 +12,7 @@ remains authoritative until Phase 6 retires it.
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -22,6 +23,18 @@ except ImportError:  # pragma: no cover
     # When imported flat after sys.path.insert(scripts/) like the existing
     # services do (cta_sync_service.py et al).
     from db.client import get_db  # type: ignore[no-redef]
+
+
+def ensure_no_replica_for_writers() -> None:
+    """Writers don't need the embedded replica — they only stream INSERTs
+    to cloud. Setting this before get_db() avoids "Failed to checkpoint WAL:
+    database is locked" when the long-running radon-nextjs reader holds the
+    same replica.db open. See migration plan §D1.
+
+    Call this at the top of every writer entry point — BEFORE the first
+    get_db() call in the process. It's a no-op if already set.
+    """
+    os.environ.setdefault("RADON_DB_NO_REPLICA", "1")
 
 
 def _now_iso() -> str:

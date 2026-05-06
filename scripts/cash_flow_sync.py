@@ -49,8 +49,15 @@ try:
     from dotenv import load_dotenv  # type: ignore[import-untyped]
     load_dotenv(_PROJECT_DIR / ".env")
     load_dotenv(_PROJECT_DIR / ".env.ib-mode")
+    load_dotenv(_PROJECT_DIR / "web" / ".env")  # ← TURSO creds live here on Hetzner
 except Exception:
     pass
+
+# Bypass the embedded replica when writing — the long-running radon-nextjs
+# reader holds replica.db open and short-lived writers collide on WAL
+# checkpoint. See migration plan §D1.
+import os as _os
+_os.environ.setdefault("RADON_DB_NO_REPLICA", "1")
 
 # DB writer / atomic_io are imported lazily inside main() so pure functions
 # (_classify, _normalize_date, fetch_cash_transactions) can be unit-tested

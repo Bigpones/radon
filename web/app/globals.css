@@ -2190,6 +2190,39 @@ tr.leg-row td {
   background: var(--banner-negative);
 }
 
+.service-health-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  background: var(--warning);
+  color: var(--bg-base);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
+  animation: banner-slide-down 200ms ease-out;
+}
+
+.service-health-banner__icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.service-health-banner__message {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.service-health-banner__detail {
+  opacity: 0.85;
+  font-weight: 400;
+}
+
 .connection-banner-warning {
   background: var(--warning);
   color: var(--bg-canvas);
