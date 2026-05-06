@@ -191,6 +191,125 @@ def upsert_oi_changes(scan_time: str, payload: dict[str, Any]) -> None:
     db.commit()
 
 
+def upsert_scanner_snapshot(scan_time: str, payload: dict[str, Any]) -> None:
+    """Phase 2.1 — store the watchlist signal snapshot from scanner.py."""
+    db = get_db()
+    db.execute(
+        """
+        INSERT OR REPLACE INTO scanner_snapshots (scan_time, payload)
+        VALUES (?, ?)
+        """,
+        (scan_time, json.dumps(payload)),
+    )
+    db.commit()
+
+
+def upsert_flow_analysis_snapshot(scan_time: str, payload: dict[str, Any]) -> None:
+    """Phase 2.2 — flow_analysis.py output (intraday dark-pool interp)."""
+    db = get_db()
+    db.execute(
+        """
+        INSERT OR REPLACE INTO flow_analysis_snapshots (scan_time, payload)
+        VALUES (?, ?)
+        """,
+        (scan_time, json.dumps(payload)),
+    )
+    db.commit()
+
+
+def upsert_performance_snapshot(taken_at: str, payload: dict[str, Any]) -> None:
+    """Phase 2.3 — portfolio_performance.py output."""
+    db = get_db()
+    db.execute(
+        """
+        INSERT OR REPLACE INTO performance_snapshots (taken_at, payload)
+        VALUES (?, ?)
+        """,
+        (taken_at, json.dumps(payload)),
+    )
+    db.commit()
+
+
+def upsert_nav_history(date_str: str, net_liq: float, daily_pnl: Optional[float]) -> None:
+    """Phase 2.3 — append-only NAV history (one row per trading day)."""
+    db = get_db()
+    db.execute(
+        """
+        INSERT OR REPLACE INTO nav_history (date, net_liq, daily_pnl, recorded_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (date_str, float(net_liq), float(daily_pnl) if daily_pnl is not None else None, _now_iso()),
+    )
+    db.commit()
+
+
+def upsert_twr_history(date_str: str, twr: float) -> None:
+    """Phase 2.3 — time-weighted return series (one row per trading day)."""
+    db = get_db()
+    db.execute(
+        """
+        INSERT OR REPLACE INTO twr_history (date, twr, recorded_at)
+        VALUES (?, ?, ?)
+        """,
+        (date_str, float(twr), _now_iso()),
+    )
+    db.commit()
+
+
+def upsert_option_close(
+    symbol: str,
+    expiry: str,
+    strike: float,
+    right: str,
+    close_date: str,
+    close_price: float,
+) -> None:
+    """Phase 2.5 — end-of-day option closing prices.
+
+    Sources: ib_realtime_server.js Node-side path. This Python helper
+    exists for symmetry / test setup; the production writer is the JS
+    file using @libsql/client directly.
+    """
+    db = get_db()
+    db.execute(
+        """
+        INSERT OR REPLACE INTO option_close_cache
+          (symbol, expiry, strike, right, close_date, close_price, recorded_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (symbol.upper(), expiry, float(strike), right.upper()[:1], close_date, float(close_price), _now_iso()),
+    )
+    db.commit()
+
+
+def upsert_discover_sp500_snapshot(scan_time: str, payload: dict[str, Any]) -> None:
+    """Phase 2.4 — sp500-scoped discover.py output (separate table to avoid
+    ALTER TABLE partial-migration risk)."""
+    db = get_db()
+    db.execute(
+        """
+        INSERT OR REPLACE INTO discover_sp500_snapshots (scan_time, payload)
+        VALUES (?, ?)
+        """,
+        (scan_time, json.dumps(payload)),
+    )
+    db.commit()
+
+
+def upsert_analyst_ratings(ticker: str, fetched_at: str, payload: dict[str, Any]) -> None:
+    """Phase 2.5 — analyst consensus per ticker. Table existed since 0001
+    but no caller wrote to it before this commit (zombie schema)."""
+    db = get_db()
+    db.execute(
+        """
+        INSERT OR REPLACE INTO analyst_ratings (ticker, fetched_at, payload)
+        VALUES (?, ?, ?)
+        """,
+        (ticker.upper(), fetched_at, json.dumps(payload)),
+    )
+    db.commit()
+
+
 def record_service_health(
     service: str,
     state: str,

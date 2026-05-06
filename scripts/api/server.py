@@ -215,41 +215,85 @@ def _write_cache(path: Path, data: dict) -> None:
 
 
 def _maybe_dual_write_to_db(path: Path, data: dict) -> None:
-    """Best-effort DB mirror for known JSON caches."""
+    """Best-effort DB mirror for known JSON caches.
+
+    Phase 2 of the Turso source-of-truth migration extends this to cover
+    scanner.json, flow_analysis.json, performance.json, discover_sp500.json.
+    On dual-write failure we record a non-OK service_health row so the
+    <ServiceHealthBanner /> in WorkspaceShell surfaces it.
+    """
     name = path.name
+    # Bypass the embedded replica for short-lived writers (avoids WAL
+    # collision with radon-nextjs reader). Setting before importing
+    # db.writer so the first get_db() in this process honors it.
+    os.environ.setdefault("RADON_DB_NO_REPLICA", "1")
     try:
-        # Defer import so server boot still works if libsql isn't installed.
         from db.writer import (
             record_service_health,
             upsert_cri_snapshot,
             upsert_discover_snapshot,
+            upsert_discover_sp500_snapshot,
+            upsert_flow_analysis_snapshot,
             upsert_gex_snapshot,
             upsert_oi_changes,
+            upsert_performance_snapshot,
+            upsert_scanner_snapshot,
             upsert_vcg_snapshot,
         )
     except ImportError:
         return
+
+    scan_iso = data.get("scan_time") if isinstance(data, dict) else None
+    fallback_iso = scan_iso or _today_et_str()
+    service: Optional[str] = None
     try:
-        scan_iso = data.get("scan_time") if isinstance(data, dict) else None
         if name == "vcg.json":
-            upsert_vcg_snapshot(scan_iso or _today_et_str(), data)
-            record_service_health("vcg-scan", "ok", finished_at=scan_iso)
+            service = "vcg-scan"
+            upsert_vcg_snapshot(fallback_iso, data)
         elif name == "gex.json":
+            service = "gex-scan"
             ticker = data.get("ticker", "SPX") if isinstance(data, dict) else "SPX"
-            upsert_gex_snapshot(ticker, scan_iso or _today_et_str(), data)
-            record_service_health("gex-scan", "ok", finished_at=scan_iso)
+            upsert_gex_snapshot(ticker, fallback_iso, data)
         elif name == "cri.json":
+            service = "cri-scan"
             session_date = (data.get("date") if isinstance(data, dict) else None) or _today_et_str()
-            upsert_cri_snapshot(session_date, scan_iso or _today_et_str(), data)
-            record_service_health("cri-scan", "ok", finished_at=scan_iso)
+            upsert_cri_snapshot(session_date, fallback_iso, data)
         elif name == "discover.json":
-            upsert_discover_snapshot(scan_iso or _today_et_str(), data)
-            record_service_health("discover", "ok", finished_at=scan_iso)
+            service = "discover"
+            upsert_discover_snapshot(fallback_iso, data)
+        elif name == "discover_sp500.json":
+            service = "discover-sp500"
+            upsert_discover_sp500_snapshot(fallback_iso, data)
         elif name == "oi_changes.json":
-            upsert_oi_changes(scan_iso or _today_et_str(), data)
-            record_service_health("oi-changes", "ok", finished_at=scan_iso)
+            service = "oi-changes"
+            upsert_oi_changes(fallback_iso, data)
+        elif name == "scanner.json":
+            service = "scanner"
+            upsert_scanner_snapshot(fallback_iso, data)
+        elif name == "flow_analysis.json":
+            service = "flow-analysis"
+            upsert_flow_analysis_snapshot(fallback_iso, data)
+        elif name == "performance.json":
+            service = "performance"
+            taken_at = (data.get("computed_at") if isinstance(data, dict) else None) or fallback_iso
+            upsert_performance_snapshot(taken_at, data)
+        else:
+            return  # unknown JSON — no DB target
+        if service:
+            record_service_health(service, "ok", finished_at=scan_iso)
     except Exception as exc:  # noqa: BLE001 — best-effort
         print(f"[server] db dual-write non-fatal for {name}: {exc}", file=sys.stderr)
+        # Surface the failure via service_health so the UI banner can pick
+        # it up — silent failure was the root cause of today's TSLA-fill
+        # incident. record_service_health itself can fail (transitively
+        # using the same DB) so we wrap a second time.
+        if service:
+            try:
+                record_service_health(
+                    service, "error", finished_at=scan_iso, error={"detail": str(exc)},
+                )
+            except Exception:
+                pass
 
 
 def _today_et_str() -> str:
