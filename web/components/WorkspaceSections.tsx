@@ -42,7 +42,12 @@ import {
 import { computeLegImpliedValue, computeOrderImpliedValue } from "@/lib/impliedValue";
 import { useRiskFreeRate } from "@/lib/useRiskFreeRate";
 import { useColumnVisibility } from "@/lib/useColumnVisibility";
+import { useViewport } from "@/lib/useViewport";
 import { ColumnsToggle, type ColumnsToggleEntry } from "./ColumnsToggle";
+import MobileOrderList from "./mobile/MobileOrderList";
+import MobileBlotterList from "./mobile/MobileBlotterList";
+import MobileExecutedList from "./mobile/MobileExecutedList";
+import MobileJournalList from "./mobile/MobileJournalList";
 import { buildGroupedComboModifyTarget } from "@/lib/openOrderComboModify";
 import PositionTable, {
   POSITION_COLUMNS,
@@ -1337,6 +1342,8 @@ function JournalSections() {
   const { data, loading, error, syncWithIB, syncing, lastSyncResult } = useJournal();
   const [syncError, setSyncError] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  const { isMobile, hasMounted } = useViewport();
+  const showMobileJournal = isMobile && hasMounted;
   const trades = useMemo(() => {
     if (!data?.trades) return [];
     return [...data.trades].sort((a, b) => b.id - a.id);
@@ -1429,7 +1436,12 @@ function JournalSections() {
         {!loading && trades.length === 0 && !error && (
           <div className="section-body"><div className="alert-item">No trades in journal.</div></div>
         )}
-        {trades.length > 0 && (
+        {trades.length > 0 && showMobileJournal && (
+          <div className="section-body">
+            <MobileJournalList trades={sortedTrades} />
+          </div>
+        )}
+        {trades.length > 0 && !showMobileJournal && (
           <div className="section-body table-wrap">
             <table>
               <thead>
@@ -1753,6 +1765,8 @@ function OrdersSections({
   portfolio?: PortfolioData | null;
 }) {
   const { pendingCancels, pendingModifies, cancelledOrders, requestCancel, requestModify } = useOrderActions();
+  const { isMobile, hasMounted } = useViewport();
+  const showMobileOrders = isMobile && hasMounted;
   const riskFreeRate = useRiskFreeRate();
   const openOrderExtract = useMemo(() => makeOpenOrderExtract(prices, portfolio, riskFreeRate), [prices, portfolio, riskFreeRate]);
   // Implied columns only meaningful when at least one open order is an option.
@@ -1932,6 +1946,34 @@ function OrdersSections({
         <div className="section-body">
           {openOrderRows.length === 0 ? (
             <div className="alert-item">No open orders</div>
+          ) : showMobileOrders ? (
+            <MobileOrderList
+              rows={openFilter.filtered}
+              pendingCancelPermIds={pendingCancels}
+              pendingModifyPermIds={pendingModifies}
+              canModify={canModify}
+              onRequestCancel={(single, combo) => {
+                if (single) setCancelTarget(single);
+                else if (combo) handleCancelCombo(combo);
+              }}
+              onRequestModify={(single, combo) => {
+                if (single) {
+                  setModifyTarget({ modalOrder: single, requestOrder: single });
+                } else if (combo && combo.length > 0) {
+                  const comboRow = openFilter.filtered.find(
+                    (row) => row.kind === "combo" && row.orders === combo,
+                  );
+                  if (comboRow && comboRow.kind === "combo") {
+                    const target = buildGroupedComboModifyTarget(comboRow);
+                    setModifyTarget({
+                      modalOrder: target.modalOrder,
+                      requestOrder: combo[0],
+                      cancelOrders: target.cancelOrders,
+                    });
+                  }
+                }
+              }}
+            />
           ) : (
             <div className="table-wrap">
             <table>
@@ -2164,6 +2206,8 @@ function OrdersSections({
         <div className="section-body">
           {positionGroups.length === 0 ? (
             <div className="alert-item">No fills this session</div>
+          ) : showMobileOrders ? (
+            <MobileExecutedList groups={execFilter.filtered} />
           ) : (
             <table>
               <thead>
@@ -2324,6 +2368,8 @@ const blotterExtract = (item: BlotterTrade, key: BlotterSortKey): string | numbe
 export function HistoricalTradesSection() {
   const { data, loading, syncing, error, syncNow } = useBlotter(true);
   const [page, setPage] = useState(0);
+  const { isMobile, hasMounted } = useViewport();
+  const showMobileBlotter = isMobile && hasMounted;
 
   const allTrades = useMemo(() => {
     if (!data) return [];
@@ -2404,7 +2450,33 @@ export function HistoricalTradesSection() {
         {!loading && !hasData && !error && (
           <div className="alert-item section-message">No historical trades. Click REFRESH to fetch from IB.</div>
         )}
-        {!loading && pageRows.length > 0 && (
+        {!loading && pageRows.length > 0 && showMobileBlotter && (
+          <>
+            <MobileBlotterList trades={pageRows} />
+            {totalPages > 1 && (
+              <div className="pagination" style={{ marginTop: 8 }}>
+                <button
+                  className="page-button"
+                  disabled={safePage === 0}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                >
+                  Prev
+                </button>
+                <span className="page-meta">
+                  Page {safePage + 1} of {totalPages}
+                </span>
+                <button
+                  className="page-button"
+                  disabled={safePage >= totalPages - 1}
+                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </>
+        )}
+        {!loading && pageRows.length > 0 && !showMobileBlotter && (
           <>
             <table>
               <thead>
