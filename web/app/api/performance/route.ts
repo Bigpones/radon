@@ -4,6 +4,7 @@ import { join } from "path";
 import { isPerformanceBehindPortfolioSync, isPortfolioBehindCurrentEtSession } from "@/lib/performanceFreshness";
 import { radonFetch } from "@/lib/radonApi";
 import { getRequestId, setNoStoreResponseHeaders } from "@/lib/apiContracts";
+import { getDb } from "@/lib/db";
 // Disable Next.js static caching: this handler reads live disk state
 // (data/*.json, cache files). Without this, the framework freezes the
 // first response and serves stale data until the dev server restarts.
@@ -62,13 +63,35 @@ function triggerBackgroundRebuild(): void {
   radonFetch("/performance/background", { method: "POST", timeout: 5_000 }).catch(() => {});
 }
 
+/** Phase 2.3 — read latest performance snapshot from Turso. Falls back
+ *  to disk JSON in the GET handler when the DB is empty/unreachable. */
+async function readPerformanceFromDb(): Promise<Record<string, unknown> | null> {
+  try {
+    const db = getDb();
+    const result = await db.execute({
+      sql: `SELECT payload FROM performance_snapshots ORDER BY taken_at DESC LIMIT 1`,
+      args: [],
+    });
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0] as unknown as { payload: string };
+    return JSON.parse(row.payload) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(): Promise<Response> {
   const requestId = getRequestId();
-  const [stale, cachedPerformance, initialPortfolioSnapshot] = await Promise.all([
+  const [stale, dbCached, fileCached, initialPortfolioSnapshot] = await Promise.all([
     isPerformanceStale(),
+    readPerformanceFromDb(),
     readJsonFile(PERFORMANCE_PATH),
     readJsonFile(PORTFOLIO_PATH),
   ]);
+  // DB-first: prefer the fresher snapshot. Fall back to disk JSON when
+  // DB is empty or behind. The downstream freshness logic uses whichever
+  // was returned.
+  const cachedPerformance = dbCached ?? fileCached;
 
   let portfolioSnapshot = initialPortfolioSnapshot;
   const portfolioLastSync = extractTimestampValue(portfolioSnapshot, "last_sync");

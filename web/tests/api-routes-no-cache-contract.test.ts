@@ -91,6 +91,9 @@ const DB_FIRST_ROUTES: { path: string; dbHelperPattern: RegExp }[] = [
   { path: "app/api/discover/route.ts", dbHelperPattern: /readDiscoverFromDb\s*\(/ },
   { path: "app/api/menthorq/cta/route.ts", dbHelperPattern: /readLatestCtaFromDb\s*\(/ },
   { path: "app/api/regime/route.ts", dbHelperPattern: /readLatestDbCri\s*\(/ },
+  { path: "app/api/scanner/route.ts", dbHelperPattern: /readScannerFromDb\s*\(/ },
+  { path: "app/api/flow-analysis/route.ts", dbHelperPattern: /readFlowAnalysisFromDb\s*\(/ },
+  { path: "app/api/performance/route.ts", dbHelperPattern: /readPerformanceFromDb\s*\(/ },
   { path: "app/api/portfolio/route.ts", dbHelperPattern: /readPortfolioFromDb\s*\(/ },
   // cash-flows reads via FastAPI proxy which queries Turso server-side
   { path: "app/api/cash-flows/route.ts", dbHelperPattern: /radonFetch\s*\(\s*[`"']\/cash-flows/ },

@@ -3,6 +3,7 @@ import { readFile } from "fs/promises";
 import { statSync } from "fs";
 import { join } from "path";
 import { radonFetch } from "@/lib/radonApi";
+import { getDb } from "@/lib/db";
 // Disable Next.js static caching: this handler reads live disk state
 // (data/*.json, cache files). Without this, the framework freezes the
 // first response and serves stale data until the dev server restarts.
@@ -40,7 +41,28 @@ function buildCacheMeta(filePath: string): CacheMeta {
   }
 }
 
+/** Phase 2 — read latest from Turso flow_analysis_snapshots. */
+async function readFlowAnalysisFromDb(): Promise<Record<string, unknown> | null> {
+  try {
+    const db = getDb();
+    const result = await db.execute({
+      sql: `SELECT payload FROM flow_analysis_snapshots ORDER BY scan_time DESC LIMIT 1`,
+      args: [],
+    });
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0] as unknown as { payload: string };
+    return JSON.parse(row.payload) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(): Promise<Response> {
+  const fromDb = await readFlowAnalysisFromDb();
+  if (fromDb) {
+    const cache_meta = buildCacheMeta(CACHE_PATH);
+    return NextResponse.json({ ...fromDb, cache_meta });
+  }
   try {
     const raw = await readFile(CACHE_PATH, "utf-8");
     const data = JSON.parse(raw);
