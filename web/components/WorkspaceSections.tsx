@@ -38,6 +38,7 @@ import {
   type OpenOrderDisplayRow,
   buildExecutedGroupDescription,
   resolveOpenOrderComboPrice,
+  findPortfolioLegDirection,
 } from "@/lib/openOrderCombos";
 import { computeLegImpliedValue, computeOrderImpliedValue } from "@/lib/impliedValue";
 import { useRiskFreeRate } from "@/lib/useRiskFreeRate";
@@ -405,8 +406,79 @@ function groupExecutedOrders(
   const cancelled = fills.filter((f) => f.side === "CANCELLED");
   const real = fills.filter((f) => f.side !== "CANCELLED");
 
-  const isClosingFill = (fill: ExecutedOrder): boolean =>
-    fill.contract.secType === "OPT" && fill.realizedPNL != null && Math.abs(fill.realizedPNL) > 0.01;
+  // ── Close detection ────────────────────────────────────────────────────
+  // IB's commission report (which carries realizedPNL) arrives async,
+  // sometimes seconds after the execution event. When it hasn't landed yet
+  // realizedPNL is null on the fill, and the naive "realizedPNL > 0" check
+  // mis-classifies a buy-to-close on a short put as opening a new long put.
+  // Fall back to portfolio context: if the fill direction opposes an existing
+  // leg, the trade reduces (closes) that leg.
+  const fillNormalizedRight = (
+    fill: ExecutedOrder,
+  ): "C" | "P" | null => {
+    const r = fill.contract.right;
+    if (r === "C" || r === "CALL") return "C";
+    if (r === "P" || r === "PUT") return "P";
+    return null;
+  };
+
+  const portfolioLegBasisFor = (
+    fill: ExecutedOrder,
+  ): { direction: "LONG" | "SHORT"; avgCost: number } | null => {
+    if (fill.contract.secType !== "OPT") return null;
+    const right = fillNormalizedRight(fill);
+    if (!right || fill.contract.expiry == null || fill.contract.strike == null) return null;
+    const dir = findPortfolioLegDirection(
+      portfolioPositions,
+      fill.contract.symbol,
+      fill.contract.expiry,
+      fill.contract.strike,
+      right,
+    );
+    if (!dir) return null;
+    if (!portfolioPositions) return null;
+    const targetExpiry = fill.contract.expiry?.replace(/-/g, "") ?? "";
+    const target = portfolioPositions.find(
+      (p) => p.ticker.toUpperCase() === fill.contract.symbol.toUpperCase()
+        && p.expiry.replace(/-/g, "") === targetExpiry,
+    );
+    const leg = target?.legs.find(
+      (l) => l.type === (right === "C" ? "Call" : "Put") && l.strike === fill.contract.strike,
+    );
+    return { direction: dir, avgCost: leg?.avg_cost != null ? Math.abs(leg.avg_cost) : 0 };
+  };
+
+  const isClosingFill = (fill: ExecutedOrder): boolean => {
+    if (fill.contract.secType !== "OPT") return false;
+    // Primary signal: IB populated realizedPNL on the commission report.
+    if (fill.realizedPNL != null && Math.abs(fill.realizedPNL) > 0.01) return true;
+    // Fallback: this fill closes against an existing portfolio leg.
+    // BOT against a SHORT leg, or SLD against a LONG leg = reduces the position.
+    const basis = portfolioLegBasisFor(fill);
+    if (!basis) return false;
+    if ((fill.side === "BOT" || fill.side === "BUY") && basis.direction === "SHORT") return true;
+    if ((fill.side === "SLD" || fill.side === "SELL") && basis.direction === "LONG") return true;
+    return false;
+  };
+
+  // For a detected close where IB hasn't returned realizedPNL yet, compute
+  // P&L from the portfolio leg's avg_cost (per-contract, already × multiplier
+  // per IB convention). Returns null when no basis is available (fully-closed
+  // position whose original open was in a prior session).
+  const fallbackPnlFor = (fill: ExecutedOrder): number | null => {
+    if (fill.realizedPNL != null && Math.abs(fill.realizedPNL) > 0.01) return null;
+    const basis = portfolioLegBasisFor(fill);
+    if (!basis || basis.avgCost <= 0) return null;
+    if (fill.avgPrice == null || !Number.isFinite(fill.avgPrice)) return null;
+    const closePerContract = fill.avgPrice * 100;
+    const qty = Math.abs(fill.quantity);
+    if (basis.direction === "LONG") {
+      // Closed long: profit when close price > entry premium
+      return (closePerContract - basis.avgCost) * qty;
+    }
+    // Closed short: profit when entry premium > close price (paid less to buy back)
+    return (basis.avgCost - closePerContract) * qty;
+  };
 
   type MinuteBucket = {
     symbol: string;
@@ -491,9 +563,22 @@ function groupExecutedOrders(
     }
 
     const totalCommission = optFills.reduce((sum, f) => sum + (f.commission ?? 0), 0);
-    const totalPnL = isClosing
-      ? optFills.reduce((sum, f) => sum + (f.realizedPNL ?? 0), 0)
-      : null;
+    let totalPnL: number | null = null;
+    if (isClosing) {
+      totalPnL = optFills.reduce((sum, f) => {
+        if (f.realizedPNL != null && Math.abs(f.realizedPNL) > 0.01) return sum + f.realizedPNL;
+        // realizedPNL not delivered (commission report still in flight or
+        // session restart lost it). Fall back to portfolio basis for the leg.
+        const fallback = fallbackPnlFor(f);
+        return sum + (fallback ?? 0);
+      }, 0);
+      // If every fill in the group failed both signals, surface null instead
+      // of a misleading $0.
+      const anySignal = optFills.some(
+        (f) => (f.realizedPNL != null && Math.abs(f.realizedPNL) > 0.01) || fallbackPnlFor(f) != null,
+      );
+      if (!anySignal) totalPnL = null;
+    }
 
     const latestTime = groupFills.reduce((maxTime, f) => {
       const current = Date.parse(f.time);
