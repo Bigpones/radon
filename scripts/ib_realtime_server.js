@@ -1018,7 +1018,12 @@ async function handleClientMessage(client, data) {
         return;
       }
       if (!ibConnected) {
-        sendMessage(client, { type: "searchResults", pattern, results: [] });
+        sendMessage(client, {
+          type: "searchResults",
+          pattern,
+          results: [],
+          disconnected: true,
+        });
         return;
       }
 

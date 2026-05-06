@@ -23,6 +23,8 @@ type TickerSearchProps = {
   onSelect: (symbol: string) => void;
   placeholder?: string;
   className?: string;
+  /** Fired when the user attempts a search while IB Gateway is unreachable. */
+  onSearchUnavailable?: () => void;
 };
 
 const WS_URL =
@@ -34,7 +36,7 @@ const ALLOWED_SEC_TYPES = new Set(["STK", "IND", "FUT"]);
 
 const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
   function TickerSearch(
-    { onSelect, placeholder = "Search ticker...", className },
+    { onSelect, placeholder = "Search ticker...", className, onSearchUnavailable },
     ref,
   ) {
     const inputRef = useRef<HTMLInputElement>(null);
@@ -56,7 +58,6 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
     const [activeIndex, setActiveIndex] = useState(-1);
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(false);
-    const [wsReady, setWsReady] = useState(false);
 
     useImperativeHandle(ref, () => inputRef.current!, []);
 
@@ -82,7 +83,6 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
             ws.close();
             return;
           }
-          setWsReady(true);
           reconnectStrategyRef.current.reset();
 
           // If a search was attempted while WS was down, fire it now
@@ -110,6 +110,9 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
               setResults(filtered);
               setActiveIndex(-1);
               setLoading(false);
+              if (data.disconnected === true) {
+                onSearchUnavailable?.();
+              }
             }
           } catch {
             // ignore non-JSON or irrelevant messages
@@ -118,7 +121,6 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
 
         ws.onclose = () => {
           if (!mountedRef.current) return;
-          setWsReady(false);
           wsRef.current = null;
           // Reconnect with exponential backoff
           const strategy = reconnectStrategyRef.current;
@@ -183,13 +185,16 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
             ws.send(JSON.stringify({ action: "search", pattern: pattern.trim() }));
             pendingPatternRef.current = null;
           } else {
-            // WS not ready — stash the pattern for when it reconnects
+            // WS not ready — relay (or upstream IB) is unreachable. Surface that.
             pendingPatternRef.current = pattern.trim();
+            setResults([]);
+            setLoading(false);
+            onSearchUnavailable?.();
             connectWs();
           }
         }, DEBOUNCE_MS);
       },
-      [connectWs],
+      [connectWs, onSearchUnavailable],
     );
 
     /* ------------------------------------------------------------------ */

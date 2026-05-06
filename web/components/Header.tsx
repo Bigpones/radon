@@ -12,6 +12,7 @@ type HeaderProps = {
   onToggleTheme: () => void;
   theme?: "dark" | "light";
   children?: ReactNode;
+  onSearchUnavailable?: () => void;
 };
 
 export default function Header({
@@ -21,6 +22,7 @@ export default function Header({
   onToggleTheme,
   theme,
   children,
+  onSearchUnavailable,
 }: HeaderProps) {
   const searchRef = useRef<HTMLInputElement | null>(null);
   const { navigateToTicker } = useTickerNav();
@@ -54,6 +56,7 @@ export default function Header({
         <TickerSearch
           ref={searchRef}
           onSelect={handleSelect}
+          onSearchUnavailable={onSearchUnavailable}
           placeholder="CMD+K to search..."
           className="search-input-wrapper"
         />

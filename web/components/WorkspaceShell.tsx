@@ -260,6 +260,20 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
     return () => clearInterval(id);
   }, [drainNotifications, addToast]);
 
+  // Surface IB-disconnected state when the user attempts a ticker search.
+  // Throttle so rapid typing doesn't spam toasts.
+  const lastSearchUnavailableToastRef = useRef(0);
+  const handleSearchUnavailable = useCallback(() => {
+    const now = Date.now();
+    if (now - lastSearchUnavailableToastRef.current < 30_000) return;
+    lastSearchUnavailableToastRef.current = now;
+    addToast(
+      "warning",
+      "IB Gateway disconnected — ticker search unavailable",
+      5000,
+    );
+  }, [addToast]);
+
   useEffect(() => {
     const saved = localStorage.getItem("theme");
     if (saved === "light" || saved === "dark") {
@@ -336,6 +350,7 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
           onToggleFullscreen={toggleFullscreen}
           onToggleTheme={toggleTheme}
           theme={resolvedTheme}
+          onSearchUnavailable={handleSearchUnavailable}
         >
           <div className="sync-controls">
             <span className={`sync-status ${error ? "sync-error" : syncing ? "sync-active" : ""}`}>
