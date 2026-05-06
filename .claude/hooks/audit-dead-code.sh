@@ -56,10 +56,14 @@ while IFS= read -r -d '' f; do
 done < <(find "$SCRIPTS_DIR" -name "*.pyc" -print0 2>/dev/null)
 
 # 3. Legacy utils superseded by clients/
+# These modules carry "Legacy … kept for backward-compatible scripts/tests"
+# docstrings — tests are intentional consumers, not collateral. Counting tests
+# as live references avoids flagging modules whose only consumer is the test
+# suite that exists specifically to keep them working.
 for f in "$SCRIPTS_DIR/utils/ib_connection.py" "$SCRIPTS_DIR/utils/uw_api.py"; do
   if [[ -f "$f" ]]; then
     basename_f="$(basename "$f" .py)"
-    imports=$(grep -rl "from utils.$basename_f\|import $basename_f" "$SCRIPTS_DIR" --include="*.py" 2>/dev/null | grep -v "/tests/" | grep -v "__pycache__" || true)
+    imports=$(grep -rl "from utils.$basename_f\|import $basename_f" "$SCRIPTS_DIR" --include="*.py" 2>/dev/null | grep -v "__pycache__" || true)
     [[ -z "$imports" ]] && add "$f" "superseded by clients/"
   fi
 done
