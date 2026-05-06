@@ -21,6 +21,23 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
 
+# Load env files BEFORE importing modules that read env at import time
+# (e.g. db.client requires TURSO_DB_URL / TURSO_AUTH_TOKEN). When this script
+# runs as a FastAPI subprocess the parent's env is not guaranteed to include
+# them, which previously made the Phase-3 dual-write to portfolio_snapshots
+# silently fail and left the Turso UI snapshot stale.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_PROJECT_DIR = _SCRIPT_DIR.parent
+try:
+    from dotenv import load_dotenv  # type: ignore[import-untyped]
+    # Project-level .env first, then the IB-mode overlay, then web/.env which
+    # is where TURSO_DB_URL / TURSO_AUTH_TOKEN actually live on Hetzner.
+    load_dotenv(_PROJECT_DIR / ".env")
+    load_dotenv(_PROJECT_DIR / ".env.ib-mode")
+    load_dotenv(_PROJECT_DIR / "web" / ".env")
+except Exception:
+    pass
+
 try:
     from ib_insync import util
 except ImportError:
