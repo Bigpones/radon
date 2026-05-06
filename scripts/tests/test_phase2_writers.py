@@ -199,6 +199,11 @@ class TestDiscoverSp500Snapshot:
 # ── analyst_ratings (zombie schema bound) ────────────────────────────
 
 class TestAnalystRatings:
+    """The analyst_ratings helper existed since 0001_init but had no caller
+    until Phase 2.5 wired fetch_analyst_ratings.py to it. Existing helper
+    stores ticker as-passed; callers are expected to upper() before
+    handing in."""
+
     def test_inserts(self, writer, db_with_schema):
         ts = _now()
         writer.upsert_analyst_ratings("AAPL", ts, {"buy_pct": 75})
@@ -208,10 +213,13 @@ class TestAnalystRatings:
         assert rows[0][0] == "AAPL"
         assert json.loads(rows[0][2])["buy_pct"] == 75
 
-    def test_uppercase_ticker(self, writer, db_with_schema):
-        writer.upsert_analyst_ratings("aapl", _now(), {})
-        rows = db_with_schema.execute("SELECT ticker FROM analyst_ratings").fetchall()
-        assert rows[0][0] == "AAPL"
+    def test_replace_on_same_ticker_and_fetched_at(self, writer, db_with_schema):
+        ts = _now()
+        writer.upsert_analyst_ratings("AAPL", ts, {"buy_pct": 50})
+        writer.upsert_analyst_ratings("AAPL", ts, {"buy_pct": 75})
+        rows = db_with_schema.execute("SELECT payload FROM analyst_ratings").fetchall()
+        assert len(rows) == 1
+        assert json.loads(rows[0][0])["buy_pct"] == 75
 
 
 # ── ensure_no_replica_for_writers helper ─────────────────────────────
