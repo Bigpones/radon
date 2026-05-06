@@ -71,3 +71,40 @@ describe("client hooks/components — every fetch must use cache: 'no-store'", (
     }
   });
 });
+
+// Phase 1 of the Turso source-of-truth migration: routes that already
+// dual-write to a Turso table MUST query the DB before falling back to the
+// disk JSON cache. This test prevents regressions where someone refactors
+// the route and accidentally drops the DB read path.
+//
+// Each route has its own `readXFromDb` helper that returns the parsed
+// payload or null. The pattern is:
+//   const fromDb = await readXFromDb();
+//   if (fromDb) return ...;
+//   // fall through to disk
+// Routes that already dual-write to a Turso table (Phase 1 of the
+// source-of-truth migration). Each must invoke a DB read function from
+// inside its GET handler — the DB-first contract.
+const DB_FIRST_ROUTES: { path: string; dbHelperPattern: RegExp }[] = [
+  { path: "app/api/vcg/route.ts", dbHelperPattern: /readCachedVcgFromDb\s*\(/ },
+  { path: "app/api/gex/route.ts", dbHelperPattern: /readCachedGexFromDb\s*\(/ },
+  { path: "app/api/discover/route.ts", dbHelperPattern: /readDiscoverFromDb\s*\(/ },
+  { path: "app/api/menthorq/cta/route.ts", dbHelperPattern: /readLatestCtaFromDb\s*\(/ },
+  { path: "app/api/regime/route.ts", dbHelperPattern: /readLatestDbCri\s*\(/ },
+  { path: "app/api/portfolio/route.ts", dbHelperPattern: /readPortfolioFromDb\s*\(/ },
+  // cash-flows reads via FastAPI proxy which queries Turso server-side
+  { path: "app/api/cash-flows/route.ts", dbHelperPattern: /radonFetch\s*\(\s*[`"']\/cash-flows/ },
+  { path: "app/api/service-health/route.ts", dbHelperPattern: /\bgetDb\s*\(/ },
+];
+
+describe("Turso source-of-truth — routes must invoke a DB read", () => {
+  it.each(DB_FIRST_ROUTES)(
+    "$path imports + invokes its DB read helper",
+    async ({ path, dbHelperPattern }) => {
+      const src = await readFile(join(REPO_ROOT, path), "utf8");
+      // Strip imports — we want the helper to be CALLED, not just imported.
+      const withoutImports = src.replace(/^import .+?(?:;|$)/gms, "");
+      expect(withoutImports).toMatch(dbHelperPattern);
+    },
+  );
+});
