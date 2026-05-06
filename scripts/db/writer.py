@@ -296,16 +296,167 @@ def upsert_discover_sp500_snapshot(scan_time: str, payload: dict[str, Any]) -> N
     db.commit()
 
 
-def upsert_analyst_ratings(ticker: str, fetched_at: str, payload: dict[str, Any]) -> None:
-    """Phase 2.5 — analyst consensus per ticker. Table existed since 0001
-    but no caller wrote to it before this commit (zombie schema)."""
+def upsert_open_order(perm_id: int, payload: dict[str, Any]) -> None:
+    """Phase 3 — open_orders table. permId is IB's stable identifier."""
     db = get_db()
     db.execute(
         """
-        INSERT OR REPLACE INTO analyst_ratings (ticker, fetched_at, payload)
+        INSERT OR REPLACE INTO open_orders (perm_id, payload, updated_at)
         VALUES (?, ?, ?)
         """,
-        (ticker.upper(), fetched_at, json.dumps(payload)),
+        (int(perm_id), json.dumps(payload), _now_iso()),
+    )
+    db.commit()
+
+
+def upsert_executed_order(
+    exec_id: str,
+    payload: dict[str, Any],
+    fill_time: str,
+    perm_id: Optional[int] = None,
+) -> None:
+    """Phase 3 — executed_orders table. execId is IB's per-fill identifier."""
+    db = get_db()
+    db.execute(
+        """
+        INSERT OR REPLACE INTO executed_orders
+          (exec_id, perm_id, payload, fill_time, recorded_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            exec_id,
+            int(perm_id) if perm_id is not None else None,
+            json.dumps(payload),
+            fill_time,
+            _now_iso(),
+        ),
+    )
+    db.commit()
+
+
+def replace_open_orders_for_session(
+    open_orders: list[tuple[int, dict[str, Any]]],
+) -> None:
+    """Phase 3 — atomic replace: delete all open_orders + insert new set.
+
+    Used by ib_orders.py after a full sync since IB returns the full
+    open-orders snapshot. Cancelled / filled orders disappear from IB's
+    snapshot; this DELETE+INSERT keeps the DB in lockstep without manual
+    diff logic.
+    """
+    db = get_db()
+    now = _now_iso()
+    db.execute("DELETE FROM open_orders")
+    for perm_id, payload in open_orders:
+        db.execute(
+            """
+            INSERT INTO open_orders (perm_id, payload, updated_at)
+            VALUES (?, ?, ?)
+            """,
+            (int(perm_id), json.dumps(payload), now),
+        )
+    db.commit()
+
+
+def upsert_daemon_state(
+    handler: str,
+    *,
+    last_run: Optional[str] = None,
+    last_status: Optional[str] = None,
+    last_error: Optional[str] = None,
+) -> None:
+    """Phase 4 — replaces data/daemon_state.json per-handler tick log."""
+    db = get_db()
+    db.execute(
+        """
+        INSERT INTO daemon_state (handler, last_run, last_status, last_error, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(handler) DO UPDATE SET
+          last_run    = COALESCE(excluded.last_run, daemon_state.last_run),
+          last_status = COALESCE(excluded.last_status, daemon_state.last_status),
+          last_error  = excluded.last_error,
+          updated_at  = excluded.updated_at
+        """,
+        (handler, last_run, last_status, last_error, _now_iso()),
+    )
+    db.commit()
+
+
+def upsert_app_config(key: str, value: str) -> None:
+    """Phase 4 — generic key/value store for static config."""
+    db = get_db()
+    db.execute(
+        """
+        INSERT INTO app_config (key, value, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+          value      = excluded.value,
+          updated_at = excluded.updated_at
+        """,
+        (key, value, _now_iso()),
+    )
+    db.commit()
+
+
+def get_app_config(key: str) -> Optional[str]:
+    """Phase 4 — read a single app_config value."""
+    db = get_db()
+    rows = db.execute("SELECT value FROM app_config WHERE key = ?", (key,)).fetchall()
+    return rows[0][0] if rows else None
+
+
+def upsert_watchlist_ticker(
+    ticker: str,
+    *,
+    sector: Optional[str] = None,
+    source: Optional[str] = None,
+    payload: Optional[dict[str, Any]] = None,
+) -> None:
+    """Phase 4 — replaces data/watchlist.json (one row per ticker)."""
+    db = get_db()
+    db.execute(
+        """
+        INSERT INTO watchlist (ticker, sector, source, payload, last_seen)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(ticker) DO UPDATE SET
+          sector    = COALESCE(excluded.sector, watchlist.sector),
+          source    = COALESCE(excluded.source, watchlist.source),
+          payload   = COALESCE(excluded.payload, watchlist.payload),
+          last_seen = excluded.last_seen
+        """,
+        (
+            ticker.upper(),
+            sector,
+            source,
+            json.dumps(payload) if payload is not None else None,
+            _now_iso(),
+        ),
+    )
+    db.commit()
+
+
+def upsert_ticker_lookup_cache(query: str, result: str, expires_at: str) -> None:
+    """Phase 4 — TTL cache for ticker validation lookups."""
+    db = get_db()
+    db.execute(
+        """
+        INSERT OR REPLACE INTO ticker_lookup_cache (query, result, expires_at, cached_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (query.upper(), result, expires_at, _now_iso()),
+    )
+    db.commit()
+
+
+def upsert_reconciliation_log(snapshot_at: str, payload: dict[str, Any]) -> None:
+    """Phase 4 — replaces data/reconciliation.json."""
+    db = get_db()
+    db.execute(
+        """
+        INSERT OR REPLACE INTO reconciliation_log (snapshot_at, payload)
+        VALUES (?, ?)
+        """,
+        (snapshot_at, json.dumps(payload)),
     )
     db.commit()
 
