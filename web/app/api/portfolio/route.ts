@@ -39,8 +39,43 @@ async function readPortfolioFromDb(): Promise<Record<string, unknown> | null> {
   }
 }
 
-/** Load ticker → earliest trade date from trade_log.json */
+/** Load ticker → latest trade date.
+ *
+ * Phase 4-followup: prefer the canonical `journal` table; fall back to
+ * `data/trade_log.json` only when the DB is empty (cold replica) or
+ * unreachable. Aggregates per-ticker in SQL so we don't pull every row
+ * back to the Node side just to take a max. */
 async function loadTradeLogDates(): Promise<Record<string, string>> {
+  try {
+    const db = getDb();
+    const result = await db.execute({
+      sql: `
+        SELECT
+          json_extract(payload, '$.ticker') AS ticker,
+          MAX(COALESCE(filled_at, json_extract(payload, '$.date'))) AS date
+        FROM journal
+        WHERE json_extract(payload, '$.ticker') IS NOT NULL
+        GROUP BY json_extract(payload, '$.ticker')
+      `,
+      args: [],
+    });
+    if (result.rows.length > 0) {
+      const dates: Record<string, string> = {};
+      for (const row of result.rows) {
+        const r = row as unknown as { ticker?: string; date?: string };
+        if (typeof r.ticker === "string" && typeof r.date === "string") {
+          dates[r.ticker] = r.date;
+        }
+      }
+      return dates;
+    }
+  } catch {
+    // Fall through to disk on any DB error.
+  }
+  return loadTradeLogDatesFromDisk();
+}
+
+async function loadTradeLogDatesFromDisk(): Promise<Record<string, string>> {
   try {
     const raw = JSON.parse(await readFile(TRADE_LOG_PATH, "utf-8"));
     const trades = Array.isArray(raw) ? raw : (raw?.trades ?? []);
@@ -49,7 +84,6 @@ async function loadTradeLogDates(): Promise<Record<string, string>> {
       const ticker = t?.ticker;
       const date = t?.date;
       if (typeof ticker === "string" && typeof date === "string") {
-        // Keep the LATEST date per ticker (most recent entry)
         if (!dates[ticker] || date > dates[ticker]) {
           dates[ticker] = date;
         }
