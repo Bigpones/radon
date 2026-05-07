@@ -104,15 +104,13 @@ test.describe("/orders section layout + collapse", () => {
     await cashFlows.waitFor({ timeout: 10_000 });
     await historical.waitFor({ timeout: 10_000 });
 
-    const order = await page.evaluate(() => {
+    const historicalPrecedesCashFlows = await page.evaluate(() => {
       const c = document.querySelector('[data-testid="cash-flows-section"]')!;
       const h = document.querySelector('[data-testid="historical-trades-section"]')!;
-      // DOCUMENT_POSITION_FOLLOWING (4) means h follows c → wrong order
-      // DOCUMENT_POSITION_PRECEDING (2) means h precedes c → correct order
-      return c.compareDocumentPosition(h);
+      // DOCUMENT_POSITION_PRECEDING = 2 → historical precedes cash flows
+      return Boolean(c.compareDocumentPosition(h) & 2);
     });
-    // Historical Trades must precede Cash Flows
-    expect(order & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(historicalPrecedesCashFlows).toBe(true);
   });
 
   test("Historical Trades has a collapsible header with chevron", async ({ page }) => {
@@ -156,7 +154,7 @@ test.describe("/orders section layout + collapse", () => {
 
     // Clear and click refresh — must not collapse
     await filter.fill("");
-    await page.getByRole("button", { name: /Refresh/i }).click();
+    await section.locator("button.sync-button").click();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
   });
 });
