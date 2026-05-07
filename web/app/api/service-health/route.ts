@@ -20,18 +20,9 @@ export type ServiceHealthRow = {
   updated_at: string;
 };
 
-const STALE_AFTER_MS = 10 * 60 * 1000;
-
 function isFailingState(state: string): boolean {
   if (state === "ok" || state === "syncing" || state === "paused") return false;
   return true;
-}
-
-function isStale(updatedAt: string | null): boolean {
-  if (!updatedAt) return false;
-  const updatedMs = Date.parse(updatedAt);
-  if (Number.isNaN(updatedMs)) return false;
-  return Date.now() - updatedMs > STALE_AFTER_MS;
 }
 
 export async function GET(): Promise<Response> {
@@ -61,7 +52,11 @@ export async function GET(): Promise<Response> {
       });
     }
 
-    const failing = rows.filter((r) => isFailingState(r.state) || isStale(r.updated_at));
+    // Banner fires only on explicit non-OK state. Staleness alone is not a
+    // failure signal: most writers run on market-hours-only cadences (gex-scan,
+    // discover, cta-sync) so a quiet table off-hours is normal. A genuinely
+    // stuck writer surfaces via its own try/except → state=warn/fail.
+    const failing = rows.filter((r) => isFailingState(r.state));
 
     const response = NextResponse.json({
       services: rows,

@@ -80,11 +80,11 @@ describe("/api/service-health", () => {
     expect(body.failing[0].last_error).toBe("WAL locked");
   });
 
-  it("classifies stale rows (>10min old) as failing even when state=ok", async () => {
-    const stale = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+  it("does NOT classify stale-but-OK rows as failing — most writers run on market-hours-only cadences, so off-hours quiet is normal", async () => {
+    const stale = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(); // 6h old
     mockGetDb([
       {
-        service: "portfolio-sync",
+        service: "gex-scan",
         state: "ok",
         last_attempt_started_at: stale,
         last_attempt_finished_at: stale,
@@ -95,7 +95,7 @@ describe("/api/service-health", () => {
     const { GET } = await import("../app/api/service-health/route");
     const res = await GET();
     const body = await res.json();
-    expect(body.failing).toHaveLength(1);
+    expect(body.failing).toHaveLength(0);
   });
 
   it("does NOT classify state=syncing or state=paused as failing", async () => {
