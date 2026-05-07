@@ -16,9 +16,20 @@ Key endpoints used:
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
+
+# Phase 4 wiring: env load + replica bypass before db.* imports.
+_PROJECT_DIR = Path(__file__).resolve().parent.parent
+try:
+    from dotenv import load_dotenv  # type: ignore[import-untyped]
+    load_dotenv(_PROJECT_DIR / ".env")
+    load_dotenv(_PROJECT_DIR / "web" / ".env")
+except Exception:
+    pass
+os.environ.setdefault("RADON_DB_NO_REPLICA", "1")
 
 from clients.uw_client import UWClient, UWNotFoundError, UWAPIError
 from utils.market_calendar import get_last_n_trading_days, load_holidays, _is_trading_day
@@ -57,13 +68,41 @@ def get_cached_ticker(ticker: str):
 
 
 def cache_ticker(ticker: str, company_name: str, sector: str = None) -> None:
-    """Add or update a ticker in the cache."""
+    """Add or update a ticker in the cache + dual-write to ticker_lookup_cache.
+
+    Phase 4 of the Turso source-of-truth migration. The disk JSON is the
+    canonical blob; the table lets per-key TTL'd lookups happen in SQL
+    without parsing the whole cache.
+    """
     cache = load_cache()
     cache["tickers"][ticker.upper()] = {
         "company_name": company_name,
         "sector": sector
     }
     save_cache(cache)
+
+    _dual_write_ticker_to_db(ticker, company_name, sector)
+
+
+def _dual_write_ticker_to_db(ticker: str, company_name: str, sector: str = None) -> None:
+    """Best-effort upsert of a single ticker into ticker_lookup_cache.
+
+    24h TTL — same as the existing in-process cache contract. Errors are
+    logged + swallowed so a Turso outage doesn't block the disk write.
+    """
+    import os as _os
+    _os.environ.setdefault("RADON_DB_NO_REPLICA", "1")
+    try:
+        from db.writer import upsert_ticker_lookup_cache
+    except ImportError:
+        return
+    try:
+        from datetime import timedelta, timezone
+        expires_at = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+        result = json.dumps({"company_name": company_name, "sector": sector})
+        upsert_ticker_lookup_cache(ticker.upper(), result, expires_at)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  Warning: ticker_lookup_cache db dual-write failed: {exc}", file=sys.stderr)
 
 
 def is_market_open(date: datetime) -> bool:

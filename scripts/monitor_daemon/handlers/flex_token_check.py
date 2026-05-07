@@ -27,6 +27,29 @@ CONFIG_PATH = PROJECT_ROOT / "data" / "flex_token_config.json"
 CHECK_INTERVAL = 86400
 
 
+def _dual_write_flex_state_to_app_config(config: Dict[str, Any], days_remaining: int) -> None:
+    """Phase 4 — store flex token expiry telemetry in app_config k/v.
+
+    Three keys: expires_at (ISO date), days_remaining (int), reminders_sent
+    (JSON blob of which thresholds have already fired). Disk JSON remains
+    canonical; this gives the UI a fast key lookup path.
+    """
+    import os as _os
+    _os.environ.setdefault("RADON_DB_NO_REPLICA", "1")
+    try:
+        from db.writer import upsert_app_config
+    except ImportError:
+        return
+    try:
+        if config.get("expires_at"):
+            upsert_app_config("flex_token_expires_at", str(config["expires_at"]))
+        upsert_app_config("flex_token_days_remaining", str(days_remaining))
+        if config.get("reminders_sent"):
+            upsert_app_config("flex_token_reminders_sent", json.dumps(config["reminders_sent"]))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"flex_token app_config dual-write failed: {exc}")
+
+
 class FlexTokenCheck(BaseHandler):
     """Check IB Flex Web Service token expiry and fire reminder_days alerts."""
 
@@ -83,6 +106,10 @@ class FlexTokenCheck(BaseHandler):
                 f"⚠️ IB Flex Token expires in {days_remaining} days "
                 f"(threshold: {fired_reminder}d). Renew at: {renewal_url}"
             )
+
+        # Phase 4 dual-write — mirror config + computed days_remaining
+        # into the app_config k/v store. Best-effort.
+        _dual_write_flex_state_to_app_config(config, days_remaining)
 
         expired = days_remaining <= 0
 
