@@ -223,7 +223,8 @@ def test_reset_restart_backoff_clears_state():
     assert ib_gateway._restart_state["next_attempt_after"] == 0.0
 
 
-def test_cloud_mode_check_returns_remote_auth_state(monkeypatch):
+def test_cloud_mode_falls_back_to_remote_when_no_pool(monkeypatch):
+    """Without a local pool to probe, cloud mode can't tell auth from port alone."""
     async def fake_check_cloud():
         return {
             "port_listening": True,
@@ -259,3 +260,78 @@ def test_cloud_mode_check_returns_unreachable_when_port_down(monkeypatch):
     result = asyncio.run(ib_gateway.check_ib_gateway())
 
     assert result["auth_state"] == "unreachable"
+
+
+def test_cloud_mode_uses_pool_when_available_and_authenticated(monkeypatch):
+    """When pool_status is provided, cloud mode derives auth from accounts
+    instead of falling back to "remote" — the local pool's connections are
+    the authoritative signal even when Gateway lives on another host."""
+    async def fake_check_cloud():
+        return {
+            "port_listening": True,
+            "upstream_dead": False,
+            "service_state": "reachable",
+            "host": "ib-gateway",
+            "port": 4001,
+            "gateway_mode": "cloud",
+        }
+
+    monkeypatch.setattr(ib_gateway, "is_cloud_mode", lambda: True)
+    monkeypatch.setattr(ib_gateway, "_check_cloud", fake_check_cloud)
+
+    pool = {
+        "sync": {"connected": True, "managed_accounts": ["U1234567"]},
+        "orders": {"connected": True, "managed_accounts": ["U1234567"]},
+    }
+    result = asyncio.run(ib_gateway.check_ib_gateway(pool_status=pool))
+
+    assert result["auth_state"] == "authenticated"
+
+
+def test_cloud_mode_uses_pool_to_detect_awaiting_2fa(monkeypatch):
+    async def fake_check_cloud():
+        return {
+            "port_listening": True,
+            "upstream_dead": False,
+            "service_state": "reachable",
+            "host": "ib-gateway",
+            "port": 4001,
+            "gateway_mode": "cloud",
+        }
+
+    monkeypatch.setattr(ib_gateway, "is_cloud_mode", lambda: True)
+    monkeypatch.setattr(ib_gateway, "_check_cloud", fake_check_cloud)
+
+    # Pool reports clients connected but no managed_accounts visible.
+    # Classic "Gateway listening, awaiting 2FA approval" signature.
+    pool = {
+        "sync": {"connected": True, "managed_accounts": []},
+        "orders": {"connected": True, "managed_accounts": []},
+    }
+    result = asyncio.run(ib_gateway.check_ib_gateway(pool_status=pool))
+
+    assert result["auth_state"] == "awaiting_2fa"
+
+
+def test_compose_dir_can_be_overridden_via_env(monkeypatch, tmp_path):
+    """Hetzner runs the IB Gateway container from /home/radon/radon-cloud/,
+    not the default <repo>/docker/ib-gateway. IB_GATEWAY_COMPOSE_DIR is the
+    knob that lets FastAPI's docker mode point at the actual compose project
+    instead of silently treating an unrelated path as authoritative."""
+    custom = tmp_path / "custom-compose"
+    custom.mkdir()
+    monkeypatch.setenv("IB_GATEWAY_COMPOSE_DIR", str(custom))
+
+    # Re-import to pick up the patched env. The module reads COMPOSE_DIR at
+    # import time, so a clean import is required.
+    import importlib
+    import scripts.api.ib_gateway as gw_module
+    reloaded = importlib.reload(gw_module)
+
+    try:
+        assert reloaded.COMPOSE_DIR == custom
+    finally:
+        # Restore the canonical module so other tests aren't poisoned by the
+        # custom path.
+        monkeypatch.delenv("IB_GATEWAY_COMPOSE_DIR", raising=False)
+        importlib.reload(gw_module)

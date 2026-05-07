@@ -37,8 +37,18 @@ STATUS_SCRIPT = IBC_HOME / "status-secure-ibc-service.sh"
 START_SCRIPT = IBC_HOME / "start-secure-ibc-service.sh"
 RESTART_SCRIPT = IBC_HOME / "restart-secure-ibc-service.sh"
 
-# Docker paths
-COMPOSE_DIR = Path(__file__).parent.parent.parent / "docker" / "ib-gateway"
+# Docker paths. Defaults to the in-tree compose at <repo>/docker/ib-gateway/
+# (matches the laptop dev layout). Override with IB_GATEWAY_COMPOSE_DIR when
+# the compose project lives elsewhere — e.g. Hetzner runs the container from
+# the radon-cloud repo via /home/radon/radon-cloud/docker-compose.yml, so a
+# bare default would point FastAPI at the wrong project (and `docker compose
+# ps` would silently report not_found while the container is actually up).
+COMPOSE_DIR = Path(
+    os.environ.get(
+        "IB_GATEWAY_COMPOSE_DIR",
+        str(Path(__file__).parent.parent.parent / "docker" / "ib-gateway"),
+    )
+)
 
 # Timing
 RESTART_WAIT_SECS = 45
@@ -578,7 +588,19 @@ async def check_ib_gateway(pool_status: Optional[dict] = None) -> Dict:
     """
     if is_cloud_mode():
         result = await _check_cloud()
-        result["auth_state"] = "remote" if result.get("port_listening") else "unreachable"
+        if not result.get("port_listening"):
+            result["auth_state"] = "unreachable"
+        elif pool_status:
+            # Pool gives us visibility into managed_accounts on the remote
+            # Gateway via this process's own client connections — that's the
+            # authoritative auth signal even in cloud mode.
+            result["auth_state"] = _derive_auth_state(result, pool_status)
+        else:
+            # No pool to probe (cold start, or this process doesn't run a
+            # pool). The TCP probe alone can't distinguish authenticated from
+            # awaiting_2fa, so report "remote" and defer to the host that
+            # actually owns the Gateway.
+            result["auth_state"] = "remote"
         return result
 
     if is_docker_mode():
