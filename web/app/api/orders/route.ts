@@ -41,17 +41,28 @@ async function compareAndLog(
 ): Promise<void> {
   if (!db) return; // dual-write hasn't populated yet — not a divergence
   const diff = compareOrders(disk, db);
-  if (!diff.diverged) {
-    return;
-  }
-  console.warn(`[orders] DB↔disk divergence: ${diff.reason}`);
+  const finishedAt = new Date().toISOString();
   try {
-    await recordServiceHealth({
-      service: "orders-read-compare",
-      state: "warn",
-      finishedAt: new Date().toISOString(),
-      error: { reason: diff.reason, details: diff.details },
-    });
+    if (diff.diverged) {
+      console.warn(`[orders] DB↔disk divergence: ${diff.reason}`);
+      await recordServiceHealth({
+        service: "orders-read-compare",
+        state: "warn",
+        finishedAt,
+        error: { reason: diff.reason, details: diff.details },
+      });
+    } else {
+      // Record "ok" so a stale warn row from a transient drift (e.g. the
+      // 60s embedded-replica sync lag during a status transition) clears
+      // on the next converged read instead of persisting until manual
+      // reset.
+      await recordServiceHealth({
+        service: "orders-read-compare",
+        state: "ok",
+        finishedAt,
+        error: null,
+      });
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(`[orders] failed to record service_health: ${message}`);

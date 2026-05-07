@@ -7,7 +7,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 type MockRow = Record<string, unknown>;
 
-function mockGetDb(openRows: MockRow[], execRows: MockRow[]): void {
+function mockGetDb(openRows: MockRow[], execRows: MockRow[]): { syncCalls: number } {
+  const counters = { syncCalls: 0 };
   let call = 0;
   vi.doMock("@/lib/db", () => ({
     getDb: () => ({
@@ -16,7 +17,11 @@ function mockGetDb(openRows: MockRow[], execRows: MockRow[]): void {
         return Promise.resolve({ rows: call === 1 ? openRows : execRows });
       }),
     }),
+    syncDb: vi.fn().mockImplementation(async () => {
+      counters.syncCalls += 1;
+    }),
   }));
+  return counters;
 }
 
 beforeEach(() => {
@@ -110,5 +115,15 @@ describe("readOrdersFromDb", () => {
     const { readOrdersFromDb } = await import("../lib/orders/readOrdersFromDb");
     const result = await readOrdersFromDb();
     expect(result!.last_sync).toBe("2026-05-07T13:30:00Z");
+  });
+
+  it("syncs the embedded replica before reading (eliminates 60s lag drift)", async () => {
+    const counters = mockGetDb(
+      [{ payload: JSON.stringify(openPayload(1)), updated_at: "2026-05-07T13:30:00Z" }],
+      [],
+    );
+    const { readOrdersFromDb } = await import("../lib/orders/readOrdersFromDb");
+    await readOrdersFromDb();
+    expect(counters.syncCalls).toBe(1);
   });
 });

@@ -95,12 +95,18 @@ describe("/api/orders", () => {
     expect((recordCalls[0][0] as { state: string }).state).toBe("warn");
   });
 
-  it("does NOT record service_health when DB matches disk", async () => {
+  it("records service_health=ok when DB matches disk (clears stale warn)", async () => {
     const { recordCalls } = mockReaders({ db: diskOrders });
     const { GET } = await import("../app/api/orders/route");
     await GET();
     await flushMicrotasks();
-    expect(recordCalls).toHaveLength(0);
+    // Without this, a transient drift (e.g. replica sync lag) leaves a
+    // permanent warn row that never clears even after disk and DB
+    // re-converge. See "orders-read-compare" banner regression.
+    expect(recordCalls).toHaveLength(1);
+    expect((recordCalls[0][0] as { service: string }).service).toBe("orders-read-compare");
+    expect((recordCalls[0][0] as { state: string }).state).toBe("ok");
+    expect((recordCalls[0][0] as { error: unknown }).error).toBeNull();
   });
 
   it("does NOT record service_health when DB returns null (not yet populated)", async () => {

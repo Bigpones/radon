@@ -8,7 +8,7 @@
  * comparison-logging step we'd be flipping the read to DB on faith.
  */
 import type { Static } from "@sinclair/typebox";
-import { getDb } from "@/lib/db";
+import { getDb, syncDb } from "@/lib/db";
 import type { OrdersData } from "@tools/schemas/ib-orders";
 
 type Open = Static<typeof OrdersData>["open_orders"][number];
@@ -27,6 +27,18 @@ function safeParse<T>(text: unknown): T | null {
 
 export async function readOrdersFromDb(): Promise<Static<typeof OrdersData> | null> {
   const db = getDb();
+
+  // Pull the freshest cloud-DB state into the embedded replica before
+  // reading. Without this we lag the disk JSON by up to 60s (the
+  // background sync interval), which surfaces as transient `status`
+  // drift on every order state transition (PreSubmitted → Submitted at
+  // market open, Submitted → Filled, etc.).
+  try {
+    await syncDb();
+  } catch {
+    // Best-effort: a sync failure (network blip, auth hiccup) just means
+    // we read the slightly-older replica — same as the pre-sync world.
+  }
 
   const openResult = await db.execute({
     sql: `SELECT payload, updated_at FROM open_orders ORDER BY updated_at DESC`,
