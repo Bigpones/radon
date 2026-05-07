@@ -170,21 +170,49 @@ class MonitorDaemon:
         self._running = False
     
     def save_state(self) -> None:
-        """Save all handler states to file."""
+        """Save all handler states to file + dual-write to Turso daemon_state.
+
+        Phase 4 of the Turso source-of-truth migration. Per-handler row
+        in the daemon_state table replaces the monolithic JSON blob; the
+        JSON file is still written for disaster-recovery fallback.
+        """
         if not self.state_file:
             return
-        
+
         state = {
             "saved_at": datetime.now().isoformat(),
             "handlers": {}
         }
-        
+
         for handler in self.handlers:
             state["handlers"][handler.name] = handler.get_state()
-        
+
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
         self.state_file.write_text(json.dumps(state, indent=2))
         logger.debug(f"Saved state to {self.state_file}")
+
+        # Best-effort dual-write to Turso. Long-lived daemon — set
+        # RADON_DB_NO_REPLICA at module top so the first get_db() in
+        # this process bypasses the embedded replica.
+        try:
+            import os
+            os.environ.setdefault("RADON_DB_NO_REPLICA", "1")
+            from db.writer import upsert_daemon_state
+            saved_at = state["saved_at"]
+            for handler in self.handlers:
+                handler_state = handler.get_state()
+                # `last_run` shape varies per handler; flatten common fields.
+                last_run = handler_state.get("last_run") or saved_at
+                last_status = handler_state.get("last_status") or handler_state.get("status")
+                last_error = handler_state.get("last_error") or handler_state.get("error")
+                upsert_daemon_state(
+                    handler.name,
+                    last_run=last_run,
+                    last_status=last_status,
+                    last_error=last_error,
+                )
+        except Exception as exc:  # noqa: BLE001 — best-effort
+            logger.warning(f"daemon_state dual-write failed: {exc}")
     
     def load_state(self) -> None:
         """Load handler states from file."""

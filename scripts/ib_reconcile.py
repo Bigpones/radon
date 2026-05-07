@@ -54,9 +54,28 @@ def load_json(filepath: str) -> dict:
         return {}
 
 def save_json(filepath: str, data: dict):
-    """Save data to JSON file."""
+    """Save data to JSON file + dual-write reconciliation to Turso (Phase 4)."""
     with open(filepath, 'w') as f:
         json.dump(data, f, indent=2, default=str)
+    # Phase 4: only the reconciliation.json output is mirrored to Turso.
+    # Other callers of save_json (if any) write to other paths and are
+    # untouched.
+    if str(filepath).endswith("reconciliation.json"):
+        _dual_write_reconciliation_to_db(data)
+
+
+def _dual_write_reconciliation_to_db(data: dict) -> None:
+    import os
+    os.environ.setdefault("RADON_DB_NO_REPLICA", "1")
+    try:
+        from db.writer import upsert_reconciliation_log
+    except ImportError:
+        return
+    try:
+        snapshot_at = data.get("snapshot_at") or data.get("timestamp") or datetime.now().isoformat()
+        upsert_reconciliation_log(snapshot_at, data)
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        log(f"reconciliation_log dual-write failed: {exc}", "warn")
 
 def get_trade_log_trades(trade_log: dict) -> set:
     """Extract set of (ticker, date, structure_type) tuples from trade log."""
