@@ -2406,9 +2406,9 @@ function OrdersSections({
         </div>
       )}
 
-      <CashFlowsSection />
-
       <HistoricalTradesSection />
+
+      <CashFlowsSection />
     </>
   );
 }
@@ -2453,8 +2453,10 @@ const blotterExtract = (item: BlotterTrade, key: BlotterSortKey): string | numbe
 export function HistoricalTradesSection() {
   const { data, loading, syncing, error, syncNow } = useBlotter(true);
   const [page, setPage] = useState(0);
+  const [expanded, setExpanded] = useState(true);
   const { isMobile, hasMounted } = useViewport();
   const showMobileBlotter = isMobile && hasMounted;
+  const stopToggle = (e: React.SyntheticEvent) => e.stopPropagation();
 
   const allTrades = useMemo(() => {
     if (!data) return [];
@@ -2489,9 +2491,31 @@ export function HistoricalTradesSection() {
   const isStale = stalenessAgeDays !== null && stalenessAgeDays > BLOTTER_STALE_THRESHOLD_DAYS;
 
   return (
-    <div className="section">
-      <div className="section-header">
+    <div className="section" data-testid="historical-trades-section">
+      <div
+        className="section-header cash-flows-header"
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        aria-controls="historical-trades-body"
+        data-testid="historical-trades-toggle"
+        onClick={() => setExpanded((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setExpanded((v) => !v);
+          }
+        }}
+        style={{ cursor: "pointer", userSelect: "none" }}
+      >
         <div className="section-title">
+          <ChevronDown
+            size={12}
+            style={{
+              transform: expanded ? "rotate(0deg)" : "rotate(-90deg)",
+              transition: "transform 150ms ease",
+            }}
+          />
           <ClipboardList size={14} />
           Historical Trades (30 Days)
           <InfoTooltip text={SECTION_TOOLTIPS["Historical Trades (30 Days)"]} />
@@ -2511,25 +2535,31 @@ export function HistoricalTradesSection() {
             </span>
           )}
           {allTrades.length > 0 ? (
-            <TableSearch
-              query={query}
-              setQuery={setQuery}
-              placeholder="Filter historical trades..."
-              resultCount={filtered.length}
-              totalCount={allTrades.length}
-            />
+            <span onClick={stopToggle} onKeyDown={stopToggle}>
+              <TableSearch
+                query={query}
+                setQuery={setQuery}
+                placeholder="Filter historical trades..."
+                resultCount={filtered.length}
+                totalCount={allTrades.length}
+              />
+            </span>
           ) : null}
           <span className="pill neutral">{totalCount} TRADES</span>
           <button
             className="sync-button"
             disabled={syncing}
-            onClick={() => syncNow()}
+            onClick={(e) => {
+              e.stopPropagation();
+              syncNow();
+            }}
           >
             {syncing ? <><Loader2 size={12} className="spin" /> Syncing...</> : "Refresh"}
           </button>
         </div>
       </div>
-      <div className="section-body">
+      {expanded && (
+      <div id="historical-trades-body" className="section-body">
         {error && <div className="alert-item section-message bearish">{error}</div>}
         {loading && <div className="p-6"><TableSkeleton rows={5} columns={8} /></div>}
         {!loading && !hasData && !error && (
@@ -2634,6 +2664,7 @@ export function HistoricalTradesSection() {
           </>
         )}
       </div>
+      )}
     </div>
   );
 }
