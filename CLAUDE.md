@@ -135,7 +135,7 @@ Every Next.js GET handler reading live disk state (`data/*.json`, `data/menthorq
 
 Every client fetch hitting these routes **MUST** pass `cache: "no-store"`.
 
-Covered routes: `menthorq/cta`, `journal`, `discover`, `flow-analysis`, `blotter`, `vcg`, `internals`, `portfolio`, `performance`, `scanner`, `regime`, `gex`. Covered hooks: `useMenthorqCta`, `useSyncHook` (shared), `useJournal`, `usePortfolio`, `useDiscover`, `useOrders`. Contract test: `web/tests/api-routes-no-cache-contract.test.ts` (18 assertions, fails CI on regression).
+Covered routes: `menthorq/cta`, `journal`, `discover`, `flow-analysis`, `blotter`, `vcg`, `internals`, `portfolio`, `performance`, `scanner`, `regime`, `gex`, `orders` (added 2026-05-07 with Phase 3.2 dual-read), `service-health`. Covered hooks: `useMenthorqCta`, `useSyncHook` (shared), `useJournal`, `usePortfolio`, `useDiscover`, `useOrders`. Contract test: `web/tests/api-routes-no-cache-contract.test.ts`, fails CI on regression.
 
 ---
 
