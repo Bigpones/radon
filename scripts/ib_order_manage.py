@@ -104,6 +104,14 @@ def cancel_order(client: IBClient, order_id: int, perm_id: int,
     if client.ib.client.clientId != original_client_id:
         client.disconnect()
         client.connect(host=host, port=port, client_id=original_client_id)
+        # TWS-GUI-placed orders come back from `reqAllOpenOrders` with
+        # placeholder negative orderIds (e.g. -7). Cancelling those by
+        # orderId fails with IB error 10147 unless we explicitly bind
+        # manual orders to the master client first. The bind is only
+        # valid for clientId=0 — guard accordingly.
+        if original_client_id == 0:
+            client.ib.reqAutoOpenOrders(True)
+            client.ib.sleep(0.5)
         trade = find_trade(client, order_id, perm_id)
         if trade is None:
             output("error", "Trade not found after reconnect as original clientId")
@@ -188,6 +196,13 @@ def modify_order(client: IBClient, order_id: int, perm_id: int, new_price: Optio
     if client.ib.client.clientId != original_client_id:
         client.disconnect()
         client.connect(host=host, port=port, client_id=original_client_id)
+        # See cancel_order for details — manual TWS orders need
+        # reqAutoOpenOrders(True) on the master client to bind their
+        # placeholder negative orderIds before placeOrder/cancelOrder
+        # round-trips work.
+        if original_client_id == 0:
+            client.ib.reqAutoOpenOrders(True)
+            client.ib.sleep(0.5)
         trade = find_trade(client, order_id, perm_id)
         if trade is None:
             output("error", "Trade not found after reconnect as original clientId")

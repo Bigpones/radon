@@ -119,6 +119,36 @@ class TestCancelOrder:
         client.connect.assert_called_once_with(host="127.0.0.1", port=4001, client_id=9)
         client.cancel_order.assert_called_once_with(t.order)
 
+    def test_cancel_binds_manual_tws_orders_when_reconnecting_as_master(self):
+        """Orders placed via the TWS GUI come back from IB with placeholder
+        negative orderIds (e.g. -7). cancelOrder(orderId=-7) returns
+        IB error 10147 unless reqAutoOpenOrders(True) was called first to
+        bind manual orders to the master client. After reconnecting as
+        clientId=0, the script MUST call reqAutoOpenOrders(True) before
+        the cancel attempt — otherwise users can't cancel any
+        TWS-GUI-placed order from the web UI.
+        """
+        t = make_trade(status="Submitted")
+        t.order.orderId = -7
+        t.order.clientId = 0  # Manual TWS placement reports clientId=0
+
+        def side_effect(order):
+            t.orderStatus.status = "Cancelled"
+
+        # Script auto-allocated clientId=23; original_client_id=0 → reconnect.
+        client = make_client([t])
+        client.ib.client.clientId = 23
+        client.cancel_order = MagicMock(side_effect=side_effect)
+        client.get_open_orders.return_value = [t]
+
+        with pytest.raises(SystemExit) as exc:
+            cancel_order(client, 0, 12345, "127.0.0.1", 4001)
+        assert exc.value.code == 0
+        client.connect.assert_called_once_with(host="127.0.0.1", port=4001, client_id=0)
+        # The actual fix: reqAutoOpenOrders(True) must fire after the
+        # reconnect-as-master so IB binds the GUI order to this session.
+        client.ib.reqAutoOpenOrders.assert_called_once_with(True)
+
     def test_cancel_same_client_id_no_reconnect(self):
         """When cancel script is already connected as the right clientId, no reconnect needed."""
         t = make_trade(status="Submitted")
