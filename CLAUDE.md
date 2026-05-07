@@ -50,6 +50,8 @@ Never skip to Yahoo / web without trying IB → UW first. Clients live in `scrip
 | `IB_FLEX_TOKEN` | Flex Web Service token | All Flex pulls |
 | `IB_FLEX_QUERY_ID` | `1422766` (blotter) | `scripts/trade_blotter/flex_query.py` |
 | `IB_FLEX_NAV_QUERY_ID` | `1497709` (Cash Transactions, created 2026-05-05) | `scripts/cash_flow_sync.py`, `scripts/portfolio_performance.py` |
+| `IB_GATEWAY_MODE` | `docker` (since 2026-05-07; was `cloud` until then) | `scripts/api/ib_gateway.py` |
+| `IB_GATEWAY_COMPOSE_DIR` | `/home/radon/radon-cloud` | `scripts/api/ib_gateway.py` — compose project the container actually runs under (NOT in-tree default) |
 
 The `1442520` (journal/Trade History) query is referenced indirectly via `scripts/journal_rehydrate.py` reading `IB_FLEX_QUERY_ID` at runtime — but on Hetzner the env points at `1422766`. Journal rehydrate has its own configuration. **Don't repurpose `IB_FLEX_NAV_QUERY_ID` for trade pulls** — it's tuned for `CashTransaction` only.
 
@@ -80,8 +82,8 @@ All FastAPI routes JWT-protected; Next.js by `web/middleware.ts`; WebSocket via 
 
 `IB_GATEWAY_MODE` env, persisted to `.env.ib-mode`. Toggle via `scripts/ib mode {local|cloud}`. Switching does NOT auto-reconnect — restart the dev stack.
 
-- **`docker`** (default for local): `ghcr.io/gnzsnz/ib-gateway`, `restart: unless-stopped`. `npm run ib:start`.
-- **`cloud`** (default for dev): Hetzner VM at `ib-gateway:4001` via Tailscale. TCP probe only — `POST /ib/restart` returns 503. Laptop aliases (SSH-wrapped, defined in `~/.zshrc`): `ibstart/stop/restart/status/logs/health` for IB Gateway only. **Whole-stack control on the VPS** uses `/usr/local/bin/radon` (also reachable from laptop via `ssh root@ib-gateway radon <cmd>`):
+- **`docker`** (default for local; **also Hetzner since 2026-05-07**): `ghcr.io/gnzsnz/ib-gateway`, `restart: unless-stopped`. `npm run ib:start`. **Hetzner config gotcha:** the container is launched by `radon-ib-gateway.service` from `/home/radon/radon-cloud/` (radon-cloud repo), not the in-tree `<repo>/docker/ib-gateway/`. FastAPI's `_check_docker()` hard-defaulted to the in-tree path and silently saw `container_state="not_found"` while the container ran under another project — `IB_GATEWAY_COMPOSE_DIR=/home/radon/radon-cloud` overrides it. **Required on Hetzner; do not unset.**
+- **`cloud`** (laptop default for dev): Hetzner VM at `ib-gateway:4001` via Tailscale. TCP probe only — `POST /ib/restart` returns 503. Laptop aliases (SSH-wrapped, defined in `~/.zshrc`): `ibstart/stop/restart/status/logs/health` for IB Gateway only. **Whole-stack control on the VPS** uses `/usr/local/bin/radon` (also reachable from laptop via `ssh root@ib-gateway radon <cmd>`):
 
   | Command | Effect |
   |---|---|
@@ -94,6 +96,8 @@ All FastAPI routes JWT-protected; Next.js by `web/middleware.ts`; WebSocket via 
 - **`launchd`** (legacy): `~/ibc/bin/`, Mon-Fri auto-lifecycle.
 
 Auto-recovery (docker mode): port + CLOSE_WAIT detection at startup (poll 45s); subprocess errors trigger health check first — only restart if port not listening or CLOSE_WAIT. Client ID collisions, VOL errors, transient timeouts do NOT trigger restart.
+
+**2FA-aware restart with exponential backoff (2026-05-07).** After every restart, IB Gateway sits at the IBKR Mobile push prompt with the API socket already open — `port_listening:true` falsely reports success. `restart_ib_gateway()` runs an explicit `managedAccounts()` probe post-restart; non-empty resets backoff, empty advances it (1m → 2m → 5m → 15m → 30m → 60m, capped). Refuses fresh restart attempts inside the window. `/health` exposes `auth_state` (`authenticated | awaiting_2fa | unreachable | unknown | remote`) and `restart_backoff` (attempt_count, next_attempt_in_secs, last_outcome). Pool's `managed_accounts` field per role is the underlying signal. **`POST /ib/reset-backoff`** is the operator escape hatch after manually approving 2FA. See `feedback_ib_gateway_2fa_verification.md` and `scripts/api/ib_gateway.py:restart_ib_gateway`.
 
 ### Client ID Ranges
 
@@ -114,6 +118,8 @@ Both modes read/write the **same Turso DB** (`libsql://radon-joemccann.aws-us-we
 
 - `scripts/cloud.sh` → `RADON_MODE=hetzner`. Schedulers run as systemd services on Hetzner VPS (`radon-{api,monitor,relay,refresh,nextjs}`); laptop runs only Next.js + newsfeed scraper. `app.radon.run` keeps serving when laptop is closed.
 - `scripts/local.sh` → `RADON_MODE=local`. Laptop launchd plists own all schedulers.
+
+**Auto-deploy on push to main.** `.github/workflows/deploy.yml` SSHes to the Hetzner VPS as the `radon` user and runs `bash scripts/deploy.sh` from `~/radon-cloud/`. So `git push origin main` IS the deploy trigger — there is no separate manual step. Confirm with `gh run list --workflow=deploy.yml --limit 1`. After deploy, `sudo systemctl restart radon-api.service` may be needed to pick up changes that aren't auto-reload-safe (FastAPI does NOT auto-reload in production).
 
 Schema: `scripts/db/migrations/0001_init.sql`. Writers: `scripts/db/writer.{js,py}`. Routes prefer DB, fall back to disk.
 
