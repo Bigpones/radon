@@ -16,8 +16,10 @@ import logging
 import os
 import socket
 import subprocess
+import time
+from datetime import datetime
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List, Optional
 
 logger = logging.getLogger("radon.ib_gateway")
 
@@ -44,6 +46,48 @@ PORT_POLL_INTERVAL = 3
 
 # Prevent concurrent restart races
 _restart_lock = asyncio.Lock()
+
+# Restart backoff state — only reset when a probe confirms login (managedAccounts non-empty).
+# Each restart sends a fresh IBKR Mobile 2FA push; tight retry loops spam the user
+# AND can flag the account as suspicious, so we widen the gap between attempts
+# until login completes.
+BACKOFF_LADDER_SECS: List[int] = [60, 120, 300, 900, 1800, 3600]  # 1m,2m,5m,15m,30m,60m
+
+_restart_state: Dict = {
+    "attempt_count": 0,            # consecutive unconfirmed attempts
+    "next_attempt_after": 0.0,     # epoch seconds; restart() refuses before this
+    "last_attempt_at": 0.0,        # epoch seconds; last actual restart attempt
+    "last_outcome": None,          # "authenticated" | "awaiting_2fa" | "unreachable" | None
+    "last_accounts": [],           # most recent managedAccounts() probe result
+}
+
+
+def _next_backoff_delay(attempt_count: int) -> int:
+    """Return delay in seconds for the Nth consecutive failed attempt (1-indexed)."""
+    if attempt_count <= 0:
+        return BACKOFF_LADDER_SECS[0]
+    idx = min(attempt_count - 1, len(BACKOFF_LADDER_SECS) - 1)
+    return BACKOFF_LADDER_SECS[idx]
+
+
+def restart_backoff_state() -> Dict:
+    """Snapshot of restart backoff state for /health and operator visibility."""
+    now = time.time()
+    return {
+        "attempt_count": _restart_state["attempt_count"],
+        "last_attempt_at": _restart_state["last_attempt_at"],
+        "next_attempt_after": _restart_state["next_attempt_after"],
+        "next_attempt_in_secs": max(0, int(_restart_state["next_attempt_after"] - now)),
+        "last_outcome": _restart_state["last_outcome"],
+    }
+
+
+def reset_restart_backoff() -> Dict:
+    """Manually clear backoff. Operator path: 'I just approved 2FA, try again now'."""
+    previous = {k: _restart_state[k] for k in ("attempt_count", "next_attempt_after", "last_outcome")}
+    _restart_state["attempt_count"] = 0
+    _restart_state["next_attempt_after"] = 0.0
+    return {"reset": True, "previous": previous}
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -472,13 +516,79 @@ def is_launchd_mode() -> bool:
     return GATEWAY_MODE == "launchd"
 
 
-async def check_ib_gateway() -> Dict:
-    """Check IB Gateway health. Returns status dict for /health endpoint."""
+async def _probe_authenticated(timeout: float = 8.0) -> tuple[bool, List[str]]:
+    """Open a throwaway IB connection and probe `managedAccounts()`.
+
+    Returns (authenticated, accounts). Authenticated = accounts list non-empty.
+    Used to verify a restart actually completed login — not just that the API
+    socket is listening. Empty accounts on a listening port means TWS is sitting
+    at the IBKR Mobile 2FA prompt.
+    """
+    try:
+        from ib_insync import IB
+    except ImportError:
+        return (False, [])
+
+    def _do_probe() -> tuple[bool, List[str]]:
+        ib = IB()
+        try:
+            # CLI range (90-99) per CLAUDE.md client-id allocation — clientId 98
+            # to avoid colliding with pool (3-5), relay (10-19), subprocesses,
+            # scanners, daemons. Brief connect + immediate disconnect.
+            ib.connect(IB_HOST, IB_PORT, clientId=98, timeout=timeout)
+            accounts = list(ib.managedAccounts() or [])
+            return (bool(accounts), accounts)
+        except Exception:
+            return (False, [])
+        finally:
+            try:
+                ib.disconnect()
+            except Exception:
+                pass
+
+    return await asyncio.to_thread(_do_probe)
+
+
+def _derive_auth_state(check_result: Dict, pool_status: Optional[dict]) -> str:
+    """Derive auth_state from a check result + optional pool status.
+
+    States:
+      unreachable   — port not listening
+      authenticated — at least one connected pool client returns managed_accounts
+      awaiting_2fa  — port listening but no accounts visible (TWS at 2FA prompt
+                      or pool fully disconnected from a Gateway that's pre-login)
+      unknown       — pool status unavailable; cannot distinguish auth/no-auth
+    """
+    if not check_result.get("port_listening"):
+        return "unreachable"
+    if not pool_status:
+        return "unknown"
+    for role_info in pool_status.values():
+        if role_info.get("connected") and role_info.get("managed_accounts"):
+            return "authenticated"
+    return "awaiting_2fa"
+
+
+async def check_ib_gateway(pool_status: Optional[dict] = None) -> Dict:
+    """Check IB Gateway health. Returns status dict for /health endpoint.
+
+    Pass `pool_status` (typically `IBPool.status()`) so the response can
+    distinguish "logged in" from "port listening but awaiting 2FA". Without
+    it, auth_state is "remote" (cloud mode) or "unknown" (no pool to probe).
+    """
     if is_cloud_mode():
-        return await _check_cloud()
+        result = await _check_cloud()
+        result["auth_state"] = "remote" if result.get("port_listening") else "unreachable"
+        return result
+
     if is_docker_mode():
-        return await _check_docker()
-    return await _check_launchd()
+        result = await _check_docker()
+    else:
+        result = await _check_launchd()
+
+    result["auth_state"] = _derive_auth_state(result, pool_status)
+    result["restart_backoff"] = restart_backoff_state()
+    return result
 
 
 async def ensure_ib_gateway() -> Dict:
@@ -492,14 +602,88 @@ async def ensure_ib_gateway() -> Dict:
 
 
 async def restart_ib_gateway() -> Dict:
-    """Restart IB Gateway. Used by POST /ib/restart and recovery paths."""
+    """Restart IB Gateway. Honors exponential backoff if 2FA stays unapproved.
+
+    Refuses fresh restart attempts inside the backoff window (1m, 2m, 5m, 15m,
+    30m, 60m, capped at 60m). After an attempt, probes `managedAccounts()` and
+    only resets the backoff counter when accounts are returned (= login
+    completed). A "port listening" success is NOT enough — Gateway sits with
+    the API socket open while waiting for the IBKR Mobile 2FA push.
+    """
     async with _restart_lock:
+        now = time.time()
+
+        # Backoff gate
+        if _restart_state["next_attempt_after"] > now:
+            wait_secs = int(_restart_state["next_attempt_after"] - now)
+            last_iso = (
+                datetime.fromtimestamp(_restart_state["last_attempt_at"]).isoformat()
+                if _restart_state["last_attempt_at"]
+                else "never"
+            )
+            return {
+                "restarted": False,
+                "deferred": True,
+                "reason": "awaiting_backoff",
+                "attempt_count": _restart_state["attempt_count"],
+                "next_attempt_in_secs": wait_secs,
+                "next_attempt_after": _restart_state["next_attempt_after"],
+                "last_attempt_at": last_iso,
+                "last_outcome": _restart_state["last_outcome"],
+                "error": (
+                    f"Skipping restart — last attempt at {last_iso} did not complete login "
+                    f"({_restart_state['attempt_count']} consecutive). Backoff window "
+                    f"of {wait_secs}s remaining. Approve IBKR Mobile 2FA, then call "
+                    f"POST /ib/reset-backoff to retry immediately."
+                ),
+            }
+
         if is_cloud_mode():
             return {
                 "restarted": False,
                 "gateway_mode": "cloud",
                 "error": f"Cannot restart remote Gateway at {IB_HOST}:{IB_PORT}. Manage it on the remote host.",
             }
-        if is_docker_mode():
-            return await _restart_docker()
-        return await _restart_launchd()
+
+        result = await (_restart_docker() if is_docker_mode() else _restart_launchd())
+        _restart_state["last_attempt_at"] = now
+
+        if result.get("port_listening"):
+            authenticated, accounts = await _probe_authenticated()
+            result["managed_accounts"] = accounts
+            if authenticated:
+                _restart_state["attempt_count"] = 0
+                _restart_state["next_attempt_after"] = 0.0
+                _restart_state["last_outcome"] = "authenticated"
+                _restart_state["last_accounts"] = accounts
+                result["authenticated"] = True
+                result["auth_state"] = "authenticated"
+                logger.info("IB Gateway restart verified — accounts: %s", accounts)
+            else:
+                _restart_state["attempt_count"] += 1
+                delay = _next_backoff_delay(_restart_state["attempt_count"])
+                _restart_state["next_attempt_after"] = now + delay
+                _restart_state["last_outcome"] = "awaiting_2fa"
+                result["authenticated"] = False
+                result["auth_state"] = "awaiting_2fa"
+                result["next_attempt_in_secs"] = delay
+                result["attempt_count"] = _restart_state["attempt_count"]
+                logger.warning(
+                    "IB Gateway restart: port up but managedAccounts empty — "
+                    "treating as awaiting_2fa, next attempt allowed in %ds (attempt #%d)",
+                    delay, _restart_state["attempt_count"],
+                )
+        else:
+            _restart_state["attempt_count"] += 1
+            delay = _next_backoff_delay(_restart_state["attempt_count"])
+            _restart_state["next_attempt_after"] = now + delay
+            _restart_state["last_outcome"] = "unreachable"
+            result["auth_state"] = "unreachable"
+            result["next_attempt_in_secs"] = delay
+            result["attempt_count"] = _restart_state["attempt_count"]
+            logger.warning(
+                "IB Gateway restart: port did not come up — next attempt allowed in %ds (attempt #%d)",
+                delay, _restart_state["attempt_count"],
+            )
+
+        return result

@@ -19,6 +19,7 @@ def test_local_launchd_runtime_failures_do_not_auto_restart(monkeypatch):
     monkeypatch.setattr(server, "restart_ib_gateway", fail_restart)
     monkeypatch.setattr(server, "is_cloud_mode", lambda: False)
     monkeypatch.setattr(server, "is_docker_mode", lambda: False)
+    monkeypatch.setattr(server, "is_launchd_mode", lambda: True)
     monkeypatch.setattr(server, "_pool_has_any_connection", lambda: True)
     monkeypatch.setattr(server, "_ib_last_failure", 0.0)
 

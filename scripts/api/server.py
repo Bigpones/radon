@@ -38,7 +38,15 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 from api.ib_pool import IBPool
 from api.subprocess import run_script, run_module, ScriptResult
-from api.ib_gateway import check_ib_gateway, ensure_ib_gateway, restart_ib_gateway, is_docker_mode, is_cloud_mode, is_launchd_mode
+from api.ib_gateway import (
+    check_ib_gateway,
+    ensure_ib_gateway,
+    restart_ib_gateway,
+    is_docker_mode,
+    is_cloud_mode,
+    is_launchd_mode,
+    reset_restart_backoff,
+)
 from clients.ib_client import DEFAULT_GATEWAY_PORT
 from api.pool_order_manage import pool_cancel_order, pool_modify_order
 from api.auth import verify_clerk_jwt, verify_api_key, is_local_or_tailnet
@@ -870,12 +878,13 @@ async def _fetch_risk_reversal_history(
 
 @app.get("/health")
 async def health():
-    gw = await check_ib_gateway()
+    pool_status = ib_pool.status() if ib_pool else None
+    gw = await check_ib_gateway(pool_status=pool_status)
     return {
         "status": "ok",
         "test_mode": test_mode,
         "ib_gateway": gw,
-        "ib_pool": ib_pool.status() if ib_pool else {},
+        "ib_pool": pool_status or {},
         "uw": uw_available,
     }
 
@@ -900,10 +909,18 @@ async def validate_ws_ticket(request: Request):
 
 @app.post("/ib/restart")
 async def ib_restart():
-    """Restart IB Gateway via IBC service, then reconnect pool."""
+    """Restart IB Gateway via IBC service, then reconnect pool.
+
+    Honors the restart backoff (1m → 60m capped) when prior attempts haven't
+    completed login. Use POST /ib/reset-backoff after approving 2FA to retry
+    immediately.
+    """
     result = await restart_ib_gateway()
-    if not result["restarted"]:
-        raise HTTPException(status_code=503, detail=result.get("error", "Restart failed"))
+    if not result.get("restarted"):
+        # Surface deferred (backoff) and unauthenticated outcomes as 503 so the
+        # caller treats them as failure, but include the structured payload for
+        # operator follow-up.
+        raise HTTPException(status_code=503, detail=result)
 
     # Reconnect pool after Gateway restart
     if ib_pool:
@@ -912,6 +929,12 @@ async def ib_restart():
         result["pool"] = pool_status
 
     return result
+
+
+@app.post("/ib/reset-backoff")
+async def ib_reset_backoff():
+    """Clear restart backoff state. Operator path: 'I just approved 2FA, try now'."""
+    return reset_restart_backoff()
 
 
 # ---------------------------------------------------------------------------

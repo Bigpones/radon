@@ -159,14 +159,34 @@ class IBPool:
             return False
 
     def status(self) -> dict:
-        """Return pool status for health endpoint."""
+        """Return pool status for health endpoint.
+
+        Each role reports `connected` (TCP-level) plus `managed_accounts` (the
+        accounts the IB client can see). A connected client with empty
+        managed_accounts means the API socket is up but Gateway hasn't
+        completed login — typically the IBKR mobile 2FA push is unanswered.
+        """
         return {
             role: {
                 "connected": self.is_connected(role),
                 "client_id": POOL_ROLES[role],
+                "managed_accounts": self._managed_accounts(role),
             }
             for role in POOL_ROLES
         }
+
+    def _managed_accounts(self, role: str) -> list[str]:
+        """Return managedAccounts() for a role, or [] if unavailable.
+
+        Never raises — empty list signals either disconnected or pre-auth.
+        """
+        client = self._clients.get(role)
+        if client is None:
+            return []
+        try:
+            return list(client.ib.managedAccounts() or [])
+        except Exception:
+            return []
 
 
 class _PoolContext:
