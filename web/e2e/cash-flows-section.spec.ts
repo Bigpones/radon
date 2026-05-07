@@ -96,7 +96,7 @@ async function setupMocks(page: Page) {
 }
 
 test.describe("Cash Flows section on /orders", () => {
-  test("renders the section with all 3 rows + summary totals", async ({ page }) => {
+  test("renders the section header + summary totals (collapsed by default)", async ({ page }) => {
     await setupMocks(page);
     await page.goto("/orders");
 
@@ -109,62 +109,73 @@ test.describe("Cash Flows section on /orders", () => {
     await expect(section).toContainText(/WITHDRAWALS/);
     await expect(section).toContainText(/NET/);
 
-    // All three rows render
-    await expect(page.locator('[data-testid="cash-flow-row-txn-1"]')).toBeVisible();
-    await expect(page.locator('[data-testid="cash-flow-row-txn-2"]')).toBeVisible();
-    await expect(page.locator('[data-testid="cash-flow-row-txn-3"]')).toBeVisible();
+    // Section is collapsed by default — no rows visible until user expands
+    await expect(page.locator('[data-testid="cash-flow-row-txn-1"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="cash-flow-row-txn-2"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="cash-flow-row-txn-3"]')).toHaveCount(0);
   });
 
-  test("withdrawal row renders with negative sign and red color", async ({ page }) => {
-    await setupMocks(page);
-    await page.goto("/orders");
-
-    const row = page.locator('[data-testid="cash-flow-row-txn-1"]');
-    await row.waitFor({ timeout: 10_000 });
-
-    // Sign convention: negative = outflow
-    await expect(row).toContainText("-$35,000.00");
-    await expect(row).toContainText("Withdrawal");
-    await expect(row).toContainText(/ACH Withdrawal/i);
-  });
-
-  test("deposit row renders with positive sign", async ({ page }) => {
-    await setupMocks(page);
-    await page.goto("/orders");
-
-    const row = page.locator('[data-testid="cash-flow-row-txn-2"]');
-    await row.waitFor({ timeout: 10_000 });
-
-    await expect(row).toContainText("+$100,000.00");
-    await expect(row).toContainText("Deposit");
-  });
-
-  test("dividend row renders with the Dividend pill type", async ({ page }) => {
-    await setupMocks(page);
-    await page.goto("/orders");
-
-    const row = page.locator('[data-testid="cash-flow-row-txn-3"]');
-    await row.waitFor({ timeout: 10_000 });
-
-    await expect(row).toContainText("+$245.50");
-    await expect(row).toContainText("Dividend");
-  });
-
-  test("type filter dropdown narrows visible rows", async ({ page }) => {
+  test("clicking the section header expands the table progressively", async ({ page }) => {
     await setupMocks(page);
     await page.goto("/orders");
 
     const section = page.locator('[data-testid="cash-flows-section"]');
     await section.waitFor({ timeout: 10_000 });
 
-    // Switch to Withdrawals only
+    const toggle = section.locator('[data-testid="cash-flows-toggle"]');
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    await toggle.click();
+
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator('[data-testid="cash-flow-row-txn-1"]')).toBeVisible();
+    await expect(page.locator('[data-testid="cash-flow-row-txn-2"]')).toBeVisible();
+    await expect(page.locator('[data-testid="cash-flow-row-txn-3"]')).toBeVisible();
+
+    // Clicking again collapses
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator('[data-testid="cash-flow-row-txn-1"]')).toHaveCount(0);
+  });
+
+  test("clicking the filter dropdown does NOT toggle collapse", async ({ page }) => {
+    await setupMocks(page);
+    await page.goto("/orders");
+
+    const section = page.locator('[data-testid="cash-flows-section"]');
+    await section.waitFor({ timeout: 10_000 });
+    await section.locator('[data-testid="cash-flows-toggle"]').click();
+
+    // Filter is in the header; interacting with it must not collapse the section
     await section.locator("select.filter-select").selectOption("Withdrawal");
 
-    // The withdrawal row stays visible
     await expect(page.locator('[data-testid="cash-flow-row-txn-1"]')).toBeVisible();
-
-    // Deposit and Dividend rows should be filtered out
     await expect(page.locator('[data-testid="cash-flow-row-txn-2"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="cash-flow-row-txn-3"]')).toHaveCount(0);
+  });
+
+  test("table cells use the brand monospace font (style guide)", async ({ page }) => {
+    await setupMocks(page);
+    await page.goto("/orders");
+
+    const section = page.locator('[data-testid="cash-flows-section"]');
+    await section.waitFor({ timeout: 10_000 });
+    await section.locator('[data-testid="cash-flows-toggle"]').click();
+
+    const row = page.locator('[data-testid="cash-flow-row-txn-1"]');
+    await row.waitFor({ timeout: 10_000 });
+
+    // Sign convention: negative = outflow, positive = inflow, dividend = inflow
+    await expect(row).toContainText("-$35,000.00");
+    await expect(row).toContainText("Withdrawal");
+    await expect(row).toContainText(/ACH Withdrawal/i);
+    await expect(page.locator('[data-testid="cash-flow-row-txn-2"]')).toContainText("+$100,000.00");
+    await expect(page.locator('[data-testid="cash-flow-row-txn-3"]')).toContainText("+$245.50");
+
+    // Cells must inherit the brand monospace stack (set on td in globals.css)
+    const fontFamily = await row.locator("td").first().evaluate(
+      (el) => getComputedStyle(el).fontFamily,
+    );
+    expect(fontFamily.toLowerCase()).toMatch(/mono|menlo|consolas|courier/);
   });
 });
