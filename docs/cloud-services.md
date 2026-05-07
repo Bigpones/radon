@@ -113,6 +113,17 @@ The same SSH public key is authorized on both routes — `~/.ssh/authorized_keys
 
 Every `radon-*.service` uses `EnvironmentFile=/home/radon/radon-cloud/.env` so a single edit propagates to all schedulers. Restart with `sudo systemctl restart radon-{nextjs,api,relay,monitor}`.
 
+**Whole-stack kill switch:** `/usr/local/bin/radon` wraps all units (IB Gateway included). Run on the VPS or remotely:
+
+```bash
+radon stop      # stop IB + radon-{api,relay,monitor,newsfeed,nextjs} + refresh.timer
+radon start     # start them all (IB Gateway first)
+radon restart   # stop + start
+radon status    # systemctl list-units "radon-*"
+```
+
+From the laptop: `ssh root@ib-gateway radon stop`. Useful for off-hours shutdowns from iPhone/Termius without remembering the unit list. Installed manually 2026-05-04 — not in `setup-vps.sh` yet, so a `wipe-vps.sh` rebuild drops it.
+
 ### Day-to-day deploys
 
 `.github/workflows/deploy.yml` runs `bash scripts/deploy.sh` on every push to `main`:

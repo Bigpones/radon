@@ -157,6 +157,14 @@
     "HEDGE-FUNDS",
     "SHORT-SELLING",
     "GOLDEN-CROSS",
-    "GOOGL"
+    "GOOGL",
+    "SK-HYNIX",
+    "NDX",
+    "RANGE",
+    "CASH-POSITION",
+    "HYPERSCALERS",
+    "STOXX-EUROPE-600",
+    "ROTATION",
+    "DEALER-GAMMA"
   ]
 }
