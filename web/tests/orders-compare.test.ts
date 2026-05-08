@@ -90,12 +90,37 @@ describe("compareOrders", () => {
     expect(diff.details.open_only_in_db).toEqual([99]);
   });
 
-  it("flags execIds missing on either side", () => {
+  it("flags execIds present only on disk (dual-write missed a fill)", () => {
     const disk = shell([], [makeExec("e1"), makeExec("e2")]);
     const db = shell([], [makeExec("e1")]);
     const diff = compareOrders(disk, db);
+    expect(diff.diverged).toBe(true);
     expect(diff.details.executed_only_in_disk).toEqual(["e2"]);
     expect(diff.details.executed_only_in_db).toEqual([]);
+    expect(diff.reason).toContain("exec_only_disk=1");
+  });
+
+  it("treats execIds present only in DB as informational, not divergence", () => {
+    // Disk holds only the current IB Gateway session; DB retains the
+    // last 36h of fills. Pre-restart fills survive in DB after disk
+    // resets — that asymmetry is expected, not a bug.
+    const disk = shell([], [makeExec("today1")]);
+    const db = shell([], [makeExec("today1"), makeExec("yesterday1"), makeExec("yesterday2")]);
+    const diff = compareOrders(disk, db);
+    expect(diff.diverged).toBe(false);
+    expect(diff.reason).toBe("ok");
+    expect(diff.details.executed_only_in_db.sort()).toEqual(["yesterday1", "yesterday2"]);
+  });
+
+  it("flags drift on tracked exec fields (avgPrice, quantity, commission, realizedPNL) for shared execIds", () => {
+    const disk = shell([], [{ ...makeExec("e1"), avgPrice: 5.25, quantity: 1, commission: 0.65 }]);
+    const db = shell([], [{ ...makeExec("e1"), avgPrice: 5.30, quantity: 1, commission: 0.70 }]);
+    const diff = compareOrders(disk, db);
+    expect(diff.diverged).toBe(true);
+    expect(diff.details.executed_field_drift).toHaveLength(1);
+    expect(diff.details.executed_field_drift[0].execId).toBe("e1");
+    expect(diff.details.executed_field_drift[0].fields.sort()).toEqual(["avgPrice", "commission"]);
+    expect(diff.reason).toContain("exec_field_drift=1");
   });
 
   it("flags drift on tracked open-order fields (status, filled, remaining, limitPrice, totalQuantity)", () => {
@@ -131,6 +156,8 @@ describe("compareOrders", () => {
     expect(diff.reason).toMatch(/open_only_disk=2/);
     expect(diff.reason).toMatch(/open_only_db=1/);
     expect(diff.reason).toMatch(/exec_only_disk=1/);
-    expect(diff.reason).toMatch(/exec_only_db=1/);
+    // exec_only_db is informational and intentionally excluded from
+    // the reason summary.
+    expect(diff.reason).not.toMatch(/exec_only_db=/);
   });
 });
