@@ -28,6 +28,7 @@ import { useDiscover } from "@/lib/useDiscover";
 import { useFlowAnalysis } from "@/lib/useFlowAnalysis";
 import { useScanner } from "@/lib/useScanner";
 import { useBlotter } from "@/lib/useBlotter";
+import { formatTradeDate } from "@/lib/blotter/formatTradeDate";
 import CashFlowsSection from "@/components/CashFlowsSection";
 import { useSort, type SortDirection } from "@/lib/useSort";
 import { useTableFilter } from "@/lib/useTableFilter";
@@ -2620,7 +2621,7 @@ export function HistoricalTradesSection() {
 
                   return (
                     <tr key={`${t.symbol}-${t.contract_desc}-${i}`}>
-                      <td>{getTradeDate(t) ? new Date(getTradeDate(t)).toLocaleDateString() : "—"}</td>
+                      <td>{getTradeDate(t) ? formatTradeDate(getTradeDate(t)) : "—"}</td>
                       <td><TickerLink ticker={t.symbol} /></td>
                       <td>{t.contract_desc}</td>
                       <td>{t.sec_type}</td>

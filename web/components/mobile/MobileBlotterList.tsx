@@ -2,6 +2,7 @@
 
 import type { BlotterTrade } from "@/lib/types";
 import { fmtPrice, fmtUsd } from "@/lib/positionUtils";
+import { formatTradeDate } from "@/lib/blotter/formatTradeDate";
 import Card from "./Card";
 
 type MobileBlotterListProps = {
@@ -73,7 +74,7 @@ export default function MobileBlotterList({ trades }: MobileBlotterListProps) {
             </div>
 
             <div className="mobile-card__chevron-row">
-              <span className="mobile-card__subtitle">{t.sec_type}{tradeDate ? ` · ${new Date(tradeDate).toLocaleDateString()}` : ""}</span>
+              <span className="mobile-card__subtitle">{t.sec_type}{tradeDate ? ` · ${formatTradeDate(tradeDate)}` : ""}</span>
               <span className="mobile-card__subtitle">Comm {t.total_commission != null ? fmtPrice(t.total_commission) : "—"}</span>
             </div>
           </Card>
