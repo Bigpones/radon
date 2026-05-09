@@ -305,19 +305,23 @@ def analyze_darkpool(trades: List[Dict]) -> Dict:
     classified = buy_volume + sell_volume
     buy_ratio = round(buy_volume / classified, 4) if classified > 0 else None
 
-    # Flow direction: >55% buy = ACCUMULATION, <45% buy = DISTRIBUTION
+    # Flow direction: >55% buy = ACCUMULATION, <45% buy = DISTRIBUTION.
+    # Strength is the magnitude of the lean (|buy_ratio - 0.5| * 200) on a
+    # 0-100 scale — reported regardless of whether the lean crossed the
+    # actionable threshold so a NEUTRAL day still reflects how skewed the
+    # prints actually were rather than collapsing to "0" (which reads as
+    # "no data" in the UI).
     if buy_ratio is None:
         direction = "UNKNOWN"
         strength = 0
-    elif buy_ratio >= 0.55:
-        direction = "ACCUMULATION"
-        strength = round((buy_ratio - 0.5) * 200, 1)  # 0-100 scale
-    elif buy_ratio <= 0.45:
-        direction = "DISTRIBUTION"
-        strength = round((0.5 - buy_ratio) * 200, 1)
     else:
-        direction = "NEUTRAL"
-        strength = 0
+        strength = round(abs(buy_ratio - 0.5) * 200, 1)
+        if buy_ratio >= 0.55:
+            direction = "ACCUMULATION"
+        elif buy_ratio <= 0.45:
+            direction = "DISTRIBUTION"
+        else:
+            direction = "NEUTRAL"
 
     return {
         "total_volume": total_volume,

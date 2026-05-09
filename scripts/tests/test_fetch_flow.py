@@ -112,6 +112,37 @@ class TestAnalyzeDarkpool:
         result = analyze_darkpool(trades)
         assert result["flow_direction"] == "NEUTRAL"
         assert result["dp_buy_ratio"] == 0.5
+        # Perfectly balanced -> 0 magnitude.
+        assert result["flow_strength"] == 0.0
+
+    def test_neutral_high_lean_strength(self):
+        # 54% buy / 46% sell -> classified NEUTRAL, but column should reflect
+        # the actual magnitude of the lean rather than collapse to 0.
+        # buy_ratio == 0.54  ->  |0.54 - 0.5| * 200 == 8.0
+        trades = [
+            {"size": "5400", "price": "51", "premium": "275400",
+             "nbbo_bid": "49", "nbbo_ask": "51"},
+            {"size": "4600", "price": "49", "premium": "225400",
+             "nbbo_bid": "49", "nbbo_ask": "51"},
+        ]
+        result = analyze_darkpool(trades)
+        assert result["flow_direction"] == "NEUTRAL"
+        assert result["dp_buy_ratio"] == 0.54
+        assert result["flow_strength"] == 8.0
+
+    def test_neutral_low_lean_strength(self):
+        # 46% buy / 54% sell -> NEUTRAL with bearish lean.
+        # buy_ratio == 0.46  ->  |0.46 - 0.5| * 200 == 8.0
+        trades = [
+            {"size": "4600", "price": "51", "premium": "234600",
+             "nbbo_bid": "49", "nbbo_ask": "51"},
+            {"size": "5400", "price": "49", "premium": "264600",
+             "nbbo_bid": "49", "nbbo_ask": "51"},
+        ]
+        result = analyze_darkpool(trades)
+        assert result["flow_direction"] == "NEUTRAL"
+        assert result["dp_buy_ratio"] == 0.46
+        assert result["flow_strength"] == 8.0
 
     def test_no_nbbo_unknown(self):
         trades = [
