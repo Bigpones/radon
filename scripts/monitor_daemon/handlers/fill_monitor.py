@@ -30,10 +30,11 @@ DEFAULT_CLIENT_ID = 70
 
 class FillMonitorHandler(BaseHandler):
     """Monitor orders for fills."""
-    
+
     name = "fill_monitor"
     interval_seconds = 60  # Check every minute
-    
+    _SERVICE_NAME = "fill-monitor"
+
     def __init__(
         self,
         trade_log_path: Optional[Path] = None,
@@ -46,11 +47,55 @@ class FillMonitorHandler(BaseHandler):
         self.ib_port = ib_port
         self.client_id = client_id
         self.send_notifications = send_notifications
-        
+
         # Track known order states: {order_id: {filled, symbol, etc}}
         self.known_orders: Dict[int, Dict] = {}
-    
+
     def execute(self) -> Dict[str, Any]:
+        """Wrap inner logic with service_health heartbeat (success+error)."""
+        # Local import — db.writer pulls libsql_experimental which may be
+        # absent in lightweight test/dev environments. Failing to record a
+        # heartbeat must never break the handler itself.
+        try:
+            from db.writer import _now_iso, record_service_health  # type: ignore
+        except Exception as exc:  # pragma: no cover — exercised on hosts without libsql
+            logger.warning("service_health heartbeat unavailable: %s", exc)
+            return self._execute_inner()
+
+        started_at = _now_iso()
+        try:
+            result = self._execute_inner()
+        except Exception as exc:
+            try:
+                record_service_health(
+                    self._SERVICE_NAME, "error",
+                    started_at=started_at, finished_at=_now_iso(),
+                    error={"message": str(exc)},
+                )
+            except Exception as inner:
+                logger.warning("record_service_health(error) failed: %s", inner)
+            raise
+
+        # The inner method swallows IB errors and surfaces them via result["error"];
+        # treat that the same as an exception for heartbeat bookkeeping.
+        try:
+            if result.get("error"):
+                record_service_health(
+                    self._SERVICE_NAME, "error",
+                    started_at=started_at, finished_at=_now_iso(),
+                    error={"message": str(result["error"])},
+                )
+            else:
+                record_service_health(
+                    self._SERVICE_NAME, "ok",
+                    started_at=started_at, finished_at=_now_iso(),
+                )
+        except Exception as exc:
+            logger.warning("record_service_health failed: %s", exc)
+
+        return result
+
+    def _execute_inner(self) -> Dict[str, Any]:
         """
         Check all open orders for fills.
 

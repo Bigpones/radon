@@ -30,10 +30,11 @@ DEFAULT_CLIENT_ID = 71
 
 class ExitOrdersHandler(BaseHandler):
     """Place pending exit orders when IB will accept them."""
-    
+
     name = "exit_orders"
     interval_seconds = 300  # Check every 5 minutes
-    
+    _SERVICE_NAME = "exit-orders"
+
     def __init__(
         self,
         trade_log_path: Optional[Path] = None,
@@ -123,6 +124,45 @@ class ExitOrdersHandler(BaseHandler):
             logger.error(f"Failed to update trade log: {e}")
     
     def execute(self) -> Dict[str, Any]:
+        """Wrap inner logic with service_health heartbeat (success+error)."""
+        try:
+            from db.writer import _now_iso, record_service_health  # type: ignore
+        except Exception as exc:  # pragma: no cover — hosts without libsql
+            logger.warning("service_health heartbeat unavailable: %s", exc)
+            return self._execute_inner()
+
+        started_at = _now_iso()
+        try:
+            result = self._execute_inner()
+        except Exception as exc:
+            try:
+                record_service_health(
+                    self._SERVICE_NAME, "error",
+                    started_at=started_at, finished_at=_now_iso(),
+                    error={"message": str(exc)},
+                )
+            except Exception as inner:
+                logger.warning("record_service_health(error) failed: %s", inner)
+            raise
+
+        try:
+            if result.get("error"):
+                record_service_health(
+                    self._SERVICE_NAME, "error",
+                    started_at=started_at, finished_at=_now_iso(),
+                    error={"message": str(result["error"])},
+                )
+            else:
+                record_service_health(
+                    self._SERVICE_NAME, "ok",
+                    started_at=started_at, finished_at=_now_iso(),
+                )
+        except Exception as exc:
+            logger.warning("record_service_health failed: %s", exc)
+
+        return result
+
+    def _execute_inner(self) -> Dict[str, Any]:
         """
         Check pending orders and place those within threshold.
 
