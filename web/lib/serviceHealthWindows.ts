@@ -27,8 +27,9 @@ const DAY = 24 * HOUR;
  * Per-service freshness windows in ms. Values match the spec table:
  *
  *   newsfeed-scraper     5m always
- *   ib-orders-sync       10m open, 1d closed
- *   ib-portfolio-sync    10m open, 1d closed
+ *   orders-sync          10m open, 3d closed   (writer: scripts/ib_orders.py)
+ *   portfolio-sync       10m open, 3d closed   (writer: scripts/ib_sync.py)
+ *   orders-read-compare  10m open, 3d closed   (writer: web/app/api/orders/route.ts)
  *   journal-sync         10m always
  *   cash-flow-sync       25h (daily handler)
  *   fill-monitor         5m open, 1h closed
@@ -39,12 +40,21 @@ const DAY = 24 * HOUR;
  *   vcg-scan             35m open, 1d closed
  *   cta-sync             35m open, 1d closed
  *   replica-watchdog     5m always (continuous)
+ *
+ * Service names MUST match the canonical writer name (no ``ib-`` prefix
+ * for orders/portfolio — the writers record under ``orders-sync`` /
+ * ``portfolio-sync`` directly). Mismatches silently fall through to the
+ * 1h default and fire the banner overnight + on weekends.
  */
 export const SERVICE_FRESHNESS_WINDOWS: Record<string, Window> = {
   "newsfeed-scraper": { open: 5 * MIN, extended: 5 * MIN, closed: 5 * MIN },
 
-  "ib-orders-sync": { open: 10 * MIN, extended: 10 * MIN, closed: 1 * DAY },
-  "ib-portfolio-sync": { open: 10 * MIN, extended: 10 * MIN, closed: 1 * DAY },
+  // Market-hours-only IB feeds. Closed-window covers the longest
+  // natural gap (Fri 16:00 ET → Mon 09:30 ET ≈ 65h) so a quiet
+  // weekend doesn't trip the banner.
+  "orders-sync": { open: 10 * MIN, extended: 10 * MIN, closed: 3 * DAY },
+  "portfolio-sync": { open: 10 * MIN, extended: 10 * MIN, closed: 3 * DAY },
+  "orders-read-compare": { open: 10 * MIN, extended: 10 * MIN, closed: 3 * DAY },
 
   "journal-sync": { open: 10 * MIN, extended: 10 * MIN, closed: 10 * MIN },
   "cash-flow-sync": { open: 25 * HOUR, extended: 25 * HOUR, closed: 25 * HOUR },
