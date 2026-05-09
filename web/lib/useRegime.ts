@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { useSyncHook, type UseSyncReturn } from "./useSyncHook";
 import { isCriDataStale } from "./criStaleness";
 import { MarketState } from "./useMarketHours";
+import { parseScanTime } from "./parseScanTime";
 
 export type CriHistoryEntry = {
   date: string;
@@ -90,11 +91,11 @@ export function needsCurrentEtSessionRetry(
   now = new Date(),
 ): boolean {
   if (!data?.scan_time) return true;
-  const scanTimeMs = Date.parse(data.scan_time);
-  if (!Number.isFinite(scanTimeMs)) return true;
+  const scanDate = parseScanTime(data.scan_time);
+  if (!scanDate) return true;
   return isCriDataStale(
     { date: data.date, market_open: data.market_open },
-    scanTimeMs,
+    scanDate.getTime(),
     todayET(now),
   );
 }

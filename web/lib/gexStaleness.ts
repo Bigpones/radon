@@ -10,6 +10,8 @@
  *  - market closed + session date === today      → not stale (EOD data is final)
  */
 
+import { parseScanTime, scanTimeToEtDate } from "./parseScanTime";
+
 const CACHE_TTL_MS = 60_000; // 1 minute
 
 export interface GexDataShape {
@@ -31,16 +33,6 @@ function todayInET(): string {
   return new Date().toLocaleDateString("sv", { timeZone: "America/New_York" });
 }
 
-function scanTimeToETDate(scanTime: string): string | null {
-  try {
-    const d = new Date(scanTime);
-    if (isNaN(d.getTime())) return null;
-    return d.toLocaleDateString("sv", { timeZone: "America/New_York" });
-  } catch {
-    return null;
-  }
-}
-
 /**
  * @param data - parsed GEX JSON
  * @param todayET - today's date in ET (YYYY-MM-DD), injectable for testing
@@ -53,13 +45,16 @@ export function isGexDataStale(
 ): boolean {
   if (!data.scan_time) return true;
 
-  const sessionDate = scanTimeToETDate(data.scan_time);
+  const scanDate = parseScanTime(data.scan_time);
+  if (!scanDate) return true;
+
+  const sessionDate = scanTimeToEtDate(data.scan_time);
   if (!sessionDate) return true;
 
   if (sessionDate !== todayET) return true;
 
   if (!currentMarketOpen) return false;
 
-  const scanAge = Date.now() - new Date(data.scan_time).getTime();
+  const scanAge = Date.now() - scanDate.getTime();
   return scanAge > CACHE_TTL_MS;
 }

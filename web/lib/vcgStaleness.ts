@@ -11,6 +11,8 @@
  *  - market closed + session date === today      → not stale (EOD data is final)
  */
 
+import { parseScanTime, scanTimeToEtDate } from "./parseScanTime";
+
 const CACHE_TTL_MS = 60_000; // 1 minute
 
 export interface VcgDataShape {
@@ -32,16 +34,6 @@ function todayInET(): string {
   return new Date().toLocaleDateString("sv", { timeZone: "America/New_York" });
 }
 
-function scanTimeToETDate(scanTime: string): string | null {
-  try {
-    const d = new Date(scanTime);
-    if (isNaN(d.getTime())) return null;
-    return d.toLocaleDateString("sv", { timeZone: "America/New_York" });
-  } catch {
-    return null;
-  }
-}
-
 /**
  * @param data - parsed VCG JSON
  * @param todayET - today's date in ET (YYYY-MM-DD), injectable for testing
@@ -55,7 +47,10 @@ export function isVcgDataStale(
   // No scan_time → always stale
   if (!data.scan_time) return true;
 
-  const sessionDate = scanTimeToETDate(data.scan_time);
+  const scanDate = parseScanTime(data.scan_time);
+  if (!scanDate) return true;
+
+  const sessionDate = scanTimeToEtDate(data.scan_time);
   if (!sessionDate) return true;
 
   // Different trading day → stale
@@ -65,6 +60,6 @@ export function isVcgDataStale(
   if (!currentMarketOpen) return false;
 
   // Market open → stale if scan_time age exceeds TTL
-  const scanAge = Date.now() - new Date(data.scan_time).getTime();
+  const scanAge = Date.now() - scanDate.getTime();
   return scanAge > CACHE_TTL_MS;
 }

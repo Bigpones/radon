@@ -2,6 +2,7 @@
 
 import { useSyncHook, type UseSyncReturn } from "./useSyncHook";
 import { MarketState } from "./useMarketHours";
+import { scanTimeToEtDate } from "./parseScanTime";
 
 /* ─── VCG types (match vcg_scan.py JSON output) ─────────────── */
 
@@ -63,12 +64,9 @@ function todayET(): string {
 
 function needsVcgRetry(data: VcgData | null | undefined): boolean {
   if (!data?.scan_time) return true;
-  try {
-    const scanDate = new Date(data.scan_time).toLocaleDateString("sv", { timeZone: "America/New_York" });
-    return scanDate !== todayET();
-  } catch {
-    return true;
-  }
+  const scanDate = scanTimeToEtDate(data.scan_time);
+  if (!scanDate) return true;
+  return scanDate !== todayET();
 }
 
 /* ─── Hook ───────────────────────────────────────────────────── */
