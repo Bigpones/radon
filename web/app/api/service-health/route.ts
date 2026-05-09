@@ -5,6 +5,7 @@ import {
   jsonApiError,
   setNoStoreResponseHeaders,
 } from "@/lib/apiContracts";
+import { getMarketStateFromDate, isStale } from "@/lib/serviceHealthWindows";
 
 // Disable Next.js static caching: this handler reads live DB state.
 export const dynamic = "force-dynamic";
@@ -21,8 +22,25 @@ export type ServiceHealthRow = {
 };
 
 function isFailingState(state: string): boolean {
+  // ``ok``, ``syncing``, ``paused`` are healthy / informational. Everything
+  // else — including ``stale`` from the freshness gate and ``error`` from
+  // a real exception — should fire the banner.
   if (state === "ok" || state === "syncing" || state === "paused") return false;
   return true;
+}
+
+/**
+ * Coerce ``ok`` rows past their freshness window into ``stale``. Real
+ * non-ok states (error, syncing, paused) are passed through untouched —
+ * the gate only adds signal, never hides it.
+ */
+function applyStalenessGate(row: ServiceHealthRow, nowMs: number): ServiceHealthRow {
+  if (row.state !== "ok") return row;
+  const market = getMarketStateFromDate(new Date(nowMs));
+  if (isStale(row.service, row.updated_at, market, nowMs)) {
+    return { ...row, state: "stale" };
+  }
+  return row;
 }
 
 export async function GET(): Promise<Response> {
@@ -39,23 +57,25 @@ export async function GET(): Promise<Response> {
       args: [],
     });
 
+    const nowMs = Date.now();
     const rows: ServiceHealthRow[] = [];
     for (const row of result.rows) {
       const r = row as unknown as ServiceHealthRow;
-      rows.push({
+      const raw: ServiceHealthRow = {
         service: String(r.service ?? ""),
         state: String(r.state ?? "unknown"),
         last_attempt_started_at: r.last_attempt_started_at ?? null,
         last_attempt_finished_at: r.last_attempt_finished_at ?? null,
         last_error: r.last_error ?? null,
         updated_at: String(r.updated_at ?? ""),
-      });
+      };
+      // Coerce stale ``ok`` rows so the banner can see them. Per-service
+      // freshness windows live in ``lib/serviceHealthWindows.ts`` and
+      // expand off-hours for market-cadence services so a quiet weekend
+      // doesn't fire a false alarm.
+      rows.push(applyStalenessGate(raw, nowMs));
     }
 
-    // Banner fires only on explicit non-OK state. Staleness alone is not a
-    // failure signal: most writers run on market-hours-only cadences (gex-scan,
-    // discover, cta-sync) so a quiet table off-hours is normal. A genuinely
-    // stuck writer surfaces via its own try/except → state=warn/fail.
     const failing = rows.filter((r) => isFailingState(r.state));
 
     const response = NextResponse.json({
