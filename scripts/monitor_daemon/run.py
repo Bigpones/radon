@@ -32,6 +32,7 @@ from monitor_daemon.daemon import MonitorDaemon
 from monitor_daemon.handlers import FillMonitorHandler, ExitOrdersHandler, PresetRebalanceHandler, JournalSyncHandler
 from monitor_daemon.handlers.flex_token_check import FlexTokenCheck
 from monitor_daemon.handlers.cash_flow_sync import CashFlowSyncHandler
+from monitor_daemon.handlers.replica_watchdog import ReplicaWatchdogHandler
 
 # Paths
 PROJECT_DIR = Path(__file__).parent.parent.parent
@@ -97,6 +98,8 @@ def create_daemon() -> MonitorDaemon:
     ))
 
     daemon.register(CashFlowSyncHandler())
+
+    daemon.register(ReplicaWatchdogHandler())
 
     # Load previous state
     daemon.load_state()
