@@ -258,4 +258,45 @@ describe("runScrapeCycle ordering — persistence before tagging", () => {
     expect(order).not.toContain("upsert");
     expect(order).not.toContain("tag");
   });
+
+  it("heartbeats service_health=ok on truly-empty cycles to clear stale error rows", async () => {
+    // Bug we're pinning: 819fe14 added the heartbeat for the
+    // nochange-after-changes branch but missed the earlier short-circuit
+    // when the scrape returns zero items. Without a heartbeat here, a
+    // prior `error` row from yesterday's WalConflict latches the banner
+    // red through a quiet weekend.
+    const { runScrapeCycle } = await import("../../scripts/newsfeed/cycle.js");
+
+    const healthCalls: Array<{ service: string; state: string }> = [];
+
+    const result = await runScrapeCycle({
+      cycleStartIso: "2026-05-09T12:00:00Z",
+      loadExistingPosts: async () => [],
+      scrapePosts: async () => ({ items: [] }),
+      mergePosts: () => ({ merged: [], changed: false }),
+      hydrateLocalImages: async () => false,
+      persistPosts: async () => ({ archived: false }),
+      pushMedia: async () => ({ ok: true, transferred: 0 }),
+      upsertPosts: async () => {},
+      hydrateTagsDual: async () => false,
+      recordServiceHealth: async (service: string, state: string) => {
+        healthCalls.push({ service, state });
+      },
+      buildTextTagger: () => ({ tagPost: async () => null }),
+      buildVisionTagger: () => ({ tagPost: async () => null }),
+      onNewTags: async () => {},
+      paths: {
+        dataDir: "/tmp/x",
+        archiveDir: "/tmp/x/archive",
+        mediaDir: "/tmp/x/media",
+        postsFile: "/tmp/x/posts.json",
+        projectRoot: "/tmp/x",
+        publicRoot: "/tmp/x/public",
+      },
+    });
+
+    expect(result).toEqual({ changed: false, count: 0 });
+    expect(healthCalls.length).toBe(1);
+    expect(healthCalls[0]).toEqual({ service: "newsfeed-scraper", state: "ok" });
+  });
 });

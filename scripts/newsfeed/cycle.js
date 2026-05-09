@@ -34,6 +34,19 @@ export async function runScrapeCycle(deps) {
   const items = scraped?.items ?? [];
 
   if (items.length === 0) {
+    // Heartbeat even on truly-empty cycles. Without this, a stale `error`
+    // row in service_health (e.g. yesterday's WalConflict) latches the
+    // banner red across quiet weekend periods. The 819fe14 fix added a
+    // heartbeat for the nochange-after-changes branch but missed this
+    // earlier short-circuit.
+    try {
+      await recordServiceHealth("newsfeed-scraper", "ok", {
+        startedAt: cycleStartIso,
+        finishedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn(`[newsfeed] heartbeat write failed: ${err.message}`);
+    }
     console.info(`[newsfeed] cycle empty ms=${Date.now() - cycleStart}`);
     return { changed: false, count: 0 };
   }
