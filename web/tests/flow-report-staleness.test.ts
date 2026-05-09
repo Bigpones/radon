@@ -81,4 +81,19 @@ describe("isFlowReportStale", () => {
     expect(FLOW_REPORT_STALENESS.MARKET_HOURS_TTL_MS).toBe(600_000);
     expect(FLOW_REPORT_STALENESS.AFTER_HOURS_TTL_MS).toBe(8 * 60 * 60 * 1000);
   });
+
+  it("naive ISO from a UTC writer is treated as UTC, not local", () => {
+    // Hetzner runs UTC; older snapshots wrote naive `analysis_time`.
+    // Repro the wrong-day edge: 22:03 ET on 2026-05-08 is 02:03 UTC on
+    // 2026-05-09. A naive ISO string of "2026-05-09T02:03:00" must NOT
+    // be parsed as 02:03 in the user's local zone (which would shift it
+    // by hours and mark a fresh report stale).
+    const now = new Date("2026-05-09T02:05:00Z"); // 22:05 ET — 2 minutes after the naive write
+    const result = isFlowReportStale(
+      { analysis_time: "2026-05-09T02:03:00.123456" }, // naive ISO, no offset
+      now,
+      true, // pretend market open to use the strict 10m TTL
+    );
+    expect(result).toBe(false);
+  });
 });
