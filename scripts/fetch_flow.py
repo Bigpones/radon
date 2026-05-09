@@ -347,8 +347,9 @@ def analyze_options_flow(alerts: List[Dict]) -> Dict:
     put_premium = 0.0
 
     for a in alerts:
-        prem = float(a.get("premium", 0))
-        if a.get("is_call"):
+        prem = float(a.get("total_premium") or a.get("premium") or 0)
+        is_call = (a.get("type") or "").lower() == "call" or bool(a.get("is_call"))
+        if is_call:
             call_premium += prem
         else:
             put_premium += prem

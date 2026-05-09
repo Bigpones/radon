@@ -200,6 +200,21 @@ class TestAnalyzeOptionsFlow:
         assert result["bias"] == "NEUTRAL"
         assert result["call_put_ratio"] == 1.0
 
+    def test_real_uw_field_names(self):
+        # UW /option-trades/flow-alerts returns total_premium (not premium)
+        # and type ("call"/"put") (not is_call). Without this, GOOGL on prod
+        # returned total_alerts:100 with bias:NO_DATA.
+        alerts = [
+            {"total_premium": "300000", "type": "call"},
+            {"total_premium": "100000", "type": "put"},
+        ]
+        result = analyze_options_flow(alerts)
+        assert result["total_premium"] == 400000.0
+        assert result["call_premium"] == 300000.0
+        assert result["put_premium"] == 100000.0
+        assert result["bias"] == "STRONGLY_BULLISH"
+        assert result["call_put_ratio"] == 3.0
+
 
 # ── fetch_flow combined signal ──────────────────────────────────────
 
