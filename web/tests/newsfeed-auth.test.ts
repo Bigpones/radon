@@ -96,7 +96,7 @@ describe("readCredentialsFromEnv", () => {
 });
 
 describe("ensureAuthenticated — storage state fresh path", () => {
-  it("skips login flow when initial /newsfeed visit lands on the authenticated newsfeed", async () => {
+  it("skips login flow but PERSISTS storage state when initial /newsfeed visit lands on the authenticated newsfeed", async () => {
     const { ensureAuthenticated } = await import("../../scripts/newsfeed/auth.js");
     const { page, calls } = createFakePage({
       initialUrl: "https://themarketear.com/the-newsletter",
@@ -110,19 +110,54 @@ describe("ensureAuthenticated — storage state fresh path", () => {
       return null;
     };
 
-    let persistCalled = false;
+    let persistCallCount = 0;
     const result = await ensureAuthenticated({
       context: {},
       page: page as never,
       credentials: { email: "joe@x", password: "pw" },
       persistStorageState: async () => {
-        persistCalled = true;
+        persistCallCount += 1;
       },
     });
 
     expect(result).toEqual({ authenticated: true, reusedSession: true });
     expect(calls.find((c) => c.method === "fill")).toBeUndefined();
-    expect(persistCalled).toBe(false);
+    // Warm-reuse path MUST refresh disk-side cookies so a process restart
+    // doesn't fall back onto stale storage state.
+    expect(persistCallCount).toBe(1);
+  });
+
+  it("persists storage state on every warm-reuse invocation (multi-cycle)", async () => {
+    const { ensureAuthenticated } = await import("../../scripts/newsfeed/auth.js");
+    const { page, calls } = createFakePage({
+      initialUrl: "https://themarketear.com/the-newsletter",
+      postLoginUrl: "https://themarketear.com/newsfeed",
+    });
+
+    page.goto = async (url: string) => {
+      calls.push({ method: "goto", args: [url] });
+      (page as unknown as { url: () => string }).url = () => "https://themarketear.com/newsfeed";
+      return null;
+    };
+
+    let persistCallCount = 0;
+    const persistFn = async () => {
+      persistCallCount += 1;
+    };
+
+    for (let i = 0; i < 3; i += 1) {
+      const result = await ensureAuthenticated({
+        context: {},
+        page: page as never,
+        credentials: { email: "joe@x", password: "pw" },
+        persistStorageState: persistFn,
+      });
+      expect(result.reusedSession).toBe(true);
+    }
+
+    // Each warm reuse must persist; the stale-storage bug surfaced precisely
+    // because the happy path skipped persistence.
+    expect(persistCallCount).toBe(3);
   });
 });
 
