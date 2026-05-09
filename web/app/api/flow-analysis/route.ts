@@ -4,6 +4,7 @@ import { statSync } from "fs";
 import { join } from "path";
 import { radonFetch } from "@/lib/radonApi";
 import { getDb } from "@/lib/db";
+import { getRequestId, setNoStoreResponseHeaders } from "@/lib/apiContracts";
 // Disable Next.js static caching: this handler reads live disk state
 // (data/*.json, cache files). Without this, the framework freezes the
 // first response and serves stale data until the dev server restarts.
@@ -58,35 +59,49 @@ async function readFlowAnalysisFromDb(): Promise<Record<string, unknown> | null>
 }
 
 export async function GET(): Promise<Response> {
+  const requestId = getRequestId();
   const fromDb = await readFlowAnalysisFromDb();
   if (fromDb) {
     const cache_meta = buildCacheMeta(CACHE_PATH);
-    return NextResponse.json({ ...fromDb, cache_meta });
+    return setNoStoreResponseHeaders(
+      NextResponse.json({ ...fromDb, cache_meta }),
+      requestId,
+    );
   }
   try {
     const raw = await readFile(CACHE_PATH, "utf-8");
     const data = JSON.parse(raw);
     const cache_meta = buildCacheMeta(CACHE_PATH);
-    return NextResponse.json({ ...data, cache_meta });
+    return setNoStoreResponseHeaders(
+      NextResponse.json({ ...data, cache_meta }),
+      requestId,
+    );
   } catch {
     const cache_meta = buildCacheMeta(CACHE_PATH);
-    return NextResponse.json({
-      analysis_time: "",
-      positions_scanned: 0,
-      supports: [],
-      against: [],
-      watch: [],
-      neutral: [],
-      cache_meta,
-    });
+    return setNoStoreResponseHeaders(
+      NextResponse.json({
+        analysis_time: "",
+        positions_scanned: 0,
+        supports: [],
+        against: [],
+        watch: [],
+        neutral: [],
+        cache_meta,
+      }),
+      requestId,
+    );
   }
 }
 
 export async function POST(): Promise<Response> {
+  const requestId = getRequestId();
   try {
     const data = await radonFetch("/flow-analysis", { method: "POST", timeout: 130_000 });
     const cache_meta = buildCacheMeta(CACHE_PATH);
-    return NextResponse.json({ ...data, cache_meta });
+    return setNoStoreResponseHeaders(
+      NextResponse.json({ ...data, cache_meta }),
+      requestId,
+    );
   } catch (error) {
     // Serve cached data on failure
     try {
@@ -95,10 +110,13 @@ export async function POST(): Promise<Response> {
       const cache_meta = buildCacheMeta(CACHE_PATH);
       const res = NextResponse.json({ ...cached, cache_meta, is_stale: true });
       res.headers.set("X-Sync-Warning", "Radon API unavailable - serving cached data");
-      return res;
+      return setNoStoreResponseHeaders(res, requestId);
     } catch {
       const message = error instanceof Error ? error.message : "Flow analysis failed";
-      return NextResponse.json({ error: message }, { status: 502 });
+      return setNoStoreResponseHeaders(
+        NextResponse.json({ error: message }, { status: 502 }),
+        requestId,
+      );
     }
   }
 }
