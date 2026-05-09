@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, XCircle } from "lucide-react";
+import { ChevronDown, ChevronRight, History, XCircle } from "lucide-react";
 import type { PositionFillGroup } from "@/components/WorkspaceSections";
 import { fmtPrice } from "@/lib/positionUtils";
 import Card from "./Card";
+import SectionEmptyState from "../SectionEmptyState";
 
 type MobileExecutedListProps = {
   groups: PositionFillGroup[];
@@ -24,9 +25,13 @@ export default function MobileExecutedList({ groups }: MobileExecutedListProps) 
 
   if (groups.length === 0) {
     return (
-      <div className="mobile-empty-state" data-testid="mobile-executed-list-empty">
-        <span>No fills this session.</span>
-      </div>
+      <SectionEmptyState
+        icon={History}
+        headline="No fills today"
+        secondary="Today's executions will appear here as orders fill."
+        variant="compact"
+        testId="mobile-executed-list-empty"
+      />
     );
   }
 
