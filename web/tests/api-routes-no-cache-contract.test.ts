@@ -113,3 +113,92 @@ describe("Turso source-of-truth — routes must invoke a DB read", () => {
     },
   );
 });
+
+// `dynamic = "force-dynamic"` only opts the route OUT of Next.js's static
+// page cache — it does NOT add a Cache-Control header to the response.
+// Without an explicit `Cache-Control: no-store`, browsers and intermediaries
+// (Caddy, Cloudflare) heuristically cache the response body and serve a
+// stale snapshot until a hard refresh. Commit ee8c401 fixed this for
+// /api/flow-analysis after stale ghost positions surfaced; an audit found
+// 8 sibling routes with the same bug. This contract scan keeps every
+// disk-backed always-fresh route honest.
+//
+// VCG / Regime / GEX deliberately use setCacheResponseHeaders with a short
+// TTL (15s + SWR 120s) — they are NOT enforced here. Performance / cash-flows
+// / service-health are exempt for similar reasons (FastAPI proxy or DB-only).
+//
+// The check is a static-source scan: every response constructor in the
+// file (NextResponse.json(...), new Response(...), or jsonApiError(...))
+// must either be wrapped in setNoStoreResponseHeaders(...) OR explicitly
+// set "cache-control: no-store" on its headers. The portfolio route is
+// the canonical example — `setNoStoreResponseHeaders(NextResponse.json(...), requestId)`.
+const NO_STORE_ROUTES = [
+  "app/api/portfolio/route.ts",
+  "app/api/flow-analysis/route.ts",
+  "app/api/flow-analysis/[ticker]/route.ts",
+  "app/api/journal/route.ts",
+  "app/api/discover/route.ts",
+  "app/api/blotter/route.ts",
+  "app/api/menthorq/cta/route.ts",
+  "app/api/internals/route.ts",
+  "app/api/orders/route.ts",
+  "app/api/scanner/route.ts",
+];
+
+describe("API route handlers — every response must set Cache-Control: no-store", () => {
+  it.each(NO_STORE_ROUTES)(
+    "%s wraps every response constructor in setNoStoreResponseHeaders",
+    async (route) => {
+      const src = await readFile(join(REPO_ROOT, route), "utf8");
+
+      // Strip line comments + block comments so we don't match commented-out
+      // examples in route files (e.g. JSDoc that shows the legacy pattern).
+      const stripped = src
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+
+      // Locate every plausible response constructor.
+      const constructorPositions = [
+        ...stripped.matchAll(/\bNextResponse\.json\s*\(/g),
+        ...stripped.matchAll(/\bnew\s+Response\s*\(/g),
+        ...stripped.matchAll(/\bjsonApiError\s*\(/g),
+        ...stripped.matchAll(/\bjsonError\s*\(/g),
+      ];
+
+      // Every route returns at least one response — guard against empty
+      // matches silently passing the assertion.
+      expect(constructorPositions.length).toBeGreaterThan(0);
+
+      for (const match of constructorPositions) {
+        // A response is "covered" if either:
+        //   a) it appears inside `setNoStoreResponseHeaders(...)` — look at
+        //      the chars BEFORE the match for the wrapping call (the
+        //      portfolio route writes `setNoStoreResponseHeaders(NextResponse.json(...), requestId)`),
+        //   b) the construction is assigned to a variable that gets passed
+        //      to setNoStoreResponseHeaders within the next ~800 chars
+        //      (e.g. `const res = NextResponse.json(...); ... return setNoStoreResponseHeaders(res, requestId);`),
+        //   c) the response object's headers get set("Cache-Control", "no-store")
+        //      explicitly within the next ~800 chars.
+        const start = match.index!;
+        const before = stripped.slice(Math.max(0, start - 120), start);
+        const after = stripped.slice(start, start + 800);
+
+        const wrappedDirectly = /\bsetNoStoreResponseHeaders\s*\(\s*$/.test(
+          before.replace(/\s+$/, ""),
+        ) || /\bsetNoStoreResponseHeaders\s*\(\s*\n?\s*$/.test(before);
+
+        const passedToHelperLater =
+          /\bsetNoStoreResponseHeaders\s*\(/.test(after);
+
+        const explicitNoStoreHeader =
+          /headers\.set\s*\(\s*["']Cache-Control["']\s*,\s*["'][^"']*no-store/i.test(after);
+
+        expect(
+          wrappedDirectly || passedToHelperLater || explicitNoStoreHeader,
+          `Response constructor at offset ${start} in ${route} is not wrapped in setNoStoreResponseHeaders. ` +
+            `Snippet: ${stripped.slice(Math.max(0, start - 40), start + 80)}`,
+        ).toBe(true);
+      }
+    },
+  );
+});

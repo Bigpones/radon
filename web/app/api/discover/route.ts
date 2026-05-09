@@ -5,6 +5,7 @@ import { join } from "path";
 import { radonFetch } from "@/lib/radonApi";
 import { getDb } from "@/lib/db";
 import { parseScanTime } from "@/lib/parseScanTime";
+import { getRequestId, setNoStoreResponseHeaders } from "@/lib/apiContracts";
 // Disable Next.js static caching: this handler reads live disk state
 // (data/*.json, cache files). Without this, the framework freezes the
 // first response and serves stale data until the dev server restarts.
@@ -79,32 +80,46 @@ function buildCacheMetaFromMs(ms: number): CacheMeta {
 }
 
 export async function GET(): Promise<Response> {
+  const requestId = getRequestId();
   const fromDb = await readDiscoverFromDb();
   if (fromDb) {
-    return NextResponse.json({ ...fromDb.data, cache_meta: buildCacheMetaFromMs(fromDb.fetchedAtMs) });
+    return setNoStoreResponseHeaders(
+      NextResponse.json({ ...fromDb.data, cache_meta: buildCacheMetaFromMs(fromDb.fetchedAtMs) }),
+      requestId,
+    );
   }
   try {
     const raw = await readFile(DISCOVER_CACHE_PATH, "utf-8");
     const data = JSON.parse(raw);
     const cache_meta = buildCacheMeta(DISCOVER_CACHE_PATH);
-    return NextResponse.json({ ...data, cache_meta });
+    return setNoStoreResponseHeaders(
+      NextResponse.json({ ...data, cache_meta }),
+      requestId,
+    );
   } catch {
     const cache_meta = buildCacheMeta(DISCOVER_CACHE_PATH);
-    return NextResponse.json({
-      discovery_time: "",
-      alerts_analyzed: 0,
-      candidates_found: 0,
-      candidates: [],
-      cache_meta,
-    });
+    return setNoStoreResponseHeaders(
+      NextResponse.json({
+        discovery_time: "",
+        alerts_analyzed: 0,
+        candidates_found: 0,
+        candidates: [],
+        cache_meta,
+      }),
+      requestId,
+    );
   }
 }
 
 export async function POST(): Promise<Response> {
+  const requestId = getRequestId();
   try {
     const data = await radonFetch("/discover", { method: "POST", timeout: 130_000 });
     const cache_meta = buildCacheMeta(DISCOVER_CACHE_PATH);
-    return NextResponse.json({ ...data, cache_meta });
+    return setNoStoreResponseHeaders(
+      NextResponse.json({ ...data, cache_meta }),
+      requestId,
+    );
   } catch (error) {
     // Serve cached data on failure
     try {
@@ -113,10 +128,13 @@ export async function POST(): Promise<Response> {
       const cache_meta = buildCacheMeta(DISCOVER_CACHE_PATH);
       const res = NextResponse.json({ ...cached, cache_meta, is_stale: true });
       res.headers.set("X-Sync-Warning", "Radon API unavailable - serving cached data");
-      return res;
+      return setNoStoreResponseHeaders(res, requestId);
     } catch {
       const message = error instanceof Error ? error.message : "Discover sync failed";
-      return NextResponse.json({ error: message }, { status: 502 });
+      return setNoStoreResponseHeaders(
+        NextResponse.json({ error: message }, { status: 502 }),
+        requestId,
+      );
     }
   }
 }

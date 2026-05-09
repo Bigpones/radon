@@ -4,6 +4,7 @@ import { join } from "path";
 import { radonFetch } from "@/lib/radonApi";
 import { runJournalSync } from "@/lib/journalSync";
 import { getDb } from "@/lib/db";
+import { getRequestId, setNoStoreResponseHeaders } from "@/lib/apiContracts";
 // Disable Next.js static caching: this handler reads live disk state
 // (data/*.json, cache files). Without this, the framework freezes the
 // first response and serves stale data until the dev server restarts.
@@ -125,34 +126,42 @@ function triggerBackgroundSync(): void {
 }
 
 export async function GET(): Promise<Response> {
+  const requestId = getRequestId();
   try {
     if (await isJournalStale()) {
       triggerBackgroundSync();
     }
 
     const data = await readJournal();
-    return NextResponse.json(data);
+    return setNoStoreResponseHeaders(NextResponse.json(data), requestId);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to read trade log";
-    return NextResponse.json({ error: message, trades: [] }, { status: 500 });
+    return setNoStoreResponseHeaders(
+      NextResponse.json({ error: message, trades: [] }, { status: 500 }),
+      requestId,
+    );
   }
 }
 
 export async function POST(): Promise<Response> {
+  const requestId = getRequestId();
   try {
     await radonFetch("/journal/reconcile", { method: "POST", timeout: 130_000 });
     await runJournalSync();
     const data = await readJournal();
-    return NextResponse.json(data);
+    return setNoStoreResponseHeaders(NextResponse.json(data), requestId);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Journal sync failed";
     try {
       const cached = await readJournal();
       const response = NextResponse.json(cached);
       response.headers.set("X-Sync-Warning", `Journal sync failed: ${message}`);
-      return response;
+      return setNoStoreResponseHeaders(response, requestId);
     } catch {
-      return NextResponse.json({ error: message, trades: [] }, { status: 500 });
+      return setNoStoreResponseHeaders(
+        NextResponse.json({ error: message, trades: [] }, { status: 500 }),
+        requestId,
+      );
     }
   }
 }

@@ -3,6 +3,7 @@ import { spawn } from "child_process";
 import { readdir, readFile, stat } from "fs/promises";
 import { join } from "path";
 import { getDb } from "@/lib/db";
+import { getRequestId, setNoStoreResponseHeaders } from "@/lib/apiContracts";
 
 export const runtime = "nodejs";
 // Disable Next.js's default static caching for route handlers. The route reads
@@ -338,6 +339,7 @@ function triggerBackgroundSync(expectedDate: string): void {
 }
 
 export async function GET(): Promise<Response> {
+  const requestId = getRequestId();
   const expectedDate = latestClosedTradingDay();
   const latest = await readLatestCta();
   const syncHealth = await readSyncHealth(expectedDate);
@@ -391,10 +393,13 @@ export async function GET(): Promise<Response> {
     : null;
   const status = latest.latestFile ? 200 : 503;
 
-  return NextResponse.json({
-    ...latest.data,
-    cache_meta,
-    sync_health: syncHealthPayload,
-    sync_status: syncStatusPayload,
-  }, { status });
+  return setNoStoreResponseHeaders(
+    NextResponse.json({
+      ...latest.data,
+      cache_meta,
+      sync_health: syncHealthPayload,
+      sync_status: syncStatusPayload,
+    }, { status }),
+    requestId,
+  );
 }
