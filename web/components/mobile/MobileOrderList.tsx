@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Inbox, Loader2 } from "lucide-react";
 import type { OpenOrder } from "@/lib/types";
 import type { OpenOrderDisplayRow } from "@/lib/openOrderCombos";
 import { fmtPrice } from "@/lib/positionUtils";
 import Card from "./Card";
 import BottomSheet from "./BottomSheet";
+import SectionEmptyState from "../SectionEmptyState";
 
 type HasPermId = { has(permId: number): boolean };
 
@@ -67,9 +68,13 @@ export default function MobileOrderList({
 
   if (rows.length === 0) {
     return (
-      <div className="mobile-empty-state" data-testid="mobile-order-list-empty">
-        <span>No open orders.</span>
-      </div>
+      <SectionEmptyState
+        icon={Inbox}
+        headline="No working orders"
+        secondary="Place an order from a ticker view to see it here."
+        variant="compact"
+        testId="mobile-order-list-empty"
+      />
     );
   }
 

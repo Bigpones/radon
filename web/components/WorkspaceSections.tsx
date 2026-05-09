@@ -11,6 +11,8 @@ import {
   ClipboardList,
   ArrowDown,
   ArrowUp,
+  History,
+  Inbox,
   Loader2,
   Search,
   Sparkles,
@@ -19,6 +21,7 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react";
+import SectionEmptyState from "./SectionEmptyState";
 import type { BlotterTrade, DiscoverCandidate, ExecutedOrder, FlowAnalysisPosition, OpenOrder, OrdersData, PortfolioData, PortfolioPosition, ScannerSignal, TradeEntry, WorkspaceSection } from "@/lib/types";
 import { useOrderActions } from "@/lib/OrderActionsContext";
 import type { PriceData } from "@/lib/pricesProtocol";
@@ -2050,7 +2053,12 @@ function OrdersSections({
         </div>
         <div className="section-body">
           {openOrderRows.length === 0 ? (
-            <div className="alert-item">No open orders</div>
+            <SectionEmptyState
+              icon={Inbox}
+              headline="No working orders"
+              secondary="Place an order from any ticker view to populate this list."
+              testId="open-orders-empty"
+            />
           ) : showMobileOrders ? (
             <MobileOrderList
               rows={openFilter.filtered}
@@ -2310,7 +2318,12 @@ function OrdersSections({
         </div>
         <div className="section-body">
           {positionGroups.length === 0 ? (
-            <div className="alert-item">No fills this session</div>
+            <SectionEmptyState
+              icon={History}
+              headline="No fills today"
+              secondary="Executions during today's session will appear here as orders fill."
+              testId="today-executed-empty"
+            />
           ) : showMobileOrders ? (
             <MobileExecutedList groups={execFilter.filtered} />
           ) : (
