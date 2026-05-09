@@ -9,6 +9,7 @@ import { selectPreferredCriCandidate, type CriCacheCandidate } from "@/lib/criCa
 import { backfillRealizedVolHistory, type RegimeHistoryEntry } from "@/lib/regimeHistory";
 import { radonFetch } from "@/lib/radonApi";
 import { isSkewCacheFresh } from "@/lib/internalsSkewCache";
+import { getRequestId, setNoStoreResponseHeaders } from "@/lib/apiContracts";
 
 // Disable Next.js static caching: this handler reads live disk state
 // (data/*.json, cache files). Without this, the framework freezes the
@@ -581,6 +582,7 @@ function triggerBackgroundScan(): void {
 }
 
 export async function GET(): Promise<Response> {
+  const requestId = getRequestId();
   const result = await readLatestCri();
   const [menthorqCache, menthorqSkewHistory] = await Promise.all([
     readLatestMenthorqCache(),
@@ -598,10 +600,11 @@ export async function GET(): Promise<Response> {
     triggerBackgroundScan();
   }
 
-  return NextResponse.json(data);
+  return setNoStoreResponseHeaders(NextResponse.json(data), requestId);
 }
 
 export async function POST(): Promise<Response> {
+  const requestId = getRequestId();
   try {
     const rawData = await radonFetch<Record<string, unknown>>("/regime/scan", {
       method: "POST",
@@ -612,9 +615,12 @@ export async function POST(): Promise<Response> {
       readInternalsSkewHistory(),
     ]);
     const data = normalizeCriPayload(rawData, menthorqCache, menthorqSkewHistory);
-    return NextResponse.json(data);
+    return setNoStoreResponseHeaders(NextResponse.json(data), requestId);
   } catch (error) {
     const message = error instanceof Error ? error.message : "CRI scan failed";
-    return NextResponse.json({ error: message }, { status: 502 });
+    return setNoStoreResponseHeaders(
+      NextResponse.json({ error: message }, { status: 502 }),
+      requestId,
+    );
   }
 }

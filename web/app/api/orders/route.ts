@@ -5,6 +5,7 @@ import { radonFetch } from "@/lib/radonApi";
 import { readOrdersFromDb } from "@/lib/orders/readOrdersFromDb";
 import { compareOrders } from "@/lib/orders/compareOrders";
 import { recordServiceHealth } from "@/lib/serviceHealth";
+import { getRequestId, setNoStoreResponseHeaders } from "@/lib/apiContracts";
 import type { Static } from "@sinclair/typebox";
 
 // Phase 3.2 — disk read remains canonical; DB read is logged-only so we
@@ -79,16 +80,21 @@ const readOrders = async (): Promise<Static<typeof OrdersData>> => {
 let syncInFlight: Promise<void> | null = null;
 
 export async function GET(): Promise<Response> {
+  const requestId = getRequestId();
   try {
     const data = await readOrders();
-    return NextResponse.json(data);
+    return setNoStoreResponseHeaders(NextResponse.json(data), requestId);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to read orders";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return setNoStoreResponseHeaders(
+      NextResponse.json({ error: message }, { status: 500 }),
+      requestId,
+    );
   }
 }
 
 export async function POST(): Promise<Response> {
+  const requestId = getRequestId();
   try {
     // Coalesce concurrent POSTs
     if (!syncInFlight) {
@@ -99,7 +105,7 @@ export async function POST(): Promise<Response> {
     await syncInFlight;
 
     const data = await readOrders();
-    return NextResponse.json(data);
+    return setNoStoreResponseHeaders(NextResponse.json(data), requestId);
   } catch {
     // Sync failed — fall back to cached data file
     const cached = await readOrders();
@@ -107,12 +113,15 @@ export async function POST(): Promise<Response> {
       console.warn("[Orders] Sync failed, serving cached data");
       const res = NextResponse.json(cached);
       res.headers.set("X-Sync-Warning", "IB sync failed - serving cached data");
-      return res;
+      return setNoStoreResponseHeaders(res, requestId);
     }
     // No cached data (empty last_sync) — genuine failure
-    return NextResponse.json(
-      { error: "Sync failed" },
-      { status: 502 },
+    return setNoStoreResponseHeaders(
+      NextResponse.json(
+        { error: "Sync failed" },
+        { status: 502 },
+      ),
+      requestId,
     );
   }
 }

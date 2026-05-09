@@ -3,6 +3,7 @@ import { readFile } from "fs/promises";
 import { statSync } from "fs";
 import { join } from "path";
 import { radonFetch } from "@/lib/radonApi";
+import { getRequestId, setNoStoreResponseHeaders } from "@/lib/apiContracts";
 
 // Disable Next.js static caching: this handler reads live disk state
 // (data/flow_reports/<TICKER>.json). Without this, Next 16 freezes the
@@ -53,10 +54,14 @@ function cachePathFor(ticker: string): string {
 type Params = { params: Promise<{ ticker: string }> };
 
 export async function GET(_req: Request, ctx: Params): Promise<Response> {
+  const requestId = getRequestId();
   const { ticker: raw } = await ctx.params;
   const ticker = normalizeTicker(raw);
   if (!ticker) {
-    return NextResponse.json({ error: "Invalid ticker symbol" }, { status: 400 });
+    return setNoStoreResponseHeaders(
+      NextResponse.json({ error: "Invalid ticker symbol" }, { status: 400 }),
+      requestId,
+    );
   }
 
   const cachePath = cachePathFor(ticker);
@@ -64,21 +69,31 @@ export async function GET(_req: Request, ctx: Params): Promise<Response> {
     const raw = await readFile(cachePath, "utf-8");
     const data = JSON.parse(raw);
     const cache_meta = buildCacheMeta(cachePath);
-    return NextResponse.json({ ...data, cache_meta });
+    return setNoStoreResponseHeaders(
+      NextResponse.json({ ...data, cache_meta }),
+      requestId,
+    );
   } catch {
     const cache_meta = buildCacheMeta(cachePath);
-    return NextResponse.json(
-      { ticker, cache_meta, missing: true },
-      { status: 404 },
+    return setNoStoreResponseHeaders(
+      NextResponse.json(
+        { ticker, cache_meta, missing: true },
+        { status: 404 },
+      ),
+      requestId,
     );
   }
 }
 
 export async function POST(_req: Request, ctx: Params): Promise<Response> {
+  const requestId = getRequestId();
   const { ticker: raw } = await ctx.params;
   const ticker = normalizeTicker(raw);
   if (!ticker) {
-    return NextResponse.json({ error: "Invalid ticker symbol" }, { status: 400 });
+    return setNoStoreResponseHeaders(
+      NextResponse.json({ error: "Invalid ticker symbol" }, { status: 400 }),
+      requestId,
+    );
   }
 
   try {
@@ -87,7 +102,10 @@ export async function POST(_req: Request, ctx: Params): Promise<Response> {
       timeout: 130_000,
     });
     const cache_meta = buildCacheMeta(cachePathFor(ticker));
-    return NextResponse.json({ ...(data as Record<string, unknown>), cache_meta });
+    return setNoStoreResponseHeaders(
+      NextResponse.json({ ...(data as Record<string, unknown>), cache_meta }),
+      requestId,
+    );
   } catch (error) {
     // Serve cached data on failure so the UI degrades gracefully.
     try {
@@ -96,10 +114,13 @@ export async function POST(_req: Request, ctx: Params): Promise<Response> {
       const cache_meta = buildCacheMeta(cachePathFor(ticker));
       const res = NextResponse.json({ ...cached, cache_meta, is_stale: true });
       res.headers.set("X-Sync-Warning", "Radon API unavailable - serving cached data");
-      return res;
+      return setNoStoreResponseHeaders(res, requestId);
     } catch {
       const message = error instanceof Error ? error.message : "Flow report failed";
-      return NextResponse.json({ error: message }, { status: 502 });
+      return setNoStoreResponseHeaders(
+        NextResponse.json({ error: message }, { status: 502 }),
+        requestId,
+      );
     }
   }
 }

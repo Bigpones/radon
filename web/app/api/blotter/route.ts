@@ -8,6 +8,7 @@ import {
   type BlotterPayload,
   type JournalRow,
 } from "@/lib/blotter/fromJournal";
+import { getRequestId, setNoStoreResponseHeaders } from "@/lib/apiContracts";
 // Disable Next.js static caching: this handler reads live disk state
 // (data/*.json, cache files). Without this, the framework freezes the
 // first response and serves stale data until the dev server restarts.
@@ -60,24 +61,29 @@ async function buildUnion(): Promise<BlotterPayload | null> {
 }
 
 export async function GET(): Promise<Response> {
+  const requestId = getRequestId();
   const union = await buildUnion();
-  if (union) return NextResponse.json(union);
+  if (union) return setNoStoreResponseHeaders(NextResponse.json(union), requestId);
 
-  return NextResponse.json({
-    as_of: "",
-    summary: { closed_trades: 0, open_trades: 0, total_commissions: 0, realized_pnl: 0 },
-    closed_trades: [],
-    open_trades: [],
-  });
+  return setNoStoreResponseHeaders(
+    NextResponse.json({
+      as_of: "",
+      summary: { closed_trades: 0, open_trades: 0, total_commissions: 0, realized_pnl: 0 },
+      closed_trades: [],
+      open_trades: [],
+    }),
+    requestId,
+  );
 }
 
 export async function POST(): Promise<Response> {
+  const requestId = getRequestId();
   // POST still kicks the legacy Flex Query path so the on-disk mirror
   // and the blotter_service cache stay current. Once the journal table
   // is the only consumer this can be retired.
   try {
     const data = await radonFetch("/blotter", { method: "POST", timeout: 130_000 });
-    return NextResponse.json(data);
+    return setNoStoreResponseHeaders(NextResponse.json(data), requestId);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Blotter sync failed";
     const union = await buildUnion();
@@ -87,8 +93,11 @@ export async function POST(): Promise<Response> {
         "X-Sync-Warning",
         `Blotter sync failed - serving union of journal + cached data (${message})`,
       );
-      return res;
+      return setNoStoreResponseHeaders(res, requestId);
     }
-    return NextResponse.json({ error: message }, { status: 502 });
+    return setNoStoreResponseHeaders(
+      NextResponse.json({ error: message }, { status: 502 }),
+      requestId,
+    );
   }
 }
