@@ -68,6 +68,8 @@ import SharePnlButton, { type SharePnlData } from "./SharePnlButton";
 import { SECTION_TOOLTIPS } from "@/lib/sectionTooltips";
 import TickerLink from "./TickerLink";
 import TickerWorkspace from "./TickerWorkspace";
+import TickerFlowReport from "./flow-analysis/TickerFlowReport";
+import FlowAnalysisTickerInput from "./flow-analysis/FlowAnalysisTickerInput";
 import { MarketState } from "@/lib/useMarketHours";
 
 /* ─── Re-exports for backward compat ──────────────────── */
@@ -885,7 +887,24 @@ function FlowTable({ rows, lastColumn }: { rows: FlowAnalysisPosition[]; lastCol
   );
 }
 
-function FlowSections() {
+function FlowSections({ tickerParam }: { tickerParam?: string }) {
+  if (tickerParam) {
+    return (
+      <>
+        <FlowAnalysisTickerInput initialTicker={tickerParam} />
+        <TickerFlowReport ticker={tickerParam} />
+      </>
+    );
+  }
+  return (
+    <>
+      <FlowAnalysisTickerInput />
+      <FlowSectionsBody />
+    </>
+  );
+}
+
+function FlowSectionsBody() {
   const { data, syncing, error, lastSync } = useFlowAnalysis(true);
 
   const supportsArr = data?.supports ?? [];
@@ -2688,7 +2707,7 @@ export default function WorkspaceSections({ section, portfolio, portfolioLastSyn
     case "dashboard":
       return null;
     case "flow-analysis":
-      return <FlowSections />;
+      return <FlowSections tickerParam={tickerParam} />;
     case "portfolio":
       return <PortfolioSections portfolio={portfolio ?? null} prices={prices} />;
     case "performance":
@@ -2710,6 +2729,6 @@ export default function WorkspaceSections({ section, portfolio, portfolioLastSyn
         <TickerWorkspace ticker={tickerParam} theme={theme ?? "dark"} />
       ) : null;
     default:
-      return <FlowSections />;
+      return <FlowSections tickerParam={tickerParam} />;
   }
 }

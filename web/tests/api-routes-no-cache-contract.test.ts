@@ -15,6 +15,7 @@ const DYNAMIC_ROUTES = [
   "app/api/journal/route.ts",
   "app/api/discover/route.ts",
   "app/api/flow-analysis/route.ts",
+  "app/api/flow-analysis/[ticker]/route.ts",
   "app/api/blotter/route.ts",
   "app/api/vcg/route.ts",
   "app/api/internals/route.ts",
@@ -44,6 +45,7 @@ const NO_STORE_HOOKS = [
   "lib/useOrders.ts",
   "lib/useCashFlows.ts",
   "lib/useServiceHealth.ts",
+  "lib/useTickerFlowReport.ts",
 ];
 
 describe("API route handlers — must export dynamic = 'force-dynamic'", () => {
