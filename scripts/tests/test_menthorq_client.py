@@ -1111,3 +1111,94 @@ class TestMenthorQForexConstants:
         assert len(FOREX_CARD_SLUGS) == 2
         assert "forex_gamma" in FOREX_CARD_SLUGS
         assert "forex_blindspot" in FOREX_CARD_SLUGS
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 19. STORAGE STATE PERSISTENCE
+# ══════════════════════════════════════════════════════════════════════
+#
+# storage_state on disk was decaying because _persist_storage_state only
+# fired on cold-login and __exit__. With a long-running client + storage
+# reuse, the disk file fell weeks behind the live cookies. Promote the
+# helper to a public method and call it after every successful page
+# interaction so a process restart never falls back onto stale cookies.
+
+
+class TestMenthorQStorageStatePersistence:
+    def test_persist_storage_state_is_public(self, mock_env_creds, mock_playwright, tmp_path):
+        """persist_storage_state() is a public method that callers can invoke."""
+        ss_path = tmp_path / "menthorq_storage_state.json"
+        c = MenthorQClient(storage_state_path=ss_path)
+
+        assert hasattr(c, "persist_storage_state"), (
+            "MenthorQClient must expose a public persist_storage_state() method "
+            "so external callers can refresh disk-side cookies after each "
+            "successful navigation."
+        )
+        # And it must be callable without error
+        c.persist_storage_state()
+
+    def test_persist_storage_state_writes_to_disk(self, mock_env_creds, mock_playwright, tmp_path):
+        """persist_storage_state() invokes BrowserContext.storage_state(path=...)."""
+        ss_path = tmp_path / "menthorq_cache" / "menthorq_storage_state.json"
+        c = MenthorQClient(storage_state_path=ss_path)
+
+        ctx = mock_playwright["context"]
+        ctx.storage_state.reset_mock()
+
+        c.persist_storage_state()
+
+        ctx.storage_state.assert_called_once()
+        call_kwargs = ctx.storage_state.call_args.kwargs
+        assert call_kwargs.get("path") == str(ss_path), (
+            "persist_storage_state() must write to the configured storage_state_path"
+        )
+        # Parent directory must be created lazily
+        assert ss_path.parent.exists()
+
+    def test_persist_storage_state_no_op_when_unconfigured(self, mock_env_creds, mock_playwright):
+        """persist_storage_state() is a no-op (no exception) when no path configured."""
+        c = MenthorQClient()  # no storage_state_path
+        ctx = mock_playwright["context"]
+        ctx.storage_state.reset_mock()
+
+        c.persist_storage_state()  # must not raise
+
+        ctx.storage_state.assert_not_called()
+
+    def test_get_cta_persists_after_extraction(self, mock_env_creds, mock_playwright, tmp_path):
+        """Successful get_cta() refreshes disk-side cookies before returning."""
+        ss_path = tmp_path / "menthorq_storage_state.json"
+        c = MenthorQClient(storage_state_path=ss_path)
+
+        page = mock_playwright["page"]
+        page.evaluate.return_value = 4
+
+        ctx = mock_playwright["context"]
+        ctx.storage_state.reset_mock()
+
+        with patch.object(c, "_download_card_images", return_value={"main": b"png1"}):
+            with patch.object(c, "_extract_via_vision", return_value=[{"underlying": "test"}]):
+                result = c.get_cta("2026-05-09")
+
+        assert "main" in result
+        # After a successful CTA extraction, the live cookies should land on
+        # disk so a process restart sees fresh storage state.
+        ctx.storage_state.assert_called()
+        path_arg = ctx.storage_state.call_args.kwargs.get("path")
+        assert path_arg == str(ss_path)
+
+    def test_get_eod_persists_after_extraction(self, mock_env_creds, mock_playwright, tmp_path):
+        """Successful get_eod() refreshes disk-side cookies before returning."""
+        ss_path = tmp_path / "menthorq_storage_state.json"
+        c = MenthorQClient(storage_state_path=ss_path)
+
+        ctx = mock_playwright["context"]
+        ctx.storage_state.reset_mock()
+
+        with patch.object(c, "_scrape_eod_fields", return_value={"last_price": 5740.0}):
+            c.get_eod("SPX", "2026-05-09")
+
+        ctx.storage_state.assert_called()
+        path_arg = ctx.storage_state.call_args.kwargs.get("path")
+        assert path_arg == str(ss_path)

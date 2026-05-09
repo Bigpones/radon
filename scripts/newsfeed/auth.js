@@ -134,6 +134,11 @@ export async function ensureAuthenticated({
 
   const reuseable = await tryReachNewsfeed(page, { timeout: timeouts.navigation }).catch(() => false);
   if (reuseable) {
+    // Refresh disk-side cookies on the warm-reuse path so a process restart
+    // doesn't fall back onto stale storage state. Without this, the only
+    // persistence trigger is the cold-login path — which the 6h re-auth gate
+    // skips entirely once a session is established.
+    await tryPersistStorageState(persistStorageState);
     return { authenticated: true, reusedSession: true };
   }
 
@@ -147,17 +152,19 @@ export async function ensureAuthenticated({
     throw new NewsfeedAuthError(`themarketear.com login failed: ${message}`, { screenshotPath });
   }
 
-  if (typeof persistStorageState === "function") {
-    try {
-      await persistStorageState();
-    } catch (err) {
-      console.warn(`[newsfeed] storage state persist failed: ${err.message}`);
-    }
-  } else if (context && typeof context.storageState === "function") {
-    /* caller did not wire persistence — best-effort no-op */
-  }
+  await tryPersistStorageState(persistStorageState);
 
   return { authenticated: true, reusedSession: false };
+}
+
+async function tryPersistStorageState(persistStorageState) {
+  if (typeof persistStorageState !== "function") return;
+  try {
+    await persistStorageState();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[newsfeed] storage state persist failed: ${message}`);
+  }
 }
 
 export const NEWSFEED_AUTH_DEFAULTS = {

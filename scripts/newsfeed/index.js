@@ -42,6 +42,7 @@ dotenv.config({ path: path.resolve(__dirname, "../../web/.env") });
 
 const INTERVAL_MS = 2 * 60 * 1000;
 const REAUTH_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6h — refresh storage state before cookies expire
+const PERSIST_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6h — periodic persist gate, fires inside re-auth window
 const COOKIE_URLS = ["https://themarketear.com"];
 
 function buildTextTaggerOrNull({ projectRoot }) {
@@ -73,6 +74,7 @@ export function createScraper(overrides = {}) {
 
   let browserHandle = null;
   let lastAuthAt = 0;
+  let lastStoragePersistAt = 0;
 
   async function getBrowser() {
     if (!browserHandle) {
@@ -98,6 +100,12 @@ export function createScraper(overrides = {}) {
     const handle = await getBrowser();
     const elapsed = Date.now() - lastAuthAt;
     if (!force && lastAuthAt > 0 && elapsed < REAUTH_INTERVAL_MS) {
+      // Inside the re-auth window we still want disk-side cookies to track
+      // the live browser context — otherwise a process restart after the
+      // cookies on disk lapse falls back onto the fragile email/password
+      // login flow. Persist on a separate gate without re-running the
+      // ensureAuthenticated → tryReachNewsfeed navigation.
+      await persistStorageStateIfDue(handle);
       return;
     }
     await ensureAuthenticated({
@@ -106,6 +114,19 @@ export function createScraper(overrides = {}) {
       persistStorageState: handle.persistStorageState,
     });
     lastAuthAt = Date.now();
+    lastStoragePersistAt = Date.now();
+  }
+
+  async function persistStorageStateIfDue(handle) {
+    if (typeof handle?.persistStorageState !== "function") return;
+    const elapsed = Date.now() - lastStoragePersistAt;
+    if (lastStoragePersistAt > 0 && elapsed < PERSIST_INTERVAL_MS) return;
+    try {
+      await handle.persistStorageState();
+      lastStoragePersistAt = Date.now();
+    } catch (err) {
+      console.warn(`[newsfeed] periodic storage state persist failed: ${err.message}`);
+    }
   }
 
   const getCookieHeader = async () => {
