@@ -33,8 +33,50 @@ class CashFlowSyncHandler(BaseHandler):
     name = "cash_flow_sync"
     interval_seconds = CHECK_INTERVAL
     requires_market_hours = False
+    _SERVICE_NAME = "cash-flow-sync"
 
     def execute(self) -> Dict[str, Any]:
+        """Wrap inner logic with service_health heartbeat (success+error)."""
+        try:
+            from db.writer import _now_iso, record_service_health  # type: ignore
+        except Exception as exc:  # pragma: no cover — hosts without libsql
+            logger.warning("service_health heartbeat unavailable: %s", exc)
+            return self._execute_inner()
+
+        started_at = _now_iso()
+        try:
+            result = self._execute_inner()
+        except Exception as exc:
+            try:
+                record_service_health(
+                    self._SERVICE_NAME, "error",
+                    started_at=started_at, finished_at=_now_iso(),
+                    error={"message": str(exc)},
+                )
+            except Exception as inner:
+                logger.warning("record_service_health(error) failed: %s", inner)
+            raise
+
+        try:
+            # Inner returns {"status": "error", "error": ...} on subprocess
+            # failure — surface that as a heartbeat error too.
+            if result.get("status") == "error" or result.get("error"):
+                record_service_health(
+                    self._SERVICE_NAME, "error",
+                    started_at=started_at, finished_at=_now_iso(),
+                    error={"message": str(result.get("error") or "cash_flow_sync failed")},
+                )
+            else:
+                record_service_health(
+                    self._SERVICE_NAME, "ok",
+                    started_at=started_at, finished_at=_now_iso(),
+                )
+        except Exception as exc:
+            logger.warning("record_service_health failed: %s", exc)
+
+        return result
+
+    def _execute_inner(self) -> Dict[str, Any]:
         if not os.environ.get("IB_FLEX_TOKEN") or not os.environ.get("IB_FLEX_NAV_QUERY_ID"):
             return {"status": "skip", "reason": "IB_FLEX_TOKEN / IB_FLEX_NAV_QUERY_ID not configured"}
 

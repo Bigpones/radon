@@ -80,16 +80,18 @@ describe("/api/service-health", () => {
     expect(body.failing[0].last_error).toBe("WAL locked");
   });
 
-  it("does NOT classify stale-but-OK rows as failing — most writers run on market-hours-only cadences, so off-hours quiet is normal", async () => {
-    const stale = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(); // 6h old
+  it("does NOT classify within-window OK rows as failing — daily-cadence services tolerate hours of silence", async () => {
+    // cash-flow-sync has a 25h window regardless of market state, so 6h
+    // ago is unambiguously fresh.
+    const recent = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
     mockGetDb([
       {
-        service: "gex-scan",
+        service: "cash-flow-sync",
         state: "ok",
-        last_attempt_started_at: stale,
-        last_attempt_finished_at: stale,
+        last_attempt_started_at: recent,
+        last_attempt_finished_at: recent,
         last_error: null,
-        updated_at: stale,
+        updated_at: recent,
       },
     ]);
     const { GET } = await import("../app/api/service-health/route");
