@@ -9,6 +9,7 @@ from .fill_monitor import FillMonitorHandler
 from .exit_orders import ExitOrdersHandler
 from .preset_rebalance_handler import PresetRebalanceHandler
 from .journal_sync import JournalSyncHandler
+from .replica_watchdog import ReplicaWatchdogHandler
 
 __all__ = [
     'BaseHandler',
@@ -16,4 +17,5 @@ __all__ = [
     'ExitOrdersHandler',
     'PresetRebalanceHandler',
     'JournalSyncHandler',
+    'ReplicaWatchdogHandler',
 ]
