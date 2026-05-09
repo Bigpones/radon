@@ -121,3 +121,41 @@ describe("market-hours-only services (weekend-aware closed window)", () => {
     expect(isStale(service, sixtyMinAgo, "open", NOW)).toBe(true);
   });
 });
+
+/**
+ * Regression: the windows table keyed orders / portfolio writers as
+ * ``ib-orders-sync`` / ``ib-portfolio-sync`` but the actual writers
+ * (scripts/ib_orders.py, scripts/ib_sync.py) record under
+ * ``orders-sync`` / ``portfolio-sync`` (no ``ib-`` prefix). The
+ * mismatch silently demoted both to the 1h default and fired the
+ * banner overnight + on weekends.
+ *
+ * Also: ``orders-read-compare`` (web/app/api/orders/route.ts) was
+ * never in the table at all — same problem.
+ *
+ * All three are market-hours-only signals — same closed window as
+ * the cri/gex/vcg/cta family.
+ */
+describe("DB-name aligned writers (orders-sync / portfolio-sync / orders-read-compare)", () => {
+  const SAT_NOON = Date.parse("2026-05-09T16:00:00Z");
+  const FRI_4PM = Date.parse("2026-05-08T20:00:00Z");
+  const friFinish = new Date(FRI_4PM).toISOString();
+
+  it.each([
+    "orders-sync",
+    "portfolio-sync",
+    "orders-read-compare",
+  ])("%s: a Friday-4PM finish does not flip to stale by Saturday noon", (service) => {
+    expect(isStale(service, friFinish, "closed", SAT_NOON)).toBe(false);
+  });
+
+  it.each([
+    "orders-sync",
+    "portfolio-sync",
+    "orders-read-compare",
+  ])("%s: still fires fast during market hours", (service) => {
+    const NOW = Date.parse("2026-05-08T18:00:00Z"); // Fri 2 PM ET
+    const sixtyMinAgo = new Date(NOW - 60 * 60_000).toISOString();
+    expect(isStale(service, sixtyMinAgo, "open", NOW)).toBe(true);
+  });
+});
