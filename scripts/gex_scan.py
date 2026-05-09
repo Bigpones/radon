@@ -41,6 +41,31 @@ BUCKET_SIZE_ETF = 5         # $5 buckets for SPY/QQQ
 PROFILE_RANGE_PCT = 0.10    # Show strikes within ±10% of spot
 HISTORY_DAYS = 20           # Number of sessions in history
 TRADING_DAYS_PER_YEAR = 252
+# Playwright fetch budget. Persist-then-enrich pipeline tolerates a hard
+# cap because the UW-only snapshot is already on disk + DB before the
+# Playwright call runs.
+MQ_FETCH_TIMEOUT_SECONDS = 10
+
+
+# ── DB / IO bindings — module-level so tests can patch ────────────
+# Imported lazily at module load, with safe no-op fallbacks for unit
+# tests that don't have the DB layer available.
+try:
+    from utils.atomic_io import atomic_save  # type: ignore
+except Exception:  # pragma: no cover
+    def atomic_save(path: str, payload: Any) -> None:  # type: ignore
+        with open(path, "w") as fh:
+            json.dump(payload, fh)
+
+try:
+    sys.path.insert(0, str(_PROJECT_DIR / "scripts"))
+    from db.writer import record_service_health, upsert_gex_snapshot  # type: ignore
+except Exception:  # pragma: no cover — DB layer optional
+    def upsert_gex_snapshot(*args, **kwargs):  # type: ignore
+        return None
+
+    def record_service_health(*args, **kwargs):  # type: ignore
+        return None
 
 
 def _bucket_size_for(ticker: str, spot: float) -> int:
@@ -225,14 +250,16 @@ def fetch_mq_levels(ticker: str) -> Optional[Dict[str, Any]]:
                 f"https://menthorq.com/account/?action=data"
                 f"&type=dashboard&commands=eod&tickers=commons&ticker={mq_slug}"
             )
+            # Persist-then-enrich budget: 10s hard cap. The UW-only
+            # snapshot is already durable, so partial failure is tolerable.
             try:
-                page.goto(url, wait_until="networkidle", timeout=60000)
+                page.goto(url, wait_until="networkidle", timeout=MQ_FETCH_TIMEOUT_SECONDS * 1000)
             except Exception:
                 # networkidle can time out on slow connections; data may still
                 # have arrived via the intercepted responses
                 pass
             import time as _t
-            _t.sleep(3)
+            _t.sleep(1)
             browser.close()
 
         if not collected:
@@ -783,6 +810,68 @@ def build_gex_output(
 
 
 # ══════════════════════════════════════════════════════════════════
+# Persist-then-Enrich pipeline
+# ══════════════════════════════════════════════════════════════════
+#
+# Old order: fetch UW → fetch MQ (≤60s Playwright) → persist.
+# New order: fetch UW → persist (UW-only) → fetch MQ → re-persist if MQ
+# returned data. Slow / failed MQ fetch never holds fresh UW data off
+# disk + DB.
+
+def persist_snapshot(ticker: str, result: Dict[str, Any], cache_path: Path) -> None:
+    """Atomic disk save + DB upsert + service-health heartbeat for one snapshot."""
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_save(str(cache_path), result)
+    try:
+        scan_iso = result.get("scan_time") or datetime.now(timezone.utc).isoformat()
+        upsert_gex_snapshot(ticker, scan_iso, result)
+        record_service_health("gex-scan", "ok", finished_at=scan_iso)
+    except Exception as exc:  # noqa: BLE001 — DB write must never crash the pipeline
+        print(f"[gex-scan] db dual-write non-fatal: {exc}", file=sys.stderr)
+
+
+def run_persist_then_enrich(
+    ticker: str,
+    uw_result: Dict[str, Any],
+    cache_path: Path,
+    build_with_mq,
+    fetch_mq: bool = True,
+) -> Dict[str, Any]:
+    """Persist UW-only snapshot, then attempt MQ enrichment.
+
+    Args:
+        ticker: Symbol being scanned.
+        uw_result: Result dict from `build_gex_output(...mq=None)`.
+        cache_path: Disk path for the JSON cache file.
+        build_with_mq: Callable taking a MQ payload dict and returning a
+            re-built result dict including enrichment.
+        fetch_mq: Whether to attempt MQ enrichment at all.
+
+    Returns:
+        The most-recent result dict (enriched if MQ succeeded, UW-only otherwise).
+    """
+    # Pass 1 — UW-only persist. ALWAYS runs first, before any Playwright work.
+    persist_snapshot(ticker, uw_result, cache_path)
+
+    if not fetch_mq:
+        return uw_result
+
+    try:
+        mq_data = fetch_mq_levels(ticker)
+    except Exception as exc:  # noqa: BLE001 — MQ fetch must never crash the pipeline
+        print(f"  MQ fetch raised: {exc}", file=sys.stderr)
+        return uw_result
+
+    if not mq_data:
+        return uw_result
+
+    # Pass 2 — re-persist with enrichment.
+    enriched = build_with_mq(mq_data)
+    persist_snapshot(ticker, enriched, cache_path)
+    return enriched
+
+
+# ══════════════════════════════════════════════════════════════════
 # CLI
 # ══════════════════════════════════════════════════════════════════
 
@@ -848,11 +937,47 @@ def main():
         if hasattr(client, "close"):
             client.close()
 
-    # MenthorQ enrichment (optional, Playwright-based)
-    mq_data: Optional[Dict[str, Any]] = None
-    if not args.no_mq:
-        print("  Fetching MenthorQ key levels...", file=sys.stderr)
-        mq_data = fetch_mq_levels(ticker)
+    # Load prior history from cache
+    cache_path = _PROJECT_DIR / "data" / "gex.json"
+    prior_history = []
+    if not args.no_cache:
+        prior_history = build_history_from_cache(cache_path)
+
+    # Build UW-only output first. MenthorQ enrichment runs AFTER persist.
+    def _build(mq: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        return build_gex_output(
+            ticker=ticker,
+            strike_data=strike_data,
+            aggregate_history=agg_history,
+            spot=spot,
+            close=close,
+            atm_iv=atm_iv,
+            vol_pc=vol_pc,
+            prior_history=prior_history,
+            market_open=market_open,
+            iv_rank=iv_rank_val,
+            mq=mq,
+        )
+
+    uw_only_result = _build(None)
+
+    # Persist-then-enrich: UW-only snapshot lands on disk + DB BEFORE the
+    # ≤10s Playwright fetch. If MQ fails or times out, the dashboard still
+    # has fresh UW data; if MQ succeeds, we re-persist with enrichment.
+    if args.no_mq:
+        print("  MQ: skipped (--no-mq)", file=sys.stderr)
+        result = uw_only_result
+        persist_snapshot(ticker, result, cache_path)
+    else:
+        print("  Persist UW-only snapshot, then enrich with MenthorQ...", file=sys.stderr)
+        result = run_persist_then_enrich(
+            ticker=ticker,
+            uw_result=uw_only_result,
+            cache_path=cache_path,
+            build_with_mq=_build,
+            fetch_mq=True,
+        )
+        mq_data = result.get("mq")
         if mq_data:
             hvl = mq_data.get("hvl")
             cr  = mq_data.get("call_resistance_all")
@@ -864,30 +989,7 @@ def main():
                 file=sys.stderr,
             )
         else:
-            print("  MQ: unavailable (proceeding with UW only)", file=sys.stderr)
-    else:
-        print("  MQ: skipped (--no-mq)", file=sys.stderr)
-
-    # Load prior history from cache
-    cache_path = _PROJECT_DIR / "data" / "gex.json"
-    prior_history = []
-    if not args.no_cache:
-        prior_history = build_history_from_cache(cache_path)
-
-    # Build output
-    result = build_gex_output(
-        ticker=ticker,
-        strike_data=strike_data,
-        aggregate_history=agg_history,
-        spot=spot,
-        close=close,
-        atm_iv=atm_iv,
-        vol_pc=vol_pc,
-        prior_history=prior_history,
-        market_open=market_open,
-        iv_rank=iv_rank_val,
-        mq=mq_data,
-    )
+            print("  MQ: unavailable (UW-only snapshot already persisted)", file=sys.stderr)
 
     elapsed = time.time() - t_start
     print(f"\n  Scan completed in {elapsed:.1f}s", file=sys.stderr)
@@ -898,22 +1000,7 @@ def main():
     else:
         _print_summary(result)
 
-    # Always write cache
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    from utils.atomic_io import atomic_save
-    atomic_save(str(cache_path), result)
     print(f"  Cache written: {cache_path}", file=sys.stderr)
-
-    # Phase 3 dual-write — best-effort, never breaks the JSON pipeline.
-    try:
-        sys.path.insert(0, str(_PROJECT_DIR / "scripts"))
-        from db.writer import record_service_health, upsert_gex_snapshot
-        ticker = result.get("ticker", args.ticker if hasattr(args, "ticker") else "UNKNOWN")
-        scan_iso = result.get("scan_time") or datetime.now(timezone.utc).isoformat()
-        upsert_gex_snapshot(ticker, scan_iso, result)
-        record_service_health("gex-scan", "ok", finished_at=scan_iso)
-    except Exception as exc:  # noqa: BLE001
-        print(f"[gex-scan] db dual-write non-fatal: {exc}", file=sys.stderr)
 
 
 def _print_summary(result: Dict[str, Any]) -> None:
