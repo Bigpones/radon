@@ -14,6 +14,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 import sys
@@ -970,6 +971,49 @@ async def flow_analysis():
     if not result.ok:
         raise HTTPException(status_code=502, detail=result.error)
     _write_cache(DATA_DIR / "flow_analysis.json", result.data)
+    return result.data
+
+
+_TICKER_RE = re.compile(r"^[A-Z]{1,5}$")
+_FLOW_REPORTS_DIR = DATA_DIR / "flow_reports"
+
+
+@app.get("/flow-analysis/{ticker}")
+async def get_flow_report(ticker: str):
+    """Return the most recent flow report for a single ticker.
+
+    Reads the cached report on disk; never triggers a fresh scan. The Next.js
+    layer compares the cache age against `flowReportStaleness` to decide
+    whether to issue a POST.
+    """
+    upper = ticker.upper()
+    if not _TICKER_RE.match(upper):
+        raise HTTPException(status_code=400, detail="Invalid ticker symbol")
+
+    cache_path = _FLOW_REPORTS_DIR / f"{upper}.json"
+    if not cache_path.exists():
+        raise HTTPException(status_code=404, detail=f"No flow report cached for {upper}")
+    try:
+        return json.loads(cache_path.read_text())
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to read cache: {exc}")
+
+
+@app.post("/flow-analysis/{ticker}")
+async def run_flow_report(ticker: str):
+    """Run a fresh flow scan for a single ticker, persist, and return."""
+    upper = ticker.upper()
+    if not _TICKER_RE.match(upper):
+        raise HTTPException(status_code=400, detail="Invalid ticker symbol")
+
+    result = await run_script("flow_report.py", [upper], timeout=120)
+    if not result.ok:
+        raise HTTPException(status_code=502, detail=result.error)
+    if not result.data:
+        raise HTTPException(status_code=502, detail="Flow report returned no data")
+    if isinstance(result.data, dict) and result.data.get("error"):
+        raise HTTPException(status_code=502, detail=result.data["error"])
+    _write_cache(_FLOW_REPORTS_DIR / f"{upper}.json", result.data)
     return result.data
 
 

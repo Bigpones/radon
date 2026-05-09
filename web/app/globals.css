@@ -7149,3 +7149,464 @@ body[data-mobile="true"] td.right {
   gap: 8px;
 }
 
+/* ─── Flow Analysis: per-ticker route ─────────────────────── */
+
+.flow-ticker-input-section {
+  padding-bottom: 0;
+}
+
+.flow-ticker-input {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+.flow-ticker-input-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.flow-ticker-input-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  border: 1px solid var(--border-dim);
+  border-radius: 4px;
+  background: var(--bg-panel);
+  padding: 8px 10px;
+  transition: border-color 150ms ease-in-out;
+}
+
+.flow-ticker-input-row:focus-within {
+  border-color: var(--signal-core);
+}
+
+.flow-ticker-input-icon {
+  color: var(--text-muted);
+  align-self: center;
+  flex-shrink: 0;
+}
+
+.flow-ticker-input input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  min-width: 0;
+}
+
+.flow-ticker-input input::placeholder {
+  color: var(--text-muted);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+}
+
+.flow-ticker-input-submit {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--signal-core);
+  color: var(--bg-base);
+  border: none;
+  border-radius: 4px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: background 150ms ease-in-out, opacity 150ms ease-in-out;
+}
+
+.flow-ticker-input-submit:hover:not(:disabled) {
+  background: var(--signal-strong);
+}
+
+.flow-ticker-input-submit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.flow-ticker-input-error {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fault);
+}
+
+.ticker-flow-report {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ticker-flow-hero {
+  padding: 16px;
+}
+
+.ticker-flow-hero-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.ticker-flow-hero-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.ticker-flow-hero-symbol {
+  font-family: var(--font-mono);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-primary);
+  margin-top: 4px;
+}
+
+.ticker-flow-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-dim);
+  border-radius: 4px;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: border-color 150ms ease-in-out, color 150ms ease-in-out;
+}
+
+.ticker-flow-refresh:hover:not(:disabled) {
+  color: var(--signal-core);
+  border-color: var(--signal-core);
+}
+
+.ticker-flow-refresh:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ticker-flow-badge {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 4px;
+  border: 1px solid var(--border-dim);
+  background: var(--bg-panel-raised);
+  position: relative;
+  overflow: hidden;
+}
+
+.ticker-flow-badge::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--neutral);
+}
+
+.ticker-flow-badge-bullish::before {
+  background: var(--signal-core);
+}
+
+.ticker-flow-badge-bearish::before {
+  background: var(--fault);
+}
+
+.ticker-flow-badge-neutral::before {
+  background: var(--neutral);
+}
+
+.ticker-flow-badge-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 4px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-dim);
+}
+
+.ticker-flow-badge-bullish .ticker-flow-badge-icon {
+  color: var(--signal-core);
+  border-color: var(--signal-core);
+}
+
+.ticker-flow-badge-bearish .ticker-flow-badge-icon {
+  color: var(--fault);
+  border-color: var(--fault);
+}
+
+.ticker-flow-badge-neutral .ticker-flow-badge-icon {
+  color: var(--text-secondary);
+}
+
+.ticker-flow-badge-body {
+  min-width: 0;
+}
+
+.ticker-flow-badge-label {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+
+.ticker-flow-badge-bullish .ticker-flow-badge-label {
+  color: var(--signal-core);
+}
+
+.ticker-flow-badge-bearish .ticker-flow-badge-label {
+  color: var(--fault);
+}
+
+.ticker-flow-badge-rationale {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+  line-height: 1.4;
+}
+
+.ticker-flow-badge-conviction {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-end;
+  padding-left: 12px;
+  border-left: 1px solid var(--border-dim);
+}
+
+.ticker-flow-badge-conviction-value {
+  font-family: var(--font-mono);
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.ticker-flow-badge-conviction-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.ticker-flow-pulse {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--signal-core);
+  box-shadow: 0 0 0 0 rgba(5, 173, 152, 0.6);
+  animation: ticker-flow-pulse 1.4s ease-out infinite;
+}
+
+@keyframes ticker-flow-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(5, 173, 152, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 14px rgba(5, 173, 152, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(5, 173, 152, 0);
+  }
+}
+
+.ticker-flow-analyzing {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 8px 0;
+}
+
+.ticker-flow-analyzing-spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--border-dim);
+  border-top-color: var(--signal-core);
+  animation: ticker-flow-spin 1s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes ticker-flow-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ticker-flow-analyzing-title {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.ticker-flow-analyzing-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.ticker-flow-analyzing-steps li::before {
+  content: "›";
+  color: var(--signal-core);
+  margin-right: 8px;
+  font-weight: 600;
+}
+
+.ticker-flow-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.ticker-flow-metric {
+  padding: 10px 12px;
+  border: 1px solid var(--border-dim);
+  border-radius: 4px;
+  background: var(--bg-panel);
+}
+
+.ticker-flow-metric-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.ticker-flow-metric-value {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.ticker-flow-metric-value.tone-positive {
+  color: var(--positive);
+}
+
+.ticker-flow-metric-value.tone-negative {
+  color: var(--negative);
+}
+
+.ticker-flow-daily {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.ticker-flow-daily thead th {
+  text-align: left;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-dim);
+}
+
+.ticker-flow-daily tbody td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.ticker-flow-daily tbody tr:last-child td {
+  border-bottom: none;
+}
+
+@media (max-width: 640px) {
+  .ticker-flow-hero {
+    padding: 12px;
+  }
+
+  .ticker-flow-badge {
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+      "icon body"
+      "conviction conviction";
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .ticker-flow-badge-icon {
+    grid-area: icon;
+    width: 44px;
+    height: 44px;
+  }
+
+  .ticker-flow-badge-body {
+    grid-area: body;
+  }
+
+  .ticker-flow-badge-conviction {
+    grid-area: conviction;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    border-left: none;
+    border-top: 1px solid var(--border-dim);
+    padding: 8px 0 0;
+    width: 100%;
+  }
+
+  .ticker-flow-badge-label {
+    font-size: 18px;
+  }
+
+  .ticker-flow-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .ticker-flow-daily {
+    font-size: 11px;
+  }
+}
+
