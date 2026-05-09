@@ -343,5 +343,171 @@ class TestUnlinkMissingFile:
         assert unlink_mock.call_count == 4
 
 
+class TestStartFailureAfterDelete:
+    def test_start_fails_after_files_deleted_logs_alert_and_throttle_not_advanced(
+        self, fake_db_writer
+    ):
+        """Start failing AFTER unlink succeeds — error path mid-heal.
+
+        Sequence: journalctl→5 conflicts, stop OK, all 4 unlinks OK, start raises.
+        Throttle MUST stay None so the next monitor cycle retries.
+        """
+        record_mock, _ = fake_db_writer
+        handler = ReplicaWatchdogHandler()
+
+        def _route(cmd, *args, **kwargs):
+            if cmd and cmd[0] == "journalctl":
+                return _journalctl_result(5)
+            if cmd[:3] == ["sudo", ReplicaWatchdogHandler.SYSTEMCTL_BIN, "stop"]:
+                return _ok_result()
+            if cmd[:3] == ["sudo", ReplicaWatchdogHandler.SYSTEMCTL_BIN, "start"]:
+                raise subprocess.CalledProcessError(
+                    returncode=5, cmd=cmd, stderr="failed to start unit"
+                )
+            return _ok_result()
+
+        with patch(
+            "monitor_daemon.handlers.replica_watchdog.subprocess.run",
+            side_effect=_route,
+        ), patch(
+            "monitor_daemon.handlers.replica_watchdog.os.unlink"
+        ) as unlink_mock:
+            result = handler.execute()
+
+        assert result["status"] == "heal_failed"
+        assert "error" in result
+        assert "failed to start unit" in result["error"] or "5" in result["error"]
+
+        # Throttle deliberately not advanced — next cycle must retry.
+        assert handler._last_heal_at is None
+
+        # All 4 sidecar files were unlinked before start failed.
+        expected_unlinks = [
+            call(f"{ReplicaWatchdogHandler.DATA_DIR}/{f}")
+            for f in ReplicaWatchdogHandler.REPLICA_FILES
+        ]
+        assert unlink_mock.call_args_list == expected_unlinks
+
+        # service_health: syncing then error, no ok.
+        states = [c[0][1] for c in record_mock.call_args_list]
+        assert states == ["syncing", "error"]
+        assert "ok" not in states
+
+        # Error payload carries the conflict count for operator triage.
+        error_kwargs = record_mock.call_args_list[1][1]
+        assert error_kwargs["error"]["wal_conflicts_observed"] == 5
+
+
+class TestSubprocessTimeout:
+    def test_subprocess_timeout_treated_same_as_call_error(self, fake_db_writer):
+        """TimeoutExpired on stop must take the same heal_failed path as CalledProcessError."""
+        record_mock, _ = fake_db_writer
+        handler = ReplicaWatchdogHandler()
+
+        def _route(cmd, *args, **kwargs):
+            if cmd and cmd[0] == "journalctl":
+                return _journalctl_result(4)
+            if cmd[:3] == ["sudo", ReplicaWatchdogHandler.SYSTEMCTL_BIN, "stop"]:
+                raise subprocess.TimeoutExpired(cmd=cmd, timeout=30)
+            return _ok_result()
+
+        with patch(
+            "monitor_daemon.handlers.replica_watchdog.subprocess.run",
+            side_effect=_route,
+        ), patch(
+            "monitor_daemon.handlers.replica_watchdog.os.unlink"
+        ) as unlink_mock:
+            result = handler.execute()
+
+        assert result["status"] == "heal_failed"
+        assert "error" in result
+        # Throttle stays unadvanced.
+        assert handler._last_heal_at is None
+        # Stop timed out before delete step.
+        unlink_mock.assert_not_called()
+        # service_health hit syncing then error, no ok.
+        states = [c[0][1] for c in record_mock.call_args_list]
+        assert states == ["syncing", "error"]
+        error_kwargs = record_mock.call_args_list[1][1]
+        assert error_kwargs["error"]["wal_conflicts_observed"] == 4
+
+
+class TestJournalctlUnavailable:
+    @pytest.mark.parametrize(
+        "exception",
+        [
+            subprocess.TimeoutExpired(cmd=["journalctl"], timeout=10),
+            FileNotFoundError("journalctl"),
+        ],
+        ids=["timeout", "not_found"],
+    )
+    def test_journalctl_unavailable_returns_healthy_with_zero_count(
+        self, exception, fake_db_writer, caplog
+    ):
+        """If journalctl is unreachable we go blind — log a warning, return 0, never heal."""
+        record_mock, _ = fake_db_writer
+        handler = ReplicaWatchdogHandler()
+
+        def _route(cmd, *args, **kwargs):
+            if cmd and cmd[0] == "journalctl":
+                raise exception
+            return _ok_result()
+
+        with caplog.at_level("WARNING", logger="monitor_daemon.handlers.replica_watchdog"), patch(
+            "monitor_daemon.handlers.replica_watchdog.subprocess.run",
+            side_effect=_route,
+        ) as run_mock, patch(
+            "monitor_daemon.handlers.replica_watchdog.os.unlink"
+        ) as unlink_mock:
+            result = handler.execute()
+
+        # Healthy with zero count — fail open, don't restart on a blind read.
+        assert result == {"status": "healthy", "wal_conflicts_5m": 0}
+
+        # No heal attempted: no service_health writes, no unlinks, no further subprocess calls.
+        record_mock.assert_not_called()
+        unlink_mock.assert_not_called()
+        assert run_mock.call_count == 1
+        assert run_mock.call_args_list[0][0][0][0] == "journalctl"
+
+        # Warning logged so operators can see the watchdog has gone blind.
+        warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+        assert any("journalctl unavailable" in r.getMessage() for r in warnings)
+
+
+class TestNaiveIsoStateRestore:
+    def test_set_state_with_naive_iso_does_not_crash_throttle_check(
+        self, fake_db_writer
+    ):
+        """Naive ISO timestamps in persisted state must not blow up the throttle subtraction.
+
+        Path (b): set_state coerces naive → UTC so datetime.now(tz=utc) - last_heal_at
+        succeeds without TypeError. Patched in replica_watchdog.set_state.
+        """
+        handler = ReplicaWatchdogHandler()
+
+        # Naive ISO — no offset, no Z. fromisoformat() gives a naive datetime.
+        handler.set_state({"last_heal_at": "2026-05-09T08:30:00"})
+
+        # The coercion happened: stored value is now tz-aware UTC.
+        assert handler._last_heal_at is not None
+        assert handler._last_heal_at.tzinfo is not None
+        assert handler._last_heal_at.utcoffset() == timedelta(0)
+
+        # Throttle check (line 124) must not raise — execute() should complete cleanly.
+        with patch(
+            "monitor_daemon.handlers.replica_watchdog.subprocess.run",
+            side_effect=_build_subprocess_router(5),
+        ), patch(
+            "monitor_daemon.handlers.replica_watchdog.os.unlink"
+        ):
+            # Whether this returns "throttled" or "healed" depends on how long ago
+            # 2026-05-09T08:30:00Z was relative to wall-clock. The test guarantee is
+            # only "no TypeError" — both terminal statuses are fine.
+            result = handler.execute()
+
+        assert result["status"] in {"throttled", "healed"}
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
