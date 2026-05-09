@@ -20,6 +20,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
+from zoneinfo import ZoneInfo
 
 # Load env files BEFORE importing modules that read env at import time
 # (e.g. db.client requires TURSO_DB_URL / TURSO_AUTH_TOKEN). When this script
@@ -909,8 +910,14 @@ def convert_to_portfolio_format(account: dict, collapsed_positions: list, pnl_da
     # Derive entry_date from trade_log and previous portfolio.
     # Priority: trade_log (most recent BUY/TRADE for matching ticker+structure) →
     # previous portfolio → today (truly new position).
+    #
+    # `today` MUST be the ET trading day, not the host's local day. On Hetzner
+    # (UTC host) `datetime.now()` after 20:00 ET is already the next calendar
+    # day in UTC, so a brand-new position opened at 21:00 ET would get stamped
+    # with tomorrow's ET date and the same-day P&L branch on the frontend
+    # (web/lib/positionUtils.ts:isSameDay) would miss it. Always use ET.
     import json as _json
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
 
     # Build date lookup from trade_log (latest trade per ticker+structure key)
     trade_log_dates: dict[str, str] = {}

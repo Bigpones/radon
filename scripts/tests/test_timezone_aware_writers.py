@@ -1,17 +1,21 @@
-"""Regression tests for timezone-aware `last_sync` writers.
+"""Regression tests for timezone-aware writers in `ib_sync.py` and
+`portfolio_performance.py`.
 
-Covers a HIGH-severity correctness bug:
+Covers two HIGH-severity correctness bugs:
 
-* `scripts/ib_sync.py` previously wrote `last_sync` via `datetime.now().isoformat()`
-  with no timezone offset. On Hetzner (UTC) the JS consumer
-  (`web/lib/performanceFreshness.ts`) parses naive strings as local time,
-  shifting the derived ET session date and triggering false-negative
-  staleness checks.
+1. `last_sync` (`scripts/ib_sync.py`) used `datetime.now().isoformat()` — no
+   offset. On Hetzner (UTC) the JS consumer parses naive strings as local
+   time, shifting the derived ET session date and triggering false-negative
+   staleness checks (`web/lib/performanceFreshness.ts`).
 
-* `scripts/portfolio_performance.py` derived `end_date` via `last_sync[:10]`.
-  With the legacy producer that string slice was already wrong on Hetzner,
-  baking the UTC-shifted date into Turso `performance_snapshots`. The helper
-  here picks the ET calendar day explicitly.
+2. `entry_date` (`scripts/ib_sync.py`) used `datetime.now().strftime(...)`.
+   On Hetzner after 20:00 ET this is already tomorrow in ET, so a fresh
+   position lands with the wrong stamp and `web/lib/positionUtils.ts:isSameDay`
+   misses it — collapsing same-day P&L back to the broken close-based branch.
+
+3. `portfolio_performance.py` derived `end_date` via `last_sync[:10]`. With
+   the new UTC-aware producer the slice is correct only by accident; the
+   helper used here picks the ET calendar day explicitly.
 """
 
 import json
@@ -67,6 +71,72 @@ class TestIbSyncLastSyncTimezone(unittest.TestCase):
         self.assertIsNotNone(parsed.tzinfo)
         # UTC offset == zero — equivalent forms `+00:00` from datetime.now(utc).
         self.assertEqual(parsed.utcoffset().total_seconds(), 0)
+
+
+class TestIbSyncEntryDateInET(unittest.TestCase):
+    """`entry_date` must reflect the ET trading day, not the host's local day."""
+
+    def _run_with_now(self, fake_utc_now: datetime, *, expected_et_date: str):
+        """Patch `datetime.now` inside `ib_sync` so `today` is computed from a
+        controlled instant. Verify the resulting `entry_date` is the ET day.
+        """
+
+        class _Now:
+            """Pretend-clock: emulates `datetime.now(tz)` precisely."""
+
+            @classmethod
+            def now(cls, tz=None):
+                if tz is None:
+                    return fake_utc_now.replace(tzinfo=None)
+                return fake_utc_now.astimezone(tz)
+
+            def __getattr__(self, name):  # delegate to real datetime
+                return getattr(datetime, name)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpdir = Path(tmp)
+            portfolio_path = tmpdir / "portfolio.json"
+            portfolio_path.write_text(json.dumps({"positions": []}))
+            (tmpdir / "trade_log.json").write_text(json.dumps({"trades": []}))
+
+            collapsed = [{
+                "id": 1, "ticker": "FOO", "structure": "Long Call $50",
+                "structure_type": "Long Call", "risk_profile": "defined",
+                "expiry": "2026-12-19", "contracts": 1, "direction": "LONG",
+                "entry_cost": 100.0, "max_risk": 100.0, "market_value": 110.0,
+                "ib_daily_pnl": None,
+                "legs": [{
+                    "direction": "LONG", "contracts": 1, "type": "Call",
+                    "strike": 50.0, "entry_cost": 100.0, "avg_cost": 100.0,
+                    "market_price": 1.10, "market_value": 110.0,
+                }],
+            }]
+
+            with patch.object(ib_sync, "PORTFOLIO_PATH", portfolio_path), \
+                 patch.object(ib_sync, "datetime", _Now()):
+                result = ib_sync.convert_to_portfolio_format(
+                    account={"NetLiquidation": 100000},
+                    collapsed_positions=collapsed,
+                    pnl_data=None,
+                    fill_dates=None,
+                )
+
+            self.assertEqual(result["positions"][0]["entry_date"], expected_et_date)
+
+    def test_entry_date_uses_et_when_utc_host_after_midnight(self):
+        # 2026-05-09T01:58 UTC == 2026-05-08T21:58 ET — still the 8th in ET.
+        # A naive `datetime.now()` on Hetzner would have written 2026-05-09 here.
+        self._run_with_now(
+            datetime(2026, 5, 9, 1, 58, tzinfo=timezone.utc),
+            expected_et_date="2026-05-08",
+        )
+
+    def test_entry_date_during_market_hours(self):
+        # 2026-05-08T18:00 UTC == 2026-05-08T14:00 ET — same day in both zones.
+        self._run_with_now(
+            datetime(2026, 5, 8, 18, 0, tzinfo=timezone.utc),
+            expected_et_date="2026-05-08",
+        )
 
 
 class TestPortfolioPerformanceEndDate(unittest.TestCase):

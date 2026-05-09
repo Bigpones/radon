@@ -287,4 +287,45 @@ describe("Same-day P&L regression invariants", () => {
       expect(todayPnl!, `${pos.ticker} ${pos.structure}`).toBeCloseTo(totalPnl, 0);
     }
   });
+
+  /**
+   * Producer-side regression: `scripts/ib_sync.py` previously stamped
+   * `entry_date` via `datetime.now().strftime(...)`. On Hetzner (UTC) after
+   * 20:00 ET that wrote *tomorrow's* ET date and the same-day branch missed
+   * the position entirely, surfacing a wildly wrong Today P&L baseline.
+   *
+   * The fix writes `datetime.now(ZoneInfo("America/New_York"))`, so a
+   * position opened at 22:00 ET still arrives stamped with today's ET date.
+   * `isSameDay` (an internal helper in positionUtils) flips to true and
+   * Today P&L collapses to MV − EC.
+   *
+   * Because `isSameDay` is not exported, we exercise it through
+   * `getTodayPnlDollars` with `entry_date = todayET()`. The sentinel value
+   * here is what the new producer writes at any UTC instant — including
+   * UTC instants that the OLD producer would have rendered as "tomorrow".
+   */
+  it("position stamped with ET-derived entry_date hits same-day branch", () => {
+    const today = todayET();
+    const pos: PortfolioPosition = {
+      id: 200, ticker: "ETBUG", structure: "Long Call $50",
+      structure_type: "Long Call", risk_profile: "defined",
+      expiry: "2026-12-19", contracts: 10, direction: "LONG",
+      entry_cost: 5000, max_risk: 5000, market_value: 5500,
+      ib_daily_pnl: -123, kelly_optimal: null, target: null, stop: null,
+      // Date-only stamp produced by the fixed producer in any UTC zone.
+      entry_date: today,
+      legs: [{
+        direction: "LONG", contracts: 10, type: "Call", strike: 50,
+        entry_cost: 5000, avg_cost: 500, market_price: 5.5, market_value: 5500,
+      }],
+    };
+    // Same-day branch should fire → Today P&L === MV − EC = +500
+    expect(getTodayPnlDollars(pos, {})).toBeCloseTo(500, 0);
+
+    // Per-leg WS prices include yesterday's close. The same-day branch must
+    // ignore close + ib_daily_pnl and stick to MV − EC even when both exist.
+    const key = optionKey({ symbol: "ETBUG", expiry: "20261219", strike: 50, right: "C" });
+    const prices = { [key]: makePriceData({ last: 5.5, close: 12.0 }) };
+    expect(getTodayPnlDollars(pos, prices)).toBeCloseTo(500, 0);
+  });
 });
