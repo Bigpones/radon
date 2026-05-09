@@ -3,6 +3,12 @@
 import { useState } from "react";
 import Modal from "./Modal";
 import type { ExposureDataWithBreakdown, ExposureBreakdownRow } from "@/lib/exposureBreakdown";
+import {
+  computeLeverageRatio,
+  classifyLeverageBias,
+  formatLeveragePct,
+  formatLeverageMultiplier,
+} from "@/lib/dollarDeltaLeverage";
 
 export type ExposureMetric = "netLong" | "netShort" | "dollarDelta" | "netExposure";
 
@@ -10,8 +16,14 @@ type Props = {
   metric: ExposureMetric | null;
   exposure: ExposureDataWithBreakdown;
   bankroll: number;
+  /** Net Liquidation Value — required for the delta-adjusted leverage block on the dollarDelta metric. */
+  netLiquidation?: number;
   onClose: () => void;
 };
+
+const DOLLAR_DELTA_FORMULA =
+  "Dollar Delta = SUM( position_delta x spot_price )\n" +
+  "Leverage = Dollar Delta / Net Liquidation Value";
 
 const METRIC_CONFIG: Record<ExposureMetric, {
   title: string;
@@ -39,7 +51,7 @@ const METRIC_CONFIG: Record<ExposureMetric, {
   },
   dollarDelta: {
     title: "Dollar Delta",
-    formula: "Dollar Delta = SUM( position_delta x spot_price )",
+    formula: DOLLAR_DELTA_FORMULA,
     contributionLabel: "$ DELTA",
     getValue: (e) => e.dollarDelta,
     getContribution: (r) => r.dollarDelta,
@@ -64,6 +76,10 @@ function fmtSignedUsd(n: number): string {
   return `${n >= 0 ? "+" : ""}${fmtUsd(Math.abs(n))}${n < 0 ? "" : ""}`.replace("+-", "-");
 }
 
+function fmtNlvUsd(n: number): string {
+  return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 function fmtDelta(n: number): string {
   return `${n >= 0 ? "+" : ""}${n.toFixed(0)}`;
 }
@@ -78,7 +94,7 @@ function fmtLegDelta(n: number | null): string {
   return n >= 0 ? `+${n.toFixed(4)}` : n.toFixed(4);
 }
 
-export default function ExposureBreakdownModal({ metric, exposure, bankroll, onClose }: Props) {
+export default function ExposureBreakdownModal({ metric, exposure, bankroll, netLiquidation, onClose }: Props) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
   if (!metric) return null;
@@ -94,6 +110,11 @@ export default function ExposureBreakdownModal({ metric, exposure, bankroll, onC
       return true; // dollarDelta and netExposure show all positions
     })
     .sort((a, b) => Math.abs(config.getContribution(b)) - Math.abs(config.getContribution(a)));
+
+  const showLeverage = metric === "dollarDelta";
+  const leverage = showLeverage && netLiquidation != null
+    ? computeLeverageRatio(exposure.dollarDelta, netLiquidation)
+    : null;
 
   return (
     <Modal
@@ -111,6 +132,16 @@ export default function ExposureBreakdownModal({ metric, exposure, bankroll, onC
           </span>
         )}
       </div>
+
+      {/* Delta-adjusted leverage — only on Dollar Delta */}
+      {showLeverage && leverage && (
+        <LeverageBlock
+          dollarDelta={exposure.dollarDelta}
+          netLiquidation={netLiquidation as number}
+          leverage={leverage}
+          hasApprox={exposure.rows.some((r) => r.deltaSource === "approx")}
+        />
+      )}
 
       {/* Formula */}
       <div className="eb-formula">
@@ -154,6 +185,63 @@ export default function ExposureBreakdownModal({ metric, exposure, bankroll, onC
   );
 }
 
+/* ─── Delta-adjusted leverage block ─────────────────────── */
+
+function LeverageBlock({
+  dollarDelta,
+  netLiquidation,
+  leverage,
+  hasApprox,
+}: {
+  dollarDelta: number;
+  netLiquidation: number;
+  leverage: { pct: number; multiplier: number };
+  hasApprox: boolean;
+}) {
+  const bias = classifyLeverageBias(leverage.pct);
+  const biasLabel = bias === "long"
+    ? "long-biased"
+    : bias === "short"
+      ? "short-biased"
+      : "market-neutral";
+  const exposurePerDollar = Math.abs(leverage.multiplier).toFixed(2);
+
+  return (
+    <div className={`dd-leverage-block dd-leverage-${bias}`} data-testid="dd-leverage-block">
+      <div className="dd-leverage-row">
+        <div className="dd-leverage-multiplier" data-testid="dd-leverage-multiplier">
+          {formatLeverageMultiplier(leverage.multiplier)}
+        </div>
+        <div className="dd-leverage-meta">
+          <span className="dd-leverage-pct" data-testid="dd-leverage-pct">
+            {formatLeveragePct(leverage.pct)}
+          </span>
+          <span className="dd-leverage-divider" aria-hidden="true">/</span>
+          <span className="dd-leverage-bias" data-testid="dd-leverage-bias">
+            {biasLabel}
+          </span>
+        </div>
+      </div>
+      <div className="dd-leverage-interpretation" data-testid="dd-leverage-interpretation">
+        Every $1 of NLV moves with ${exposurePerDollar} of directional exposure.
+      </div>
+      <div className="dd-leverage-footnote">
+        <span className="dd-leverage-nlv" data-testid="dd-leverage-nlv">
+          NLV {fmtNlvUsd(netLiquidation)}
+        </span>
+        <span className="dd-leverage-dollar-delta" aria-hidden="true">
+          {" "}/{" "}$ Delta {fmtSignedUsd(dollarDelta)}
+        </span>
+        {hasApprox && (
+          <span className="dd-leverage-approx" data-testid="dd-leverage-approx">
+            includes APPROX legs
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Per-position row with expandable legs ─────────────── */
 
 function RowGroup({
@@ -175,7 +263,7 @@ function RowGroup({
     <>
       <tr className="eb-row" onClick={hasLegs ? onToggle : undefined} style={hasLegs ? { cursor: "pointer" } : undefined}>
         <td className="eb-ticker">
-          {hasLegs && <span className="eb-expand">{isExpanded ? "\u25BC" : "\u25B6"}</span>}
+          {hasLegs && <span className="eb-expand">{isExpanded ? "▼" : "▶"}</span>}
           {row.ticker}
         </td>
         <td className="eb-structure">{row.structure}</td>
