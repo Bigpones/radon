@@ -3735,6 +3735,162 @@ tr {
   letter-spacing: 0.05em;
 }
 
+/* ── Delta-adjusted leverage block (Dollar Delta modal) ── */
+
+.dd-leverage-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border-dim);
+  border-radius: 4px;
+  background: var(--bg-hover);
+  border-left-width: 3px;
+}
+
+.dd-leverage-long {
+  border-left-color: var(--positive);
+  background: color-mix(in srgb, var(--positive) 8%, var(--bg-hover));
+}
+
+.dd-leverage-short {
+  border-left-color: var(--negative);
+  background: color-mix(in srgb, var(--negative) 8%, var(--bg-hover));
+}
+
+.dd-leverage-neutral {
+  border-left-color: var(--neutral);
+}
+
+.dd-leverage-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dd-leverage-multiplier {
+  font-family: var(--font-mono);
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.dd-leverage-long .dd-leverage-multiplier { color: var(--positive); }
+.dd-leverage-short .dd-leverage-multiplier { color: var(--negative); }
+.dd-leverage-neutral .dd-leverage-multiplier { color: var(--text-secondary); }
+
+.dd-leverage-meta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-mono);
+}
+
+.dd-leverage-pct {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.dd-leverage-long .dd-leverage-pct { color: var(--positive); }
+.dd-leverage-short .dd-leverage-pct { color: var(--negative); }
+.dd-leverage-neutral .dd-leverage-pct { color: var(--text-secondary); }
+
+.dd-leverage-divider {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.dd-leverage-bias {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-secondary);
+}
+
+.dd-leverage-interpretation {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.dd-leverage-footnote {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  align-items: center;
+}
+
+.dd-leverage-nlv,
+.dd-leverage-dollar-delta {
+  display: inline-block;
+}
+
+.dd-leverage-approx {
+  margin-left: auto;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  padding: 1px 6px;
+  border: 1px solid var(--border-dim);
+  border-radius: 4px;
+  color: var(--warning);
+}
+
+/* ── Metric card subtitle (Dollar Delta leverage on card) ── */
+
+.metric-subtitle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  margin-top: -4px;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.metric-subtitle-leverage {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.metric-subtitle-pct {
+  font-weight: 500;
+}
+
+.metric-subtitle-multiplier {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 10px;
+}
+
+.metric-subtitle-divider {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.metric-subtitle-long .metric-subtitle-pct { color: var(--positive); }
+.metric-subtitle-short .metric-subtitle-pct { color: var(--negative); }
+.metric-subtitle-neutral .metric-subtitle-pct { color: var(--text-secondary); }
+
+.metric-subtitle-approx {
+  margin-left: 4px;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  padding: 0 4px;
+  border: 1px solid var(--border-dim);
+  border-radius: 4px;
+  color: var(--warning);
+}
+
 /* ═══════════════════════════════════════════════════════
    REGIME PANEL — CRI Dashboard
    ═══════════════════════════════════════════════════════ */

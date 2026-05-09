@@ -1,10 +1,16 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, type ReactNode } from "react";
 import type { PortfolioData, AccountSummary, ExecutedOrder } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { computeExposureDetailed, type ExposureDataWithBreakdown } from "@/lib/exposureBreakdown";
 import { computeDayMoveBreakdown } from "@/lib/dayMoveBreakdown";
+import {
+  computeLeverageRatio,
+  classifyLeverageBias,
+  formatLeveragePct,
+  formatLeverageMultiplier,
+} from "@/lib/dollarDeltaLeverage";
 import ExposureBreakdownModal, { type ExposureMetric } from "./ExposureBreakdownModal";
 import FillsModal from "./FillsModal";
 import PnlBreakdownModal, { type PnlBreakdownRow } from "./PnlBreakdownModal";
@@ -71,13 +77,21 @@ function computeTodayUnrealizedPnl(
 
 /* ─── Metric card helper ─────────────────────────────────── */
 
-type CardDef = { label: string; value: string; change: string; tone: "positive" | "negative" | "neutral" };
+type CardDef = {
+  label: string;
+  value: string;
+  change: string;
+  tone: "positive" | "negative" | "neutral";
+  /** Optional subtitle rendered between value and change line. */
+  subtitle?: ReactNode;
+};
 
 function MetricCard({ card, onClick }: { card: CardDef; onClick?: () => void }) {
   return (
     <div className={`metric-card${onClick ? " metric-card-clickable" : ""}`} onClick={onClick}>
       <div className="metric-label">{card.label}</div>
       <div className={`metric-value ${card.tone !== "neutral" ? card.tone : ""}`}>{card.value}</div>
+      {card.subtitle ? <div className="metric-subtitle">{card.subtitle}</div> : null}
       <div className={`metric-change ${card.tone}`}>{card.change}</div>
     </div>
   );
@@ -282,17 +296,66 @@ function CapitalRow({
 
 /* ─── Exposure row (real-time computed, clickable) ────────── */
 
+function buildDollarDeltaSubtitle(
+  exposure: ExposureDataWithBreakdown,
+  netLiquidation: number | undefined,
+  hasApprox: boolean,
+): { subtitle: ReactNode | undefined; change: string } {
+  const leverage = netLiquidation != null
+    ? computeLeverageRatio(exposure.dollarDelta, netLiquidation)
+    : null;
+  if (!leverage) return { subtitle: undefined, change: "NOTIONAL EXPOSURE" };
+
+  const bias = classifyLeverageBias(leverage.pct);
+  const biasLabel = bias === "long"
+    ? "long-biased"
+    : bias === "short"
+      ? "short-biased"
+      : "market-neutral";
+  const biasClass = `metric-subtitle-${bias}`;
+
+  return {
+    subtitle: (
+      <span className={`metric-subtitle-leverage ${biasClass}`} data-testid="dd-card-leverage">
+        <span className="metric-subtitle-pct" data-testid="dd-card-leverage-pct">
+          {formatLeveragePct(leverage.pct)} of NLV
+        </span>
+        <span className="metric-subtitle-divider" aria-hidden="true">/</span>
+        <span className="metric-subtitle-multiplier" data-testid="dd-card-leverage-multiplier">
+          {formatLeverageMultiplier(leverage.multiplier)} {biasLabel}
+        </span>
+        {hasApprox && (
+          <span className="metric-subtitle-approx" data-testid="dd-card-leverage-approx">
+            APPROX
+          </span>
+        )}
+      </span>
+    ),
+    change: "NOTIONAL EXPOSURE",
+  };
+}
+
 function ExposureRow({
   exposure,
+  netLiquidation,
   collapsed,
   onToggle,
   onCardClick,
 }: {
   exposure: ExposureDataWithBreakdown | null;
+  netLiquidation: number | undefined;
   collapsed: boolean;
   onToggle: () => void;
   onCardClick: (metric: ExposureMetric) => void;
 }) {
+  const ddCard = exposure
+    ? buildDollarDeltaSubtitle(
+        exposure,
+        netLiquidation,
+        exposure.rows.some((r) => r.deltaSource === "approx"),
+      )
+    : { subtitle: undefined, change: "NOTIONAL EXPOSURE" };
+
   return (
     <>
       <SectionHeader label="EXPOSURE" collapsed={collapsed} onToggle={onToggle} />
@@ -307,7 +370,13 @@ function ExposureRow({
             onClick={() => onCardClick("netShort")}
           />
           <MetricCard
-            card={{ label: "Dollar Delta", value: fmtSigned(exposure.dollarDelta), change: "NOTIONAL EXPOSURE", tone: tone(exposure.dollarDelta) }}
+            card={{
+              label: "Dollar Delta",
+              value: fmtSigned(exposure.dollarDelta),
+              change: ddCard.change,
+              tone: tone(exposure.dollarDelta),
+              subtitle: ddCard.subtitle,
+            }}
             onClick={() => onCardClick("dollarDelta")}
           />
           <MetricCard
@@ -581,7 +650,13 @@ export default function MetricCards({ portfolio, prices, realizedPnl, executedOr
       )}
 
       {/* Row 5: EXPOSURE (real-time, all 4 clickable) */}
-      <ExposureRow exposure={exposure} collapsed={collapsed.exposure} onToggle={() => toggle("exposure")} onCardClick={setActiveMetric} />
+      <ExposureRow
+        exposure={exposure}
+        netLiquidation={acct?.net_liquidation}
+        collapsed={collapsed.exposure}
+        onToggle={() => toggle("exposure")}
+        onCardClick={setActiveMetric}
+      />
 
       {/* Row 6: TODAY'S P&L — renamed "Unrealized" → "Day Move" */}
       <TodayPnlRow
@@ -606,6 +681,7 @@ export default function MetricCards({ portfolio, prices, realizedPnl, executedOr
           metric={activeMetric}
           exposure={exposure}
           bankroll={portfolio.bankroll}
+          netLiquidation={acct?.net_liquidation}
           onClose={() => setActiveMetric(null)}
         />
       )}
