@@ -7,7 +7,7 @@ Output: JSON to stdout with supports/against/watch/neutral arrays.
 """
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fetch_flow import fetch_flow as fetch_flow_module
@@ -130,7 +130,7 @@ def run_analysis():
     positions = load_portfolio()
     if not positions:
         output = {
-            "analysis_time": datetime.now().isoformat(),
+            "analysis_time": datetime.now(timezone.utc).isoformat(),
             "positions_scanned": 0,
             "supports": [],
             "against": [],
@@ -170,7 +170,7 @@ def run_analysis():
         results[cat].sort(key=lambda x: x["strength"], reverse=True)
 
     output = {
-        "analysis_time": datetime.now().isoformat(),
+        "analysis_time": datetime.now(timezone.utc).isoformat(),
         "positions_scanned": len(positions),
         **results,
     }

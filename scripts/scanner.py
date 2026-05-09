@@ -13,7 +13,7 @@ import json
 import logging
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from clients.uw_client import UWRateLimitError
@@ -220,7 +220,7 @@ def scan(top_n: int = 20, min_score: float = 0, max_workers: int = 5):
     filtered = [r for r in results if r["score"] >= min_score][:top_n]
 
     output = {
-        "scan_time": datetime.now().isoformat(),
+        "scan_time": datetime.now(timezone.utc).isoformat(),
         "tickers_scanned": len(results),
         "signals_found": len([r for r in results if r["signal"] in ("STRONG", "MODERATE")]),
         "top_signals": filtered
