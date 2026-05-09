@@ -73,7 +73,10 @@ class ReplicaWatchdogHandler(BaseHandler):
         super().set_state(state)
         last_heal_at = state.get("last_heal_at")
         if last_heal_at:
-            self._last_heal_at = datetime.fromisoformat(last_heal_at)
+            parsed = datetime.fromisoformat(last_heal_at)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            self._last_heal_at = parsed
         else:
             self._last_heal_at = None
 
