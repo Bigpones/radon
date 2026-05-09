@@ -20,8 +20,11 @@ Outputs:
     `data/cash_flows.json`    - file fallback / debug trace of last pull.
 
 Cadence:
-    monitor_daemon `cash_flow_sync` handler runs this daily (86400s). Cash
-    transactions don't change intraday so polling more often is wasteful.
+    monitor_daemon `cash_flow_sync` handler runs this every 4h (14400s).
+    IBKR Flex publishes cash transactions once per day with a ~1-day
+    settlement lag — a withdrawal initiated on day N becomes Flex-visible
+    on the morning of day N+1. 4h cadence catches the publication
+    window without wasting API budget on a once-per-day feed.
 """
 
 from __future__ import annotations

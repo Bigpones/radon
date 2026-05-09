@@ -3,8 +3,9 @@
 
 Pulls IB CashTransaction rows (deposits, withdrawals, dividends, interest,
 fees) from the NAV Flex Query and persists to the `cash_flows` Turso
-table once per day. Cash transactions don't change intraday so daily is
-sufficient.
+table every 4h. IBKR Flex publishes cash transactions once per day with
+a ~1-day settlement lag, but the publication time floats — polling 4x
+daily catches the morning publication window without wasting API budget.
 
 Wired into monitor_daemon via scripts/monitor_daemon/run.py:create_daemon().
 """
@@ -23,8 +24,17 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
-# Run once per day (86400s)
-CHECK_INTERVAL = 86400
+# Poll every 4h (14400s).
+#
+# Why not daily: IBKR Flex publishes cash transactions with ~1 trading-day
+# settlement lag — a withdrawal initiated on day N becomes Flex-visible
+# on the morning of day N+1. With a 24h cadence the next sync after Flex
+# makes a row visible could be ~24h away (we saw 12h+ display lag in
+# production on 2026-05-08 → 2026-05-09). 4h is the sweet spot: fresh
+# enough that a morning Flex publication appears in the panel by lunch,
+# slow enough that we don't waste IB's API budget polling a feed that
+# updates roughly once per day.
+CHECK_INTERVAL = 4 * 60 * 60  # 14400s
 
 
 class CashFlowSyncHandler(BaseHandler):
