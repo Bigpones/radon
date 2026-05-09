@@ -1,3 +1,5 @@
+import { scanTimeToEtDate } from "./parseScanTime";
+
 type PerformanceFreshness = {
   as_of?: string | null;
   last_sync?: string | null;
@@ -5,9 +7,19 @@ type PerformanceFreshness = {
 
 const ET_TIME_ZONE = "America/New_York";
 
+/**
+ * `last_sync` is a wall-clock timestamp produced by `scripts/ib_sync.py`.
+ * On Hetzner (UTC host) older builds wrote `datetime.now().isoformat()` —
+ * a naive ISO string. Naive slicing of those strings rolls the ET session
+ * date forward the moment UTC midnight passes (~20:00 ET), even though
+ * it is still the same trading day in ET.
+ *
+ * Treat naive strings as UTC and convert to the ET calendar day so the
+ * portfolio freshness gate matches the trading session a human would.
+ */
 export function portfolioAsOfFromLastSync(lastSync: string | null | undefined): string | null {
   if (!lastSync || lastSync.length < 10) return null;
-  return lastSync.slice(0, 10);
+  return scanTimeToEtDate(lastSync);
 }
 
 function toEtDate(now: Date): Date {

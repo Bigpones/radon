@@ -12,6 +12,28 @@ describe("performance freshness", () => {
     expect(portfolioAsOfFromLastSync(null)).toBeNull();
   });
 
+  it("interprets a naive UTC last_sync written at 21:58 ET as the same ET session", () => {
+    // Hetzner (UTC) host writes datetime.now().isoformat() → 2026-05-09T01:58:36
+    // That instant is 2026-05-08 21:58 ET — still the same trading session.
+    // Naive-string slicing (the old behavior) would return "2026-05-09" and
+    // flip the freshness banner to STALE the moment UTC midnight passes.
+    expect(portfolioAsOfFromLastSync("2026-05-09T01:58:36.144211")).toBe("2026-05-08");
+  });
+
+  it("respects timezone-aware last_sync values from non-UTC hosts", () => {
+    // A laptop in ET that writes a tz-aware ISO must still resolve to the
+    // ET trading day it was actually produced on.
+    expect(portfolioAsOfFromLastSync("2026-05-08T21:58:36-04:00")).toBe("2026-05-08");
+  });
+
+  it("does not flip a portfolio behind when naive last_sync crosses UTC midnight", () => {
+    // After UTC midnight, last_sync="2026-05-09T01:58:36" is still the
+    // 2026-05-08 ET session. The freshness gate must NOT mark it stale.
+    expect(
+      isPortfolioBehindCurrentEtSession("2026-05-09T01:58:36.144211", "2026-05-08"),
+    ).toBe(false);
+  });
+
   it("marks performance as behind when portfolio sync advances after the panel loads", () => {
     expect(isPerformanceBehindPortfolioSync(
       {

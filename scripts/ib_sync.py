@@ -17,7 +17,7 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -1050,7 +1050,10 @@ def convert_to_portfolio_format(account: dict, collapsed_positions: list, pnl_da
     result = {
         "bankroll": round(bankroll, 2),
         "peak_value": round(bankroll, 2),  # Would need historical tracking
-        "last_sync": datetime.now().isoformat(),
+        # Wall-clock timestamp consumed by web/lib/performanceFreshness.ts.
+        # Must include a timezone offset so the JS side does not parse it as
+        # the user's local time and shift the derived ET session date.
+        "last_sync": datetime.now(timezone.utc).isoformat(),
         "positions": collapsed_positions,
         "total_deployed_pct": round(deployed_pct, 2),
         "total_deployed_dollars": round(total_deployed, 2),

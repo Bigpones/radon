@@ -23,7 +23,8 @@ import re
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 from urllib.parse import urlencode
@@ -98,6 +99,32 @@ def safe_float(value: Any, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _last_sync_to_et_date(last_sync: str) -> Optional[str]:
+    """Convert a `last_sync` timestamp to its ET calendar day (YYYY-MM-DD).
+
+    `scripts/ib_sync.py` writes `datetime.now(timezone.utc).isoformat()`, but
+    older builds wrote naive ISO strings. Naive slicing (`last_sync[:10]`) on
+    a UTC host returns the wrong calendar day after 20:00 ET, baking the
+    UTC-shifted date into Turso `performance_snapshots`.
+
+    Treat naive strings as UTC; honor explicit offsets when present. Returns
+    None when the input is empty or unparseable.
+    """
+    if not last_sync:
+        return None
+    try:
+        # `datetime.fromisoformat` accepts "+HH:MM" and (3.11+) trailing "Z".
+        normalized = last_sync.replace("Z", "+00:00") if last_sync.endswith("Z") else last_sync
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        # Fallback to the legacy date-prefix slice so a malformed timestamp
+        # still degrades gracefully rather than blowing up the whole pull.
+        return last_sync[:10] if len(last_sync) >= 10 else None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
 
 
 def normalize_expiry(expiry: str) -> str:
@@ -1178,7 +1205,7 @@ def build_payload(benchmark_symbol: str = "SPY") -> dict:
     current_net_liq = safe_float(account.get("net_liquidation"), default=safe_float(portfolio.get("bankroll")))
     last_sync = str(portfolio.get("last_sync") or "")
 
-    end_date = last_sync[:10] if last_sync else datetime.now().strftime("%Y-%m-%d")
+    end_date = _last_sync_to_et_date(last_sync) or datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
     start_date = f"{end_date[:4]}-01-01"
 
     warnings: List[str] = []
