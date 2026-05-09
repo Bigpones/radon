@@ -1,0 +1,261 @@
+// Freshness contract for the newsfeed scrape cycle.
+//
+// Bug being prevented: tag hydration was running BEFORE persistence, so a
+// fresh post on TheMarketEar would sit in memory while every other untagged
+// post in the buffer got re-classified through Cerebras + Anthropic
+// (rate-limited at ~24 req/min). On a feed with several novel posts, the
+// per-cycle delay between scrape and DB-write ballooned past the 120s poll
+// interval — a fresh post that should have appeared in <2 min on the
+// dashboard instead waited for an entire tagging pass.
+//
+// The fix: persist freshly-merged posts to disk + DB BEFORE invoking the
+// tagger. Tags are nice-to-have; freshness is the user-facing contract.
+// Tags trickle in on a second persist after hydrateTagsDual completes.
+//
+// This test pins the ordering: upsertPosts MUST be invoked for fresh posts
+// before hydrateTagsDual is awaited.
+
+import { describe, expect, it } from "vitest";
+
+describe("runScrapeCycle ordering — persistence before tagging", () => {
+  it("calls upsertPosts BEFORE awaiting hydrateTagsDual", async () => {
+    const { runScrapeCycle } = await import("../../scripts/newsfeed/cycle.js");
+
+    const order: string[] = [];
+
+    // The scraper produces one new post on this cycle.
+    const scraped = [
+      {
+        id: "fresh-1",
+        title: "Fresh post",
+        content: "body",
+        timestamp: "2026-05-09T12:00:00Z",
+        images: [],
+      },
+    ];
+
+    let tagResolveOrder = -1;
+
+    const result = await runScrapeCycle({
+      cycleStartIso: "2026-05-09T12:00:00Z",
+      loadExistingPosts: async () => [],
+      scrapePosts: async () => ({ items: scraped }),
+      mergePosts: (existing: unknown[], items: unknown[]) => ({
+        merged: items.map((item) => ({ ...(item as object) })),
+        changed: true,
+      }),
+      hydrateLocalImages: async () => false,
+      persistPosts: async () => {
+        order.push("persistPosts");
+        return { archived: false };
+      },
+      pushMedia: async () => ({ ok: true, transferred: 0 }),
+      upsertPosts: async () => {
+        order.push("upsertPosts");
+      },
+      hydrateTagsDual: async () => {
+        // Simulate a slow tagging pass — the API rate-limits us to ~24 req/min,
+        // so several novel posts can take many seconds.
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        tagResolveOrder = order.length;
+        order.push("hydrateTagsDual");
+        return false;
+      },
+      recordServiceHealth: async () => {
+        order.push("recordServiceHealth");
+      },
+      buildTextTagger: () => ({ tagPost: async () => null }),
+      buildVisionTagger: () => ({ tagPost: async () => null }),
+      onNewTags: async () => {},
+      paths: {
+        dataDir: "/tmp/x",
+        archiveDir: "/tmp/x/archive",
+        mediaDir: "/tmp/x/media",
+        postsFile: "/tmp/x/posts.json",
+        projectRoot: "/tmp/x",
+        publicRoot: "/tmp/x/public",
+      },
+    });
+
+    expect(result.changed).toBe(true);
+
+    // The persistPosts AND upsertPosts calls for fresh posts must happen
+    // BEFORE hydrateTagsDual resolves. Otherwise the dashboard waits for
+    // the slow tagger before seeing the fresh post.
+    const firstPersist = order.indexOf("persistPosts");
+    const firstUpsert = order.indexOf("upsertPosts");
+    const tagIndex = order.indexOf("hydrateTagsDual");
+
+    expect(firstPersist).toBeGreaterThanOrEqual(0);
+    expect(firstUpsert).toBeGreaterThanOrEqual(0);
+    expect(tagIndex).toBeGreaterThanOrEqual(0);
+    expect(firstPersist).toBeLessThan(tagIndex);
+    expect(firstUpsert).toBeLessThan(tagIndex);
+
+    // Sanity: the tagger really did resolve last among the three primary
+    // signals (otherwise the timing was meaningless).
+    expect(tagResolveOrder).toBeGreaterThan(firstUpsert);
+  });
+
+  it("re-persists after tagging when tags update", async () => {
+    const { runScrapeCycle } = await import("../../scripts/newsfeed/cycle.js");
+
+    const persistCalls: string[] = [];
+    const upsertCalls: string[] = [];
+
+    await runScrapeCycle({
+      cycleStartIso: "2026-05-09T12:00:00Z",
+      loadExistingPosts: async () => [],
+      scrapePosts: async () => ({
+        items: [
+          {
+            id: "p1",
+            title: "Fresh",
+            content: "",
+            timestamp: "2026-05-09T12:00:00Z",
+            images: [],
+          },
+        ],
+      }),
+      mergePosts: (existing: unknown[], items: unknown[]) => ({
+        merged: items.map((item) => ({ ...(item as object) })),
+        changed: true,
+      }),
+      hydrateLocalImages: async () => false,
+      persistPosts: async (posts: unknown[]) => {
+        persistCalls.push(`persist(N=${posts.length})`);
+        return { archived: false };
+      },
+      pushMedia: async () => ({ ok: true, transferred: 0 }),
+      upsertPosts: async (posts: unknown[]) => {
+        upsertCalls.push(`upsert(N=${posts.length})`);
+      },
+      hydrateTagsDual: async (posts: unknown[]) => {
+        // Pretend the tagger added tags to the first post.
+        const arr = posts as { tags?: string[] }[];
+        if (arr.length > 0) arr[0].tags = ["BTC", "VOL", "MACRO"];
+        return true;
+      },
+      recordServiceHealth: async () => {},
+      buildTextTagger: () => ({ tagPost: async () => null }),
+      buildVisionTagger: () => ({ tagPost: async () => null }),
+      onNewTags: async () => {},
+      paths: {
+        dataDir: "/tmp/x",
+        archiveDir: "/tmp/x/archive",
+        mediaDir: "/tmp/x/media",
+        postsFile: "/tmp/x/posts.json",
+        projectRoot: "/tmp/x",
+        publicRoot: "/tmp/x/public",
+      },
+    });
+
+    // Persist + upsert MUST happen twice when tags get added: once for the
+    // fresh-post pre-tag pass, once after the tagger adds the tags.
+    expect(persistCalls.length).toBe(2);
+    expect(upsertCalls.length).toBe(2);
+  });
+
+  it("only persists once when tagging produces no changes", async () => {
+    const { runScrapeCycle } = await import("../../scripts/newsfeed/cycle.js");
+
+    const persistCalls: string[] = [];
+    const upsertCalls: string[] = [];
+
+    await runScrapeCycle({
+      cycleStartIso: "2026-05-09T12:00:00Z",
+      loadExistingPosts: async () => [],
+      scrapePosts: async () => ({
+        items: [
+          {
+            id: "p1",
+            title: "Fresh",
+            content: "",
+            timestamp: "2026-05-09T12:00:00Z",
+            images: [],
+          },
+        ],
+      }),
+      mergePosts: (existing: unknown[], items: unknown[]) => ({
+        merged: items.map((item) => ({ ...(item as object) })),
+        changed: true,
+      }),
+      hydrateLocalImages: async () => false,
+      persistPosts: async (posts: unknown[]) => {
+        persistCalls.push(`persist(N=${posts.length})`);
+        return { archived: false };
+      },
+      pushMedia: async () => ({ ok: true, transferred: 0 }),
+      upsertPosts: async (posts: unknown[]) => {
+        upsertCalls.push(`upsert(N=${posts.length})`);
+      },
+      hydrateTagsDual: async () => false, // tagger ran but nothing changed
+      recordServiceHealth: async () => {},
+      buildTextTagger: () => ({ tagPost: async () => null }),
+      buildVisionTagger: () => ({ tagPost: async () => null }),
+      onNewTags: async () => {},
+      paths: {
+        dataDir: "/tmp/x",
+        archiveDir: "/tmp/x/archive",
+        mediaDir: "/tmp/x/media",
+        postsFile: "/tmp/x/posts.json",
+        projectRoot: "/tmp/x",
+        publicRoot: "/tmp/x/public",
+      },
+    });
+
+    expect(persistCalls.length).toBe(1);
+    expect(upsertCalls.length).toBe(1);
+  });
+
+  it("returns early on empty scrape without persisting or tagging", async () => {
+    const { runScrapeCycle } = await import("../../scripts/newsfeed/cycle.js");
+
+    const order: string[] = [];
+
+    const result = await runScrapeCycle({
+      cycleStartIso: "2026-05-09T12:00:00Z",
+      loadExistingPosts: async () => [],
+      scrapePosts: async () => ({ items: [] }),
+      mergePosts: () => {
+        order.push("merge");
+        return { merged: [], changed: false };
+      },
+      hydrateLocalImages: async () => {
+        order.push("images");
+        return false;
+      },
+      persistPosts: async () => {
+        order.push("persist");
+        return { archived: false };
+      },
+      pushMedia: async () => ({ ok: true, transferred: 0 }),
+      upsertPosts: async () => {
+        order.push("upsert");
+      },
+      hydrateTagsDual: async () => {
+        order.push("tag");
+        return false;
+      },
+      recordServiceHealth: async () => {
+        order.push("health");
+      },
+      buildTextTagger: () => ({ tagPost: async () => null }),
+      buildVisionTagger: () => ({ tagPost: async () => null }),
+      onNewTags: async () => {},
+      paths: {
+        dataDir: "/tmp/x",
+        archiveDir: "/tmp/x/archive",
+        mediaDir: "/tmp/x/media",
+        postsFile: "/tmp/x/posts.json",
+        projectRoot: "/tmp/x",
+        publicRoot: "/tmp/x/public",
+      },
+    });
+
+    expect(result).toEqual({ changed: false, count: 0 });
+    expect(order).not.toContain("persist");
+    expect(order).not.toContain("upsert");
+    expect(order).not.toContain("tag");
+  });
+});

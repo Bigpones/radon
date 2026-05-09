@@ -30,6 +30,7 @@ import { createVisionTagger, hydrateTagsDual } from "./vision_tagger.js";
 import { appendTagsToTaxonomy, loadTaxonomy } from "./taxonomy.js";
 import { createBrowser, NEWSFEED_DEFAULT_STORAGE_PATH } from "./browser.js";
 import { ensureAuthenticated } from "./auth.js";
+import { runScrapeCycle } from "./cycle.js";
 
 // Concurrently spawns this process without env inheritance from `next dev`,
 // so neither CEREBRAS_API_KEY nor ANTHROPIC_API_KEY are present. Load web/.env
@@ -138,115 +139,45 @@ export function createScraper(overrides = {}) {
         .catch(() => {});
     }
 
-    const pages = await listTargets();
-    const target = selectMarketEarTab(pages);
-    const expression = buildExtractionExpression();
-    const raw = await runCdpCommand("eval", target.targetId, expression);
-
-    const payload = parsePayload(raw);
-    if (!payload.ok) {
-      const stage = payload.source === "dom" ? "extract" : "extract/parse";
-      throw new Error(`[${stage}] ${payload.reason}`);
-    }
-
-    if (payload.items.length === 0) {
-      console.info(`[newsfeed] cycle empty ms=${Date.now() - cycleStart}`);
-      return { changed: false, count: 0 };
-    }
-
-    const existing = await loadExistingPosts(paths.postsFile);
-    const { merged, changed } = mergePosts(existing, payload.items);
-    const imagesUpdated = await hydrateLocalImages(merged, downloader);
-
-    let tagsUpdated = false;
-    let newTagsAdded = 0;
-    const textTagger = buildTextTaggerOrNull({ projectRoot: paths.projectRoot });
-    const visionTagger = buildVisionTaggerOrNull({
-      projectRoot: paths.projectRoot,
-      publicRoot: paths.publicRoot,
+    return runScrapeCycle({
+      cycleStartIso,
+      loadExistingPosts,
+      scrapePosts: async () => {
+        const pages = await listTargets();
+        const target = selectMarketEarTab(pages);
+        const expression = buildExtractionExpression();
+        const raw = await runCdpCommand("eval", target.targetId, expression);
+        const payload = parsePayload(raw);
+        if (!payload.ok) {
+          const stage = payload.source === "dom" ? "extract" : "extract/parse";
+          throw new Error(`[${stage}] ${payload.reason}`);
+        }
+        return { items: payload.items };
+      },
+      mergePosts,
+      hydrateLocalImages: (posts) => hydrateLocalImages(posts, downloader),
+      persistPosts,
+      pushMedia,
+      upsertPosts,
+      hydrateTagsDual,
+      recordServiceHealth,
+      buildTextTagger: () => buildTextTaggerOrNull({ projectRoot: paths.projectRoot }),
+      buildVisionTagger: () =>
+        buildVisionTaggerOrNull({ projectRoot: paths.projectRoot, publicRoot: paths.publicRoot }),
+      onNewTags: async (tags) => {
+        const additions = await appendTagsToTaxonomy(paths.projectRoot, tags);
+        if (additions.length > 0) {
+          console.info(`[newsfeed] taxonomy +${additions.length}: ${additions.join(", ")}`);
+          try {
+            await appendTaxonomy(additions);
+          } catch (err) {
+            console.warn(`[newsfeed] db taxonomy append non-fatal: ${err.message}`);
+          }
+        }
+        return additions;
+      },
+      paths,
     });
-    if (textTagger || visionTagger) {
-      try {
-        tagsUpdated = await hydrateTagsDual(merged, {
-          textTagger,
-          visionTagger,
-          onNewTags: async (tags) => {
-            const additions = await appendTagsToTaxonomy(paths.projectRoot, tags);
-            newTagsAdded += additions.length;
-            if (additions.length > 0) {
-              console.info(`[newsfeed] taxonomy +${additions.length}: ${additions.join(", ")}`);
-              try {
-                await appendTaxonomy(additions);
-              } catch (err) {
-                console.warn(`[newsfeed] db taxonomy append non-fatal: ${err.message}`);
-              }
-            }
-          },
-        });
-      } catch (err) {
-        console.warn(`[newsfeed] tag hydration failed: ${err.message}`);
-      }
-    }
-
-    if (!changed && !imagesUpdated && !tagsUpdated) {
-      // Heartbeat even on nochange cycles. Without this, a stuck error
-      // row in service_health (e.g. yesterday's WalConflict) persists
-      // forever during quiet periods and the banner stays red even
-      // though the scraper is healthy.
-      try {
-        await recordServiceHealth("newsfeed-scraper", "ok", {
-          startedAt: cycleStartIso,
-          finishedAt: new Date().toISOString(),
-        });
-      } catch (err) {
-        console.warn(`[newsfeed] heartbeat write failed: ${err.message}`);
-      }
-      console.info(`[newsfeed] cycle nochange N=${merged.length} ms=${Date.now() - cycleStart}`);
-      return { changed: false, count: merged.length };
-    }
-
-    await persistPosts(merged, {
-      dataDir: paths.dataDir,
-      archiveDir: paths.archiveDir,
-      mediaDir: paths.mediaDir,
-      postsFile: paths.postsFile,
-    });
-
-    let pushedToHetzner = 0;
-    if (imagesUpdated) {
-      const pushResult = await pushMedia({ local: `${paths.mediaDir}/` });
-      if (pushResult.ok) {
-        pushedToHetzner = pushResult.transferred ?? 0;
-      } else {
-        console.warn(`[newsfeed] media push non-fatal: ${pushResult.reason}`);
-      }
-    }
-
-    let dbWritten = 0;
-    try {
-      await upsertPosts(merged);
-      dbWritten = merged.length;
-      await recordServiceHealth("newsfeed-scraper", "ok", {
-        startedAt: cycleStartIso,
-        finishedAt: new Date().toISOString(),
-      });
-    } catch (err) {
-      console.warn(`[newsfeed] db dual-write non-fatal: ${err.message}`);
-      try {
-        await recordServiceHealth("newsfeed-scraper", "error", {
-          startedAt: cycleStartIso,
-          finishedAt: new Date().toISOString(),
-          error: { message: err.message },
-        });
-      } catch (_inner) {
-        /* ignore — health write is best-effort */
-      }
-    }
-
-    console.info(
-      `[newsfeed] cycle ok N=${merged.length} changed=${changed} imagesUpdated=${imagesUpdated} pushedToHetzner=${pushedToHetzner} tagsUpdated=${tagsUpdated} newTags=${newTagsAdded} dbWritten=${dbWritten} ms=${Date.now() - cycleStart}`,
-    );
-    return { changed: true, count: merged.length };
   }
 
   return { paths, scrapeOnce, closeBrowser, authenticateIfNeeded };
