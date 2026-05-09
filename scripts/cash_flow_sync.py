@@ -111,18 +111,60 @@ def _normalize_date(raw: str) -> str:
     return raw
 
 
+_TRANSIENT_FLEX_ERROR_CODES = {
+    # Per IBKR Flex Web Service docs: codes that explicitly instruct the
+    # caller to "try again shortly". Anything else (auth, permission,
+    # bad query id) should fail fast — retrying won't help.
+    "1001",  # Statement could not be generated at this time.
+    "1018",  # Too many requests in a short period of time.
+    "1019",  # Statement generation in progress. Please try again shortly.
+}
+
+_MAX_SEND_REQUEST_ATTEMPTS = 3
+_SEND_REQUEST_RETRY_SLEEP = 30.0
+
+
+def _request_reference_code(token: str, query_id: str) -> str:
+    """Call SendRequest; retry on documented transient failures.
+
+    Surfaces IBKR's actual ErrorCode + ErrorMessage on a non-transient
+    failure rather than collapsing to a generic "no ReferenceCode"
+    message — that opacity hid a Flex outage from the operator banner
+    on 2026-05-09.
+    """
+    last_error: Optional[str] = None
+    for attempt in range(1, _MAX_SEND_REQUEST_ATTEMPTS + 1):
+        params = urlencode({"t": token, "q": query_id, "v": "3"})
+        resp = urlopen(f"{_SEND_URL}?{params}", timeout=30)
+        body = resp.read().decode("utf-8")
+        root = ET.fromstring(body)
+        ref_node = root.find(".//ReferenceCode")
+        if ref_node is not None and ref_node.text:
+            return ref_node.text
+
+        code_node = root.find(".//ErrorCode")
+        msg_node = root.find(".//ErrorMessage")
+        code = (code_node.text or "").strip() if code_node is not None and code_node.text else ""
+        message = (msg_node.text or "").strip() if msg_node is not None and msg_node.text else ""
+        last_error = f"Flex SendRequest failed (code {code or 'N/A'}): {message or 'no ErrorMessage from IBKR'}"
+
+        if code in _TRANSIENT_FLEX_ERROR_CODES and attempt < _MAX_SEND_REQUEST_ATTEMPTS:
+            time.sleep(_SEND_REQUEST_RETRY_SLEEP)
+            continue
+        # Non-transient OR retry budget exhausted — surface the real error.
+        raise RuntimeError(last_error)
+
+    # Defensive — loop above always returns or raises. If somehow we exit
+    # the loop without one, surface whatever we last saw.
+    raise RuntimeError(last_error or "Flex SendRequest failed: unknown error")
+
+
 def fetch_cash_transactions(token: str, query_id: str, *, max_polls: int = 20, poll_sleep: float = 3.0) -> list[dict[str, Any]]:
     """Fetch the NAV Flex Query and parse CashTransaction rows.
 
     Returns a list of dicts ready to feed `upsert_cash_flow`.
     """
-    params = urlencode({"t": token, "q": query_id, "v": "3"})
-    resp = urlopen(f"{_SEND_URL}?{params}", timeout=30)
-    root = ET.fromstring(resp.read().decode("utf-8"))
-    ref_node = root.find(".//ReferenceCode")
-    if ref_node is None or not ref_node.text:
-        raise RuntimeError("Flex SendRequest did not return a ReferenceCode")
-    ref_code = ref_node.text
+    ref_code = _request_reference_code(token, query_id)
 
     xml_text = ""
     for _ in range(max_polls):

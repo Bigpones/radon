@@ -83,3 +83,41 @@ describe("isStale", () => {
     expect(states).toHaveLength(3);
   });
 });
+
+/**
+ * Regression: scanner / discover / flow-analysis / analyst-ratings are
+ * market-hours-only writers — they only run during 9:30-16:00 ET on
+ * weekdays. Off-hours quiet on those services is normal, so the
+ * ``closed`` window must be wide enough to cover a weekend (~3 days)
+ * without flipping them to ``stale`` and firing the banner.
+ *
+ * 2026-05-09 incident: all four flipped to stale on a Saturday, even
+ * though they had a clean Friday-afternoon finish, because they were
+ * not in the windows table and fell back to the 1h default.
+ */
+describe("market-hours-only services (weekend-aware closed window)", () => {
+  const SAT_NOON = Date.parse("2026-05-09T16:00:00Z"); // Sat noon ET-ish
+  const FRI_4PM = Date.parse("2026-05-08T20:00:00Z"); // Fri 4 PM ET, last finish
+
+  const friFinish = new Date(FRI_4PM).toISOString();
+
+  it.each([
+    "scanner",
+    "discover",
+    "flow-analysis",
+    "analyst-ratings",
+  ])("%s: a Friday-4PM finish does not flip to stale by Saturday noon", (service) => {
+    expect(isStale(service, friFinish, "closed", SAT_NOON)).toBe(false);
+  });
+
+  it.each([
+    "scanner",
+    "discover",
+    "flow-analysis",
+    "analyst-ratings",
+  ])("%s: still fires fast during market hours (≤30 min)", (service) => {
+    const NOW = Date.parse("2026-05-08T18:00:00Z"); // Fri 2 PM ET
+    const sixtyMinAgo = new Date(NOW - 60 * 60_000).toISOString();
+    expect(isStale(service, sixtyMinAgo, "open", NOW)).toBe(true);
+  });
+});

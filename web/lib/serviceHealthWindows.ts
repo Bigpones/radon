@@ -59,6 +59,17 @@ export const SERVICE_FRESHNESS_WINDOWS: Record<string, Window> = {
   "vcg-scan": { open: 35 * MIN, extended: 35 * MIN, closed: 1 * DAY },
   "cta-sync": { open: 35 * MIN, extended: 35 * MIN, closed: 1 * DAY },
 
+  // Market-hours-only writers: triggered by the FastAPI scan endpoints
+  // during the trading day, dormant on nights and weekends. The
+  // ``closed`` window has to be wide enough to bridge a full weekend
+  // (Friday 16:00 ET → Monday 09:30 ET ≈ 65h) without flipping to
+  // stale. Per-service intraday cadence varies but ≤30 min during
+  // market hours catches genuine outages quickly.
+  "scanner": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY },
+  "discover": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY },
+  "flow-analysis": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY },
+  "analyst-ratings": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY },
+
   "replica-watchdog": { open: 5 * MIN, extended: 5 * MIN, closed: 5 * MIN },
 };
 
