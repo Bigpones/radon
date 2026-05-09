@@ -700,7 +700,7 @@ def build_json_output(
         })
 
     result = {
-        "scan_time": datetime.now().isoformat(),
+        "scan_time": datetime.now(timezone.utc).isoformat(),
         "market_open": market_open,
         "credit_proxy": proxy,
         "signal": signal,

@@ -24,7 +24,7 @@ import math
 import sys
 import time
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -759,7 +759,7 @@ def build_gex_output(
     }
 
     return {
-        "scan_time": datetime.now().isoformat(),
+        "scan_time": datetime.now(timezone.utc).isoformat(),
         "market_open": market_open,
         "ticker": ticker.upper(),
         "spot": spot,
@@ -909,7 +909,7 @@ def main():
         sys.path.insert(0, str(_PROJECT_DIR / "scripts"))
         from db.writer import record_service_health, upsert_gex_snapshot
         ticker = result.get("ticker", args.ticker if hasattr(args, "ticker") else "UNKNOWN")
-        scan_iso = result.get("scan_time") or datetime.now().isoformat()
+        scan_iso = result.get("scan_time") or datetime.now(timezone.utc).isoformat()
         upsert_gex_snapshot(ticker, scan_iso, result)
         record_service_health("gex-scan", "ok", finished_at=scan_iso)
     except Exception as exc:  # noqa: BLE001

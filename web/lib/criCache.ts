@@ -1,3 +1,5 @@
+import { parseScanTime } from "./parseScanTime";
+
 export interface CriCacheData {
   date?: string;
   scan_time?: string;
@@ -24,7 +26,7 @@ function numericRealizedVolCount(data: CriCacheData): number {
 
 function candidateTimestamp(candidate: CriCacheCandidate): number {
   const parsed = typeof candidate.data.scan_time === "string"
-    ? Date.parse(candidate.data.scan_time)
+    ? parseScanTime(candidate.data.scan_time)?.getTime() ?? Number.NaN
     : Number.NaN;
   return Number.isFinite(parsed) ? parsed : candidate.mtimeMs;
 }

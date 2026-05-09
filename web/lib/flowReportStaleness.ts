@@ -8,6 +8,8 @@
  * Mirrors the pattern used by `gexStaleness.ts` and `vcgStaleness.ts`.
  */
 
+import { parseScanTime } from "./parseScanTime";
+
 const MARKET_HOURS_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const AFTER_HOURS_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
 
@@ -51,8 +53,9 @@ export function isFlowReportStale(
   const ts = flowReportTimestamp(report);
   if (!ts) return true;
 
-  const timestamp = Date.parse(ts);
-  if (Number.isNaN(timestamp)) return true;
+  const parsed = parseScanTime(ts);
+  if (!parsed) return true;
+  const timestamp = parsed.getTime();
 
   const ageMs = now.getTime() - timestamp;
   if (ageMs < 0) return false;

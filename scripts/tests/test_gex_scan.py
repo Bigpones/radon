@@ -464,3 +464,29 @@ class TestBuildGexOutput:
         )
         assert result["day_change"] == 10.0
         assert result["day_change_pct"] == round(10 / 5510 * 100, 4)
+
+
+# ── scan_time timezone-awareness regression ──────────────────────
+# Hetzner is UTC; without an offset, JS `new Date()` parses naive ISO
+# strings as local time and rolls the trading-day forward. The writer
+# must emit an explicit offset (`+00:00`).
+
+class TestScanTimeTimezoneAware:
+    def test_scan_time_has_utc_offset(self):
+        result = build_gex_output(
+            ticker="SPX",
+            strike_data=SAMPLE_STRIKES,
+            aggregate_history=[],
+            spot=SPOT,
+            close=SPOT,
+            atm_iv=0.20,
+            vol_pc=1.0,
+            prior_history=[],
+            market_open=True,
+        )
+        scan_time = result["scan_time"]
+        assert isinstance(scan_time, str) and scan_time
+        # Either '+00:00' or 'Z' counts as an explicit UTC marker.
+        assert "+00:00" in scan_time or scan_time.endswith("Z"), (
+            f"scan_time {scan_time!r} is naive; JS will parse it as local time"
+        )
