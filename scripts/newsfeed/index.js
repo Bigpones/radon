@@ -189,6 +189,18 @@ export function createScraper(overrides = {}) {
     }
 
     if (!changed && !imagesUpdated && !tagsUpdated) {
+      // Heartbeat even on nochange cycles. Without this, a stuck error
+      // row in service_health (e.g. yesterday's WalConflict) persists
+      // forever during quiet periods and the banner stays red even
+      // though the scraper is healthy.
+      try {
+        await recordServiceHealth("newsfeed-scraper", "ok", {
+          startedAt: cycleStartIso,
+          finishedAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.warn(`[newsfeed] heartbeat write failed: ${err.message}`);
+      }
       console.info(`[newsfeed] cycle nochange N=${merged.length} ms=${Date.now() - cycleStart}`);
       return { changed: false, count: merged.length };
     }
