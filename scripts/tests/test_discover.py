@@ -1,10 +1,12 @@
 """Tests for discover.py — dark pool day analysis and scoring."""
 import pytest
 from datetime import datetime
+from unittest.mock import MagicMock, patch
 
 from discover import (
     analyze_darkpool_day,
     calculate_score,
+    discover_targeted,
     is_market_open,
     WEIGHTS,
 )
@@ -145,3 +147,75 @@ class TestCalculateScore:
         )
         expected_total = sum(result["weighted"].values())
         assert abs(result["total"] - expected_total) < 0.2
+
+
+# ── discovery_time is timezone-aware ────────────────────────────────
+#
+# Hetzner is UTC; the JS consumer parses naive ISO strings as local time
+# and the freshness banner lies for any viewer west of UTC. discover.py
+# must emit timezone-aware ISO so JS Date.parse() pins the instant
+# correctly regardless of the viewer's offset.
+
+def _has_tz_offset(iso_string: str) -> bool:
+    # An ISO datetime is tz-aware iff it ends with "Z" or "+HH:MM" / "-HH:MM"
+    # (Python's isoformat always emits the colon when tz is UTC).
+    if iso_string.endswith("Z"):
+        return True
+    tail = iso_string[-6:]
+    return len(tail) == 6 and tail[0] in "+-" and tail[3] == ":"
+
+
+class TestDiscoveryTimeTimezoneAware:
+    """discover.py must emit a timezone-aware ISO scan_time string.
+
+    Both empty-result paths and the targeted-mode path are covered. The
+    market-wide path with results is identical to the empty path for the
+    purpose of the discovery_time field.
+    """
+
+    def test_helper_recognises_offset_strings(self):
+        # Sanity: confirm the helper rejects naive strings (the bug) and
+        # accepts both forms of tz-aware ISO (the fix).
+        assert _has_tz_offset("2026-05-09T01:58:36.144211+00:00")
+        assert _has_tz_offset("2026-05-09T01:58:36Z")
+        assert not _has_tz_offset("2026-05-09T01:58:36.144211")
+
+    def test_targeted_mode_discovery_time_is_timezone_aware(self):
+        """Targeted mode (line 465) must emit tz-aware discovery_time."""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.get_flow_alerts.return_value = {"data": []}
+
+        with patch("discover.UWClient", return_value=mock_client), \
+             patch("discover.fetch_darkpool_multi", return_value={
+                 "aggregate": {"buy_ratio": 0.5, "direction": "NEUTRAL",
+                               "strength": 0.0, "prints": 0},
+                 "daily": [], "sustained_days": 0, "total_prints": 0,
+             }):
+            result = discover_targeted(["AAPL"])
+
+        discovery_time = result["discovery_time"]
+        assert isinstance(discovery_time, str) and discovery_time
+        assert _has_tz_offset(discovery_time), (
+            f"discovery_time {discovery_time!r} is naive — JS Date.parse() "
+            "will treat it as local time and the freshness banner will lie"
+        )
+
+    def test_market_wide_empty_alerts_discovery_time_is_timezone_aware(self):
+        """Market-wide empty-alert path (line 500) must emit tz-aware ISO."""
+        from discover import discover
+
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+
+        with patch("discover.UWClient", return_value=mock_client), \
+             patch("discover.fetch_options_flow", return_value=[]):
+            result = discover()
+
+        discovery_time = result["discovery_time"]
+        assert _has_tz_offset(discovery_time), (
+            f"discovery_time {discovery_time!r} is naive — JS Date.parse() "
+            "will treat it as local time and the freshness banner will lie"
+        )

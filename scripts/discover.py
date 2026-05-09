@@ -25,7 +25,7 @@ import logging
 import sys
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from clients.uw_client import UWClient, UWAPIError, UWRateLimitError
@@ -462,7 +462,7 @@ def discover_targeted(tickers: list, dp_days: int = 3,
     candidates.sort(key=lambda x: x["score"], reverse=True)
 
     return {
-        "discovery_time": datetime.now().isoformat(),
+        "discovery_time": datetime.now(timezone.utc).isoformat(),
         "mode": "targeted",
         "tickers_scanned": len(tickers),
         "scoring_weights": WEIGHTS,
@@ -497,7 +497,7 @@ def discover(min_premium: int = 500000, min_alerts: int = 1,
 
         if not alerts:
             return {
-                "discovery_time": datetime.now().isoformat(),
+                "discovery_time": datetime.now(timezone.utc).isoformat(),
                 "mode": "market-wide",
                 "scoring_weights": WEIGHTS,
                 "alerts_analyzed": 0,
@@ -544,7 +544,7 @@ def discover(min_premium: int = 500000, min_alerts: int = 1,
     candidates.sort(key=lambda x: x["score"], reverse=True)
 
     return {
-        "discovery_time": datetime.now().isoformat(),
+        "discovery_time": datetime.now(timezone.utc).isoformat(),
         "mode": "market-wide",
         "scoring_weights": WEIGHTS,
         "alerts_analyzed": len(alerts),

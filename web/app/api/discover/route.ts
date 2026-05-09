@@ -4,6 +4,7 @@ import { statSync } from "fs";
 import { join } from "path";
 import { radonFetch } from "@/lib/radonApi";
 import { getDb } from "@/lib/db";
+import { parseScanTime } from "@/lib/parseScanTime";
 // Disable Next.js static caching: this handler reads live disk state
 // (data/*.json, cache files). Without this, the framework freezes the
 // first response and serves stale data until the dev server restarts.
@@ -55,7 +56,12 @@ async function readDiscoverFromDb(): Promise<{
     const row = result.rows[0] as unknown as { scan_time: string; payload: string };
     return {
       data: JSON.parse(row.payload) as Record<string, unknown>,
-      fetchedAtMs: Date.parse(row.scan_time) || Date.now(),
+      // Hetzner writes scan_time via Python `datetime.now().isoformat()`,
+      // which is naive (no offset). JS `Date.parse` treats naive ISO as
+      // local time, shifting the instant by the viewer's UTC offset and
+      // making the freshness banner lie. parseScanTime treats naive
+      // strings as UTC.
+      fetchedAtMs: parseScanTime(row.scan_time)?.getTime() ?? Date.now(),
     };
   } catch {
     return null;
