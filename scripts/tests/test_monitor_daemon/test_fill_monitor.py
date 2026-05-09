@@ -190,6 +190,90 @@ class TestFillMonitorNotifications:
             mock_notify.assert_called()
 
 
+class TestFillMonitorJournalPersistence:
+    """Detected fills must be mirrored to the Turso journal table inline.
+
+    Today fills land only in self.known_orders (in-memory). A process
+    restart between detection and the next journal_sync cycle drops the
+    fill from the in-process cache; only Flex rehydrate recovers it.
+    Mirror inline via db.writer.upsert_journal_entry.
+    """
+
+    def _make_partial_fill_trade(self):
+        mock_trade = MagicMock()
+        mock_trade.order.orderId = 5
+        mock_trade.order.action = "BUY"
+        mock_trade.order.totalQuantity = 25
+        mock_trade.order.lmtPrice = 1.00
+        mock_trade.orderStatus.status = "Submitted"
+        mock_trade.orderStatus.filled = 10
+        mock_trade.orderStatus.remaining = 15
+        mock_trade.orderStatus.avgFillPrice = 0.98
+        mock_trade.contract.symbol = "AAOI"
+        mock_trade.contract.localSymbol = "AAOI  260306P00090000"
+        return mock_trade
+
+    def test_partial_fill_writes_to_journal(self):
+        """A newly detected partial fill triggers upsert_journal_entry."""
+        with patch("monitor_daemon.handlers.fill_monitor.IBClient") as mock_cls, \
+             patch("monitor_daemon.handlers.fill_monitor.upsert_journal_entry") as mock_upsert:
+
+            mock_trade = self._make_partial_fill_trade()
+            mock_client = make_mock_client(trades=[mock_trade])
+            mock_cls.return_value = mock_client
+
+            handler = FillMonitorHandler(send_notifications=False)
+            handler.known_orders = {5: {"filled": 0}}
+
+            result = handler.execute()
+
+            assert result["partial_fills"] == 1
+            mock_upsert.assert_called()
+            # First positional arg = trade_id; payload follows.
+            call_args = mock_upsert.call_args
+            trade_id = call_args.args[0] if call_args.args else call_args.kwargs.get("trade_id")
+            assert trade_id  # non-empty
+            assert "5" in str(trade_id)  # contains order id
+
+    def test_already_known_fill_does_not_rewrite(self):
+        """Known fill (same total_filled) does NOT call upsert again."""
+        with patch("monitor_daemon.handlers.fill_monitor.IBClient") as mock_cls, \
+             patch("monitor_daemon.handlers.fill_monitor.upsert_journal_entry") as mock_upsert:
+
+            mock_trade = self._make_partial_fill_trade()
+            mock_client = make_mock_client(trades=[mock_trade])
+            mock_cls.return_value = mock_client
+
+            handler = FillMonitorHandler(send_notifications=False)
+            # Pretend we already saw the fill at total_filled=10
+            handler.known_orders = {5: {"filled": 10}}
+
+            result = handler.execute()
+
+            assert result["partial_fills"] == 0
+            mock_upsert.assert_not_called()
+
+    def test_db_write_failure_does_not_crash_handler(self):
+        """A DB upsert exception is logged but never propagates."""
+        with patch("monitor_daemon.handlers.fill_monitor.IBClient") as mock_cls, \
+             patch(
+                 "monitor_daemon.handlers.fill_monitor.upsert_journal_entry",
+                 side_effect=RuntimeError("turso write down"),
+             ):
+
+            mock_trade = self._make_partial_fill_trade()
+            mock_client = make_mock_client(trades=[mock_trade])
+            mock_cls.return_value = mock_client
+
+            handler = FillMonitorHandler(send_notifications=False)
+            handler.known_orders = {5: {"filled": 0}}
+
+            # Should NOT raise even though the DB write fails.
+            result = handler.execute()
+
+            assert result["partial_fills"] == 1
+
+
 class TestFillMonitorState:
     """Test state persistence for fill monitor."""
 

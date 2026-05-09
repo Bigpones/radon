@@ -490,3 +490,110 @@ class TestScanTimeTimezoneAware:
         assert "+00:00" in scan_time or scan_time.endswith("Z"), (
             f"scan_time {scan_time!r} is naive; JS will parse it as local time"
         )
+
+
+# ── Persist-then-enrich pipeline (P1) ─────────────────────────────
+#
+# Today the MQ Playwright fetch (up to 60s) sits between UW data fetch
+# and persist. A slow / failed Playwright call holds fresh UW data off
+# disk + DB for the full timeout. The fix: persist UW-only first, then
+# enrich. If MQ fetch fails or times out, the UW snapshot is already
+# durable. If MQ returns useful data, we re-persist with enrichment.
+
+class TestPersistThenEnrich:
+    """Persist UW-only output before MQ enrichment, re-persist on enrich."""
+
+    def _baseline_result(self, mq=None):
+        return build_gex_output(
+            ticker="SPX",
+            strike_data=SAMPLE_STRIKES,
+            aggregate_history=[],
+            spot=SPOT,
+            close=SPOT,
+            atm_iv=0.20,
+            vol_pc=1.0,
+            prior_history=[],
+            market_open=True,
+            mq=mq,
+        )
+
+    def test_pass1_persist_runs_when_mq_fetch_raises(self):
+        """UW-only snapshot lands on disk + DB even if MQ fetch raises."""
+        from gex_scan import run_persist_then_enrich
+
+        with patch("gex_scan.atomic_save") as mock_save, \
+             patch("gex_scan.upsert_gex_snapshot") as mock_upsert, \
+             patch("gex_scan.record_service_health"), \
+             patch("gex_scan.fetch_mq_levels", side_effect=RuntimeError("playwright timeout")):
+
+            uw_only = self._baseline_result(mq=None)
+
+            run_persist_then_enrich(
+                ticker="SPX",
+                uw_result=uw_only,
+                cache_path=Path("/tmp/gex.json"),
+                build_with_mq=lambda mq: self._baseline_result(mq=mq),
+                fetch_mq=True,
+            )
+
+            # Pass 1 (UW-only) must have written even though MQ raised.
+            assert mock_save.call_count >= 1
+            assert mock_upsert.call_count >= 1
+
+    def test_pass2_persist_runs_when_mq_returns_enriched_data(self):
+        """When MQ enriches the result, a SECOND persist (atomic_save + upsert) fires."""
+        from gex_scan import run_persist_then_enrich
+
+        mq_payload = {
+            "hvl": 5510.0,
+            "call_resistance_all": 5600.0,
+            "put_support_all": 5400.0,
+            "iv30d": 0.18,
+        }
+
+        with patch("gex_scan.atomic_save") as mock_save, \
+             patch("gex_scan.upsert_gex_snapshot") as mock_upsert, \
+             patch("gex_scan.record_service_health"), \
+             patch("gex_scan.fetch_mq_levels", return_value=mq_payload):
+
+            uw_only = self._baseline_result(mq=None)
+
+            run_persist_then_enrich(
+                ticker="SPX",
+                uw_result=uw_only,
+                cache_path=Path("/tmp/gex.json"),
+                build_with_mq=lambda mq: self._baseline_result(mq=mq),
+                fetch_mq=True,
+            )
+
+            # Two writes — one UW-only, one enriched.
+            assert mock_save.call_count == 2
+            assert mock_upsert.call_count == 2
+
+    def test_pass2_skipped_when_mq_returns_none(self):
+        """When MQ returns None (no-op), pass-2 persist must NOT run."""
+        from gex_scan import run_persist_then_enrich
+
+        with patch("gex_scan.atomic_save") as mock_save, \
+             patch("gex_scan.upsert_gex_snapshot") as mock_upsert, \
+             patch("gex_scan.record_service_health"), \
+             patch("gex_scan.fetch_mq_levels", return_value=None):
+
+            uw_only = self._baseline_result(mq=None)
+
+            run_persist_then_enrich(
+                ticker="SPX",
+                uw_result=uw_only,
+                cache_path=Path("/tmp/gex.json"),
+                build_with_mq=lambda mq: self._baseline_result(mq=mq),
+                fetch_mq=True,
+            )
+
+            # Only the UW-only persist should have happened.
+            assert mock_save.call_count == 1
+            assert mock_upsert.call_count == 1
+
+    def test_mq_fetch_called_with_short_timeout(self):
+        """fetch_mq_levels should run with a 10s timeout (down from 60s)."""
+        from gex_scan import MQ_FETCH_TIMEOUT_SECONDS
+        assert MQ_FETCH_TIMEOUT_SECONDS == 10

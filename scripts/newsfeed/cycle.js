@@ -71,34 +71,44 @@ export async function runScrapeCycle(deps) {
   if (changed || imagesUpdated) {
     await persistPosts(merged, persistDirs);
 
-    if (imagesUpdated) {
-      const pushResult = await pushMedia({ local: `${paths.mediaDir}/` });
-      if (pushResult?.ok) {
-        pushedToHetzner = pushResult.transferred ?? 0;
-      } else {
-        console.warn(`[newsfeed] media push non-fatal: ${pushResult?.reason ?? "unknown"}`);
-      }
-    }
-
-    try {
-      await upsertPosts(merged);
-      dbWrites += 1;
-      await recordServiceHealth("newsfeed-scraper", "ok", {
-        startedAt: cycleStartIso,
-        finishedAt: new Date().toISOString(),
-      });
-    } catch (err) {
-      console.warn(`[newsfeed] db dual-write non-fatal: ${err.message}`);
+    // upsertPosts (DB) and pushMedia (rsync over Tailscale) are
+    // independent of each other. Run them in parallel so a degraded
+    // Tailscale link can't delay the DB write — routes preferring DB
+    // would otherwise see stale data for up to 30s while rsync timed out.
+    const upsertTask = (async () => {
       try {
-        await recordServiceHealth("newsfeed-scraper", "error", {
+        await upsertPosts(merged);
+        dbWrites += 1;
+        await recordServiceHealth("newsfeed-scraper", "ok", {
           startedAt: cycleStartIso,
           finishedAt: new Date().toISOString(),
-          error: { message: err.message },
         });
-      } catch (_inner) {
-        /* health write best-effort */
+      } catch (err) {
+        console.warn(`[newsfeed] db dual-write non-fatal: ${err.message}`);
+        try {
+          await recordServiceHealth("newsfeed-scraper", "error", {
+            startedAt: cycleStartIso,
+            finishedAt: new Date().toISOString(),
+            error: { message: err.message },
+          });
+        } catch (_inner) {
+          /* health write best-effort */
+        }
       }
-    }
+    })();
+
+    const pushTask = imagesUpdated
+      ? (async () => {
+          const pushResult = await pushMedia({ local: `${paths.mediaDir}/` });
+          if (pushResult?.ok) {
+            pushedToHetzner = pushResult.transferred ?? 0;
+          } else {
+            console.warn(`[newsfeed] media push non-fatal: ${pushResult?.reason ?? "unknown"}`);
+          }
+        })()
+      : Promise.resolve();
+
+    await Promise.all([upsertTask, pushTask]);
   }
 
   // Pass 2 — slow tag hydration. Runs after the dashboard has already

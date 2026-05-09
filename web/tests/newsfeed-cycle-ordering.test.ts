@@ -208,6 +208,79 @@ describe("runScrapeCycle ordering — persistence before tagging", () => {
     expect(upsertCalls.length).toBe(1);
   });
 
+  it("calls upsertPosts BEFORE pushMedia resolves on slow rsync", async () => {
+    // pushMedia (rsync over Tailscale) is independent of the DB upsert. When
+    // Tailscale is degraded, the rsync delays the DB write up to 30s, so
+    // routes preferring DB see stale data even though disk is fresh.
+    //
+    // Fix: upsertPosts must NOT wait on pushMedia. Either reorder so the
+    // upsert runs first, or Promise.all them — either way the upsert
+    // completes before a slow pushMedia resolves.
+    const { runScrapeCycle } = await import("../../scripts/newsfeed/cycle.js");
+
+    const events: { name: string; ts: number }[] = [];
+
+    await runScrapeCycle({
+      cycleStartIso: "2026-05-09T12:00:00Z",
+      loadExistingPosts: async () => [],
+      scrapePosts: async () => ({
+        items: [
+          {
+            id: "p-fresh",
+            title: "Fresh",
+            content: "",
+            timestamp: "2026-05-09T12:00:00Z",
+            images: ["https://media.example/img.png"],
+          },
+        ],
+      }),
+      mergePosts: (existing: unknown[], items: unknown[]) => ({
+        merged: items.map((item) => ({ ...(item as object) })),
+        changed: true,
+      }),
+      // Force the imagesUpdated branch so pushMedia is invoked.
+      hydrateLocalImages: async () => true,
+      persistPosts: async () => {
+        events.push({ name: "persistPosts:done", ts: Date.now() });
+        return { archived: false };
+      },
+      pushMedia: async () => {
+        events.push({ name: "pushMedia:start", ts: Date.now() });
+        // Slow rsync — simulate a degraded Tailscale link.
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        events.push({ name: "pushMedia:done", ts: Date.now() });
+        return { ok: true, transferred: 1 };
+      },
+      upsertPosts: async () => {
+        events.push({ name: "upsertPosts:done", ts: Date.now() });
+      },
+      hydrateTagsDual: async () => false,
+      recordServiceHealth: async () => {},
+      buildTextTagger: () => ({ tagPost: async () => null }),
+      buildVisionTagger: () => ({ tagPost: async () => null }),
+      onNewTags: async () => {},
+      paths: {
+        dataDir: "/tmp/x",
+        archiveDir: "/tmp/x/archive",
+        mediaDir: "/tmp/x/media",
+        postsFile: "/tmp/x/posts.json",
+        projectRoot: "/tmp/x",
+        publicRoot: "/tmp/x/public",
+      },
+    });
+
+    const upsertDone = events.findIndex((e) => e.name === "upsertPosts:done");
+    const pushDone = events.findIndex((e) => e.name === "pushMedia:done");
+
+    expect(upsertDone).toBeGreaterThanOrEqual(0);
+    expect(pushDone).toBeGreaterThanOrEqual(0);
+
+    // The DB write must complete before the slow rsync resolves. Either
+    // ordering (upsert-first sequential) or parallel scheduling satisfies
+    // this — both keep DB freshness independent of Tailscale latency.
+    expect(upsertDone).toBeLessThan(pushDone);
+  });
+
   it("returns early on empty scrape without persisting or tagging", async () => {
     const { runScrapeCycle } = await import("../../scripts/newsfeed/cycle.js");
 
