@@ -20,6 +20,14 @@ from typing import Dict, Any, List, Optional
 from .base import BaseHandler
 from clients.ib_client import IBClient, DEFAULT_HOST
 
+try:
+    # Mirror detected fills inline to the Turso journal table so a process
+    # restart between detection and the next journal_sync cycle doesn't
+    # silently drop the fill from the in-memory known_orders cache.
+    from db.writer import upsert_journal_entry  # type: ignore
+except ImportError:  # pragma: no cover — DB layer optional in unit tests
+    upsert_journal_entry = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 # Default paths
@@ -130,7 +138,13 @@ class FillMonitorHandler(BaseHandler):
                             f"Fill detected: #{order_id} {order.action} {newly_filled}x "
                             f"{contract.symbol} @ ${status.avgFillPrice:.2f}"
                         )
-                        
+
+                        # Mirror to journal table inline. A process restart
+                        # between this detection and the next journal_sync
+                        # cycle would otherwise lose the fill — only Flex
+                        # rehydrate could recover it.
+                        self._persist_fill_to_journal(fill_info, contract, order, status)
+
                         # Send notification
                         if self.send_notifications:
                             self._notify_fill(fill_info)
@@ -173,6 +187,64 @@ class FillMonitorHandler(BaseHandler):
         
         return result
     
+    def _persist_fill_to_journal(
+        self,
+        fill_info: Dict,
+        contract: Any,
+        order: Any,
+        status: Any,
+    ) -> None:
+        """Mirror a detected partial fill to the Turso journal table.
+
+        Failures are logged and swallowed — the journal_sync handler runs
+        every 300s and the next Flex rehydrate is the canonical recovery
+        path. The DB write must NEVER crash the handler.
+        """
+        if upsert_journal_entry is None:
+            return
+
+        order_id = fill_info["order_id"]
+        total_filled = fill_info["total_filled"]
+        # Synthetic trade_id: each progressive fill state gets its own row.
+        # Real ib_exec_id would be ideal but is not exposed on order status.
+        trade_id = f"fill-monitor:order-{order_id}:filled-{total_filled}"
+
+        sec_type = getattr(contract, "secType", "STK")
+        side_label = "BUY" if str(order.action).upper() == "BUY" else "SELL"
+        action = side_label if sec_type == "STK" else (
+            "BUY_OPTION" if side_label == "BUY" else "SELL_TO_OPEN"
+        )
+
+        avg_price = fill_info.get("avg_price") or 0.0
+        newly_filled = fill_info.get("newly_filled", 0)
+        multiplier = 100 if sec_type in ("OPT", "BAG") else 1
+        total_cost = float(newly_filled) * float(avg_price) * multiplier
+        filled_at = datetime.now().strftime("%Y-%m-%d")
+
+        payload: Dict[str, Any] = {
+            "date": filled_at,
+            "ticker": fill_info.get("symbol", ""),
+            "structure": f"{side_label} {sec_type}",
+            "decision": "FILL_MONITOR_AUTO_IMPORT",
+            "action": action,
+            "fill_price": round(float(avg_price), 4),
+            "total_cost": round(total_cost, 4),
+            "ib_exec_id": trade_id,
+            "order_id": order_id,
+            "total_filled": total_filled,
+            "newly_filled": newly_filled,
+            "notes": f"Imported from fill_monitor on {filled_at}",
+        }
+        if sec_type in ("OPT", "BAG"):
+            payload["contracts"] = int(abs(newly_filled))
+        else:
+            payload["shares"] = int(abs(newly_filled))
+
+        try:
+            upsert_journal_entry(trade_id, payload, filled_at=filled_at)
+        except Exception as exc:  # noqa: BLE001 — never crash on DB write failure
+            logger.warning("fill_monitor: journal upsert failed: %s", exc)
+
     def _notify_fill(self, fill: Dict) -> None:
         """Send macOS notification for a fill."""
         title = f"Order Fill: {fill['symbol']}"
