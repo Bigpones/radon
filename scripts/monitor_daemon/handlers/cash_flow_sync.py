@@ -3,9 +3,22 @@
 
 Pulls IB CashTransaction rows (deposits, withdrawals, dividends, interest,
 fees) from the NAV Flex Query and persists to the `cash_flows` Turso
-table every 4h. IBKR Flex publishes cash transactions once per day with
-a ~1-day settlement lag, but the publication time floats — polling 4x
-daily catches the morning publication window without wasting API budget.
+table once per ET trading day at 17:00 ET (1h after the 4PM ET close).
+
+Why daily, not 4-hourly: IBKR Flex Web Service uses a sliding-window
+rate limit. Every request during throttle — including failures —
+pushes the reset further out. The previous 4h cadence with internal
+retries fired up to 12 attempts per 24h. While the token was throttled,
+those attempts perpetuated the throttle indefinitely (May 9 2026 — Joe
+burned ~24h of cash flow visibility this way). Cash flows publish once
+per day; one well-timed daily call after market close is sufficient
+and stays inside the rate budget.
+
+Throttle handling: documented Flex codes 1001 / 1018 / 1019 trigger an
+exponential circuit breaker (24h -> 48h -> 72h -> 168h capped) via
+``_throttle_backoff``. The breaker composes with the daily 17:00 ET
+window: when the embargo says "not before tomorrow", the handler still
+waits until tomorrow at 17:00 ET — never a partial-day re-probe.
 
 Wired into monitor_daemon via scripts/monitor_daemon/run.py:create_daemon().
 """
@@ -15,36 +28,133 @@ import logging
 import os
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover — Py3.9 fallback (already shipped)
+    from backports.zoneinfo import ZoneInfo  # type: ignore
+
+from monitor_daemon.handlers import _throttle_backoff
+from monitor_daemon.handlers._throttle_backoff import FlexThrottleError
 from monitor_daemon.handlers.base import BaseHandler
 
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+SCRIPTS_DIR = PROJECT_ROOT / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
 
-# Poll every 4h (14400s).
-#
-# Why not daily: IBKR Flex publishes cash transactions with ~1 trading-day
-# settlement lag — a withdrawal initiated on day N becomes Flex-visible
-# on the morning of day N+1. With a 24h cadence the next sync after Flex
-# makes a row visible could be ~24h away (we saw 12h+ display lag in
-# production on 2026-05-08 → 2026-05-09). 4h is the sweet spot: fresh
-# enough that a morning Flex publication appears in the panel by lunch,
-# slow enough that we don't waste IB's API budget polling a feed that
-# updates roughly once per day.
-CHECK_INTERVAL = 4 * 60 * 60  # 14400s
+# CHECK_INTERVAL is retained for the daemon's bookkeeping (it falls back
+# to BaseHandler.is_due in tests that don't override our window). The
+# real cadence is enforced by the ``is_due`` override below.
+CHECK_INTERVAL = 24 * 60 * 60  # 24h floor — exact firing handled by is_due
+
+ET = ZoneInfo("America/New_York")
+
+# Daily fire window: 17:00 ET (inclusive) through 17:59 ET (inclusive).
+# A 1h window gives the daemon's 30s loop ~120 chances to pick it up
+# under normal operation. Outside the window we still allow a "late
+# fire" if last_run is on a strictly earlier ET trading day, so a
+# daemon outage doesn't skip a day.
+FIRE_HOUR_ET = 17
+FIRE_WINDOW_HOURS = 1
+
+
+def _now_utc() -> datetime:
+    """Indirection to make `datetime.now(tz=UTC)` patchable in tests."""
+    return datetime.now(timezone.utc)
+
+
+def _et_date(now_utc: datetime) -> str:
+    """ET calendar date as YYYY-MM-DD for the given UTC moment."""
+    return now_utc.astimezone(ET).strftime("%Y-%m-%d")
+
+
+def _is_trading_day_et(now_utc: datetime) -> bool:
+    """True iff the ET calendar day is a US equity trading day."""
+    et_dt = now_utc.astimezone(ET)
+    if et_dt.weekday() >= 5:
+        return False
+    # Lazy import — keeps the handler importable in environments without
+    # the holiday config in place.
+    try:
+        from utils.market_calendar import load_holidays
+    except Exception:
+        return True
+    holidays = load_holidays(et_dt.year)
+    return et_dt.strftime("%Y-%m-%d") not in holidays
 
 
 class CashFlowSyncHandler(BaseHandler):
-    """Run scripts/cash_flow_sync.py daily to refresh cash transactions."""
+    """Run scripts/cash_flow_sync.py once per ET trading day at 17:00 ET."""
 
     name = "cash_flow_sync"
     interval_seconds = CHECK_INTERVAL
     requires_market_hours = False
     _SERVICE_NAME = "cash-flow-sync"
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._backoff_state: Dict[str, Any] = _throttle_backoff.initial_state()
+
+    # ------------------------------------------------------------------
+    # State persistence — circuit breaker survives daemon restarts.
+    # ------------------------------------------------------------------
+    def get_state(self) -> Dict[str, Any]:
+        state = super().get_state()
+        state["backoff_state"] = dict(self._backoff_state)
+        return state
+
+    def set_state(self, state: Dict[str, Any]) -> None:
+        super().set_state(state)
+        raw = state.get("backoff_state")
+        if isinstance(raw, dict):
+            self._backoff_state = {
+                "throttle_count": int(raw.get("throttle_count") or 0),
+                "blocked_until": raw.get("blocked_until"),
+            }
+        else:
+            self._backoff_state = _throttle_backoff.initial_state()
+
+    # ------------------------------------------------------------------
+    # Cadence override — daily window + circuit breaker.
+    # ------------------------------------------------------------------
+    def is_due(self) -> bool:
+        if not self._enabled:
+            return False
+
+        now_utc = _now_utc()
+
+        if _throttle_backoff.is_blocked(self._backoff_state, now_utc=now_utc):
+            return False
+
+        if not _is_trading_day_et(now_utc):
+            return False
+
+        et_now = now_utc.astimezone(ET)
+        if et_now.hour < FIRE_HOUR_ET:
+            return False
+
+        # Past the start of the window. If the daemon already fired today
+        # in ET, we're done — never double-fire same ET trading day.
+        if self.last_run is not None:
+            last_run_et_date = self.last_run.astimezone(ET).strftime("%Y-%m-%d")
+            today_et_date = et_now.strftime("%Y-%m-%d")
+            if last_run_et_date == today_et_date:
+                return False
+
+        # We're past 17:00 ET on a trading day and haven't fired today.
+        # Fire — even if past the 1h "preferred" window, since we'd
+        # otherwise skip the day entirely.
+        return True
+
+    # ------------------------------------------------------------------
+    # Execution — one shot, no internal retries on throttle codes.
+    # ------------------------------------------------------------------
     def execute(self) -> Dict[str, Any]:
         """Wrap inner logic with service_health heartbeat (success+error)."""
         try:
@@ -57,26 +167,15 @@ class CashFlowSyncHandler(BaseHandler):
         try:
             result = self._execute_inner()
         except Exception as exc:
-            try:
-                record_service_health(
-                    self._SERVICE_NAME, "error",
-                    started_at=started_at, finished_at=_now_iso(),
-                    error={"message": str(exc)},
-                )
-            except Exception as inner:
-                logger.warning("record_service_health(error) failed: %s", inner)
+            self._record_failure(record_service_health, started_at, str(exc))
             raise
 
         try:
-            # Inner returns {"status": "error", "error": ...} on subprocess
-            # failure — surface that as a heartbeat error too.
-            if result.get("status") == "error" or result.get("error"):
-                record_service_health(
-                    self._SERVICE_NAME, "error",
-                    started_at=started_at, finished_at=_now_iso(),
-                    error={"message": str(result.get("error") or "cash_flow_sync failed")},
-                )
+            inner_error = result.get("error") if result.get("status") == "error" else None
+            if inner_error:
+                self._record_failure(record_service_health, started_at, str(inner_error))
             else:
+                self._mark_success()
                 record_service_health(
                     self._SERVICE_NAME, "ok",
                     started_at=started_at, finished_at=_now_iso(),
@@ -85,6 +184,71 @@ class CashFlowSyncHandler(BaseHandler):
             logger.warning("record_service_health failed: %s", exc)
 
         return result
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+    def _record_failure(
+        self,
+        record_service_health,
+        started_at: str,
+        message: str,
+    ) -> None:
+        """Persist failure heartbeat with next_attempt_at metadata."""
+        from db.writer import _now_iso  # local import — keeps top tidy
+
+        is_throttle = "FlexThrottleError" in message or any(
+            f"code {code}" in message for code in ("1001", "1018", "1019")
+        )
+
+        now_utc = _now_utc()
+        if is_throttle:
+            self._backoff_state = _throttle_backoff.record_throttle(
+                self._backoff_state, now_utc=now_utc
+            )
+        else:
+            self._backoff_state = _throttle_backoff.record_soft_failure(
+                self._backoff_state, now_utc=now_utc
+            )
+
+        next_attempt_at = self._next_attempt_iso(now_utc)
+        try:
+            record_service_health(
+                self._SERVICE_NAME, "error",
+                started_at=started_at, finished_at=_now_iso(),
+                error={"message": message, "next_attempt_at": next_attempt_at},
+            )
+        except Exception as exc:
+            logger.warning("record_service_health(error) failed: %s", exc)
+
+    def _mark_success(self) -> None:
+        """Reset the circuit breaker after a successful sync."""
+        self._backoff_state = _throttle_backoff.record_success(self._backoff_state)
+
+    def _next_attempt_iso(self, now_utc: datetime) -> Optional[str]:
+        """ISO timestamp of the next eligible fire window."""
+        embargo_until = _throttle_backoff.blocked_until(self._backoff_state)
+        next_window = self._next_daily_window_after(now_utc)
+        candidates = [c for c in (embargo_until, next_window) if c is not None]
+        if not candidates:
+            return None
+        return max(candidates).isoformat()
+
+    @staticmethod
+    def _next_daily_window_after(now_utc: datetime) -> datetime:
+        """Next 17:00 ET on a trading day strictly later than today."""
+        et_now = now_utc.astimezone(ET)
+        from datetime import timedelta as _td
+        candidate = et_now.replace(hour=FIRE_HOUR_ET, minute=0, second=0, microsecond=0)
+        if candidate <= et_now:
+            candidate = candidate + _td(days=1)
+        # Walk forward to a trading day.
+        for _ in range(8):
+            probe_utc = candidate.astimezone(timezone.utc)
+            if _is_trading_day_et(probe_utc):
+                return probe_utc
+            candidate = candidate + _td(days=1)
+        return candidate.astimezone(timezone.utc)
 
     def _execute_inner(self) -> Dict[str, Any]:
         if not os.environ.get("IB_FLEX_TOKEN") or not os.environ.get("IB_FLEX_NAV_QUERY_ID"):
@@ -100,7 +264,7 @@ class CashFlowSyncHandler(BaseHandler):
                 cwd=str(PROJECT_ROOT),
                 capture_output=True,
                 text=True,
-                timeout=180,  # Flex Query polling can take ~60s
+                timeout=180,
             )
         except subprocess.TimeoutExpired:
             return {"status": "error", "error": "cash_flow_sync timed out after 180s"}
@@ -109,9 +273,13 @@ class CashFlowSyncHandler(BaseHandler):
 
         if result.returncode != 0:
             tail = (result.stderr or result.stdout or "").splitlines()[-3:]
-            logger.warning("cash_flow_sync failed: %s", " | ".join(tail))
-            return {"status": "error", "error": " | ".join(tail), "returncode": result.returncode}
+            error_msg = " | ".join(tail)
+            logger.warning("cash_flow_sync failed: %s", error_msg)
+            return {"status": "error", "error": error_msg, "returncode": result.returncode}
 
-        # Last line of stdout is "Synced N cash flows. Breakdown: {...}"
         last_line = (result.stdout or "").strip().splitlines()[-1] if result.stdout else ""
         return {"status": "ok", "summary": last_line}
+
+
+# Re-export so callers can `from cash_flow_sync import FlexThrottleError`.
+__all__ = ["CashFlowSyncHandler", "CHECK_INTERVAL", "FlexThrottleError"]
