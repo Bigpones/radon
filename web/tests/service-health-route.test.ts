@@ -130,4 +130,50 @@ describe("/api/service-health", () => {
     const res = await GET();
     expect(res.headers.get("cache-control") || "").toMatch(/no-store/);
   });
+
+  it("normalises JSON-encoded last_error into a plain error_summary", async () => {
+    const now = new Date().toISOString();
+    mockGetDb([
+      {
+        service: "cash-flow-sync",
+        state: "error",
+        last_attempt_started_at: now,
+        last_attempt_finished_at: now,
+        last_error: JSON.stringify({
+          message: "ERR: cash flow fetch failed: Flex SendRequest failed (code 1001)",
+        }),
+        updated_at: now,
+      },
+    ]);
+    const { GET } = await import("../app/api/service-health/route");
+    const res = await GET();
+    const body = await res.json();
+    expect(body.failing).toHaveLength(1);
+    const row = body.failing[0];
+    // Raw payload preserved on the wire for diagnostic clients.
+    expect(row.last_error).toContain("{");
+    // But the summary used by the banner is plain prose.
+    expect(typeof row.error_summary).toBe("string");
+    expect(row.error_summary).toContain("ERR: cash flow fetch failed");
+    expect(row.error_summary).not.toContain("{");
+    expect(row.error_summary).not.toContain('"');
+  });
+
+  it("emits null error_summary when last_error itself is null", async () => {
+    const now = new Date().toISOString();
+    mockGetDb([
+      {
+        service: "scanner",
+        state: "error",
+        last_attempt_started_at: now,
+        last_attempt_finished_at: now,
+        last_error: null,
+        updated_at: now,
+      },
+    ]);
+    const { GET } = await import("../app/api/service-health/route");
+    const res = await GET();
+    const body = await res.json();
+    expect(body.failing[0].error_summary).toBeNull();
+  });
 });
