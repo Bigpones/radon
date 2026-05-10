@@ -1169,6 +1169,31 @@ async def performance_background():
     return {"status": "accepted"}
 
 
+@app.get("/historical")
+async def historical_data(symbol: str, timeframe: Optional[str] = None):
+    """Fetch historical OHLCV bars from IB.
+
+    Fetches all six Forge timeframes in a single IB connection when no
+    *timeframe* is specified (recommended).  Pass ``timeframe`` to fetch a
+    single timeframe (Monthly, Weekly, 1D, 4H, 1H, 15M).
+    """
+    valid = {"Monthly", "Weekly", "1D", "4H", "1H", "15M"}
+    if timeframe and timeframe not in valid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid timeframe '{timeframe}'. Must be one of: {sorted(valid)}",
+        )
+    args = ["--symbol", symbol.upper()]
+    if timeframe:
+        args += ["--timeframe", timeframe]
+    result = await _run_ib_script_with_recovery("ib_historical.py", args, timeout=60)
+    if not result.ok:
+        raise HTTPException(status_code=502, detail=result.error)
+    if result.data and result.data.get("error"):
+        raise HTTPException(status_code=502, detail=result.data["error"])
+    return result.data
+
+
 @app.get("/options/chain")
 async def options_chain(symbol: str, expiry: Optional[str] = None):
     """Fetch options chain for a symbol."""
