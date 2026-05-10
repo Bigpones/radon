@@ -20,11 +20,26 @@ Outputs:
     `data/cash_flows.json`    - file fallback / debug trace of last pull.
 
 Cadence:
-    monitor_daemon `cash_flow_sync` handler runs this every 4h (14400s).
-    IBKR Flex publishes cash transactions once per day with a ~1-day
-    settlement lag — a withdrawal initiated on day N becomes Flex-visible
-    on the morning of day N+1. 4h cadence catches the publication
-    window without wasting API budget on a once-per-day feed.
+    monitor_daemon `cash_flow_sync` handler runs this once per ET trading
+    day at 17:00 ET (1h after market close). IBKR Flex publishes cash
+    transactions once per day with a ~1-day settlement lag — a single
+    well-timed daily call after the publication window is sufficient.
+
+    The 4h cadence used through 2026-05-08 fired up to 12 attempts per
+    day; the Flex Web Service uses a sliding-window rate limit, so every
+    request during throttle pushes the reset further out and the daemon
+    perpetuated its own throttle for ~24h on May 9 2026. See
+    feedback_flex_cash_transaction_lag.md.
+
+Throttle handling:
+    Documented Flex throttle codes (1001 / 1018 / 1019) raise
+    ``FlexThrottleError`` IMMEDIATELY — no internal retry, since each
+    retry burns more of the sliding-window budget. The daemon handler
+    intercepts the error and advances its circuit breaker (24h -> 48h
+    -> 72h -> 168h capped) before the next attempt.
+
+    Other transient failures (network blip, parse error) get exactly
+    ONE bounded retry within the call.
 """
 
 from __future__ import annotations
@@ -111,58 +126,103 @@ def _normalize_date(raw: str) -> str:
     return raw
 
 
-_TRANSIENT_FLEX_ERROR_CODES = {
-    # Per IBKR Flex Web Service docs: codes that explicitly instruct the
-    # caller to "try again shortly". Anything else (auth, permission,
-    # bad query id) should fail fast — retrying won't help.
+# Documented throttle codes — every retry on these burns the sliding-window
+# budget further. We do NOT retry internally; the daemon handler's circuit
+# breaker waits 24h+ before the next attempt.
+_FLEX_THROTTLE_CODES = {
     "1001",  # Statement could not be generated at this time.
-    "1018",  # Too many requests in a short period of time.
-    "1019",  # Statement generation in progress. Please try again shortly.
+    "1018",  # Too many requests have been made from this token.
+    "1019",  # Statement generation in progress.
 }
 
-_MAX_SEND_REQUEST_ATTEMPTS = 3
-_SEND_REQUEST_RETRY_SLEEP = 30.0
+# Single bounded retry on a non-throttle transient (network blip, parse error).
+_MAX_SOFT_RETRY_ATTEMPTS = 2  # initial + 1 retry
+
+
+# Imported lazily to avoid a circular when the handler module imports this
+# script's pure functions for testing without the full daemon scaffolding.
+def _flex_throttle_error_cls():
+    from monitor_daemon.handlers._throttle_backoff import FlexThrottleError
+    return FlexThrottleError
+
+
+class _FlexAppError(RuntimeError):
+    """Flex returned a structured ErrorCode / ErrorMessage that isn't a
+    throttle (auth, bad query id, etc.). NOT retryable — retrying won't
+    flip a 1012 into a success.
+    """
+
+
+def _send_request_once(token: str, query_id: str) -> str:
+    """One SendRequest hit. Returns the ReferenceCode or raises.
+
+    Raises:
+        FlexThrottleError    on documented throttle codes (1001/1018/1019)
+        _FlexAppError        on any other structured Flex error
+        Exception            on transport / parse failure
+    """
+    params = urlencode({"t": token, "q": query_id, "v": "3"})
+    resp = urlopen(f"{_SEND_URL}?{params}", timeout=30)
+    body = resp.read().decode("utf-8")
+    root = ET.fromstring(body)
+    ref_node = root.find(".//ReferenceCode")
+    if ref_node is not None and ref_node.text:
+        return ref_node.text
+
+    code_node = root.find(".//ErrorCode")
+    msg_node = root.find(".//ErrorMessage")
+    code = (code_node.text or "").strip() if code_node is not None and code_node.text else ""
+    message = (msg_node.text or "").strip() if msg_node is not None and msg_node.text else "no ErrorMessage from IBKR"
+    detail = f"Flex SendRequest failed (code {code or 'N/A'}): {message}"
+
+    if code in _FLEX_THROTTLE_CODES:
+        raise _flex_throttle_error_cls()(code, detail)
+    raise _FlexAppError(detail)
 
 
 def _request_reference_code(token: str, query_id: str) -> str:
-    """Call SendRequest; retry on documented transient failures.
+    """Call SendRequest with a single bounded retry on transport blips only.
 
-    Surfaces IBKR's actual ErrorCode + ErrorMessage on a non-transient
-    failure rather than collapsing to a generic "no ReferenceCode"
-    message — that opacity hid a Flex outage from the operator banner
-    on 2026-05-09.
+    Throttle codes (1001/1018/1019) raise FlexThrottleError on the first
+    hit — no retry, since every retry pushes the sliding-window out
+    further. Structured Flex application errors (auth, bad query id)
+    fail fast — retrying won't flip them.
+
+    Only transport / parse failures (network blip, bad XML) get a single
+    bounded retry; the daemon's daily window catches anything that takes
+    longer to resolve.
     """
-    last_error: Optional[str] = None
-    for attempt in range(1, _MAX_SEND_REQUEST_ATTEMPTS + 1):
-        params = urlencode({"t": token, "q": query_id, "v": "3"})
-        resp = urlopen(f"{_SEND_URL}?{params}", timeout=30)
-        body = resp.read().decode("utf-8")
-        root = ET.fromstring(body)
-        ref_node = root.find(".//ReferenceCode")
-        if ref_node is not None and ref_node.text:
-            return ref_node.text
-
-        code_node = root.find(".//ErrorCode")
-        msg_node = root.find(".//ErrorMessage")
-        code = (code_node.text or "").strip() if code_node is not None and code_node.text else ""
-        message = (msg_node.text or "").strip() if msg_node is not None and msg_node.text else ""
-        last_error = f"Flex SendRequest failed (code {code or 'N/A'}): {message or 'no ErrorMessage from IBKR'}"
-
-        if code in _TRANSIENT_FLEX_ERROR_CODES and attempt < _MAX_SEND_REQUEST_ATTEMPTS:
-            time.sleep(_SEND_REQUEST_RETRY_SLEEP)
+    last_transport_error: Optional[BaseException] = None
+    for attempt in range(1, _MAX_SOFT_RETRY_ATTEMPTS + 1):
+        try:
+            return _send_request_once(token, query_id)
+        except _flex_throttle_error_cls():
+            raise
+        except _FlexAppError:
+            raise
+        except Exception as exc:
+            last_transport_error = exc
+            if attempt >= _MAX_SOFT_RETRY_ATTEMPTS:
+                raise
+            time.sleep(1.0)
             continue
-        # Non-transient OR retry budget exhausted — surface the real error.
-        raise RuntimeError(last_error)
-
-    # Defensive — loop above always returns or raises. If somehow we exit
-    # the loop without one, surface whatever we last saw.
-    raise RuntimeError(last_error or "Flex SendRequest failed: unknown error")
+    # Defensive — loop above always returns or raises.
+    if last_transport_error is not None:
+        raise last_transport_error
+    raise RuntimeError("Flex SendRequest failed: unknown error")
 
 
 def fetch_cash_transactions(token: str, query_id: str, *, max_polls: int = 20, poll_sleep: float = 3.0) -> list[dict[str, Any]]:
     """Fetch the NAV Flex Query and parse CashTransaction rows.
 
     Returns a list of dicts ready to feed `upsert_cash_flow`.
+
+    Raises:
+        FlexThrottleError    on Flex throttle codes 1001 / 1018 / 1019.
+                             Surfaced typed so the daemon handler can
+                             advance its circuit breaker without retrying.
+        RuntimeError         on auth failure, parse error, or polling
+                             timeout (after one bounded soft retry).
     """
     ref_code = _request_reference_code(token, query_id)
 

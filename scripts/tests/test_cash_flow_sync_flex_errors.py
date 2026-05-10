@@ -1,22 +1,22 @@
 """Regression tests for `fetch_cash_transactions` IBKR Flex error handling.
 
-Production incident 2026-05-09: the service-health banner showed
-"Flex SendRequest did not return a ReferenceCode" — a generic message
-that hides the real IBKR error. Hitting the Flex SendRequest endpoint
-directly returned:
+Production incidents:
 
-    <FlexStatementResponse>
-      <Status>Fail</Status>
-      <ErrorCode>1001</ErrorCode>
-      <ErrorMessage>Statement could not be generated at this time.
-                    Please try again shortly.</ErrorMessage>
-    </FlexStatementResponse>
+  2026-05-09 (#1): the service-health banner showed "Flex SendRequest
+  did not return a ReferenceCode" — a generic message that hid the
+  real IBKR error. Now we surface IBKR's ErrorCode + ErrorMessage so
+  an operator can tell transient from auth from config.
 
-Two issues:
-  1. The raised RuntimeError must surface IBKR's ErrorCode + ErrorMessage
-     so an operator can act on it (transient vs auth vs config).
-  2. Documented transient codes (1001, 1018, 1019) must trigger a bounded
-     retry — the IBKR error message itself instructs "try again shortly".
+  2026-05-09 (#2): the daemon's 4h cadence with internal 3-attempt
+  retries (12 hits/day) perpetuated a Flex sliding-window throttle
+  for ~24h. Every retry on a throttle code (1001/1018/1019) pushes
+  the reset further out — so the script must NOT retry internally
+  on those codes. It raises FlexThrottleError on the first hit and
+  the handler decides when to try again (typically tomorrow at
+  17:00 ET via the throttle-aware circuit breaker).
+
+  Other transient failures (network blip, parse error) still allow
+  ONE bounded retry within the call.
 """
 from __future__ import annotations
 
@@ -33,6 +33,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from cash_flow_sync import fetch_cash_transactions  # noqa: E402
+from monitor_daemon.handlers._throttle_backoff import FlexThrottleError  # noqa: E402
 
 
 def _xml_response(body: str) -> MagicMock:
@@ -91,15 +92,24 @@ SUCCESS_STMT = (
 )
 
 
+FAIL_1018 = (
+    "<FlexStatementResponse>"
+    "<Status>Fail</Status>"
+    "<ErrorCode>1018</ErrorCode>"
+    "<ErrorMessage>Too many requests have been made from this token. "
+    "Please try again shortly.</ErrorMessage>"
+    "</FlexStatementResponse>"
+)
+
+
 class TestFlexErrorSurface:
     """Surface IBKR's actual error code + message instead of a generic."""
 
     def test_includes_error_code_in_exception(self):
         with patch("cash_flow_sync.urlopen") as mock_urlopen, \
              patch("cash_flow_sync.time.sleep"):
-            # Always return the same transient error so retries exhaust.
             mock_urlopen.return_value = _xml_response(FAIL_1001)
-            with pytest.raises(RuntimeError) as excinfo:
+            with pytest.raises(FlexThrottleError) as excinfo:
                 fetch_cash_transactions("tok", "qid")
             msg = str(excinfo.value)
             assert "1001" in msg, f"error code 1001 missing: {msg!r}"
@@ -108,7 +118,7 @@ class TestFlexErrorSurface:
         with patch("cash_flow_sync.urlopen") as mock_urlopen, \
              patch("cash_flow_sync.time.sleep"):
             mock_urlopen.return_value = _xml_response(FAIL_1001)
-            with pytest.raises(RuntimeError) as excinfo:
+            with pytest.raises(FlexThrottleError) as excinfo:
                 fetch_cash_transactions("tok", "qid")
             msg = str(excinfo.value)
             assert "Statement could not be generated" in msg, (
@@ -120,7 +130,7 @@ class TestFlexErrorSurface:
         with patch("cash_flow_sync.urlopen") as mock_urlopen, \
              patch("cash_flow_sync.time.sleep"):
             mock_urlopen.return_value = _xml_response(FAIL_1001)
-            with pytest.raises(RuntimeError) as excinfo:
+            with pytest.raises(FlexThrottleError) as excinfo:
                 fetch_cash_transactions("tok", "qid")
             msg = str(excinfo.value)
             assert "did not return a ReferenceCode" not in msg, (
@@ -138,59 +148,92 @@ class TestFlexErrorSurface:
             assert "Token has expired" in msg
 
 
-class TestTransientRetry:
-    """Documented transient codes (1001, 1018, 1019) trigger a bounded retry."""
+class TestThrottleNoInternalRetry:
+    """Codes 1001 / 1018 / 1019 must NOT trigger an internal retry —
+    every retry burns the sliding-window throttle budget further. The
+    daemon handler will back off via its circuit breaker instead."""
 
-    def test_retries_on_1001_then_succeeds(self):
-        # Two transient failures, then SendRequest succeeds, then GetStatement
-        # returns the statement on the first poll.
-        responses = [
-            _xml_response(FAIL_1001),
-            _xml_response(FAIL_1001),
-            _xml_response(SUCCESS_REF),
-            _xml_response(SUCCESS_STMT),
-        ]
+    def test_1001_raises_flex_throttle_error_immediately(self):
+        with patch("cash_flow_sync.urlopen") as mock_urlopen, \
+             patch("cash_flow_sync.time.sleep") as mock_sleep:
+            mock_urlopen.return_value = _xml_response(FAIL_1001)
+            with pytest.raises(FlexThrottleError) as excinfo:
+                fetch_cash_transactions("tok", "qid")
+            assert excinfo.value.code == "1001"
+            # Exactly ONE call — no internal retry on a throttle code.
+            assert mock_urlopen.call_count == 1
+            # And we slept zero times — no waiting either.
+            mock_sleep.assert_not_called()
+
+    def test_1018_raises_flex_throttle_error_immediately(self):
+        with patch("cash_flow_sync.urlopen") as mock_urlopen, \
+             patch("cash_flow_sync.time.sleep") as mock_sleep:
+            mock_urlopen.return_value = _xml_response(FAIL_1018)
+            with pytest.raises(FlexThrottleError) as excinfo:
+                fetch_cash_transactions("tok", "qid")
+            assert excinfo.value.code == "1018"
+            assert mock_urlopen.call_count == 1
+            mock_sleep.assert_not_called()
+
+    def test_1019_raises_flex_throttle_error_immediately(self):
+        with patch("cash_flow_sync.urlopen") as mock_urlopen, \
+             patch("cash_flow_sync.time.sleep") as mock_sleep:
+            mock_urlopen.return_value = _xml_response(FAIL_1019)
+            with pytest.raises(FlexThrottleError) as excinfo:
+                fetch_cash_transactions("tok", "qid")
+            assert excinfo.value.code == "1019"
+            assert mock_urlopen.call_count == 1
+            mock_sleep.assert_not_called()
+
+    def test_throttle_error_is_runtime_error_subclass(self):
+        """Existing callers that catch RuntimeError still work."""
         with patch("cash_flow_sync.urlopen") as mock_urlopen, \
              patch("cash_flow_sync.time.sleep"):
-            mock_urlopen.side_effect = responses
-            rows = fetch_cash_transactions("tok", "qid", max_polls=5, poll_sleep=0)
-            assert len(rows) == 1
-            assert rows[0]["id"] == "42"
-            # Three SendRequest hits + one GetStatement.
-            assert mock_urlopen.call_count == 4
+            mock_urlopen.return_value = _xml_response(FAIL_1018)
+            with pytest.raises(RuntimeError):
+                fetch_cash_transactions("tok", "qid")
 
-    def test_retries_on_1019_then_succeeds(self):
-        responses = [
-            _xml_response(FAIL_1019),
-            _xml_response(SUCCESS_REF),
-            _xml_response(SUCCESS_STMT),
-        ]
-        with patch("cash_flow_sync.urlopen") as mock_urlopen, \
-             patch("cash_flow_sync.time.sleep"):
-            mock_urlopen.side_effect = responses
-            rows = fetch_cash_transactions("tok", "qid", max_polls=5, poll_sleep=0)
-            assert len(rows) == 1
+
+class TestNonThrottleFailures:
+    """Non-throttle errors keep their existing semantics."""
 
     def test_does_not_retry_on_auth_failure(self):
         """Auth/permission errors are NOT transient — fail fast."""
         with patch("cash_flow_sync.urlopen") as mock_urlopen, \
              patch("cash_flow_sync.time.sleep"):
             mock_urlopen.return_value = _xml_response(FAIL_AUTH)
-            with pytest.raises(RuntimeError):
-                fetch_cash_transactions("tok", "qid")
-            # Exactly ONE call — no retry on a non-transient failure.
-            assert mock_urlopen.call_count == 1
-
-    def test_retry_budget_is_bounded(self):
-        """All transient failures: gives up after a fixed number of attempts."""
-        with patch("cash_flow_sync.urlopen") as mock_urlopen, \
-             patch("cash_flow_sync.time.sleep"):
-            mock_urlopen.return_value = _xml_response(FAIL_1001)
             with pytest.raises(RuntimeError) as excinfo:
                 fetch_cash_transactions("tok", "qid")
-            msg = str(excinfo.value)
-            # Bounded: must not loop forever, and must include the IBKR code
-            # so an operator can tell this was a transient that exhausted.
-            assert "1001" in msg
-            # 3 attempts total (initial + 2 retries) is the contract.
+            # Auth failures must NOT be FlexThrottleError — that would
+            # advance the circuit breaker incorrectly.
+            assert not isinstance(excinfo.value, FlexThrottleError)
+            assert mock_urlopen.call_count == 1
+
+    def test_network_error_retried_at_most_once(self):
+        """A network blip is NOT a throttle — bounded single retry is fine."""
+        from urllib.error import URLError
+
+        side_effects = [
+            URLError("connection reset"),
+            _xml_response(SUCCESS_REF),
+            _xml_response(SUCCESS_STMT),
+        ]
+        with patch("cash_flow_sync.urlopen") as mock_urlopen, \
+             patch("cash_flow_sync.time.sleep"):
+            mock_urlopen.side_effect = side_effects
+            rows = fetch_cash_transactions("tok", "qid", max_polls=5, poll_sleep=0)
+            assert len(rows) == 1
+            # Exactly 3: 1 failed + 1 retry SendRequest + 1 GetStatement.
             assert mock_urlopen.call_count == 3
+
+    def test_persistent_network_error_fails_after_one_retry(self):
+        """If both attempts fail with network errors, raise — don't loop."""
+        from urllib.error import URLError
+
+        with patch("cash_flow_sync.urlopen") as mock_urlopen, \
+             patch("cash_flow_sync.time.sleep"):
+            mock_urlopen.side_effect = URLError("connection reset")
+            with pytest.raises(Exception):
+                fetch_cash_transactions("tok", "qid")
+            # 2 attempts total (initial + 1 retry).
+            assert mock_urlopen.call_count == 2
