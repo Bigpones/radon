@@ -64,7 +64,9 @@ describe("<ServiceHealthBanner />", () => {
     const banner = screen.getByTestId("service-health-banner");
     expect(banner.textContent).toContain("Background sync degraded");
     expect(banner.textContent).toContain("portfolio-sync");
-    expect(banner.textContent).toContain("WAL locked");
+    // Banner now humanizes "WAL locked" into "Database temporarily busy".
+    expect(banner.textContent).toContain("Database temporarily busy");
+    expect(banner.textContent).not.toContain("WAL");
   });
 
   it("lists multiple failing services up to 3 + truncates rest with +N more", async () => {
@@ -102,7 +104,7 @@ describe("<ServiceHealthBanner />", () => {
   // banner now leans on the route's ``error_summary`` and re-runs the
   // same formatter defensively when only ``last_error`` is present.
   describe("JSON-encoded last_error payloads (regression: braces/quotes leak)", () => {
-    it("renders only the human-readable message when given a JSON-stringified object via last_error", async () => {
+    it("renders the humanized message when given a JSON-stringified Flex throttle via last_error", async () => {
       const raw = JSON.stringify({
         message:
           "ERR: cash flow fetch failed: Flex SendRequest failed (code 1001): Statement could not be generated at this time. Please try again shortly.",
@@ -117,42 +119,108 @@ describe("<ServiceHealthBanner />", () => {
       const banner = screen.getByTestId("service-health-banner");
       const text = banner.textContent ?? "";
       expect(text).toContain("cash-flow-sync");
-      expect(text).toContain("ERR: cash flow fetch failed");
+      // The banner now rewrites the developer-flavoured Flex error into
+      // operator-friendly copy. Old verbatim wording must NOT leak.
+      expect(text).toContain("Flex Web Service rate limit hit");
+      expect(text).not.toContain("ERR:");
+      expect(text).not.toContain("SendRequest");
+      expect(text).not.toContain("(code 1001)");
       // No JSON structural characters should leak through.
       expect(text).not.toContain("{");
       expect(text).not.toContain("}");
       expect(text).not.toContain('"');
     });
 
-    it("prefers the route-shipped error_summary when present", async () => {
+    it("falls back to error_summary when last_error is null but route shipped a summary", async () => {
       mockUseServiceHealth({
         failing: [
           {
             service: "cash-flow-sync",
             state: "error",
-            last_error: JSON.stringify({ message: "raw payload that should not render" }),
-            error_summary: "ERR: cash flow fetch failed",
+            last_error: null,
+            // Already-cleaned plain text from the route.
+            error_summary: "Flex Web Service was unreachable",
           },
         ],
       });
       const { default: Banner } = await import("../components/ServiceHealthBanner");
       render(<Banner />);
       const banner = screen.getByTestId("service-health-banner");
-      expect(banner.textContent).toContain("ERR: cash flow fetch failed");
-      expect(banner.textContent).not.toContain("raw payload");
+      expect(banner.textContent).toContain("Flex Web Service was unreachable");
       expect(banner.textContent).not.toContain('"');
     });
 
-    it("renders a plain non-JSON string unchanged", async () => {
+    it("prefers raw last_error over error_summary when both are present", async () => {
+      // The raw payload carries metadata (next_attempt_at, structured
+      // error codes) that the API's pre-normaliser strips. The banner
+      // should humanize the raw payload directly so we keep that signal.
+      mockUseServiceHealth({
+        failing: [
+          {
+            service: "cash-flow-sync",
+            state: "error",
+            last_error: JSON.stringify({
+              message: "Flex SendRequest failed (code 1001): ...",
+            }),
+            error_summary: "Some lossy summary the route produced",
+          },
+        ],
+      });
+      const { default: Banner } = await import("../components/ServiceHealthBanner");
+      render(<Banner />);
+      const banner = screen.getByTestId("service-health-banner");
+      expect(banner.textContent).toContain("Flex Web Service rate limit hit");
+      expect(banner.textContent).not.toContain("Some lossy summary");
+    });
+
+    it("humanizes a plain non-JSON WAL string into Database temporarily busy", async () => {
       mockUseServiceHealth({
         failing: [{ service: "cri-scan", state: "error", last_error: "WAL locked" }],
       });
       const { default: Banner } = await import("../components/ServiceHealthBanner");
       render(<Banner />);
       const banner = screen.getByTestId("service-health-banner");
-      expect(banner.textContent).toContain("WAL locked");
+      expect(banner.textContent).toContain("Database temporarily busy");
+      expect(banner.textContent).not.toContain("WAL");
       expect(banner.textContent).not.toContain("{");
       expect(banner.textContent).not.toContain('"');
+    });
+
+    it("passes through a novel plain string we don't recognise", async () => {
+      mockUseServiceHealth({
+        failing: [
+          { service: "cri-scan", state: "error", last_error: "something we never saw before" },
+        ],
+      });
+      const { default: Banner } = await import("../components/ServiceHealthBanner");
+      render(<Banner />);
+      const banner = screen.getByTestId("service-health-banner");
+      expect(banner.textContent).toContain("something we never saw before");
+    });
+
+    it("appends a relative retry window when last_error carries next_attempt_at", async () => {
+      const future = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      mockUseServiceHealth({
+        failing: [
+          {
+            service: "cash-flow-sync",
+            state: "error",
+            last_error: JSON.stringify({
+              message: "Flex SendRequest failed (code 1001): ...",
+              next_attempt_at: future,
+            }),
+          },
+        ],
+      });
+      const { default: Banner } = await import("../components/ServiceHealthBanner");
+      render(<Banner />);
+      const banner = screen.getByTestId("service-health-banner");
+      const text = banner.textContent ?? "";
+      expect(text).toContain("Flex Web Service rate limit hit");
+      expect(text.toLowerCase()).toContain("retry in");
+      // Retry window expressed in compact units, never raw ISO.
+      expect(text).not.toContain("T");
+      expect(text).not.toContain("Z");
     });
 
     it("uses the `error` key when the JSON payload omits `message`", async () => {
@@ -181,7 +249,7 @@ describe("<ServiceHealthBanner />", () => {
       expect(banner.textContent).not.toContain("wal_conflicts_observed");
     });
 
-    it("truncates long messages cleanly with an ellipsis at a word boundary", async () => {
+    it("renders the humanized Flex throttle copy in well under banner width", async () => {
       const longMessage =
         "ERR: cash flow fetch failed: Flex SendRequest failed (code 1001): Statement could not be generated at this time. Please try again shortly.";
       mockUseServiceHealth({
@@ -200,10 +268,12 @@ describe("<ServiceHealthBanner />", () => {
         .querySelector(".service-health-banner__detail");
       expect(detail).not.toBeNull();
       const detailText = detail?.textContent ?? "";
-      // The detail span carries " - <text>" so the rendered visible
-      // string is shorter than the full untrimmed message.
+      // The humanized copy is much shorter than the raw payload, and
+      // ends as a complete phrase rather than mid-sentence.
       expect(detailText.length).toBeLessThan(longMessage.length);
-      expect(detailText.includes("...")).toBe(true);
+      expect(detailText).toContain("Flex Web Service rate limit hit");
+      // No mid-word truncation marker on the rewritten copy.
+      expect(detailText).not.toContain("...");
     });
   });
 });

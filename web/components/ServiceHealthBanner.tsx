@@ -2,7 +2,7 @@
 
 import { AlertTriangle } from "lucide-react";
 import { useServiceHealth } from "@/lib/useServiceHealth";
-import { formatServiceHealthError } from "@/lib/serviceHealthError";
+import { humanizeServiceHealthError } from "@/lib/serviceHealthError";
 
 /**
  * Service health banner — surfaces when any background dual-write or
@@ -20,10 +20,12 @@ import { formatServiceHealthError } from "@/lib/serviceHealthError";
  *
  * The ``last_error`` column is JSON-encoded by the workers, so the
  * route handler runs ``formatServiceHealthError`` against it and ships
- * a clean ``error_summary``. We re-run the same formatter on the client
- * defensively — if a stale cached response, an older API version, or a
- * future writer ever leaks raw JSON to the UI, the banner still renders
- * plain prose instead of ``{"message": "..."}``.
+ * a clean ``error_summary``. The banner runs the upgraded
+ * ``humanizeServiceHealthError`` on the raw payload to produce
+ * banner-ready prose for the known error shapes (Flex throttle, Flex
+ * auth, timeout, network blip) and falls back to the route's
+ * pre-normalised summary when only that is available. Either path
+ * renders plain text, never raw JSON.
  */
 export default function ServiceHealthBanner() {
   const { data } = useServiceHealth();
@@ -63,17 +65,31 @@ export default function ServiceHealthBanner() {
 }
 
 /**
- * Pick the safest detail copy for the first failing row. Prefer the
- * pre-normalized ``error_summary`` shipped by the route; fall back to
- * re-running the formatter against ``last_error`` so the component can
- * never leak JSON structure even if the route response is stale.
+ * Pick the safest detail copy for the first failing row.
+ *
+ * Preference order:
+ *
+ *  1. ``last_error`` (raw structured payload) run through the humanizer.
+ *     This is the highest-fidelity path because the raw payload carries
+ *     ``next_attempt_at`` and other metadata the API summariser strips.
+ *  2. ``error_summary`` (pre-normalised plain text from the route) run
+ *     through the humanizer for pattern rewriting. Used when the route
+ *     ships a summary but the raw payload is unavailable.
+ *  3. ``null`` when neither is present.
+ *
+ * The humanizer is idempotent on its own output, so step 2's pass
+ * through is safe even when the input is already clean.
  */
 function resolveDetailCopy(row: {
   last_error?: string | null;
   error_summary?: string | null;
 } | undefined): string | null {
   if (!row) return null;
-  if (row.error_summary && row.error_summary.length > 0) return row.error_summary;
-  if (row.last_error == null) return null;
-  return formatServiceHealthError(row.last_error);
+  if (row.last_error != null) {
+    return humanizeServiceHealthError(row.last_error);
+  }
+  if (row.error_summary && row.error_summary.length > 0) {
+    return humanizeServiceHealthError(row.error_summary);
+  }
+  return null;
 }
