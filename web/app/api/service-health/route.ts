@@ -6,6 +6,7 @@ import {
   setNoStoreResponseHeaders,
 } from "@/lib/apiContracts";
 import { getMarketStateFromDate, isStale } from "@/lib/serviceHealthWindows";
+import { formatServiceHealthError } from "@/lib/serviceHealthError";
 
 // Disable Next.js static caching: this handler reads live DB state.
 export const dynamic = "force-dynamic";
@@ -17,7 +18,19 @@ export type ServiceHealthRow = {
   state: string;
   last_attempt_started_at: string | null;
   last_attempt_finished_at: string | null;
+  /**
+   * Original raw payload as written by the worker — JSON-encoded object
+   * or a plain string. Kept on the wire for diagnostic clients; UIs
+   * should prefer ``error_summary`` to avoid leaking JSON structure.
+   */
   last_error: string | null;
+  /**
+   * Human-readable single-line summary of ``last_error`` produced by
+   * ``formatServiceHealthError``. Always populated when ``last_error``
+   * is non-null, even on parse failure (uses fallback copy). Safe to
+   * concatenate directly into user-facing copy.
+   */
+  error_summary: string | null;
   updated_at: string;
 };
 
@@ -60,13 +73,18 @@ export async function GET(): Promise<Response> {
     const nowMs = Date.now();
     const rows: ServiceHealthRow[] = [];
     for (const row of result.rows) {
-      const r = row as unknown as ServiceHealthRow;
+      const r = row as unknown as Record<string, unknown>;
+      const lastErrorRaw = (r.last_error ?? null) as string | null;
       const raw: ServiceHealthRow = {
         service: String(r.service ?? ""),
         state: String(r.state ?? "unknown"),
-        last_attempt_started_at: r.last_attempt_started_at ?? null,
-        last_attempt_finished_at: r.last_attempt_finished_at ?? null,
-        last_error: r.last_error ?? null,
+        last_attempt_started_at: (r.last_attempt_started_at ?? null) as string | null,
+        last_attempt_finished_at: (r.last_attempt_finished_at ?? null) as string | null,
+        last_error: lastErrorRaw,
+        // Pre-normalize the human-readable summary at the API boundary
+        // so every UI consumer (banner, future status pages, etc.) sees
+        // a clean string instead of a JSON-stringified blob.
+        error_summary: lastErrorRaw == null ? null : formatServiceHealthError(lastErrorRaw),
         updated_at: String(r.updated_at ?? ""),
       };
       // Coerce stale ``ok`` rows so the banner can see them. Per-service

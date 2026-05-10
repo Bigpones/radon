@@ -7,7 +7,18 @@ export type ServiceHealthRow = {
   state: string;
   last_attempt_started_at: string | null;
   last_attempt_finished_at: string | null;
+  /**
+   * Raw JSON payload from ``service_health.last_error``. Diagnostic only
+   * — UIs should render ``error_summary`` to stay clear of leaked JSON
+   * structure.
+   */
   last_error: string | null;
+  /**
+   * Pre-normalized single-line summary, populated by the route handler
+   * via ``formatServiceHealthError``. ``null`` only when ``last_error``
+   * itself is ``null``.
+   */
+  error_summary?: string | null;
   updated_at: string;
 };
 
