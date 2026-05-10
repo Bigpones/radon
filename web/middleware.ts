@@ -1,4 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
 // API routes are public at the middleware level because server-side page
 // fetches don't carry Clerk session cookies. External API access is still
@@ -9,11 +11,16 @@ const isPublicRoute = createRouteMatcher([
   "/api/(.*)",
 ]);
 
-export default clerkMiddleware(async (auth, request) => {
-  if (!isPublicRoute(request)) {
-    await auth.protect();
-  }
-});
+// When NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is not set (local dev without auth),
+// export a no-op middleware so Clerk never runs and no redirect occurs.
+// Set NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY in web/.env to enable auth.
+export default process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+  ? clerkMiddleware(async (auth, request) => {
+      if (!isPublicRoute(request)) {
+        await auth.protect();
+      }
+    })
+  : (_req: NextRequest) => NextResponse.next();
 
 export const config = {
   matcher: [

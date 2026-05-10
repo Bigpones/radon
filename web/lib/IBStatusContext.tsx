@@ -9,7 +9,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useAuth } from "@clerk/nextjs";
+// When Clerk is not configured, stub useAuth so IBStatusProvider can mount
+// without a ClerkProvider in the tree. buildAuthenticatedUrl already handles
+// a null token by connecting without auth — so the stub is fully safe.
+const useAuth: () => { getToken: () => Promise<string | null> } =
+  process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    ? require("@clerk/nextjs").useAuth
+    : () => ({ getToken: async () => null });
 import { createReconnectStrategy, type ReconnectState } from "./reconnectStrategy";
 
 /* ─── Types ───────────────────────────────────────────── */

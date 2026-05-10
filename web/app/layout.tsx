@@ -1,6 +1,4 @@
 import type { Metadata } from "next";
-import { ClerkProvider } from "@clerk/nextjs";
-import { dark } from "@clerk/themes";
 import Providers from "@/components/Providers";
 import "./globals.css";
 
@@ -35,14 +33,22 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <ClerkProvider appearance={{ baseTheme: dark }}>
-      <html lang="en" data-theme="dark">
-        <body className="app-root">
-          <Providers>{children}</Providers>
-        </body>
-      </html>
-    </ClerkProvider>
-  );
+const inner = (children: React.ReactNode) => (
+  <html lang="en" data-theme="dark">
+    <body className="app-root">
+      <Providers>{children}</Providers>
+    </body>
+  </html>
+);
+
+// When NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is set, wrap with ClerkProvider+dark
+// theme (imported via ClerkShell so @clerk/themes is only bundled when needed).
+// Without the key (local dev), render the bare tree — no Clerk, no redirect.
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+    return inner(children);
+  }
+
+  const { default: ClerkShell } = await import("@/components/ClerkShell");
+  return <ClerkShell>{inner(children)}</ClerkShell>;
 }
