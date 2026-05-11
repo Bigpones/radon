@@ -1,0 +1,15 @@
+[Unit]
+Description=Radon VCG refresh — every 5 minutes during ET trading hours
+Requires=radon-vcg-refresh.service
+
+[Timer]
+# Fires every 5 minutes Mon-Fri 09:30-16:00 ET.
+# UTC equivalent: 14:30-21:00 (winter) / 13:30-20:00 (summer).
+# The OnCalendar window covers both DST shoulders without holiday
+# awareness — run_vcg_refresh.sh re-checks the calendar at runtime
+# and exits 0 on holidays before doing any work.
+OnCalendar=Mon..Fri *-*-* 13..21:00,05,10,15,20,25,30,35,40,45,50,55
+Persistent=true
+
+[Install]
+WantedBy=timers.target

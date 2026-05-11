@@ -70,7 +70,8 @@ RUN chmod +x /usr/local/bin/radon-services-entrypoint \
         radon-exit-orders.timer \
         radon-cta-sync.timer \
         radon-portfolio-sync.timer \
-        radon-analyst-ratings.timer
+        radon-analyst-ratings.timer \
+        radon-vcg-refresh.timer
 
 VOLUME ["/app/data"]
 
