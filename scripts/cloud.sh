@@ -117,7 +117,8 @@ fi
 # on the VPS. We unload the laptop's launchd plists so they don't race.
 if command -v launchctl >/dev/null 2>&1; then
   for plist in com.radon.cri-scan com.radon.cta-sync com.radon.data-refresh \
-               com.radon.exit-order-service com.radon.monitor-daemon; do
+               com.radon.exit-order-service com.radon.monitor-daemon \
+               com.radon.vcg-refresh; do
     if launchctl list | grep -q "$plist"; then
       log_info "Unloading $plist (Hetzner mode)..."
       launchctl unload "$HOME/Library/LaunchAgents/$plist.plist" 2>/dev/null || true

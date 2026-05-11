@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
-"""Scheduled CRI/VCG data refresh for the cloud server.
+"""Standalone helper for combined CRI + VCG refresh.
 
-Invoked by radon-refresh.service every 15 minutes (Mon–Fri) via:
-    python -m scripts.data_refresh
+NOT wired into any scheduler. The autonomous entry points are:
 
-Runs cri_scan.py --json  →  data/cri.json
-Runs vcg_scan.py --json  →  data/vcg.json
+  - radon-cri-scan.timer        (CRI: every 30 minutes, ET trading hours)
+  - radon-data-refresh.timer    (scanner / flow_analysis / discover)
+  - radon-vcg-refresh.timer     (VCG: every 5 minutes, ET trading hours)
+  - com.radon.cri-scan          (laptop launchd)
+  - com.radon.data-refresh      (laptop launchd)
+  - com.radon.vcg-refresh       (laptop launchd)
 
-Writes atomically (.tmp → rename) and keeps existing files on failure.
-Exits 0 on success (or skipped holiday/weekend), 1 if any scan failed.
+Kept for ad-hoc invocation (``python -m scripts.data_refresh``) — runs
+both scans sequentially, writes atomically, and exits 0 on success or
+skipped holiday/weekend. Useful when reconciling discrepancies between
+the two cache files at the same instant.
 """
 from __future__ import annotations
 

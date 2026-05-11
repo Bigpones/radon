@@ -54,7 +54,7 @@ const DAY = 24 * HOUR;
  *   flex-token-check     25h (daily)
  *   cri-scan             35m open, 1d closed
  *   gex-scan             30m open, 1d closed
- *   vcg-scan             35m open, 1d closed
+ *   vcg-scan             15m open, 1d closed   (5-min cadence; 3 missed cycles)
  *   cta-sync             35m open, 1d closed
  *   replica-watchdog     5m always (continuous)
  *
@@ -89,7 +89,12 @@ export const SERVICE_FRESHNESS_WINDOWS: Record<string, Window> = {
   // when a user POSTs the scan endpoint, so they're on-demand for banner
   // purposes even though some have companion systemd timers.
   "gex-scan": { open: 30 * MIN, extended: 30 * MIN, closed: 1 * DAY, category: "on-demand" },
-  "vcg-scan": { open: 35 * MIN, extended: 35 * MIN, closed: 1 * DAY, category: "scheduled" },
+  // ``vcg-scan`` has an autonomous 5-min cadence during market hours
+  // (radon-vcg-refresh.timer / com.radon.vcg-refresh). The 15-min open
+  // window tolerates 3 missed cycles before flagging — long enough to
+  // absorb transient FastAPI or IB Gateway blips, short enough to
+  // surface a real outage well inside the trading day.
+  "vcg-scan": { open: 15 * MIN, extended: 15 * MIN, closed: 1 * DAY, category: "scheduled" },
   "cta-sync": { open: 35 * MIN, extended: 35 * MIN, closed: 1 * DAY, category: "on-demand" },
 
   // Market-hours-only writers: triggered by the FastAPI scan endpoints

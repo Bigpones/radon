@@ -29,7 +29,8 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # if the plist is already loaded.
 if command -v launchctl >/dev/null 2>&1; then
   for plist in com.radon.cri-scan com.radon.cta-sync com.radon.data-refresh \
-               com.radon.exit-order-service com.radon.monitor-daemon; do
+               com.radon.exit-order-service com.radon.monitor-daemon \
+               com.radon.vcg-refresh; do
     f="$HOME/Library/LaunchAgents/$plist.plist"
     if [[ -f "$f" ]]; then
       launchctl load "$f" 2>/dev/null || true
