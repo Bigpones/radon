@@ -1,0 +1,91 @@
+"""The intraday bucket — only fires alerts when the market is open.
+
+The systemd timer is already gated to Mon-Fri 13:00-21:00 UTC, but the
+Python check also enforces this so a stray manual run / cron drift
+doesn't fire P1 alerts overnight.
+"""
+from __future__ import annotations
+
+import json
+from datetime import datetime, timedelta, timezone
+
+
+def _seed(db_conn, service: str, state: str, updated_at: datetime, error: dict | None = None):
+    db_conn.execute(
+        """
+        INSERT OR REPLACE INTO service_health
+          (service, state, last_attempt_started_at, last_attempt_finished_at,
+           last_error, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            service,
+            state,
+            None,
+            updated_at.isoformat().replace("+00:00", "Z"),
+            json.dumps(error) if error else None,
+            updated_at.isoformat().replace("+00:00", "Z"),
+        ),
+    )
+    db_conn.commit()
+
+
+class TestIntradayBucketGate:
+    def test_market_open_runs_checks(self, db_conn):
+        from watchdog import check
+
+        # 15:00 UTC on a Wednesday → ET 10:00 → market open.
+        now = datetime(2026, 5, 13, 15, 0, tzinfo=timezone.utc)
+        _seed(db_conn, "vcg-scan", "ok", now - timedelta(minutes=2))
+        report = check.check_bucket(bucket="intraday", now=now)
+        assert report.ran is True
+        # All four scheduled intraday services should appear in the report.
+        services_checked = {r.service for r in report.outcomes}
+        assert "vcg-scan" in services_checked
+        assert "cri-scan" in services_checked
+        assert "orders-sync" in services_checked
+        assert "portfolio-sync" in services_checked
+
+    def test_market_closed_no_op(self, db_conn):
+        from watchdog import check
+
+        # 02:00 UTC on a Sunday → market firmly closed in any tz.
+        now = datetime(2026, 5, 10, 2, 0, tzinfo=timezone.utc)
+        _seed(db_conn, "vcg-scan", "ok", now - timedelta(hours=20))
+        report = check.check_bucket(bucket="intraday", now=now)
+        assert report.ran is False
+        assert report.outcomes == []
+
+    def test_market_open_stale_triggers_eventually(self, db_conn):
+        from watchdog import check
+
+        now = datetime(2026, 5, 13, 15, 0, tzinfo=timezone.utc)
+        _seed(db_conn, "vcg-scan", "ok", now - timedelta(minutes=30))
+        # Seed the other intraday services as fresh so we don't get noise.
+        for other in ("cri-scan", "orders-sync", "portfolio-sync"):
+            _seed(db_conn, other, "ok", now - timedelta(minutes=2))
+
+        # First run — vcg stale but hysteresis blocks.
+        report1 = check.check_bucket(bucket="intraday", now=now)
+        fired1 = [o for o in report1.outcomes if o.fired]
+        assert fired1 == []
+
+        # Second run 5 min later — vcg still stale, hysteresis trips.
+        report2 = check.check_bucket(bucket="intraday", now=now + timedelta(minutes=5))
+        fired2 = [o for o in report2.outcomes if o.fired]
+        assert len(fired2) == 1
+        assert fired2[0].service == "vcg-scan"
+
+
+class TestContinuousBucketAlwaysRuns:
+    def test_continuous_bucket_runs_off_hours(self, db_conn):
+        from watchdog import check
+
+        # 03:00 UTC Sunday — should still run continuous checks.
+        now = datetime(2026, 5, 10, 3, 0, tzinfo=timezone.utc)
+        _seed(db_conn, "newsfeed-scraper", "ok", now - timedelta(minutes=1))
+        report = check.check_bucket(bucket="continuous", now=now)
+        assert report.ran is True
+        services = {r.service for r in report.outcomes}
+        assert "newsfeed-scraper" in services
+        assert "replica-watchdog" in services
