@@ -16,20 +16,33 @@ afterEach(() => {
 type FailingFixture = {
   service: string;
   state: string;
+  category?: "scheduled" | "on-demand";
   last_error: string | null;
   error_summary?: string | null;
 };
 
 function mockUseServiceHealth(payload: {
   failing?: FailingFixture[];
+  services?: FailingFixture[];
+  degraded_count?: number;
+  dormant_count?: number;
 } | null): void {
   vi.doMock("@/lib/useServiceHealth", () => ({
     useServiceHealth: () => ({
       data: payload === null
         ? null
         : {
-          services: payload.failing ?? [],
+          services: payload.services ?? payload.failing ?? [],
           failing: payload.failing ?? [],
+          degraded_count:
+            payload.degraded_count ?? (payload.failing ?? []).filter(
+              (r) =>
+                r.state === "error" ||
+                (r.state === "stale" && r.category !== "on-demand"),
+            ).length,
+          dormant_count:
+            payload.dormant_count ??
+            (payload.services ?? []).filter((r) => r.state === "dormant").length,
           summary: {
             total: (payload.failing ?? []).length,
             failing_count: (payload.failing ?? []).length,
@@ -274,6 +287,163 @@ describe("<ServiceHealthBanner />", () => {
       expect(detailText).toContain("Flex Web Service rate limit hit");
       // No mid-word truncation marker on the rewritten copy.
       expect(detailText).not.toContain("...");
+    });
+  });
+
+  /**
+   * Category-aware presentation: the banner renders the degraded
+   * (red) treatment only for scheduled writers in trouble. On-demand
+   * writers that are simply dormant get a softer informational chip
+   * in the same banner so a user can see something is silent without
+   * being alarmed.
+   *
+   * The Monday 11:01 ET incident this fixes: seven on-demand scan
+   * services flagged as ``stale`` because no user had visited their
+   * pages yet that morning. None were actually broken.
+   */
+  describe("on-demand dormant chip (informational, separate from degraded)", () => {
+    it("does NOT show the banner when only fresh services exist", async () => {
+      mockUseServiceHealth({ failing: [], services: [], dormant_count: 0 });
+      const { default: Banner } = await import("../components/ServiceHealthBanner");
+      const { container } = render(<Banner />);
+      expect(container.firstChild).toBeNull();
+    });
+
+    it("renders only the informational chip when degraded_count=0 and dormant_count>0", async () => {
+      mockUseServiceHealth({
+        failing: [],
+        services: [
+          { service: "scanner", state: "dormant", category: "on-demand", last_error: null },
+          { service: "discover", state: "dormant", category: "on-demand", last_error: null },
+          { service: "gex-scan", state: "dormant", category: "on-demand", last_error: null },
+        ],
+        degraded_count: 0,
+        dormant_count: 3,
+      });
+      const { default: Banner } = await import("../components/ServiceHealthBanner");
+      render(<Banner />);
+      const banner = screen.getByTestId("service-health-banner");
+      // Banner is visible.
+      expect(banner).toBeTruthy();
+      // Severity is the soft variant, not red.
+      expect(banner.getAttribute("data-severity")).toBe("dormant");
+      // Lists the dormant service names + the call to action.
+      expect(banner.textContent).toContain("scanner");
+      expect(banner.textContent).toContain("discover");
+      expect(banner.textContent).toContain("gex-scan");
+      expect(banner.textContent?.toLowerCase()).toContain("visit to refresh");
+      // No degraded-style copy.
+      expect(banner.textContent).not.toContain("Background sync degraded");
+    });
+
+    it("truncates dormant chip service list at 3 with +N more", async () => {
+      mockUseServiceHealth({
+        failing: [],
+        services: [
+          { service: "scanner", state: "dormant", category: "on-demand", last_error: null },
+          { service: "discover", state: "dormant", category: "on-demand", last_error: null },
+          { service: "gex-scan", state: "dormant", category: "on-demand", last_error: null },
+          { service: "flow-analysis", state: "dormant", category: "on-demand", last_error: null },
+          { service: "cta-sync", state: "dormant", category: "on-demand", last_error: null },
+        ],
+        degraded_count: 0,
+        dormant_count: 5,
+      });
+      const { default: Banner } = await import("../components/ServiceHealthBanner");
+      render(<Banner />);
+      const banner = screen.getByTestId("service-health-banner");
+      expect(banner.textContent).toContain("scanner");
+      expect(banner.textContent).toContain("discover");
+      expect(banner.textContent).toContain("gex-scan");
+      expect(banner.textContent).toContain("+2 more");
+      expect(banner.textContent).not.toContain("flow-analysis");
+    });
+
+    it("shows red degraded treatment when degraded_count>0 regardless of dormant_count", async () => {
+      mockUseServiceHealth({
+        failing: [
+          { service: "newsfeed-scraper", state: "error", category: "scheduled", last_error: "boom" },
+        ],
+        services: [
+          { service: "newsfeed-scraper", state: "error", category: "scheduled", last_error: "boom" },
+          { service: "scanner", state: "dormant", category: "on-demand", last_error: null },
+        ],
+        degraded_count: 1,
+        dormant_count: 1,
+      });
+      const { default: Banner } = await import("../components/ServiceHealthBanner");
+      render(<Banner />);
+      const banner = screen.getByTestId("service-health-banner");
+      // Red treatment dominates.
+      expect(banner.getAttribute("data-severity")).toBe("error");
+      // Degraded copy is still about the scheduled error, not the dormant chip.
+      expect(banner.textContent).toContain("Background sync degraded");
+      expect(banner.textContent).toContain("newsfeed-scraper");
+    });
+
+    it("shows both the degraded message and the dormant chip when both are present", async () => {
+      mockUseServiceHealth({
+        failing: [
+          { service: "newsfeed-scraper", state: "error", category: "scheduled", last_error: "boom" },
+        ],
+        services: [
+          { service: "newsfeed-scraper", state: "error", category: "scheduled", last_error: "boom" },
+          { service: "scanner", state: "dormant", category: "on-demand", last_error: null },
+          { service: "discover", state: "dormant", category: "on-demand", last_error: null },
+        ],
+        degraded_count: 1,
+        dormant_count: 2,
+      });
+      const { default: Banner } = await import("../components/ServiceHealthBanner");
+      render(<Banner />);
+      const banner = screen.getByTestId("service-health-banner");
+      // Both rows visible.
+      expect(banner.textContent).toContain("newsfeed-scraper");
+      expect(banner.textContent).toContain("scanner");
+      expect(banner.textContent).toContain("discover");
+      // Two distinct sub-elements so styling can diverge.
+      expect(banner.querySelector(".service-health-banner__message")).not.toBeNull();
+      expect(banner.querySelector(".service-health-banner__dormant")).not.toBeNull();
+    });
+
+    it("does NOT include the on-demand row name in the degraded list", async () => {
+      // Regression: the old banner pulled every failing row including
+      // on-demand dormant rows, which is exactly the Monday-11:01-ET
+      // false alarm we are fixing. The degraded headline should list
+      // only the scheduled error rows.
+      mockUseServiceHealth({
+        failing: [
+          { service: "newsfeed-scraper", state: "error", category: "scheduled", last_error: "boom" },
+        ],
+        services: [
+          { service: "newsfeed-scraper", state: "error", category: "scheduled", last_error: "boom" },
+          { service: "scanner", state: "dormant", category: "on-demand", last_error: null },
+        ],
+        degraded_count: 1,
+        dormant_count: 1,
+      });
+      const { default: Banner } = await import("../components/ServiceHealthBanner");
+      render(<Banner />);
+      const banner = screen.getByTestId("service-health-banner");
+      const headline = banner.querySelector(".service-health-banner__message");
+      expect(headline?.textContent).toContain("newsfeed-scraper");
+      expect(headline?.textContent).not.toContain("scanner");
+    });
+
+    it("dormant chip copy contains no em dash", async () => {
+      mockUseServiceHealth({
+        failing: [],
+        services: [
+          { service: "scanner", state: "dormant", category: "on-demand", last_error: null },
+        ],
+        degraded_count: 0,
+        dormant_count: 1,
+      });
+      const { default: Banner } = await import("../components/ServiceHealthBanner");
+      render(<Banner />);
+      const banner = screen.getByTestId("service-health-banner");
+      // No em dashes anywhere in user-facing copy.
+      expect(banner.textContent).not.toContain("—");
     });
   });
 });
