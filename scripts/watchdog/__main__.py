@@ -19,6 +19,16 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Match the canonical sys.path pattern used by every other script entry point
+# (cash_flow_sync.py, cri_scan.py, etc): prepend the scripts/ dir so the bare
+# `from db.client import get_db` / `from db.writer import record_service_health`
+# imports inside check.py / cooldown.py / ack.py / notify.py resolve. Without
+# this, `python -m scripts.watchdog --bucket X` from systemd fails on the
+# first cross-package import with ModuleNotFoundError: No module named 'db'.
+_SCRIPTS_DIR = Path(__file__).resolve().parent.parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
 
 # Writers must not hold the embedded replica open — Phase 6 lesson.
 os.environ.setdefault("RADON_DB_NO_REPLICA", "1")
