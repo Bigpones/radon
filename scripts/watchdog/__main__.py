@@ -1,0 +1,133 @@
+"""CLI entry point — `python -m scripts.watchdog [...]`.
+
+Subcommands:
+
+  --bucket {intraday|continuous|daily|error}   run one bucket cycle
+  ack <service> [--hours N] [--reason TEXT]    silence a service
+  clear <service>                              remove its ack
+  status                                       list active acks
+
+Reads `RADON_DB_NO_REPLICA=1` at top of module — writers don't need the
+embedded replica and a second WAL holder caused crashes during the
+Phase 6 migration. Same pattern as scripts/cash_flow_sync.py et al.
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+# Writers must not hold the embedded replica open — Phase 6 lesson.
+os.environ.setdefault("RADON_DB_NO_REPLICA", "1")
+
+# Load .env files so TURSO_* + channel creds are visible to subprocess runs.
+_PROJECT_DIR = Path(__file__).resolve().parent.parent.parent
+try:
+    from dotenv import load_dotenv  # type: ignore[import-untyped]
+    load_dotenv(_PROJECT_DIR / ".env")
+    load_dotenv(_PROJECT_DIR / ".env.ib-mode")
+    load_dotenv(_PROJECT_DIR / "web" / ".env")
+except Exception:
+    pass
+
+
+def _cmd_bucket(args: argparse.Namespace) -> int:
+    from watchdog import check, cooldown as cooldown_mod, notify
+
+    notify.log_startup_warning()
+    now = datetime.now(timezone.utc)
+    report = check.check_bucket(bucket=args.bucket, now=now)
+    if not report.ran:
+        print(f"[watchdog] bucket={args.bucket} skipped (off-window)")
+        return 0
+
+    fired_count = 0
+    for outcome in report.outcomes:
+        line = f"  {outcome.service:24s} {outcome.status:8s} fired={outcome.fired}"
+        print(line)
+        if not outcome.fired:
+            continue
+        if outcome.severity and not cooldown_mod.cooldown_allows_fire(
+            service=outcome.service, severity=outcome.severity, now=outcome.now
+        ):
+            print(f"    -> suppressed by cooldown ({outcome.severity})")
+            continue
+        notify.dispatch(outcome)
+        fired_count += 1
+    print(f"[watchdog] bucket={args.bucket} fired={fired_count}/{len(report.outcomes)}")
+    return 0
+
+
+def _cmd_ack(args: argparse.Namespace) -> int:
+    from watchdog import ack
+    ack.add_ack(service=args.service, hours=args.hours, reason=args.reason)
+    expires = ack.list_active_acks()
+    matched = next((row for row in expires if row["service"] == args.service), None)
+    if matched:
+        print(f"[watchdog] acked {args.service} until {matched['expires_at']}")
+    return 0
+
+
+def _cmd_clear(args: argparse.Namespace) -> int:
+    from watchdog import ack
+    ack.clear_ack(service=args.service)
+    print(f"[watchdog] cleared ack for {args.service}")
+    return 0
+
+
+def _cmd_status(args: argparse.Namespace) -> int:
+    from watchdog import ack
+    rows = ack.list_active_acks()
+    if not rows:
+        print("[watchdog] no active acks")
+        return 0
+    print(f"[watchdog] {len(rows)} active ack(s):")
+    for row in rows:
+        reason = f" — {row['reason']}" if row["reason"] else ""
+        print(f"  {row['service']:24s} expires {row['expires_at']}{reason}")
+    return 0
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="watchdog", description=__doc__)
+    parser.add_argument(
+        "--bucket",
+        choices=["intraday", "continuous", "daily", "error"],
+        help="Run one bucket cycle and exit.",
+    )
+
+    sub = parser.add_subparsers(dest="command")
+
+    ack_p = sub.add_parser("ack", help="Silence a service for N hours.")
+    ack_p.add_argument("service")
+    ack_p.add_argument("--hours", type=int, default=4)
+    ack_p.add_argument("--reason", default=None)
+
+    clear_p = sub.add_parser("clear", help="Remove an ack.")
+    clear_p.add_argument("service")
+
+    sub.add_parser("status", help="List active acks.")
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    if args.bucket:
+        return _cmd_bucket(args)
+    if args.command == "ack":
+        return _cmd_ack(args)
+    if args.command == "clear":
+        return _cmd_clear(args)
+    if args.command == "status":
+        return _cmd_status(args)
+    parser.print_help()
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
