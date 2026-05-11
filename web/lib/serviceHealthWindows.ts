@@ -13,10 +13,27 @@
 
 export type MarketState = "open" | "extended" | "closed";
 
+/**
+ * How a writer is triggered.
+ *
+ *  - ``scheduled``: a daemon, systemd timer, or cron fires this
+ *    automatically without user interaction. Past-window silence
+ *    indicates a real problem and SHOULD fire the degraded banner.
+ *  - ``on-demand``: only runs when a user visits its page or POSTs to
+ *    its scan endpoint. Past-window silence just means "nobody has
+ *    looked at it today" and should NOT fire the degraded banner.
+ *
+ * The route handler uses this to coerce past-window ``on-demand`` rows
+ * into the ``dormant`` state (informational) while ``scheduled`` rows
+ * continue to coerce into ``stale`` (degraded).
+ */
+export type ServiceCategory = "scheduled" | "on-demand";
+
 type Window = {
   open: number;
   extended: number;
   closed: number;
+  category: ServiceCategory;
 };
 
 const MIN = 60_000;
@@ -47,27 +64,33 @@ const DAY = 24 * HOUR;
  * 1h default and fire the banner overnight + on weekends.
  */
 export const SERVICE_FRESHNESS_WINDOWS: Record<string, Window> = {
-  "newsfeed-scraper": { open: 5 * MIN, extended: 5 * MIN, closed: 5 * MIN },
+  "newsfeed-scraper": { open: 5 * MIN, extended: 5 * MIN, closed: 5 * MIN, category: "scheduled" },
 
   // Market-hours-only IB feeds. Closed-window covers the longest
   // natural gap (Fri 16:00 ET → Mon 09:30 ET ≈ 65h) so a quiet
   // weekend doesn't trip the banner.
-  "orders-sync": { open: 10 * MIN, extended: 10 * MIN, closed: 3 * DAY },
-  "portfolio-sync": { open: 10 * MIN, extended: 10 * MIN, closed: 3 * DAY },
-  "orders-read-compare": { open: 10 * MIN, extended: 10 * MIN, closed: 3 * DAY },
+  "orders-sync": { open: 10 * MIN, extended: 10 * MIN, closed: 3 * DAY, category: "scheduled" },
+  "portfolio-sync": { open: 10 * MIN, extended: 10 * MIN, closed: 3 * DAY, category: "scheduled" },
+  // ``orders-read-compare`` only runs when /api/orders is hit, so even
+  // though the dashboard polls it every 60s the writer itself has no
+  // autonomous trigger and is treated as on-demand for the banner.
+  "orders-read-compare": { open: 10 * MIN, extended: 10 * MIN, closed: 3 * DAY, category: "on-demand" },
 
-  "journal-sync": { open: 10 * MIN, extended: 10 * MIN, closed: 10 * MIN },
-  "cash-flow-sync": { open: 25 * HOUR, extended: 25 * HOUR, closed: 25 * HOUR },
+  "journal-sync": { open: 10 * MIN, extended: 10 * MIN, closed: 10 * MIN, category: "scheduled" },
+  "cash-flow-sync": { open: 25 * HOUR, extended: 25 * HOUR, closed: 25 * HOUR, category: "scheduled" },
 
-  "fill-monitor": { open: 5 * MIN, extended: 5 * MIN, closed: 1 * HOUR },
-  "exit-orders": { open: 5 * MIN, extended: 5 * MIN, closed: 1 * HOUR },
+  "fill-monitor": { open: 5 * MIN, extended: 5 * MIN, closed: 1 * HOUR, category: "scheduled" },
+  "exit-orders": { open: 5 * MIN, extended: 5 * MIN, closed: 1 * HOUR, category: "scheduled" },
 
-  "flex-token-check": { open: 25 * HOUR, extended: 25 * HOUR, closed: 25 * HOUR },
+  "flex-token-check": { open: 25 * HOUR, extended: 25 * HOUR, closed: 25 * HOUR, category: "scheduled" },
 
-  "cri-scan": { open: 35 * MIN, extended: 35 * MIN, closed: 1 * DAY },
-  "gex-scan": { open: 30 * MIN, extended: 30 * MIN, closed: 1 * DAY },
-  "vcg-scan": { open: 35 * MIN, extended: 35 * MIN, closed: 1 * DAY },
-  "cta-sync": { open: 35 * MIN, extended: 35 * MIN, closed: 1 * DAY },
+  "cri-scan": { open: 35 * MIN, extended: 35 * MIN, closed: 1 * DAY, category: "scheduled" },
+  // ``gex-scan`` / ``cta-sync`` only flow through ``record_service_health``
+  // when a user POSTs the scan endpoint, so they're on-demand for banner
+  // purposes even though some have companion systemd timers.
+  "gex-scan": { open: 30 * MIN, extended: 30 * MIN, closed: 1 * DAY, category: "on-demand" },
+  "vcg-scan": { open: 35 * MIN, extended: 35 * MIN, closed: 1 * DAY, category: "scheduled" },
+  "cta-sync": { open: 35 * MIN, extended: 35 * MIN, closed: 1 * DAY, category: "on-demand" },
 
   // Market-hours-only writers: triggered by the FastAPI scan endpoints
   // during the trading day, dormant on nights and weekends. The
@@ -75,15 +98,24 @@ export const SERVICE_FRESHNESS_WINDOWS: Record<string, Window> = {
   // (Friday 16:00 ET → Monday 09:30 ET ≈ 65h) without flipping to
   // stale. Per-service intraday cadence varies but ≤30 min during
   // market hours catches genuine outages quickly.
-  "scanner": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY },
-  "discover": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY },
-  "flow-analysis": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY },
-  "analyst-ratings": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY },
+  "scanner": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY, category: "on-demand" },
+  "discover": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY, category: "on-demand" },
+  "flow-analysis": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY, category: "on-demand" },
+  "analyst-ratings": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY, category: "on-demand" },
 
-  "replica-watchdog": { open: 5 * MIN, extended: 5 * MIN, closed: 5 * MIN },
+  "replica-watchdog": { open: 5 * MIN, extended: 5 * MIN, closed: 5 * MIN, category: "scheduled" },
 };
 
-const DEFAULT_WINDOW: Window = { open: 1 * HOUR, extended: 1 * HOUR, closed: 1 * HOUR };
+const DEFAULT_WINDOW: Window = {
+  open: 1 * HOUR,
+  extended: 1 * HOUR,
+  closed: 1 * HOUR,
+  // Default to ``scheduled`` so the banner stays honest about silent
+  // daemons we forgot to register — an unrecognised writer is more
+  // likely a misnamed scheduled service than a brand-new on-demand
+  // surface.
+  category: "scheduled",
+};
 
 /**
  * Resolve the freshness window for ``service`` under the given market
@@ -92,6 +124,16 @@ const DEFAULT_WINDOW: Window = { open: 1 * HOUR, extended: 1 * HOUR, closed: 1 *
 export function getFreshnessWindowMs(service: string, market: MarketState): number {
   const entry = SERVICE_FRESHNESS_WINDOWS[service] ?? DEFAULT_WINDOW;
   return entry[market];
+}
+
+/**
+ * Resolve the trigger-category for ``service``. Unknown services fall
+ * back to ``scheduled`` — the safer default so the banner keeps
+ * shouting about silent daemons we forgot to register here.
+ */
+export function getServiceCategory(service: string): ServiceCategory {
+  const entry = SERVICE_FRESHNESS_WINDOWS[service] ?? DEFAULT_WINDOW;
+  return entry.category;
 }
 
 /**

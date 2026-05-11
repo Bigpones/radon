@@ -9,8 +9,10 @@ import { describe, it, expect } from "vitest";
 import {
   SERVICE_FRESHNESS_WINDOWS,
   getFreshnessWindowMs,
+  getServiceCategory,
   isStale,
   type MarketState,
+  type ServiceCategory,
 } from "../lib/serviceHealthWindows";
 
 describe("SERVICE_FRESHNESS_WINDOWS", () => {
@@ -157,5 +159,68 @@ describe("DB-name aligned writers (orders-sync / portfolio-sync / orders-read-co
     const NOW = Date.parse("2026-05-08T18:00:00Z"); // Fri 2 PM ET
     const sixtyMinAgo = new Date(NOW - 60 * 60_000).toISOString();
     expect(isStale(service, sixtyMinAgo, "open", NOW)).toBe(true);
+  });
+});
+
+/**
+ * Each entry in SERVICE_FRESHNESS_WINDOWS now carries a ``category``
+ * field so the banner can distinguish:
+ *
+ *  - ``scheduled``: a daemon/timer/cron fires this without user action.
+ *    Past-window silence is a real problem and SHOULD fire the banner.
+ *  - ``on-demand``: only runs when a user visits its page or POSTs to
+ *    its scan endpoint. Past-window silence means "you haven't looked
+ *    at it today" and should NOT fire the banner.
+ */
+describe("SERVICE_FRESHNESS_WINDOWS — category field", () => {
+  it("every entry declares a category", () => {
+    for (const [service, entry] of Object.entries(SERVICE_FRESHNESS_WINDOWS)) {
+      expect(
+        entry.category,
+        `service ${service} is missing the category field`,
+      ).toBeDefined();
+      expect(["scheduled", "on-demand"]).toContain(entry.category);
+    }
+  });
+
+  it.each<[string, ServiceCategory]>([
+    ["newsfeed-scraper", "scheduled"],
+    ["journal-sync", "scheduled"],
+    ["cash-flow-sync", "scheduled"],
+    ["fill-monitor", "scheduled"],
+    ["exit-orders", "scheduled"],
+    ["flex-token-check", "scheduled"],
+    ["cri-scan", "scheduled"],
+    ["vcg-scan", "scheduled"],
+    ["replica-watchdog", "scheduled"],
+    ["orders-sync", "scheduled"],
+    ["portfolio-sync", "scheduled"],
+    ["scanner", "on-demand"],
+    ["discover", "on-demand"],
+    ["flow-analysis", "on-demand"],
+    ["analyst-ratings", "on-demand"],
+    ["gex-scan", "on-demand"],
+    ["cta-sync", "on-demand"],
+    ["orders-read-compare", "on-demand"],
+  ])("%s is categorized as %s", (service, expected) => {
+    expect(SERVICE_FRESHNESS_WINDOWS[service]?.category).toBe(expected);
+  });
+});
+
+describe("getServiceCategory", () => {
+  it("returns the configured category for a known scheduled service", () => {
+    expect(getServiceCategory("newsfeed-scraper")).toBe("scheduled");
+  });
+
+  it("returns the configured category for a known on-demand service", () => {
+    expect(getServiceCategory("scanner")).toBe("on-demand");
+  });
+
+  it("treats unknown services as scheduled (fail loud, not quiet)", () => {
+    // An unrecognised writer is more likely to be a misnamed scheduled
+    // service we forgot to register than a genuinely new on-demand
+    // surface — defaulting to ``scheduled`` keeps the banner honest
+    // about silent daemons.
+    expect(getServiceCategory("brand-new-handler")).toBe("scheduled");
   });
 });
