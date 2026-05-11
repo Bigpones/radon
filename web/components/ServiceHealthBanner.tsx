@@ -2,6 +2,7 @@
 
 import { AlertTriangle } from "lucide-react";
 import { useServiceHealth } from "@/lib/useServiceHealth";
+import type { ServiceHealthRow } from "@/lib/useServiceHealth";
 import { humanizeServiceHealthError } from "@/lib/serviceHealthError";
 
 /**
@@ -9,14 +10,20 @@ import { humanizeServiceHealthError } from "@/lib/serviceHealthError";
  * scheduler is in a non-OK state. Hidden in steady state. Mounted in
  * WorkspaceShell so it appears on every page.
  *
- * Two severity tones, distinguished via ``data-severity``:
- *   - ``error`` (red): a worker raised an exception, dual-write failed,
- *     etc. The classic "something is broken now" signal.
- *   - ``stale`` (amber): worker hasn't heartbeated within its freshness
- *     window. Soft signal — the process may be silent, hung, or simply
- *     between cycles on a slow cadence we miscalibrated.
+ * Three severity tones, distinguished via ``data-severity``:
+ *   - ``error`` (red): a scheduled worker raised an exception. The
+ *     classic "something is broken now" signal.
+ *   - ``stale`` (amber): a scheduled worker hasn't heartbeated within
+ *     its freshness window. Soft signal — the process may be silent,
+ *     hung, or simply between cycles on a slow cadence we
+ *     miscalibrated.
+ *   - ``dormant`` (informational): on-demand writers past their
+ *     freshness window. Nobody has visited the scanner / discover /
+ *     gex page today, so the data is old. Not a problem to fix.
  *
- * Errors take precedence over stale rows when both are present.
+ * Errors take precedence over stale; both are "degraded". Dormant is
+ * informational and never flips the banner red — when only dormant
+ * rows exist, the banner renders the soft chip alone.
  *
  * The ``last_error`` column is JSON-encoded by the workers, so the
  * route handler runs ``formatServiceHealthError`` against it and ships
@@ -30,19 +37,14 @@ import { humanizeServiceHealthError } from "@/lib/serviceHealthError";
 export default function ServiceHealthBanner() {
   const { data } = useServiceHealth();
 
-  const failing = data?.failing ?? [];
-  if (failing.length === 0) return null;
+  const degradedRows = collectDegradedRows(data?.failing ?? []);
+  const dormantRows = collectDormantRows(data?.services ?? []);
+  const degradedCount = data?.degraded_count ?? degradedRows.length;
+  const dormantCount = data?.dormant_count ?? dormantRows.length;
 
-  const hasError = failing.some((row) => row.state === "error");
-  const severity: "error" | "stale" = hasError ? "error" : "stale";
-  const headline = severity === "error"
-    ? "Background sync degraded:"
-    : "Background sync stale (no recent heartbeat):";
+  if (degradedCount === 0 && dormantCount === 0) return null;
 
-  const services = failing.slice(0, 3).map((row) => row.service).join(", ");
-  const more = failing.length > 3 ? ` +${failing.length - 3} more` : "";
-
-  const detail = resolveDetailCopy(failing[0]);
+  const severity = resolveSeverity(degradedRows, dormantRows);
 
   return (
     <div
@@ -54,12 +56,69 @@ export default function ServiceHealthBanner() {
       <span className="service-health-banner__icon" aria-hidden>
         <AlertTriangle size={14} />
       </span>
-      <div className="service-health-banner__message">
-        <strong>{headline}</strong> {services}{more}
-        {detail ? (
-          <span className="service-health-banner__detail"> - {detail}</span>
-        ) : null}
-      </div>
+      {degradedRows.length > 0 ? renderDegradedMessage(degradedRows) : null}
+      {dormantRows.length > 0 ? renderDormantChip(dormantRows) : null}
+    </div>
+  );
+}
+
+type Severity = "error" | "stale" | "dormant";
+
+const MAX_LISTED = 3;
+
+function collectDegradedRows(failing: ServiceHealthRow[]): ServiceHealthRow[] {
+  return failing.filter((row) => row.state === "error" || row.state === "stale");
+}
+
+function collectDormantRows(services: ServiceHealthRow[]): ServiceHealthRow[] {
+  return services.filter((row) => row.state === "dormant");
+}
+
+function resolveSeverity(
+  degraded: ServiceHealthRow[],
+  dormant: ServiceHealthRow[],
+): Severity {
+  if (degraded.some((row) => row.state === "error")) return "error";
+  if (degraded.length > 0) return "stale";
+  if (dormant.length > 0) return "dormant";
+  return "stale";
+}
+
+function renderDegradedMessage(degraded: ServiceHealthRow[]) {
+  const hasError = degraded.some((row) => row.state === "error");
+  const headline = hasError
+    ? "Background sync degraded:"
+    : "Background sync stale (no recent heartbeat):";
+  const names = degraded.slice(0, MAX_LISTED).map((row) => row.service).join(", ");
+  const more =
+    degraded.length > MAX_LISTED ? ` +${degraded.length - MAX_LISTED} more` : "";
+  const detail = resolveDetailCopy(degraded[0]);
+
+  return (
+    <div className="service-health-banner__message">
+      <strong>{headline}</strong> {names}
+      {more}
+      {detail ? (
+        <span className="service-health-banner__detail"> - {detail}</span>
+      ) : null}
+    </div>
+  );
+}
+
+function renderDormantChip(dormant: ServiceHealthRow[]) {
+  const names = dormant.slice(0, MAX_LISTED).map((row) => row.service).join(", ");
+  const more =
+    dormant.length > MAX_LISTED ? ` +${dormant.length - MAX_LISTED} more` : "";
+  const headline =
+    dormant.length === 1
+      ? "1 on-demand service dormant:"
+      : `${dormant.length} on-demand services dormant:`;
+
+  return (
+    <div className="service-health-banner__dormant">
+      <strong>{headline}</strong> {names}
+      {more}
+      <span className="service-health-banner__detail"> - visit to refresh</span>
     </div>
   );
 }

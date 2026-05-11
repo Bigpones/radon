@@ -2351,7 +2351,7 @@ tr.leg-row td {
 .service-health-banner {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   padding: 8px 20px;
   background: var(--warning);
   color: var(--bg-base);
@@ -2360,6 +2360,33 @@ tr.leg-row td {
   letter-spacing: 0.03em;
   flex-shrink: 0;
   animation: banner-slide-down 200ms ease-out;
+}
+
+/*
+ * data-severity drives the banner tone:
+ *   error   → red          (a scheduled worker is broken)
+ *   stale   → amber        (a scheduled worker is silent)
+ *   dormant → muted panel  (an on-demand surface hasn't been visited)
+ *
+ * The dormant treatment intentionally uses the panel-raised background
+ * with the warning colour as a left border instead of a flood fill, so
+ * it reads as informational rather than urgent.
+ */
+.service-health-banner[data-severity="error"] {
+  background: var(--fault);
+  color: var(--bg-base);
+}
+
+.service-health-banner[data-severity="stale"] {
+  background: var(--warning);
+  color: var(--bg-base);
+}
+
+.service-health-banner[data-severity="dormant"] {
+  background: var(--bg-panel-raised);
+  color: var(--text-muted);
+  border-left: 3px solid var(--warning);
+  padding-left: 17px;
 }
 
 .service-health-banner__icon {
@@ -2374,6 +2401,25 @@ tr.leg-row td {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * The dormant chip sits to the right of the degraded message when both
+ * are present, separated by a subtle divider so the user can tell
+ * them apart at a glance.
+ */
+.service-health-banner__dormant {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+
+.service-health-banner__message + .service-health-banner__dormant {
+  border-left: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  padding-left: 12px;
 }
 
 .service-health-banner__detail {

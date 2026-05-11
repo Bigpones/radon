@@ -177,3 +177,180 @@ describe("/api/service-health", () => {
     expect(body.failing[0].error_summary).toBeNull();
   });
 });
+
+/**
+ * Category-aware response: scheduled services that miss their window
+ * become ``stale`` and contribute to ``degraded_count`` (banner red).
+ * On-demand services that miss their window become ``dormant`` and
+ * contribute to ``dormant_count`` (banner informational chip).
+ *
+ * Both shapes ride the same /api/service-health response so the banner
+ * can read one number for each treatment.
+ */
+describe("/api/service-health — category-aware response shape", () => {
+  it("includes `category` on every row so clients can group locally", async () => {
+    const now = new Date().toISOString();
+    mockGetDb([
+      {
+        service: "newsfeed-scraper",
+        state: "ok",
+        last_attempt_started_at: now,
+        last_attempt_finished_at: now,
+        last_error: null,
+        updated_at: now,
+      },
+      {
+        service: "scanner",
+        state: "ok",
+        last_attempt_started_at: now,
+        last_attempt_finished_at: now,
+        last_error: null,
+        updated_at: now,
+      },
+    ]);
+    const { GET } = await import("../app/api/service-health/route");
+    const res = await GET();
+    const body = await res.json();
+    const byName = Object.fromEntries(
+      body.services.map((row: { service: string; category: string }) => [row.service, row.category]),
+    );
+    expect(byName["newsfeed-scraper"]).toBe("scheduled");
+    expect(byName["scanner"]).toBe("on-demand");
+  });
+
+  it("coerces past-window scheduled rows to state=stale and counts them in degraded_count", async () => {
+    const stale = new Date(Date.now() - 30 * 60_000).toISOString();
+    mockGetDb([
+      {
+        service: "newsfeed-scraper",
+        state: "ok",
+        last_attempt_started_at: stale,
+        last_attempt_finished_at: stale,
+        last_error: null,
+        updated_at: stale,
+      },
+    ]);
+    const { GET } = await import("../app/api/service-health/route");
+    const res = await GET();
+    const body = await res.json();
+    expect(body.services[0].state).toBe("stale");
+    expect(body.degraded_count).toBe(1);
+    expect(body.dormant_count).toBe(0);
+  });
+
+  it("coerces past-window on-demand rows to state=dormant and counts them in dormant_count", async () => {
+    // scanner is on-demand; closed-window is 3d. Use a Friday-evening
+    // timestamp + a frozen Saturday-noon now: 3d window not exceeded,
+    // so simulate well past it instead.
+    const dormant = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString();
+    mockGetDb([
+      {
+        service: "scanner",
+        state: "ok",
+        last_attempt_started_at: dormant,
+        last_attempt_finished_at: dormant,
+        last_error: null,
+        updated_at: dormant,
+      },
+    ]);
+    const { GET } = await import("../app/api/service-health/route");
+    const res = await GET();
+    const body = await res.json();
+    expect(body.services[0].state).toBe("dormant");
+    expect(body.dormant_count).toBe(1);
+    expect(body.degraded_count).toBe(0);
+  });
+
+  it("preserves error state regardless of category — errors always count toward degraded_count", async () => {
+    const now = new Date().toISOString();
+    mockGetDb([
+      {
+        service: "scanner", // on-demand
+        state: "error",
+        last_attempt_started_at: now,
+        last_attempt_finished_at: now,
+        last_error: "boom",
+        updated_at: now,
+      },
+    ]);
+    const { GET } = await import("../app/api/service-health/route");
+    const res = await GET();
+    const body = await res.json();
+    expect(body.services[0].state).toBe("error");
+    expect(body.degraded_count).toBe(1);
+    expect(body.dormant_count).toBe(0);
+  });
+
+  it("fresh ok rows contribute to neither degraded_count nor dormant_count", async () => {
+    const fresh = new Date().toISOString();
+    mockGetDb([
+      {
+        service: "newsfeed-scraper",
+        state: "ok",
+        last_attempt_started_at: fresh,
+        last_attempt_finished_at: fresh,
+        last_error: null,
+        updated_at: fresh,
+      },
+      {
+        service: "scanner",
+        state: "ok",
+        last_attempt_started_at: fresh,
+        last_attempt_finished_at: fresh,
+        last_error: null,
+        updated_at: fresh,
+      },
+    ]);
+    const { GET } = await import("../app/api/service-health/route");
+    const res = await GET();
+    const body = await res.json();
+    expect(body.degraded_count).toBe(0);
+    expect(body.dormant_count).toBe(0);
+  });
+
+  it("mixed bag: one scheduled stale + two on-demand dormant + one healthy = 1/2/0", async () => {
+    const now = Date.now();
+    const stale = new Date(now - 30 * 60_000).toISOString();
+    const dormantTs = new Date(now - 7 * 24 * 60 * 60_000).toISOString();
+    const fresh = new Date(now).toISOString();
+    mockGetDb([
+      {
+        service: "newsfeed-scraper",
+        state: "ok",
+        last_attempt_started_at: stale,
+        last_attempt_finished_at: stale,
+        last_error: null,
+        updated_at: stale,
+      },
+      {
+        service: "scanner",
+        state: "ok",
+        last_attempt_started_at: dormantTs,
+        last_attempt_finished_at: dormantTs,
+        last_error: null,
+        updated_at: dormantTs,
+      },
+      {
+        service: "discover",
+        state: "ok",
+        last_attempt_started_at: dormantTs,
+        last_attempt_finished_at: dormantTs,
+        last_error: null,
+        updated_at: dormantTs,
+      },
+      {
+        service: "journal-sync",
+        state: "ok",
+        last_attempt_started_at: fresh,
+        last_attempt_finished_at: fresh,
+        last_error: null,
+        updated_at: fresh,
+      },
+    ]);
+    const { GET } = await import("../app/api/service-health/route");
+    const res = await GET();
+    const body = await res.json();
+    expect(body.degraded_count).toBe(1);
+    expect(body.dormant_count).toBe(2);
+  });
+});

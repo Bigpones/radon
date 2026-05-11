@@ -5,7 +5,12 @@ import {
   jsonApiError,
   setNoStoreResponseHeaders,
 } from "@/lib/apiContracts";
-import { getMarketStateFromDate, isStale } from "@/lib/serviceHealthWindows";
+import {
+  getMarketStateFromDate,
+  getServiceCategory,
+  isStale,
+  type ServiceCategory,
+} from "@/lib/serviceHealthWindows";
 import { formatServiceHealthError } from "@/lib/serviceHealthError";
 
 // Disable Next.js static caching: this handler reads live DB state.
@@ -16,6 +21,7 @@ export const runtime = "nodejs";
 export type ServiceHealthRow = {
   service: string;
   state: string;
+  category: ServiceCategory;
   last_attempt_started_at: string | null;
   last_attempt_finished_at: string | null;
   /**
@@ -35,25 +41,44 @@ export type ServiceHealthRow = {
 };
 
 function isFailingState(state: string): boolean {
-  // ``ok``, ``syncing``, ``paused`` are healthy / informational. Everything
-  // else — including ``stale`` from the freshness gate and ``error`` from
-  // a real exception — should fire the banner.
-  if (state === "ok" || state === "syncing" || state === "paused") return false;
+  // ``ok``, ``syncing``, ``paused`` are healthy / informational.
+  // ``dormant`` is informational too — an on-demand service that no
+  // user has visited recently. Everything else — including ``stale``
+  // from the freshness gate and ``error`` from a real exception —
+  // should fire the degraded banner.
+  if (state === "ok" || state === "syncing" || state === "paused" || state === "dormant") {
+    return false;
+  }
   return true;
 }
 
 /**
- * Coerce ``ok`` rows past their freshness window into ``stale``. Real
- * non-ok states (error, syncing, paused) are passed through untouched —
- * the gate only adds signal, never hides it.
+ * True when the row should fire the red degraded banner. ``error``
+ * rows from any category and ``stale`` rows from scheduled writers
+ * both qualify; on-demand ``dormant`` rows do not.
+ */
+function isDegradedRow(row: ServiceHealthRow): boolean {
+  if (row.state === "error") return true;
+  if (row.state === "stale" && row.category === "scheduled") return true;
+  return false;
+}
+
+function isDormantRow(row: ServiceHealthRow): boolean {
+  return row.state === "dormant";
+}
+
+/**
+ * Coerce ``ok`` rows past their freshness window into ``stale`` for
+ * scheduled writers and ``dormant`` for on-demand writers. Real non-ok
+ * states (error, syncing, paused) are passed through untouched — the
+ * gate only adds signal, never hides it.
  */
 function applyStalenessGate(row: ServiceHealthRow, nowMs: number): ServiceHealthRow {
   if (row.state !== "ok") return row;
   const market = getMarketStateFromDate(new Date(nowMs));
-  if (isStale(row.service, row.updated_at, market, nowMs)) {
-    return { ...row, state: "stale" };
-  }
-  return row;
+  if (!isStale(row.service, row.updated_at, market, nowMs)) return row;
+  const coerced = row.category === "on-demand" ? "dormant" : "stale";
+  return { ...row, state: coerced };
 }
 
 export async function GET(): Promise<Response> {
@@ -75,9 +100,11 @@ export async function GET(): Promise<Response> {
     for (const row of result.rows) {
       const r = row as unknown as Record<string, unknown>;
       const lastErrorRaw = (r.last_error ?? null) as string | null;
+      const service = String(r.service ?? "");
       const raw: ServiceHealthRow = {
-        service: String(r.service ?? ""),
+        service,
         state: String(r.state ?? "unknown"),
+        category: getServiceCategory(service),
         last_attempt_started_at: (r.last_attempt_started_at ?? null) as string | null,
         last_attempt_finished_at: (r.last_attempt_finished_at ?? null) as string | null,
         last_error: lastErrorRaw,
@@ -90,15 +117,21 @@ export async function GET(): Promise<Response> {
       // Coerce stale ``ok`` rows so the banner can see them. Per-service
       // freshness windows live in ``lib/serviceHealthWindows.ts`` and
       // expand off-hours for market-cadence services so a quiet weekend
-      // doesn't fire a false alarm.
+      // doesn't fire a false alarm. The category drives whether the
+      // coercion produces ``stale`` (scheduled — real problem) or
+      // ``dormant`` (on-demand — nobody has looked at it).
       rows.push(applyStalenessGate(raw, nowMs));
     }
 
     const failing = rows.filter((r) => isFailingState(r.state));
+    const degraded = rows.filter(isDegradedRow);
+    const dormant = rows.filter(isDormantRow);
 
     const response = NextResponse.json({
       services: rows,
       failing,
+      degraded_count: degraded.length,
+      dormant_count: dormant.length,
       summary: {
         total: rows.length,
         failing_count: failing.length,
@@ -113,6 +146,8 @@ export async function GET(): Promise<Response> {
     const response = NextResponse.json({
       services: [],
       failing: [],
+      degraded_count: 0,
+      dormant_count: 0,
       summary: { total: 0, failing_count: 0 },
       warning: message,
     });
