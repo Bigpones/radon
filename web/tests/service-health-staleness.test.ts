@@ -151,7 +151,30 @@ describe("/api/service-health — stale coercion", () => {
     const { GET } = await import("../app/api/service-health/route");
     const res = await GET();
     const body = await res.json();
+    // Unknown services default to ``scheduled``, so a missed window
+    // becomes ``stale`` (not ``dormant``) and contributes to the
+    // degraded banner — the safer default.
     expect(body.services[0].state).toBe("stale");
     expect(body.failing).toHaveLength(1);
+  });
+
+  it("on-demand service past its closed window is coerced to dormant, not stale", async () => {
+    // ``scanner`` is on-demand with a 3d closed window, so 7d-old data
+    // is well past it.
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString();
+    mockGetDb([
+      {
+        service: "scanner",
+        state: "ok",
+        last_attempt_started_at: sevenDaysAgo,
+        last_attempt_finished_at: sevenDaysAgo,
+        last_error: null,
+        updated_at: sevenDaysAgo,
+      },
+    ]);
+    const { GET } = await import("../app/api/service-health/route");
+    const res = await GET();
+    const body = await res.json();
+    expect(body.services[0].state).toBe("dormant");
   });
 });
