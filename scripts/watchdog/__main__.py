@@ -35,7 +35,7 @@ except Exception:
 
 
 def _cmd_bucket(args: argparse.Namespace) -> int:
-    from watchdog import check, cooldown as cooldown_mod, notify
+    from scripts.watchdog import check, cooldown as cooldown_mod, notify
 
     notify.log_startup_warning()
     now = datetime.now(timezone.utc)
@@ -62,7 +62,7 @@ def _cmd_bucket(args: argparse.Namespace) -> int:
 
 
 def _cmd_ack(args: argparse.Namespace) -> int:
-    from watchdog import ack
+    from scripts.watchdog import ack
     ack.add_ack(service=args.service, hours=args.hours, reason=args.reason)
     expires = ack.list_active_acks()
     matched = next((row for row in expires if row["service"] == args.service), None)
@@ -72,14 +72,14 @@ def _cmd_ack(args: argparse.Namespace) -> int:
 
 
 def _cmd_clear(args: argparse.Namespace) -> int:
-    from watchdog import ack
+    from scripts.watchdog import ack
     ack.clear_ack(service=args.service)
     print(f"[watchdog] cleared ack for {args.service}")
     return 0
 
 
 def _cmd_status(args: argparse.Namespace) -> int:
-    from watchdog import ack
+    from scripts.watchdog import ack
     rows = ack.list_active_acks()
     if not rows:
         print("[watchdog] no active acks")
