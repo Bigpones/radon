@@ -153,8 +153,11 @@ class TestSeverityMapping:
     def test_continuous_stale_is_p3(self, db_conn):
         from watchdog import check
 
+        # replica-watchdog uses a 24h window because it's event-driven —
+        # it only writes service_health when it heals. Seed 25h old so
+        # the stale path trips for the severity test.
         now = datetime(2026, 5, 11, 14, 0, tzinfo=timezone.utc)
-        _seed_service_health(db_conn, "replica-watchdog", "ok", now - timedelta(minutes=10))
+        _seed_service_health(db_conn, "replica-watchdog", "ok", now - timedelta(hours=25))
         check.check_service(service="replica-watchdog", kind="stale", now=now, market_state="closed")
         outcome = check.check_service(
             service="replica-watchdog",

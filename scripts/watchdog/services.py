@@ -51,7 +51,15 @@ SCHEDULED_SERVICES: dict[str, FreshnessWindow] = {
     "cri-scan":         {"open": 35 * _MIN, "closed": 1 * _DAY},
     "vcg-scan":         {"open": 15 * _MIN, "closed": 1 * _DAY},
     "cta-sync":         {"open": 25 * _HOUR, "closed": 72 * _HOUR},
-    "replica-watchdog": {"open": 5 * _MIN, "closed": 5 * _MIN},
+    # Event-driven writer — only records a row when it heals. Match
+    # the 24h window from web/lib/serviceHealthWindows.ts so the dash
+    # banner and the watchdog agree on what "stale" means here.
+    "replica-watchdog": {"open": 24 * _HOUR, "closed": 24 * _HOUR},
+    # ``watchdog-alerts`` is the meta-row this very service writes when
+    # alerting on OTHER services. Same event-driven shape as
+    # replica-watchdog — 24h window. NOT included in any bucket below
+    # to avoid recursive alerting (watchdog alerting on its own alerts row).
+    "watchdog-alerts":  {"open": 24 * _HOUR, "closed": 24 * _HOUR},
 }
 
 
@@ -74,7 +82,11 @@ BUCKETS: dict[str, list[str]] = {
         "flex-token-check",
         "cta-sync",
     ],
-    "error": list(SCHEDULED_SERVICES.keys()),
+    # Every scheduled service EXCEPT watchdog-alerts. Including
+    # watchdog-alerts here would create a recursive alerting loop:
+    # the row is in state=error whenever we've alerted on something
+    # else, which would trigger another alert, etc.
+    "error": [s for s in SCHEDULED_SERVICES.keys() if s != "watchdog-alerts"],
 }
 
 

@@ -200,7 +200,10 @@ describe("SERVICE_FRESHNESS_WINDOWS — category field", () => {
     ["flow-analysis", "on-demand"],
     ["analyst-ratings", "on-demand"],
     ["gex-scan", "on-demand"],
-    ["cta-sync", "on-demand"],
+    // cta-sync is scheduled by radon-cta-sync.timer on Hetzner — flipped
+    // from on-demand when the autonomous timer landed.
+    ["cta-sync", "scheduled"],
+    ["watchdog-alerts", "scheduled"],
     ["orders-read-compare", "on-demand"],
   ])("%s is categorized as %s", (service, expected) => {
     expect(SERVICE_FRESHNESS_WINDOWS[service]?.category).toBe(expected);

@@ -113,7 +113,16 @@ export const SERVICE_FRESHNESS_WINDOWS: Record<string, Window> = {
   "flow-analysis": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY, category: "on-demand" },
   "analyst-ratings": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY, category: "on-demand" },
 
-  "replica-watchdog": { open: 5 * MIN, extended: 5 * MIN, closed: 5 * MIN, category: "scheduled" },
+  // ``replica-watchdog`` and ``watchdog-alerts`` are EVENT-DRIVEN
+  // writers: they only record a service_health row when something
+  // actually happens (a replica heal in the watchdog's case; an alert
+  // fire in the alerts row's case). A healthy cycle returns early
+  // without writing, so a tight 5-min window would flip them to stale
+  // within minutes of the last event — even though "nothing happened"
+  // is the desired healthy state. Use a 24h window so we still notice
+  // when the writer process itself is down for a full day.
+  "replica-watchdog": { open: 24 * HOUR, extended: 24 * HOUR, closed: 24 * HOUR, category: "scheduled" },
+  "watchdog-alerts": { open: 24 * HOUR, extended: 24 * HOUR, closed: 24 * HOUR, category: "scheduled" },
 };
 
 const DEFAULT_WINDOW: Window = {

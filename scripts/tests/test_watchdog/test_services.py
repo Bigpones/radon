@@ -88,11 +88,18 @@ class TestBuckets:
         assert "cash-flow-sync" in daily
         assert "flex-token-check" in daily
 
-    def test_error_bucket_lists_every_scheduled_service(self):
+    def test_error_bucket_lists_every_scheduled_service_except_self_meta(self):
         from watchdog import services as svc_mod
 
+        # watchdog-alerts is the meta-row the watchdog writes to when
+        # alerting on OTHER services. Including it in the error bucket
+        # would create a recursive alerting loop (alert about an alert
+        # row, which then triggers another alert, etc). Every other
+        # scheduled service should be in the error bucket.
         error_bucket = set(svc_mod.BUCKETS["error"])
-        assert error_bucket == set(svc_mod.SCHEDULED_SERVICES.keys())
+        expected = set(svc_mod.SCHEDULED_SERVICES.keys()) - {"watchdog-alerts"}
+        assert error_bucket == expected
+        assert "watchdog-alerts" not in error_bucket
 
     def test_no_unknown_buckets(self):
         from watchdog import services as svc_mod
