@@ -50,6 +50,7 @@ SCHEDULED_SERVICES: dict[str, FreshnessWindow] = {
     "flex-token-check": {"open": 25 * _HOUR, "closed": 25 * _HOUR},
     "cri-scan":         {"open": 35 * _MIN, "closed": 1 * _DAY},
     "vcg-scan":         {"open": 15 * _MIN, "closed": 1 * _DAY},
+    "cta-sync":         {"open": 25 * _HOUR, "closed": 72 * _HOUR},
     "replica-watchdog": {"open": 5 * _MIN, "closed": 5 * _MIN},
 }
 
@@ -71,6 +72,7 @@ BUCKETS: dict[str, list[str]] = {
     "daily": [
         "cash-flow-sync",
         "flex-token-check",
+        "cta-sync",
     ],
     "error": list(SCHEDULED_SERVICES.keys()),
 }

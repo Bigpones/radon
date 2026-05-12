@@ -85,9 +85,8 @@ export const SERVICE_FRESHNESS_WINDOWS: Record<string, Window> = {
   "flex-token-check": { open: 25 * HOUR, extended: 25 * HOUR, closed: 25 * HOUR, category: "scheduled" },
 
   "cri-scan": { open: 35 * MIN, extended: 35 * MIN, closed: 1 * DAY, category: "scheduled" },
-  // ``gex-scan`` / ``cta-sync`` only flow through ``record_service_health``
-  // when a user POSTs the scan endpoint, so they're on-demand for banner
-  // purposes even though some have companion systemd timers.
+  // ``gex-scan`` still flows through ``record_service_health`` only when
+  // a user POSTs the scan endpoint, so it's on-demand for banner purposes.
   "gex-scan": { open: 30 * MIN, extended: 30 * MIN, closed: 1 * DAY, category: "on-demand" },
   // ``vcg-scan`` has an autonomous 5-min cadence during market hours
   // (radon-vcg-refresh.timer / com.radon.vcg-refresh). The 15-min open
@@ -95,7 +94,13 @@ export const SERVICE_FRESHNESS_WINDOWS: Record<string, Window> = {
   // absorb transient FastAPI or IB Gateway blips, short enough to
   // surface a real outage well inside the trading day.
   "vcg-scan": { open: 15 * MIN, extended: 15 * MIN, closed: 1 * DAY, category: "scheduled" },
-  "cta-sync": { open: 35 * MIN, extended: 35 * MIN, closed: 1 * DAY, category: "on-demand" },
+  // ``cta-sync`` has an autonomous Mon-Fri schedule on the VPS
+  // (radon-cta-sync.timer fires 18:15, 19:00, 21:30 UTC) plus the
+  // laptop launchd plist as a redundant local trigger. Stale > 25h
+  // means the timer failed across both regimes; 25h tolerates a long
+  // weekend (Friday 21:30 UTC → Monday 18:15 UTC ≈ 69h) plus any
+  // single missed firing.
+  "cta-sync": { open: 25 * HOUR, extended: 25 * HOUR, closed: 72 * HOUR, category: "scheduled" },
 
   // Market-hours-only writers: triggered by the FastAPI scan endpoints
   // during the trading day, dormant on nights and weekends. The
