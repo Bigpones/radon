@@ -55,6 +55,8 @@ Never skip to Yahoo / web without trying IB → UW first. Clients live in `scrip
 
 The `1442520` (journal/Trade History) query is referenced indirectly via `scripts/journal_rehydrate.py` reading `IB_FLEX_QUERY_ID` at runtime — but on Hetzner the env points at `1422766`. Journal rehydrate has its own configuration. **Don't repurpose `IB_FLEX_NAV_QUERY_ID` for trade pulls** — it's tuned for `CashTransaction` only.
 
+**Values with `$` in env files need quoting.** Any wrapper script that loads env via `set -a; . "$tmp"; set +a` (the historical pattern in `scripts/run_*_refresh.sh`) will shell-expand `$VARNAME` substrings inside values. Under `set -u`, an unset reference aborts the script silently from systemd. Either quote the value with single quotes in the .env file (`PASS='RX$abc!xyz'`) or use a non-shell loader — systemd's `EnvironmentFile=` directive and `python-dotenv` both parse literally without expansion. See `feedback_env_file_shell_expansion.md` for the case that surfaced this (MENTHORQ_PASS broke vcg-refresh on every 5-min tick for 2h).
+
 ---
 
 ## Architecture
