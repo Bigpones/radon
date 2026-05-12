@@ -37,3 +37,9 @@ playwright>=1.48.0
 # `libsql-experimental` is the supported SDK with embedded-replica
 # support; the older `libsql-client` package does not have it.
 libsql-experimental>=0.0.55
+
+# httpx is used by fetch_menthorq_cta.py for the MenthorQ API client.
+# Required by scripts/cash_flow_sync.py-style writers and the cta-sync
+# launchd/systemd timers — without it `python -m fetch_menthorq_cta`
+# fails with `No module named httpx` on a fresh provision.
+httpx>=0.28.0
