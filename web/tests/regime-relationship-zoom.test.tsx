@@ -3,10 +3,13 @@
 /**
  * Tests for zoom + pan controls on the Correlation Risk Premium chart.
  *
- * Covers (added incrementally — chips first, brush+hover follow):
+ * Covers:
  *   - Default range covers the last 252 trading days (or all when shorter).
  *   - Preset chips (1M/3M/6M/1Y/All) narrow rendered bars to the right count.
+ *   - Brush start/end state propagates to the chart's visible slice.
+ *   - Tooltip exposes correct values for an in-range hover.
  *   - No raw hex in any new className/style.
+ *   - Pointer-event interaction with the brush handles updates state.
  */
 import React from "react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -126,5 +129,113 @@ describe("Correlation Risk Premium preset range chips", () => {
     const source = readFileSync(VIEW_PATH, "utf-8");
     const hexMatches = source.match(/#(?:[0-9a-fA-F]{3}){1,2}\b/g);
     expect(hexMatches).toBeNull();
+  });
+});
+
+describe("Correlation Risk Premium brush + hover", () => {
+  it("exposes a hover tooltip with date, spread, and z-score values for the in-range entry", () => {
+    const history = buildHistory(40);
+    render(
+      React.createElement(RegimeRelationshipView, {
+        history,
+      }),
+    );
+
+    const overlay = screen.getByTestId("regime-spread-chart-overlay");
+    overlay.getBoundingClientRect = () => ({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 760,
+      bottom: 240,
+      width: 760,
+      height: 240,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.mouseMove(overlay, { clientX: 400, clientY: 100 });
+
+    const tooltip = screen.getByTestId("regime-spread-hover-tooltip");
+    expect(tooltip).toBeTruthy();
+    expect(screen.getByTestId("regime-spread-hover-date")).toBeTruthy();
+    expect(tooltip.textContent ?? "").toMatch(/Spread/i);
+    expect(tooltip.textContent ?? "").toMatch(/RVOL z/i);
+    expect(tooltip.textContent ?? "").toMatch(/COR1M z/i);
+    expect(tooltip.textContent ?? "").toMatch(/(Goldilocks|Fragile Calm|Stock Picker|Systemic Panic)/i);
+  });
+
+  it("renders a brush minimap beneath the chart with two draggable handles", () => {
+    const history = buildHistory(120);
+    render(
+      React.createElement(RegimeRelationshipView, {
+        history,
+      }),
+    );
+
+    expect(screen.getByTestId("regime-spread-brush")).toBeTruthy();
+    expect(screen.getByTestId("regime-spread-brush-handle-left")).toBeTruthy();
+    expect(screen.getByTestId("regime-spread-brush-handle-right")).toBeTruthy();
+    expect(screen.getByTestId("regime-spread-brush-window")).toBeTruthy();
+  });
+
+  it("propagates brush window state to the chart's visible slice on pointer drag", () => {
+    const history = buildHistory(252);
+    render(
+      React.createElement(RegimeRelationshipView, {
+        history,
+      }),
+    );
+
+    const brush = screen.getByTestId("regime-spread-brush");
+    const handle = screen.getByTestId("regime-spread-brush-handle-left");
+
+    const brushRect = {
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 700,
+      bottom: 40,
+      width: 700,
+      height: 40,
+      toJSON: () => ({}),
+    };
+    brush.getBoundingClientRect = () => brushRect;
+    handle.getBoundingClientRect = () => brushRect;
+
+    const before = countSpreadBars();
+    expect(before).toBe(252);
+
+    fireEvent.pointerDown(handle, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientX: 350, pointerId: 1 });
+    fireEvent.pointerUp(window, { clientX: 350, pointerId: 1 });
+
+    const after = countSpreadBars();
+    expect(after).toBeLessThan(before);
+    expect(after).toBeGreaterThan(0);
+
+    // Chips should swap to the Custom label after a manual brush drag.
+    expect(screen.getByTestId("regime-spread-range-custom")).toBeTruthy();
+  });
+
+  it("snaps the brush window to the preset range when a chip is clicked", () => {
+    const history = buildHistory(252);
+    render(
+      React.createElement(RegimeRelationshipView, {
+        history,
+      }),
+    );
+
+    fireEvent.click(screen.getByTestId("regime-spread-range-1m"));
+    expect(countSpreadBars()).toBe(21);
+
+    const windowEl = screen.getByTestId("regime-spread-brush-window");
+    const widthPct = windowEl.style.width;
+    // 21 of 252 sessions is ~8.3% of the brush track.
+    expect(widthPct).toMatch(/%/);
+    const widthVal = Number.parseFloat(widthPct);
+    expect(widthVal).toBeGreaterThan(5);
+    expect(widthVal).toBeLessThan(15);
   });
 });

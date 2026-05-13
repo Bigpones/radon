@@ -4903,7 +4903,7 @@ tr {
   margin-top: 24px;
 }
 
-/* Correlation Risk Premium preset range chips */
+/* Correlation Risk Premium preset range chips + brush */
 .regime-spread-range-chips {
   display: flex;
   gap: 6px;
@@ -4936,6 +4936,65 @@ tr {
   background: var(--signal-core);
   color: var(--accent-text);
   border-color: var(--signal-core);
+}
+
+.regime-spread-range-chip-custom {
+  cursor: default;
+}
+
+.regime-spread-brush {
+  position: relative;
+  margin-top: 8px;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-dim);
+  border-radius: 4px;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+.regime-spread-brush-context {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.regime-spread-brush-line {
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 1;
+  opacity: 0.6;
+  vector-effect: non-scaling-stroke;
+}
+
+.regime-spread-brush-window {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--signal-core) 16%, transparent);
+  border-left: 1px solid var(--signal-core);
+  border-right: 1px solid var(--signal-core);
+  cursor: grab;
+  touch-action: none;
+}
+
+.regime-spread-brush-window:active {
+  cursor: grabbing;
+}
+
+.regime-spread-brush-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--signal-core);
+  border-radius: 4px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.regime-spread-brush-handle-left,
+.regime-spread-brush-handle-right {
+  /* handles are styled identically; reserved for future variant tweaks */
 }
 
 .regime-state-key {
