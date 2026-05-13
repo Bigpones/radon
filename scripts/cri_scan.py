@@ -966,10 +966,13 @@ def run_analysis(
         cor1m=cor1m_now,
     )
 
-    # Rolling 20-day history
+    # Full per-day history over the entire Yahoo/CBOE intersection window
+    # (capped by `_fetch_yahoo(days=400)` ≈ 280 trading days). The chart
+    # consumer renders all of it; statistical windows like the 20-session
+    # z-score are scoped on the JS side over the tail of this array.
     history = []
     n = len(vix)
-    for i in range(max(0, n - 20), n):
+    for i in range(0, n):
         v = float(vix[i])
         vv = float(vvix[i])
         s = float(spy[i])

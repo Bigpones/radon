@@ -276,7 +276,7 @@ export default function RegimeRelationshipView({
             data-testid="regime-spread-chart"
             viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
             role="img"
-            aria-label="COR1M minus RVOL spread over the last 20 sessions"
+            aria-label="COR1M minus RVOL spread across the available history window"
           >
             <g transform={`translate(${MARGIN.left},${MARGIN.top})`}>
               {spreadScale.ticks(5).map((tick) => (
