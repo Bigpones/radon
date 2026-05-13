@@ -94,7 +94,7 @@ All FastAPI routes JWT-protected; Next.js by `web/middleware.ts`; WebSocket via 
   | `radon restart` | stop then start |
   | `radon status` (or bare `radon`) | `systemctl list-units "radon-*"` |
 
-  Covers `radon-{ib-gateway,api,relay,monitor,newsfeed,nextjs}` + `radon-refresh.timer`. Installed manually 2026-05-04 — **not yet wired into `radon-cloud/scripts/setup-vps.sh`, so a `wipe-vps.sh` rebuild drops it.**
+  Auto-enumerates every loaded `radon-*` unit on each run via `systemctl list-units 'radon-*' --all` — no hard-coded list to go stale when new timers land. Currently covers `radon-{ib-gateway,api,relay,monitor,newsfeed,nextjs}` plus the timer-fired oneshots `radon-{refresh,vcg-refresh,cta-sync,portfolio-sync}.{service,timer}` and `radon-watchdog-{intraday,continuous,daily,error}.{service,timer}`. **Source of truth checked in at `radon-cloud/scripts/operator-radon.sh`; installed by `setup-vps.sh:install_operator_cli()` so a `wipe-vps.sh` rebuild restores it automatically (fixed 2026-05-13).**
 - **`launchd`** (legacy): `~/ibc/bin/`, Mon-Fri auto-lifecycle.
 
 Auto-recovery (docker mode): port + CLOSE_WAIT detection at startup (poll 45s); subprocess errors trigger health check first — only restart if port not listening or CLOSE_WAIT. Client ID collisions, VOL errors, transient timeouts do NOT trigger restart.
@@ -130,6 +130,37 @@ Schema: `scripts/db/migrations/0001_init.sql`. Writers: `scripts/db/writer.{js,p
 **Newsfeed is fully Hetzner-resident (cutover 2026-05-03).** `scripts/newsfeed/browser.js` + `auth.js` drive headless Playwright; auth via `THEMARKETEAR_EMAIL` / `THEMARKETEAR_PASSWORD` env. Session persisted to `data/newsfeed-storage.json` (gitignored, ~30d), full re-auth every ~6h. Polls every 120s. Hetzner runs it as `radon-newsfeed.service` (`Restart=on-failure`, `RestartSec=30`); steady-state cycle ~4s. The chrome-cdp / Chrome Debug.app dependency on the laptop is retired — close the lid and `app.radon.run` keeps showing fresh content. `deploy.sh` runs `npx playwright install chromium` after npm install; one-time `npx playwright install-deps chromium` (sudo) was applied during cutover. On Hetzner `RADON_MEDIA_REMOTE=/home/radon/radon-cloud/media/` (local fs path; rsync skips SSH self-loop). Local-laptop dev still works for iteration via `node scripts/newsfeed/index.js --once`.
 
 **Trades canonical store (shipped 2026-05-03, `6c6f90f`):** Turso `journal` table. Both `/journal` and `/orders` derive from it. `/orders` uses `web/lib/blotter/fromJournal.ts:journalRowsToBlotter()` with a **union+preference fallback to `data/blotter.json`** for legacy aggregate-only rows that lack explicit `realized_pnl` / `cost_basis` / `proceeds` (the persistence path commit `bbc776e` added to `journal_rehydrate.py` only applies to *new* rehydrate runs; existing rows pre-date it). When IB Flex Query 1442520 cooldown clears and a fresh rehydrate runs, journal rows gain explicit P&L fields and the deriver auto-prefers them; `data/blotter.json` decays to a redundant fallback with no code change. See `docs/cloud-services.md` § "Trades — single source of truth".
+
+### Autonomous timers (Hetzner only)
+
+Several scans + syncs used to depend on a browser tab being open or on Joe's laptop running. They now have their own systemd timers on the VPS so data refreshes regardless of laptop state:
+
+| Timer | Cadence | Wrapper | Endpoint hit |
+|---|---|---|---|
+| `radon-refresh.timer` | Mon–Fri */15min | `scripts/data_refresh.py` (cri+vcg) | direct script |
+| `radon-vcg-refresh.timer` | Mon–Fri 13–21 UTC every 5min | `scripts/run_vcg_refresh.sh` | `POST /vcg/scan` |
+| `radon-portfolio-sync.timer` | Mon–Fri 13–21 UTC every 60s | `scripts/run_portfolio_refresh.sh` | `POST /portfolio/sync` |
+| `radon-cta-sync.timer` | Mon–Fri 18:15, 19:00, 21:30 UTC | `scripts/run_cta_sync.sh` | `POST /menthorq/cta` (spawns Playwright) |
+| `radon-watchdog-{intraday,continuous,daily,error}.timer` | see below | `python -m scripts.watchdog --bucket <name>` | reads `service_health` |
+
+All unit files in `radon-cloud/services/`; `setup-vps.sh SERVICE_FILES` enumerates them so `wipe-vps.sh` rebuilds install them automatically.
+
+**Wrapper env-loader gotcha (2026-05-12):** `run_*_refresh.sh` historically used `set -a; . "$tmp"; set +a` which **shell-expands `$VARNAME` substrings inside values**. Under `set -u`, an unset reference aborted the script silently from systemd — `MENTHORQ_PASS=***REMOVED-MENTHORQ-CREDENTIAL***` crashed vcg-refresh on every 5-min tick for 2h until traced. All wrappers now use a literal parser (matches `run_cta_sync.sh`'s pattern). See `feedback_env_file_shell_expansion.md`.
+
+### Service health watchdog (shipped 2026-05-12)
+
+Four-bucket alerting system at `scripts/watchdog/` that monitors every `scheduled` service in `web/lib/serviceHealthWindows.ts` and notifies via Discord (P1-P3) + Pushover (P1 only). Buckets group by expected freshness:
+
+- **`intraday`** (`vcg-scan`, `cri-scan`, `orders-sync`, `portfolio-sync`) — 5 min cadence, Mon–Fri 13:00–21:00 UTC.
+- **`continuous`** (`newsfeed-scraper`, `replica-watchdog`, `fill-monitor`, `exit-orders`, `journal-sync`) — 5 min, 24/7.
+- **`daily`** (`cash-flow-sync`, `flex-token-check`, `cta-sync`) — hourly, 24/7.
+- **`error`** — every scheduled service except `watchdog-alerts` (recursive-alert prevention), 5 min, 24/7.
+
+Anti-flood: **2-consecutive-failures hysteresis** (suppresses transient blips); **1h per-(service,severity) cooldown** in `watchdog_cooldowns` table; **`python -m scripts.watchdog ack <service>` CLI** for 4h muting via `watchdog_acks` table. Env vars in `radon-cloud/.env`: `DISCORD_WATCHDOG_WEBHOOK_URL`, `PUSHOVER_USER`, `PUSHOVER_TOKEN` — absent vars degrade gracefully (banner still gets the `watchdog-alerts` row).
+
+**Service categories** (`web/lib/serviceHealthWindows.ts`): every service is tagged `scheduled` or `on-demand`. Stale `scheduled` rows fire the red banner. Stale `on-demand` rows (services that only run on user page visit — `gex-scan`, `discover`, `flow-analysis`, `analyst-ratings`, `orders-read-compare`) become `state="dormant"` and show in the amber "visit to refresh" chip rather than red.
+
+**Event-driven writers use 24h windows:** `replica-watchdog` and `watchdog-alerts` only record `service_health` rows when something actually happens (a heal / an alert). Tight windows treat quiet healthy periods as stale; both use 24h to tolerate quiescence while still catching a dead writer process.
 
 ### Production Build Constraint
 
