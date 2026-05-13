@@ -22,11 +22,13 @@ import Link from "next/link";
  */
 
 export type SectionEmptyStateVariant = "default" | "compact";
+export type SectionEmptyStateTone = "default" | "danger";
 
 export type SectionEmptyStateAction = {
   label: string;
   href?: string;
   onClick?: () => void;
+  disabled?: boolean;
 };
 
 export type SectionEmptyStateProps = {
@@ -35,6 +37,7 @@ export type SectionEmptyStateProps = {
   secondary?: string;
   action?: SectionEmptyStateAction;
   variant?: SectionEmptyStateVariant;
+  tone?: SectionEmptyStateTone;
   testId?: string;
 };
 
@@ -54,6 +57,7 @@ function ActionElement({ action }: { action: SectionEmptyStateAction }) {
     <button
       type="button"
       onClick={action.onClick}
+      disabled={action.disabled}
       className="section-empty-state__action"
       data-testid="section-empty-state-action"
     >
@@ -68,6 +72,7 @@ export default function SectionEmptyState({
   secondary,
   action,
   variant = "default",
+  tone = "default",
   testId = "section-empty-state",
 }: SectionEmptyStateProps) {
   const iconSize = variant === "compact" ? 14 : 18;
@@ -76,7 +81,8 @@ export default function SectionEmptyState({
       className="section-empty-state"
       data-testid={testId}
       data-variant={variant}
-      role="status"
+      data-tone={tone}
+      role={tone === "danger" ? "alert" : "status"}
     >
       <span
         className="section-empty-state__icon"

@@ -1,8 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, TriangleAlert, Wallet } from "lucide-react";
 import { useCashFlows, type CashFlowRow, type CashFlowType } from "@/lib/useCashFlows";
+import SectionEmptyState from "@/components/SectionEmptyState";
+import { TableSkeleton } from "@/components/ui/Skeleton";
 
 const TYPE_TONE: Record<CashFlowType, "accum" | "distrib" | "neutral"> = {
   Deposit: "accum",
@@ -126,19 +128,30 @@ export default function CashFlowsSection() {
         <div id="cash-flows-body">
           {error && (
             <div className="section-body">
-              <div className="alert-item bearish">Failed to load cash flows: {error}</div>
+              <SectionEmptyState
+                icon={TriangleAlert}
+                tone="danger"
+                headline="Couldn't load cash flows"
+                secondary={error}
+                testId="cash-flows-error"
+              />
             </div>
           )}
 
-          {loading && !data ? (
-            <div className="section-body">
-              <div className="alert-item">Loading…</div>
+          {!error && loading && !data ? (
+            <div className="section-body p-6">
+              <TableSkeleton rows={4} columns={4} />
             </div>
-          ) : rows.length === 0 ? (
+          ) : !error && rows.length === 0 ? (
             <div className="section-body">
-              <div className="alert-item">No cash transactions in the last 90 days.</div>
+              <SectionEmptyState
+                icon={Wallet}
+                headline="No cash transactions in the last 90 days"
+                secondary="Deposits, withdrawals, dividends, and fees appear here once IBKR settles them."
+                testId="cash-flows-empty"
+              />
             </div>
-          ) : (
+          ) : !error ? (
             <>
               <div className="section-body table-wrap">
                 <table>
@@ -191,7 +204,7 @@ export default function CashFlowsSection() {
                 </div>
               )}
             </>
-          )}
+          ) : null}
         </div>
       )}
     </div>

@@ -1997,7 +1997,7 @@ function OrdersSections({
 
   if (!orders) {
     return (
-      <div className="section">
+      <div className="section" data-testid="orders-loading">
         <div className="section-header">
           <div className="section-title">
             <ClipboardList size={14} />
@@ -2006,8 +2006,8 @@ function OrdersSections({
           </div>
           <span className="pill neutral">LOADING</span>
         </div>
-        <div className="section-body">
-          <div className="alert-item">Waiting for orders data...</div>
+        <div className="section-body p-6">
+          <TableSkeleton rows={5} columns={8} />
         </div>
       </div>
     );
@@ -2593,10 +2593,29 @@ export function HistoricalTradesSection() {
       </div>
       {expanded && (
       <div id="historical-trades-body" className="section-body">
-        {error && <div className="alert-item section-message bearish">{error}</div>}
+        {error && (
+          <SectionEmptyState
+            icon={TriangleAlert}
+            tone="danger"
+            headline="Couldn't load historical trades"
+            secondary={error}
+            action={{ label: syncing ? "Refreshing…" : "Refresh", onClick: syncNow, disabled: syncing }}
+            testId="historical-trades-error"
+          />
+        )}
         {loading && <div className="p-6"><TableSkeleton rows={5} columns={8} /></div>}
-        {!loading && !hasData && !error && (
-          <div className="alert-item section-message">No historical trades. Click REFRESH to fetch from IB.</div>
+        {!loading && !error && totalCount === 0 && (
+          <SectionEmptyState
+            icon={History}
+            headline="No historical trades"
+            secondary={
+              hasData
+                ? "No fills in the last 30 days. Click Refresh to pull again from IB Flex."
+                : "Pull the last 30 days of IB Flex trades to populate this list."
+            }
+            action={{ label: syncing ? "Refreshing…" : "Refresh from IB", onClick: syncNow, disabled: syncing }}
+            testId="historical-trades-empty"
+          />
         )}
         {!loading && pageRows.length > 0 && showMobileBlotter && (
           <>

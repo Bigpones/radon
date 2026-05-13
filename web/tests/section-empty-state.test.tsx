@@ -95,4 +95,30 @@ describe("<SectionEmptyState />", () => {
     const root = screen.getByTestId("section-empty-state");
     expect(root.getAttribute("data-variant")).toBe("compact");
   });
+
+  it("marks danger-toned empties with role=alert and data-tone=danger", () => {
+    render(
+      <SectionEmptyState
+        icon={History}
+        tone="danger"
+        headline="Couldn't load historical trades"
+        secondary="Network unreachable."
+      />,
+    );
+    const root = screen.getByTestId("section-empty-state");
+    expect(root.getAttribute("data-tone")).toBe("danger");
+    expect(root.getAttribute("role")).toBe("alert");
+  });
+
+  it("supports disabling the action button", () => {
+    render(
+      <SectionEmptyState
+        icon={Inbox}
+        headline="No working orders"
+        action={{ label: "Refreshing", onClick: () => {}, disabled: true }}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Refreshing" });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+  });
 });

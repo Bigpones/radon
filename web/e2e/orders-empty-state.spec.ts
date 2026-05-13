@@ -100,4 +100,39 @@ test.describe("/orders empty-state surfaces", () => {
 
     await expect(page.locator(".alert-item", { hasText: /^No fills this session$/ })).toHaveCount(0);
   });
+
+  test("Historical Trades empty state renders icon + headline + refresh action", async ({ page }) => {
+    await setupEmptyMocks(page);
+    await page.goto("/orders");
+
+    await page.locator('[data-testid="historical-trades-toggle"]').click();
+
+    const empty = page.locator('[data-testid="historical-trades-empty"]');
+    await empty.waitFor({ timeout: 10_000 });
+
+    await expect(empty).toBeVisible();
+    await expect(empty.locator('[data-testid="section-empty-state-icon"]')).toBeVisible();
+    await expect(empty).toContainText("No historical trades");
+    await expect(empty).toContainText(/Pull the last 30 days/);
+    await expect(empty.locator('[data-testid="section-empty-state-action"]')).toBeVisible();
+
+    await expect(page.locator(".alert-item", { hasText: /No historical trades/ })).toHaveCount(0);
+  });
+
+  test("Cash Flows empty state renders icon + headline + secondary copy", async ({ page }) => {
+    await setupEmptyMocks(page);
+    await page.goto("/orders");
+
+    await page.locator('[data-testid="cash-flows-toggle"]').click();
+
+    const empty = page.locator('[data-testid="cash-flows-empty"]');
+    await empty.waitFor({ timeout: 10_000 });
+
+    await expect(empty).toBeVisible();
+    await expect(empty.locator('[data-testid="section-empty-state-icon"]')).toBeVisible();
+    await expect(empty).toContainText("No cash transactions in the last 90 days");
+    await expect(empty).toContainText(/Deposits, withdrawals, dividends, and fees/);
+
+    await expect(page.locator(".alert-item", { hasText: /No cash transactions/ })).toHaveCount(0);
+  });
 });

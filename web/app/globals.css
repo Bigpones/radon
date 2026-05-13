@@ -1029,6 +1029,15 @@ td.last-price-cell {
   height: 26px;
 }
 
+.section-empty-state[data-tone="danger"] .section-empty-state__icon {
+  color: var(--negative);
+  border-color: var(--negative);
+}
+
+.section-empty-state[data-tone="danger"] .section-empty-state__headline {
+  color: var(--negative);
+}
+
 .section-empty-state__copy {
   display: flex;
   flex-direction: column;
@@ -1090,6 +1099,18 @@ td.last-price-cell {
   border-color: var(--signal-core);
   background: var(--bg-panel-raised);
   outline: none;
+}
+
+.section-empty-state__action:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.section-empty-state__action:disabled:hover,
+.section-empty-state__action:disabled:focus-visible {
+  color: var(--text-secondary);
+  border-color: var(--border-dim);
+  background: transparent;
 }
 
 .report-meta {
