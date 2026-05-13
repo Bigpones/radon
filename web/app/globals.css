@@ -4903,6 +4903,41 @@ tr {
   margin-top: 24px;
 }
 
+/* Correlation Risk Premium preset range chips */
+.regime-spread-range-chips {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.regime-spread-range-chip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border: 1px solid var(--border-dim);
+  background: var(--bg-panel-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease;
+}
+
+.regime-spread-range-chip:hover {
+  color: var(--text-secondary);
+  border-color: var(--text-muted);
+}
+
+.regime-spread-range-chip[data-active="true"] {
+  background: var(--signal-core);
+  color: var(--accent-text);
+  border-color: var(--signal-core);
+}
+
 .regime-state-key {
   margin-top: 14px;
   padding-top: 12px;

@@ -1,6 +1,12 @@
 "use client";
 
-import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import * as d3 from "d3";
 import InfoTooltip from "./InfoTooltip";
 import ChartLegend from "./charts/ChartLegend";
@@ -25,6 +31,31 @@ const CHART_WIDTH = 760;
 const CHART_HEIGHT = 240;
 const MARGIN = { top: 16, right: 20, bottom: 32, left: 44 };
 const DATE_FORMATTER = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+
+type RangePresetSlug = "1m" | "3m" | "6m" | "1y" | "all";
+type ActiveRange = RangePresetSlug | "custom";
+
+const RANGE_PRESETS: ReadonlyArray<{ slug: RangePresetSlug; label: string; sessions: number }> = [
+  { slug: "1m", label: "1M", sessions: 21 },
+  { slug: "3m", label: "3M", sessions: 63 },
+  { slug: "6m", label: "6M", sessions: 126 },
+  { slug: "1y", label: "1Y", sessions: 252 },
+  { slug: "all", label: "All", sessions: Number.POSITIVE_INFINITY },
+];
+
+const DEFAULT_PRESET: RangePresetSlug = "1y";
+
+function presetSessions(slug: RangePresetSlug): number {
+  const preset = RANGE_PRESETS.find((entry) => entry.slug === slug);
+  return preset?.sessions ?? Number.POSITIVE_INFINITY;
+}
+
+function presetRange(slug: RangePresetSlug, total: number): [number, number] {
+  if (total === 0) return [0, 0];
+  const sessions = Math.min(presetSessions(slug), total);
+  const start = Math.max(0, total - sessions);
+  return [start, total - 1];
+}
 
 function fmtSigned(value: number, digits = 2): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(digits)}`;
@@ -125,17 +156,55 @@ export default function RegimeRelationshipView({
     [entries],
   );
 
+  // Visible range as inclusive [startIdx, endIdx] into the full `entries` array.
+  // Default to the last 252 sessions; the full history still drives the
+  // Regime Quadrants scatter and Normalized Divergence z-score chart so the
+  // rolling 20-session statistical baseline stays intact.
+  const [range, setRange] = useState<[number, number]>(() =>
+    presetRange(DEFAULT_PRESET, Math.max(entries.length, 1)),
+  );
+  const [activeRange, setActiveRange] = useState<ActiveRange>(DEFAULT_PRESET);
+
+  // Re-clamp when history grows or shrinks upstream.
+  useEffect(() => {
+    if (entries.length === 0) return;
+    setRange(([start, end]) => {
+      const maxIdx = entries.length - 1;
+      const clampedEnd = Math.min(end, maxIdx);
+      const clampedStart = Math.max(0, Math.min(start, clampedEnd));
+      if (clampedStart === start && clampedEnd === end) return [start, end];
+      return [clampedStart, clampedEnd];
+    });
+  }, [entries.length]);
+
   if (!summary || entries.length < 2) {
     return null;
   }
 
   const innerWidth = CHART_WIDTH - MARGIN.left - MARGIN.right;
   const innerHeight = CHART_HEIGHT - MARGIN.top - MARGIN.bottom;
+
+  // Slice the entries to the active range for the spread chart only.
+  // Z-score and scatter charts continue to consume the full history.
+  const visibleStart = Math.max(0, Math.min(range[0], entries.length - 1));
+  const visibleEnd = Math.max(visibleStart, Math.min(range[1], entries.length - 1));
+  const visibleEntries = entries.slice(visibleStart, visibleEnd + 1);
+  const visibleCount = visibleEntries.length;
+
+  const spreadXScale = d3
+    .scaleLinear()
+    .domain([0, Math.max(visibleCount - 1, 1)])
+    .range([0, innerWidth]);
+  const spreadTickIndices = buildTickIndices(
+    visibleCount,
+    resolveRelationshipTickCount(innerWidth),
+  );
+
   const xScale = d3.scaleLinear().domain([0, entries.length - 1]).range([0, innerWidth]);
   const tickIndices = buildTickIndices(entries.length, resolveRelationshipTickCount(innerWidth));
 
   const spreadMax = Math.max(
-    ...entries.map((entry) => Math.abs(entry.spread)),
+    ...visibleEntries.map((entry) => Math.abs(entry.spread)),
     Math.abs(summary.meanSpread),
     1,
   );
@@ -144,10 +213,15 @@ export default function RegimeRelationshipView({
     .domain([-(spreadMax * 1.15), spreadMax * 1.15])
     .range([innerHeight, 0]);
   const spreadLine = d3
-    .line<(typeof entries)[number]>()
-    .x((entry, index) => xScale(index))
+    .line<RegimeRelationshipEntry>()
+    .x((_entry, index) => spreadXScale(index))
     .y((entry) => spreadScale(entry.spread))
-    .curve(d3.curveMonotoneX)(entries);
+    .curve(d3.curveMonotoneX)(visibleEntries);
+
+  function applyPreset(slug: RangePresetSlug) {
+    setRange(presetRange(slug, entries.length));
+    setActiveRange(slug);
+  }
 
   const realizedExtent = d3.extent(entries, (entry) => entry.realizedVol) as [number, number];
   const cor1mExtent = d3.extent(entries, (entry) => entry.cor1m) as [number, number];
@@ -185,6 +259,7 @@ export default function RegimeRelationshipView({
     .curve(d3.curveMonotoneX)(entries);
 
   const latest = entries[entries.length - 1];
+  const latestVisible = visibleEntries[visibleCount - 1] ?? latest;
   const spreadColor = spreadStateColor(summary.spreadState);
   const quadrantColor = quadrantTone(summary.latestQuadrant);
   const latestQuadrantColor = quadrantTone(latest.quadrant);
@@ -271,12 +346,35 @@ export default function RegimeRelationshipView({
             </div>
           </div>
 
+          <div
+            className="regime-spread-range-chips"
+            data-testid="regime-spread-range-chips"
+            role="group"
+            aria-label="Visible date range"
+          >
+            {RANGE_PRESETS.map((preset) => {
+              const isActive = activeRange === preset.slug;
+              return (
+                <button
+                  key={preset.slug}
+                  type="button"
+                  className="regime-spread-range-chip"
+                  data-testid={`regime-spread-range-${preset.slug}`}
+                  data-active={isActive ? "true" : "false"}
+                  onClick={() => applyPreset(preset.slug)}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
+          </div>
+
           <svg
             className="regime-relationship-chart"
             data-testid="regime-spread-chart"
             viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
             role="img"
-            aria-label="COR1M minus RVOL spread across the available history window"
+            aria-label="COR1M minus RVOL spread across the visible history window"
           >
             <g transform={`translate(${MARGIN.left},${MARGIN.top})`}>
               {spreadScale.ticks(5).map((tick) => (
@@ -307,15 +405,16 @@ export default function RegimeRelationshipView({
                 className="regime-relationship-baseline"
               />
 
-              {entries.map((entry, index) => {
-                const x = xScale(index);
+              {visibleEntries.map((entry, index) => {
+                const x = spreadXScale(index);
                 const zeroY = spreadScale(0);
                 const y = spreadScale(entry.spread);
-                const width = Math.max(innerWidth / entries.length - 6, 6);
+                const width = Math.max(innerWidth / Math.max(visibleCount, 1) - 6, 1);
                 const fill = entry.spread >= 0 ? "var(--positive)" : "var(--negative)";
                 return (
                   <rect
                     key={`spread-bar-${entry.date}`}
+                    data-testid={`regime-spread-bar-${entry.date}`}
                     x={x - width / 2}
                     y={Math.min(y, zeroY)}
                     width={width}
@@ -329,28 +428,28 @@ export default function RegimeRelationshipView({
               <path d={spreadLine ?? ""} className="regime-relationship-line regime-relationship-line-spread" />
 
               <circle
-                cx={xScale(entries.length - 1)}
-                cy={spreadScale(latest.spread)}
+                cx={spreadXScale(Math.max(visibleCount - 1, 0))}
+                cy={spreadScale(latestVisible.spread)}
                 r={5}
                 className="regime-relationship-marker regime-relationship-marker-spread"
               />
 
-              {tickIndices.map((index) => (
-                <g key={`spread-x-${entries[index]?.date}`}>
+              {spreadTickIndices.map((index) => (
+                <g key={`spread-x-${visibleEntries[index]?.date}`}>
                   <line
-                    x1={xScale(index)}
-                    x2={xScale(index)}
+                    x1={spreadXScale(index)}
+                    x2={spreadXScale(index)}
                     y1={innerHeight}
                     y2={innerHeight + 6}
                     className="regime-relationship-axis-tick"
                   />
                   <text
-                    x={xScale(index)}
+                    x={spreadXScale(index)}
                     y={innerHeight + 20}
                     textAnchor="middle"
                     className="regime-relationship-axis-label"
                   >
-                    {formatDateLabel(entries[index]?.date ?? "")}
+                    {formatDateLabel(visibleEntries[index]?.date ?? "")}
                   </text>
                 </g>
               ))}
