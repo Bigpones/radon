@@ -86,13 +86,49 @@ class ReplicaWatchdogHandler(BaseHandler):
     def execute(self) -> Dict[str, Any]:
         conflicts = self._count_recent_wal_conflicts()
         if conflicts < self.CONFLICT_THRESHOLD:
+            # Heartbeat ok on every healthy cycle. The watchdog runs every
+            # 60s but only writes service_health on heal events, so a
+            # healthy steady state used to age out and flip the row to
+            # stale at the 24h window. Heartbeat keeps the row fresh so
+            # the banner only flags us when something is actually wrong.
+            # See feedback_service_health_heartbeat.md.
+            self._record_heartbeat(conflicts)
             return {"status": "healthy", "wal_conflicts_5m": conflicts}
 
         throttle_status = self._throttle_status()
         if throttle_status is not None:
+            self._record_heartbeat(conflicts, throttle=throttle_status)
             return throttle_status
 
         return self._self_heal(conflicts)
+
+    def _record_heartbeat(
+        self,
+        conflicts: int,
+        *,
+        throttle: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Best-effort `service_health=ok` write on healthy + throttled cycles.
+
+        Failures are logged but never propagated — telemetry must not
+        crash the watchdog itself.
+        """
+        from db.writer import _now_iso, record_service_health
+
+        finished_at = _now_iso()
+        try:
+            record_service_health(
+                "replica-watchdog",
+                "ok",
+                finished_at=finished_at,
+                error={
+                    "heartbeat_at": finished_at,
+                    "wal_conflicts_5m": conflicts,
+                    **({"throttle": throttle} if throttle else {}),
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 — best-effort telemetry
+            logger.warning("record_service_health(heartbeat) failed: %s", exc)
 
     # ------------------------------------------------------------------
     # Helpers — single responsibility per method.

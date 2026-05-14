@@ -135,6 +135,29 @@ class TestHealthy:
         assert run_mock.call_count == 1
         unlink_mock.assert_not_called()
 
+    def test_healthy_path_writes_ok_heartbeat(self, fake_db_writer):
+        """Every healthy cycle must heartbeat service_health=ok so the
+        dashboard banner doesn't latch the row at stale after 24h of
+        quiet (no WalConflicts to heal). Documented in
+        feedback_service_health_heartbeat.md.
+        """
+        record_mock, _ = fake_db_writer
+        handler = ReplicaWatchdogHandler()
+
+        with patch(
+            "monitor_daemon.handlers.replica_watchdog.subprocess.run",
+            side_effect=_build_subprocess_router(0),
+        ), patch(
+            "monitor_daemon.handlers.replica_watchdog.os.unlink"
+        ):
+            handler.execute()
+
+        assert record_mock.call_count == 1
+        args, kwargs = record_mock.call_args
+        assert args == ("replica-watchdog", "ok")
+        assert kwargs["error"]["wal_conflicts_5m"] == 0
+        assert "heartbeat_at" in kwargs["error"]
+
 
 # ---------------------------------------------------------------------------
 # Self-heal at threshold.
@@ -464,9 +487,16 @@ class TestJournalctlUnavailable:
         # Healthy with zero count — fail open, don't restart on a blind read.
         assert result == {"status": "healthy", "wal_conflicts_5m": 0}
 
-        # No heal attempted: no service_health writes, no unlinks, no further subprocess calls.
-        record_mock.assert_not_called()
+        # No heal attempted: no unlinks, no further subprocess calls.
         unlink_mock.assert_not_called()
+
+        # The healthy path heartbeats service_health=ok (single write).
+        # Heal-specific writes (syncing → ok with wal_conflicts_observed)
+        # must NOT fire.
+        assert record_mock.call_count == 1
+        args, kwargs = record_mock.call_args
+        assert args == ("replica-watchdog", "ok")
+        assert "heartbeat_at" in kwargs.get("error", {})
         assert run_mock.call_count == 1
         assert run_mock.call_args_list[0][0][0][0] == "journalctl"
 

@@ -128,6 +128,47 @@ class TestServiceHealthLog:
         assert "vcg-scan" in rows[0][2]
 
 
+class TestHeartbeatOk:
+    """`heartbeat_ok` writes `watchdog-alerts=ok` so a single fired alert
+    doesn't latch the row at state=error forever between fires. See
+    feedback_service_health_heartbeat.md.
+    """
+
+    def test_writes_ok_row_on_clean_cycle(self, db_conn):
+        from watchdog import notify
+
+        now = datetime(2026, 5, 14, 14, 0, tzinfo=timezone.utc)
+        notify.heartbeat_ok(bucket="continuous", now=now)
+        rows = db_conn.execute(
+            "SELECT service, state, last_error FROM service_health WHERE service='watchdog-alerts'"
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0][1] == "ok"
+        assert "heartbeat_at" in rows[0][2]
+        assert "continuous" in rows[0][2]
+
+    def test_heartbeat_overwrites_prior_error_row(self, db_conn, sample_alert):
+        """When an earlier cycle wrote `=error`, the next clean cycle
+        must overwrite it back to `=ok`.
+        """
+        from watchdog import notify
+
+        # Earlier cycle: dispatch fired an alert.
+        notify.dispatch(sample_alert)
+        row_after_dispatch = db_conn.execute(
+            "SELECT state FROM service_health WHERE service='watchdog-alerts'"
+        ).fetchone()
+        assert row_after_dispatch[0] == "error"
+
+        # Next clean cycle: heartbeat ok overwrites it.
+        now = datetime(2026, 5, 14, 15, 0, tzinfo=timezone.utc)
+        notify.heartbeat_ok(bucket="continuous", now=now)
+        row_after_heartbeat = db_conn.execute(
+            "SELECT state FROM service_health WHERE service='watchdog-alerts'"
+        ).fetchone()
+        assert row_after_heartbeat[0] == "ok"
+
+
 class TestStartupWarning:
     def test_warns_when_only_service_health_enabled(self, monkeypatch, capsys):
         from watchdog import notify

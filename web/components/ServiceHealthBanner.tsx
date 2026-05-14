@@ -10,20 +10,20 @@ import { humanizeServiceHealthError } from "@/lib/serviceHealthError";
  * scheduler is in a non-OK state. Hidden in steady state. Mounted in
  * WorkspaceShell so it appears on every page.
  *
- * Three severity tones, distinguished via ``data-severity``:
+ * Two severity tones, distinguished via ``data-severity``:
  *   - ``error`` (red): a scheduled worker raised an exception. The
  *     classic "something is broken now" signal.
  *   - ``stale`` (amber): a scheduled worker hasn't heartbeated within
  *     its freshness window. Soft signal — the process may be silent,
  *     hung, or simply between cycles on a slow cadence we
  *     miscalibrated.
- *   - ``dormant`` (informational): on-demand writers past their
- *     freshness window. Nobody has visited the scanner / discover /
- *     gex page today, so the data is old. Not a problem to fix.
  *
- * Errors take precedence over stale; both are "degraded". Dormant is
- * informational and never flips the banner red — when only dormant
- * rows exist, the banner renders the soft chip alone.
+ * Errors take precedence over stale; both are "degraded".
+ *
+ * Dormant on-demand services are NOT surfaced. "Scanner has been
+ * dormant for 5 days" is not an outage — the user hasn't visited
+ * the scanner page, by design. Showing it constantly conditioned
+ * the user to ignore the banner, masking real failures.
  *
  * The ``last_error`` column is JSON-encoded by the workers, so the
  * route handler runs ``formatServiceHealthError`` against it and ships
@@ -38,13 +38,11 @@ export default function ServiceHealthBanner() {
   const { data } = useServiceHealth();
 
   const degradedRows = collectDegradedRows(data?.failing ?? []);
-  const dormantRows = collectDormantRows(data?.services ?? []);
   const degradedCount = data?.degraded_count ?? degradedRows.length;
-  const dormantCount = data?.dormant_count ?? dormantRows.length;
 
-  if (degradedCount === 0 && dormantCount === 0) return null;
+  if (degradedCount === 0) return null;
 
-  const severity = resolveSeverity(degradedRows, dormantRows);
+  const severity = resolveSeverity(degradedRows);
 
   return (
     <div
@@ -56,13 +54,12 @@ export default function ServiceHealthBanner() {
       <span className="service-health-banner__icon" aria-hidden>
         <AlertTriangle size={14} />
       </span>
-      {degradedRows.length > 0 ? renderDegradedMessage(degradedRows) : null}
-      {dormantRows.length > 0 ? renderDormantChip(dormantRows) : null}
+      {renderDegradedMessage(degradedRows)}
     </div>
   );
 }
 
-type Severity = "error" | "stale" | "dormant";
+type Severity = "error" | "stale";
 
 const MAX_LISTED = 3;
 
@@ -70,17 +67,8 @@ function collectDegradedRows(failing: ServiceHealthRow[]): ServiceHealthRow[] {
   return failing.filter((row) => row.state === "error" || row.state === "stale");
 }
 
-function collectDormantRows(services: ServiceHealthRow[]): ServiceHealthRow[] {
-  return services.filter((row) => row.state === "dormant");
-}
-
-function resolveSeverity(
-  degraded: ServiceHealthRow[],
-  dormant: ServiceHealthRow[],
-): Severity {
+function resolveSeverity(degraded: ServiceHealthRow[]): Severity {
   if (degraded.some((row) => row.state === "error")) return "error";
-  if (degraded.length > 0) return "stale";
-  if (dormant.length > 0) return "dormant";
   return "stale";
 }
 
@@ -101,24 +89,6 @@ function renderDegradedMessage(degraded: ServiceHealthRow[]) {
       {detail ? (
         <span className="service-health-banner__detail"> - {detail}</span>
       ) : null}
-    </div>
-  );
-}
-
-function renderDormantChip(dormant: ServiceHealthRow[]) {
-  const names = dormant.slice(0, MAX_LISTED).map((row) => row.service).join(", ");
-  const more =
-    dormant.length > MAX_LISTED ? ` +${dormant.length - MAX_LISTED} more` : "";
-  const headline =
-    dormant.length === 1
-      ? "1 on-demand service dormant:"
-      : `${dormant.length} on-demand services dormant:`;
-
-  return (
-    <div className="service-health-banner__dormant">
-      <strong>{headline}</strong> {names}
-      {more}
-      <span className="service-health-banner__detail"> - visit to refresh</span>
     </div>
   );
 }

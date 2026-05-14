@@ -156,6 +156,31 @@ def _emit_service_health(outcome: CheckOutcome) -> None:
     )
 
 
+def heartbeat_ok(*, bucket: str, now) -> None:
+    """Write `watchdog-alerts=ok` when a bucket cycle dispatched nothing.
+
+    Without this, a single fired alert latches the row at `state=error`
+    indefinitely — every subsequent quiet cycle leaves the stale error
+    row visible in the banner. Mirrors the heartbeat-on-success pattern
+    documented in `feedback_service_health_heartbeat.md` and applied to
+    `replica-watchdog` and `newsfeed-scraper`.
+
+    Best-effort: telemetry failures are logged, never raised.
+    """
+    from db.writer import record_service_health  # local import — fixture reloads
+
+    finished_at = now.isoformat().replace("+00:00", "Z") if hasattr(now, "isoformat") else None
+    try:
+        record_service_health(
+            "watchdog-alerts",
+            "ok",
+            finished_at=finished_at,
+            error={"heartbeat_at": finished_at, "bucket": bucket},
+        )
+    except Exception as exc:  # noqa: BLE001 — telemetry failure must not kill cycle
+        log.warning("watchdog-alerts heartbeat failed: %s", exc)
+
+
 # ── public entry point ─────────────────────────────────────────────
 
 def dispatch(outcome: CheckOutcome) -> None:

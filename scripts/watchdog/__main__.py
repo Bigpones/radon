@@ -68,6 +68,16 @@ def _cmd_bucket(args: argparse.Namespace) -> int:
         notify.dispatch(outcome)
         fired_count += 1
     print(f"[watchdog] bucket={args.bucket} fired={fired_count}/{len(report.outcomes)}")
+
+    # Heartbeat the watchdog-alerts row when this bucket cycle dispatched
+    # nothing. notify._emit_service_health() writes ``error`` on every
+    # fire but never writes ``ok`` between fires — without this, a single
+    # alert latches the row forever and the banner keeps showing
+    # watchdog-alerts even after the underlying issue heals. Same
+    # heartbeat-on-success pattern as replica-watchdog (see
+    # feedback_service_health_heartbeat.md).
+    if fired_count == 0:
+        notify.heartbeat_ok(bucket=args.bucket, now=now)
     return 0
 
 
