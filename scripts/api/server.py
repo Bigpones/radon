@@ -1013,7 +1013,24 @@ async def run_flow_report(ticker: str):
         raise HTTPException(status_code=502, detail="Flow report returned no data")
     if isinstance(result.data, dict) and result.data.get("error"):
         raise HTTPException(status_code=502, detail=result.data["error"])
-    _write_cache(_FLOW_REPORTS_DIR / f"{upper}.json", result.data)
+
+    # Don't persist a structurally empty report. `scripts/fetch_flow.py`
+    # swallows every UWAPIError subclass (rate limit, 5xx, auth) and
+    # returns ``[]`` — the aggregator then produces a fake-success
+    # report with num_prints=0 / flow_direction="NO_DATA" that the GET
+    # route would serve for the 600s cache TTL. Surfaced 2026-05-14
+    # as a phantom "NO DATA" view of GOOGL on /flow-analysis/GOOGL
+    # while UW was perfectly happy. Skipping the cache write lets the
+    # next POST retry hit a healthy UW; the GET route falls back to
+    # the prior valid cache if any.
+    num_prints = (result.data.get("analysis") or {}).get("num_prints") or 0
+    if num_prints > 0:
+        _write_cache(_FLOW_REPORTS_DIR / f"{upper}.json", result.data)
+    else:
+        logger.warning(
+            "Skipping flow_reports cache for %s: num_prints=0 (likely transient UW failure)",
+            upper,
+        )
     return result.data
 
 
