@@ -76,16 +76,24 @@ class MonitorDaemon:
         return open_mins <= current_mins < close_mins
     
     def is_market_hours(self) -> bool:
-        """Check if current time is within US market hours."""
-        # Get current time in ET (approximate - doesn't handle DST perfectly)
-        from datetime import timezone, timedelta
-        
-        # EST is UTC-5, EDT is UTC-4
-        # For simplicity, assume EST (UTC-5)
-        utc_now = datetime.now(timezone.utc)
-        et_offset = timedelta(hours=-5)  # EST
-        et_now = utc_now + et_offset
-        
+        """Check if current time is within US market hours.
+
+        Uses zoneinfo for proper DST handling. The previous implementation
+        hardcoded a UTC-5 offset which silently shifted the market window
+        by one hour every DST season — market-hours handlers (fill_monitor,
+        journal_sync, exit_orders) would skip the first hour of EDT trading
+        and run for an extra hour after the real close.
+        """
+        try:
+            from zoneinfo import ZoneInfo
+            et_now = datetime.now(ZoneInfo("America/New_York"))
+        except Exception:
+            # Fail-open: if zoneinfo / tzdata is unavailable on the host,
+            # fall back to UTC-5 so handlers still run rather than going
+            # silent. Better to run an hour late than not at all.
+            from datetime import timezone, timedelta
+            et_now = datetime.now(timezone.utc) + timedelta(hours=-5)
+
         return self._is_market_hours_time(
             et_now.hour,
             et_now.minute,

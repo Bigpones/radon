@@ -91,6 +91,70 @@ class TestMonitorDaemonMarketHours:
         assert daemon._is_market_hours_time(12, 0, 6) == False  # Noon Sunday
 
 
+class TestMonitorDaemonDstHandling:
+    """Regression for the EDT bug: the daemon previously hardcoded UTC-5
+    (EST), which silently shifted the market window one hour each summer.
+    Now uses zoneinfo so EST/EDT switch automatically.
+    """
+
+    def test_edt_open_uses_correct_offset(self):
+        """At 13:30 UTC during EDT (UTC-4), ET = 09:30 = market open."""
+        from zoneinfo import ZoneInfo
+
+        daemon = MonitorDaemon()
+        # 2026-05-14 13:30 UTC is a Thursday in EDT → 09:30 ET.
+        edt_open = datetime(2026, 5, 14, 13, 30, tzinfo=ZoneInfo("UTC"))
+
+        with patch("monitor_daemon.daemon.datetime") as mock_dt:
+            mock_dt.now.return_value = edt_open.astimezone(ZoneInfo("America/New_York"))
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            assert daemon.is_market_hours() is True
+
+    def test_edt_first_hour_no_longer_skipped(self):
+        """At 14:30 UTC during EDT, ET = 10:30 = mid-session. The old
+        hardcoded UTC-5 made this look like 09:30 ET (technically still
+        open) but at 13:30 UTC it would have looked like 08:30 = closed.
+        Verify both anchor points now agree the market is open.
+        """
+        from zoneinfo import ZoneInfo
+
+        daemon = MonitorDaemon()
+        for utc_h in (13, 14, 15, 16, 17, 18, 19):  # 09:00-15:00 EDT
+            with patch("monitor_daemon.daemon.datetime") as mock_dt:
+                anchor = datetime(2026, 5, 14, utc_h, 30, tzinfo=ZoneInfo("UTC"))
+                mock_dt.now.return_value = anchor.astimezone(ZoneInfo("America/New_York"))
+                mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+                # 09:30-15:30 EDT is within 09:30-16:00 ET window.
+                assert daemon.is_market_hours() is True, f"open expected at {utc_h}:30 UTC (EDT)"
+
+    def test_est_window_unchanged(self):
+        """During EST (UTC-5), 14:30 UTC = 09:30 ET = market open.
+        Confirms the fix didn't regress winter behavior.
+        """
+        from zoneinfo import ZoneInfo
+
+        daemon = MonitorDaemon()
+        # 2026-01-14 14:30 UTC is a Wednesday in EST → 09:30 ET.
+        est_open = datetime(2026, 1, 14, 14, 30, tzinfo=ZoneInfo("UTC"))
+
+        with patch("monitor_daemon.daemon.datetime") as mock_dt:
+            mock_dt.now.return_value = est_open.astimezone(ZoneInfo("America/New_York"))
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            assert daemon.is_market_hours() is True
+
+    def test_post_close_returns_false(self):
+        """16:30 ET = market closed in either EST or EDT."""
+        from zoneinfo import ZoneInfo
+
+        daemon = MonitorDaemon()
+        for ymd, expected_offset in [((2026, 5, 14), -4), ((2026, 1, 14), -5)]:
+            close = datetime(*ymd, 16, 30, tzinfo=ZoneInfo("America/New_York"))
+            with patch("monitor_daemon.daemon.datetime") as mock_dt:
+                mock_dt.now.return_value = close
+                mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+                assert daemon.is_market_hours() is False
+
+
 class TestMonitorDaemonRun:
     """Test daemon execution."""
     
