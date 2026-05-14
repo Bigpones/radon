@@ -13,6 +13,8 @@ from clients.ib_client import DEFAULT_HOST
 from cri_scan import (
     _extract_ib_quote_value,
     _connect_ib_with_retry,
+    _fetch_ib,
+    _ib_auth_state,
     append_post_close_snapshot,
     build_post_close_snapshot,
     cor1m_level_and_change,
@@ -120,6 +122,75 @@ class TestIBConnectionRetry:
             (DEFAULT_HOST, 4001, 52, 5),
             (DEFAULT_HOST, 7497, 52, 5),
         ]
+
+
+class TestIBAuthGate:
+    """Guards against unbounded IB hangs when the gateway is up but the user
+    session isn't authenticated (e.g. awaiting IBKR Mobile 2FA push). See
+    `_ib_auth_state` and the `_fetch_ib` pre-check.
+    """
+
+    def test_ib_auth_state_returns_value_from_health_endpoint(self, monkeypatch):
+        import io
+        import json
+
+        class _Resp(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                self.close()
+                return False
+
+        def fake_urlopen(req, timeout):
+            return _Resp(
+                json.dumps({"ib_gateway": {"auth_state": "authenticated"}}).encode("utf-8")
+            )
+
+        monkeypatch.setattr("cri_scan.urlopen", fake_urlopen, raising=False)
+        monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+        assert _ib_auth_state() == "authenticated"
+
+    def test_ib_auth_state_returns_none_when_endpoint_unreachable(self, monkeypatch):
+        def boom(req, timeout):
+            raise ConnectionError("connection refused")
+
+        monkeypatch.setattr("urllib.request.urlopen", boom)
+        assert _ib_auth_state() is None
+
+    def test_fetch_ib_skips_when_awaiting_2fa(self, monkeypatch):
+        called = {"connect": 0}
+
+        class _IB:
+            def __init__(self):
+                called["connect"] += 1
+
+        # If the pre-check is honored, IB() must never be instantiated.
+        monkeypatch.setattr("cri_scan._ib_auth_state", lambda: "awaiting_2fa")
+
+        result = _fetch_ib(["SPY"])
+
+        assert result == {}
+        assert called["connect"] == 0
+
+    def test_fetch_ib_proceeds_when_authenticated(self, monkeypatch):
+        # When auth is good, the script should attempt the IB import + connect
+        # path. We exercise that by stubbing `_connect_ib_with_retry` to fail
+        # immediately — the function should return {} via the connect path,
+        # NOT via the auth pre-check.
+        monkeypatch.setattr("cri_scan._ib_auth_state", lambda: "authenticated")
+        monkeypatch.setattr("cri_scan._connect_ib_with_retry", lambda *_args, **_kw: False)
+
+        assert _fetch_ib(["SPY"]) == {}
+
+    def test_fetch_ib_proceeds_when_health_unreachable(self, monkeypatch):
+        # Fail-open: if /health is unreachable (auth_state=None), the per-request
+        # timeout is the real safety net; let the IB path try.
+        monkeypatch.setattr("cri_scan._ib_auth_state", lambda: None)
+        monkeypatch.setattr("cri_scan._connect_ib_with_retry", lambda *_args, **_kw: False)
+
+        assert _fetch_ib(["SPY"]) == {}
 
 
 class TestCor1mCurrentQuoteSelection:
@@ -709,8 +780,14 @@ class TestRunAnalysis:
 
         result = run_analysis(aligned, dates)
 
-        assert len(result["history"]) == 20
-        assert all(entry["realized_vol"] is not None for entry in result["history"])
+        # The CRI payload's `history` is the full Yahoo intersection window
+        # (commit 9c942e0). The 20-session statistical window is now scoped
+        # on the consumer side (Z_SCORE_WINDOW in regimeRelationships.ts).
+        # What this test still cares about: enough realized_vol entries to
+        # rebuild the 20-session overlay, and spy_closes capped for cache.
+        assert len(result["history"]) == n
+        rvol_entries = [e for e in result["history"] if e["realized_vol"] is not None]
+        assert len(rvol_entries) >= 20
         assert len(result["spy_closes"]) == 40
 
 

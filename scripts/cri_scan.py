@@ -64,6 +64,19 @@ from clients.ib_client import DEFAULT_HOST
 # ── constants ─────────────────────────────────────────────────────
 ALL_TICKERS = ["VIX", "VVIX", "SPY", "COR1M"]
 
+# Per-IB-request timeout. `ib_insync` itself doesn't bound API calls,
+# so qualifyContractsAsync / reqHistoricalDataAsync hang forever when
+# the gateway is logged in but the user session isn't authenticated
+# (e.g. awaiting the IBKR Mobile 2FA push). 15s is comfortably above
+# normal latency (~1-3s) and well below the 120s subprocess budget.
+IB_REQUEST_TIMEOUT_S = 15
+
+# FastAPI health endpoint used to short-circuit the IB path before it
+# can hang. Unreachable health = proceed optimistically; the per-request
+# timeout is still the real safety net.
+FASTAPI_HEALTH_URL = "http://127.0.0.1:8321/health"
+FASTAPI_HEALTH_TIMEOUT_S = 3
+
 MA_WINDOW = 100        # SPX moving average window
 VOL_WINDOW = 20        # Realized vol window (annualized)
 MIN_BARS = MA_WINDOW + 20  # Minimum price history
@@ -122,6 +135,21 @@ def _connect_ib_with_retry(
                 )
     return False
 
+
+def _ib_auth_state() -> Optional[str]:
+    """Probe FastAPI /health for IB Gateway auth_state. Returns None when
+    the endpoint is unreachable (graceful fail-open — let the IB path
+    attempt and rely on the per-request timeout as the safety net).
+    """
+    from urllib.request import Request, urlopen
+    try:
+        req = Request(FASTAPI_HEALTH_URL, headers={"User-Agent": "cri_scan"})
+        with urlopen(req, timeout=FASTAPI_HEALTH_TIMEOUT_S) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        return (payload.get("ib_gateway") or {}).get("auth_state")
+    except Exception:
+        return None
+
 def _fetch_ib(tickers: List[str]) -> Dict[str, List[Tuple[str, float]]]:
     """Fetch 1Y daily bars from IB concurrently using asyncio.gather.
 
@@ -129,6 +157,14 @@ def _fetch_ib(tickers: List[str]) -> Dict[str, List[Tuple[str, float]]]:
 
     Returns {ticker: [(date_str, close), ...]}.
     """
+    auth_state = _ib_auth_state()
+    if auth_state and auth_state != "authenticated":
+        print(
+            f"  IB skipped — gateway auth_state={auth_state} (falling back to UW/Cboe/Yahoo)",
+            file=sys.stderr,
+        )
+        return {}
+
     try:
         from ib_insync import IB, Index, Stock
     except ImportError:
@@ -150,15 +186,21 @@ def _fetch_ib(tickers: List[str]) -> Dict[str, List[Tuple[str, float]]]:
         else:
             contract = Stock(ticker, "SMART", "USD")
         try:
-            await ib.qualifyContractsAsync(contract)
-            bars = await ib.reqHistoricalDataAsync(
-                contract,
-                endDateTime="",
-                durationStr="1 Y",
-                barSizeSetting="1 day",
-                whatToShow="TRADES",
-                useRTH=True,
-                formatDate=1,
+            await asyncio.wait_for(
+                ib.qualifyContractsAsync(contract),
+                timeout=IB_REQUEST_TIMEOUT_S,
+            )
+            bars = await asyncio.wait_for(
+                ib.reqHistoricalDataAsync(
+                    contract,
+                    endDateTime="",
+                    durationStr="1 Y",
+                    barSizeSetting="1 day",
+                    whatToShow="TRADES",
+                    useRTH=True,
+                    formatDate=1,
+                ),
+                timeout=IB_REQUEST_TIMEOUT_S,
             )
             if bars:
                 results[ticker] = [
@@ -168,6 +210,12 @@ def _fetch_ib(tickers: List[str]) -> Dict[str, List[Tuple[str, float]]]:
             else:
                 failed.append(ticker)
                 print(f"  IB: {ticker} — no bars returned", file=sys.stderr)
+        except asyncio.TimeoutError:
+            failed.append(ticker)
+            print(
+                f"  IB: {ticker} timed out after {IB_REQUEST_TIMEOUT_S}s — falling back",
+                file=sys.stderr,
+            )
         except Exception as exc:
             failed.append(ticker)
             print(f"  IB: {ticker} failed — {exc}", file=sys.stderr)
@@ -400,6 +448,10 @@ def _extract_ib_quote_value(ticker: Any) -> Optional[float]:
 
 def _fetch_ib_current_quote(ticker: str) -> Optional[float]:
     """Fetch a current quote from IB, trying live then delayed data."""
+    auth_state = _ib_auth_state()
+    if auth_state and auth_state != "authenticated":
+        return None
+
     try:
         from ib_insync import IB, Index, Stock
     except ImportError:
