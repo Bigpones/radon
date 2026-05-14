@@ -64,6 +64,8 @@ Three deployment modes selected by `IB_GATEWAY_MODE`:
 
 **Hetzner gotcha.** On Hetzner, `radon-ib-gateway.service` launches the container from `/home/radon/radon-cloud/`, not the in-tree `docker/ib-gateway/`. `IB_GATEWAY_COMPOSE_DIR=/home/radon/radon-cloud` is required to point FastAPI's `_check_docker()` at the right compose project. Without it, `container_state` reports `not_found` while the container is actually running.
 
+**ib_insync request bounding.** `ib_insync` has no built-in timeout on its async API calls — `qualifyContractsAsync`, `reqHistoricalDataAsync`, and `reqMktData` will block forever when the gateway is logged in but the user session isn't authenticated (the 2FA-pending state). Any script that imports `ib_insync` directly must wrap each await in `asyncio.wait_for(..., timeout=15)` and pre-check `auth_state == "authenticated"` against FastAPI `/health` before instantiating `IB()`. `cri_scan.py` is the reference implementation.
+
 **Client ID ranges.**
 
 | Range | Usage |
@@ -151,6 +153,8 @@ Staleness windows live in `web/lib/serviceHealthWindows.ts`. Cycle-driven writer
 **Banner humanization.** `service_health.last_error` JSON payloads are rewritten into operator-friendly copy before render (see `web/lib/serviceHealthBanner.ts`).
 
 **Replica watchdog** (`monitor_daemon`) self-heals libsql `WalConflict` errors on the Next.js embedded replica. Long-running write-only services must set `RADON_DB_NO_REPLICA=1` so they write directly to the cloud DB. Only one process per host can hold `data/replica.db` open as a writer.
+
+**Market-hours gate.** Handlers tagged `requires_market_hours=True` (`fill_monitor`, `exit_orders`, `journal_sync`) only run during 09:30-16:00 ET. The daemon converts UTC to ET via `zoneinfo.ZoneInfo("America/New_York")` so DST is handled automatically; a fail-open UTC-5 fallback fires only if the host is missing `tzdata`. Never hardcode a fixed offset for ET — it silently shifts the window 1h every DST season.
 
 ## Cash Flows
 

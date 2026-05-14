@@ -101,6 +101,8 @@ Auto-recovery (docker mode): port + CLOSE_WAIT detection at startup (poll 45s); 
 
 **2FA-aware restart with exponential backoff (2026-05-07).** After every restart, IB Gateway sits at the IBKR Mobile push prompt with the API socket already open — `port_listening:true` falsely reports success. `restart_ib_gateway()` runs an explicit `managedAccounts()` probe post-restart; non-empty resets backoff, empty advances it (1m → 2m → 5m → 15m → 30m → 60m, capped). Refuses fresh restart attempts inside the window. `/health` exposes `auth_state` (`authenticated | awaiting_2fa | unreachable | unknown | remote`) and `restart_backoff` (attempt_count, next_attempt_in_secs, last_outcome). Pool's `managed_accounts` field per role is the underlying signal. **`POST /ib/reset-backoff`** is the operator escape hatch after manually approving 2FA. See `feedback_ib_gateway_2fa_verification.md` and `scripts/api/ib_gateway.py:restart_ib_gateway`.
 
+**IB request bounding pattern (2026-05-14).** `ib_insync` has no built-in per-request timeout. When IB Gateway is logged in but the user session isn't authenticated (the 2FA-pending window), `qualifyContractsAsync` / `reqHistoricalDataAsync` / `reqMktData` block forever — `IB.connect()` returns fine, then any subsequent await never returns. Scripts that import `ib_insync` directly **must**: (1) wrap every IB await in `asyncio.wait_for(..., timeout=15)`, and (2) pre-check FastAPI `/health` for `auth_state == "authenticated"` before instantiating `IB()`; `/health` unreachable → optimistic fall-through (the per-request timeout is the real bound). Pattern landed in `scripts/cri_scan.py` (`_fetch_ib`, `_fetch_ib_current_quote`); see `feedback_ib_insync_no_request_timeouts.md` for the audit recipe.
+
 ### Client ID Ranges
 
 | Range | Usage |
@@ -161,6 +163,10 @@ Anti-flood: **2-consecutive-failures hysteresis** (suppresses transient blips); 
 **Service categories** (`web/lib/serviceHealthWindows.ts`): every service is tagged `scheduled` or `on-demand`. Stale `scheduled` rows fire the red banner. Stale `on-demand` rows (services that only run on user page visit — `gex-scan`, `discover`, `flow-analysis`, `analyst-ratings`, `orders-read-compare`) become `state="dormant"` and show in the amber "visit to refresh" chip rather than red.
 
 **Event-driven writers use 24h windows:** `replica-watchdog` and `watchdog-alerts` only record `service_health` rows when something actually happens (a heal / an alert). Tight windows treat quiet healthy periods as stale; both use 24h to tolerate quiescence while still catching a dead writer process.
+
+### Monitor daemon market-hours gate
+
+`scripts/monitor_daemon/daemon.py:is_market_hours()` gates handlers with `requires_market_hours=True` (`fill_monitor`, `exit_orders`, `journal_sync`). Uses `datetime.now(ZoneInfo("America/New_York"))` so EST↔EDT transitions happen automatically via tzdata; fail-open fallback to UTC-5 if zoneinfo is unavailable (better late than silent). The old hardcoded `timedelta(hours=-5)` shifted the window 1h every DST season — fixed 2026-05-14 in `7b2fd3f`. **Never reintroduce a fixed offset** for ET conversion anywhere in the codebase; see `feedback_hardcoded_timezone_offsets.md`.
 
 ### Production Build Constraint
 
