@@ -58,6 +58,15 @@ def get_db() -> object:
     Uses the embedded replica unless RADON_DB_NO_REPLICA is set or
     we're running under pytest. Returns a `libsql_experimental.Connection`
     with `.execute(sql, params)`, `.executemany`, `.commit()`, `.sync()`.
+
+    Test-pollution guard: if pytest is the caller (PYTEST_CURRENT_TEST is
+    set) and the test hasn't explicitly opted in via RADON_DB_TEST_WRITE_OK,
+    refuse to open a real connection. Every test that needs DB access
+    must either monkeypatch `get_db` (see test_watchdog/conftest.py and
+    test_phase2_writers.py) or set the override. This prevents a missed
+    mock from silently writing phantom rows to production Turso — the
+    failure mode that surfaced 2026-05-14 as MagicMock contracts being
+    persisted to the production journal table.
     """
     global _cached
     if _cached is not None:
@@ -66,6 +75,17 @@ def get_db() -> object:
     with _lock:
         if _cached is not None:
             return _cached
+
+        if (
+            os.environ.get("PYTEST_CURRENT_TEST")
+            and os.environ.get("RADON_DB_TEST_WRITE_OK") != "1"
+        ):
+            raise RuntimeError(
+                "db.client.get_db() called from a test without a monkeypatch. "
+                "Mock get_db in your fixture (see test_watchdog/conftest.py) "
+                "or set RADON_DB_TEST_WRITE_OK=1 for explicit integration tests. "
+                "Refusing to open a production connection from pytest."
+            )
 
         url, token = _read_env()
         use_replica = (
