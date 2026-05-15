@@ -302,3 +302,112 @@ class TestFetchFlowCombinedSignal:
         mock_flow.return_value = []
         result = fetch_flow("AAPL", lookback_days=1)
         assert result["combined_signal"] == "DP_ACCUMULATION_ONLY"
+
+
+class TestUWRetryPolicy:
+    """Regression for the 2026-05-15 EWY incident: a transient UW
+    rate-limit on per-day darkpool calls was silently swallowed and
+    converted to []. Three healthy days kept the aggregate positive so
+    the cache-write gate at server.py:1026 waved the partial report
+    through, leaving a "NO DATA" view on healthy tickers for 600s.
+
+    After the fix:
+      - UWNotFoundError → return [] (legit empty)
+      - UWRateLimitError / UWServerError → one 2s retry, then re-raise
+      - Other UWAPIError → re-raise immediately
+    """
+
+    def test_darkpool_not_found_returns_empty_no_retry(self):
+        from clients.uw_client import UWNotFoundError
+        from fetch_flow import fetch_darkpool
+
+        mock_client = MagicMock()
+        mock_client.get_darkpool_flow.side_effect = UWNotFoundError(
+            "no data for date", status_code=404
+        )
+
+        result = fetch_darkpool("XYZ", date="2026-05-15", _client=mock_client)
+
+        assert result == []
+        assert mock_client.get_darkpool_flow.call_count == 1, "no retry on NotFound"
+
+    def test_darkpool_rate_limit_retries_once_then_succeeds(self):
+        from clients.uw_client import UWRateLimitError
+        from fetch_flow import fetch_darkpool
+
+        mock_client = MagicMock()
+        mock_client.get_darkpool_flow.side_effect = [
+            UWRateLimitError("429", status_code=429),
+            {"data": [{"size": 100, "price": 50.0}]},
+        ]
+
+        with patch("fetch_flow.time_module.sleep"):
+            result = fetch_darkpool("EWY", date="2026-05-15", _client=mock_client)
+
+        assert result == [{"size": 100, "price": 50.0}]
+        assert mock_client.get_darkpool_flow.call_count == 2
+
+    def test_darkpool_rate_limit_persistent_raises(self):
+        """If the retry ALSO 429s, propagate. The caller (flow_report)
+        will surface this so server.py 502s the POST and the cache is
+        never written.
+        """
+        from clients.uw_client import UWRateLimitError
+        from fetch_flow import fetch_darkpool
+
+        mock_client = MagicMock()
+        mock_client.get_darkpool_flow.side_effect = UWRateLimitError(
+            "429", status_code=429
+        )
+
+        with patch("fetch_flow.time_module.sleep"), \
+             pytest.raises(UWRateLimitError):
+            fetch_darkpool("EWY", date="2026-05-15", _client=mock_client)
+
+    def test_darkpool_server_error_retries_once_then_succeeds(self):
+        from clients.uw_client import UWServerError
+        from fetch_flow import fetch_darkpool
+
+        mock_client = MagicMock()
+        mock_client.get_darkpool_flow.side_effect = [
+            UWServerError("503", status_code=503),
+            {"data": []},
+        ]
+
+        with patch("fetch_flow.time_module.sleep"):
+            result = fetch_darkpool("EWY", date="2026-05-15", _client=mock_client)
+
+        assert result == []
+        assert mock_client.get_darkpool_flow.call_count == 2
+
+    def test_darkpool_auth_error_raises_immediately_no_retry(self):
+        """Auth failures must NOT silently empty the result. Re-raise
+        so the operator sees the configuration problem.
+        """
+        from clients.uw_client import UWAuthError
+        from fetch_flow import fetch_darkpool
+
+        mock_client = MagicMock()
+        mock_client.get_darkpool_flow.side_effect = UWAuthError(
+            "401 token expired", status_code=401
+        )
+
+        with pytest.raises(UWAuthError):
+            fetch_darkpool("EWY", date="2026-05-15", _client=mock_client)
+        assert mock_client.get_darkpool_flow.call_count == 1
+
+    def test_flow_alerts_inherits_same_retry_policy(self):
+        from clients.uw_client import UWRateLimitError
+        from fetch_flow import fetch_flow_alerts
+
+        mock_client = MagicMock()
+        mock_client.get_flow_alerts.side_effect = [
+            UWRateLimitError("429", status_code=429),
+            {"data": [{"ticker": "AAPL"}]},
+        ]
+
+        with patch("fetch_flow.time_module.sleep"):
+            result = fetch_flow_alerts("AAPL", _client=mock_client)
+
+        assert result == [{"ticker": "AAPL"}]
+        assert mock_client.get_flow_alerts.call_count == 2

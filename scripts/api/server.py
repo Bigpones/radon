@@ -1014,24 +1014,68 @@ async def run_flow_report(ticker: str):
     if isinstance(result.data, dict) and result.data.get("error"):
         raise HTTPException(status_code=502, detail=result.data["error"])
 
-    # Don't persist a structurally empty report. `scripts/fetch_flow.py`
-    # swallows every UWAPIError subclass (rate limit, 5xx, auth) and
-    # returns ``[]`` — the aggregator then produces a fake-success
-    # report with num_prints=0 / flow_direction="NO_DATA" that the GET
-    # route would serve for the 600s cache TTL. Surfaced 2026-05-14
-    # as a phantom "NO DATA" view of GOOGL on /flow-analysis/GOOGL
-    # while UW was perfectly happy. Skipping the cache write lets the
-    # next POST retry hit a healthy UW; the GET route falls back to
-    # the prior valid cache if any.
-    num_prints = (result.data.get("analysis") or {}).get("num_prints") or 0
-    if num_prints > 0:
-        _write_cache(_FLOW_REPORTS_DIR / f"{upper}.json", result.data)
-    else:
-        logger.warning(
-            "Skipping flow_reports cache for %s: num_prints=0 (likely transient UW failure)",
-            upper,
-        )
+    # Don't persist a structurally degraded report. The aggregate-only
+    # check (2026-05-14 fix) caught reports where the WHOLE 5-day window
+    # was zero, but it let through partial degradations where 1-2 days
+    # silently swallowed a UW rate-limit and the OTHER days carried the
+    # cross-day total past `> 0`. EWY surfaced 2026-05-15 with two recent
+    # days showing "NO DATA" while UW was healthy — three good days
+    # (1,499 total prints) waved the bad report through this guard.
+    #
+    # Two checks now:
+    #   (a) aggregate `analysis.num_prints > 0` — the original guard
+    #   (b) every per-day darkpool row covering a real trading day has
+    #       `num_prints > 0`. If any trading-day slot is zero, we
+    #       assume a per-day call was swallowed and refuse the cache
+    #       write. The previous valid cache stays served.
+    if not _flow_report_is_cacheable(result.data, upper):
+        return result.data
+    _write_cache(_FLOW_REPORTS_DIR / f"{upper}.json", result.data)
     return result.data
+
+
+def _flow_report_is_cacheable(report: dict, ticker: str) -> bool:
+    """Gate the flow-report cache write on structural validity.
+
+    Refuses to write when the aggregate is empty OR any per-day darkpool
+    row covering a real trading day shows zero prints. The latter is the
+    signal that a per-day call was swallowed by `fetch_flow.py`'s retry
+    layer — even after the 2026-05-15 narrowing, a sustained rate-limit
+    can still bubble up as an empty day; that report is unsafe to cache.
+    """
+    aggregate_prints = (report.get("analysis") or {}).get("num_prints") or 0
+    if aggregate_prints <= 0:
+        logger.warning(
+            "Skipping flow_reports cache for %s: aggregate num_prints=0 (transient UW failure)",
+            ticker,
+        )
+        return False
+
+    daily_rows = ((report.get("dark_pool") or {}).get("daily") or [])
+    blank_dates: list[str] = []
+    for row in daily_rows:
+        date_str = (row.get("date") or "").strip()
+        if not date_str:
+            continue
+        if (row.get("num_prints") or 0) > 0:
+            continue
+        # Only flag dates that are real US trading days. UW will legitimately
+        # return [] for weekends / holidays / pre-data-availability dates.
+        try:
+            year, month, day = (int(p) for p in date_str.split("-"))
+            from utils.market_calendar import _is_trading_day  # local import — keeps top tidy
+            if _is_trading_day(datetime(year, month, day)):
+                blank_dates.append(date_str)
+        except Exception:
+            continue
+
+    if blank_dates:
+        logger.warning(
+            "Skipping flow_reports cache for %s: %d trading day(s) returned zero prints (%s) — likely partial UW outage",
+            ticker, len(blank_dates), ",".join(blank_dates),
+        )
+        return False
+    return True
 
 
 @app.get("/attribution")
