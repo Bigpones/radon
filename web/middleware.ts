@@ -1,4 +1,9 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import {
+  getRequestId,
+  jsonApiError,
+  setNoStoreResponseHeaders,
+} from "@/lib/apiContracts";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
@@ -26,14 +31,38 @@ export function isLocalDevAuthBypassEnabled(
   return isLocalHost(url);
 }
 
-// API routes are public at the middleware level because server-side page
-// fetches don't carry Clerk session cookies. External API access is still
-// protected by FastAPI's Clerk JWT auth middleware.
-const isPublicRoute = createRouteMatcher([
+// Public allowlist. Every other route — pages AND /api/* — requires a Clerk
+// session. The narrow exemptions:
+//
+//   /sign-in, /sign-up                  — Clerk auth flow pages
+//   /api/.../share, /api/.../share/...  — share-card link previews; link-
+//                                          preview bots (Twitter, Slack,
+//                                          iMessage) have no Clerk session
+//                                          and can't sign in. Matches both
+//                                          `/api/share/pnl` and nested
+//                                          shapes like `/api/menthorq/cta/
+//                                          share/content`.
+//   /api/service-health                 — dashboard banner data; intentionally
+//                                          accessible so monitoring pollers
+//                                          and the future public status page
+//                                          don't need a session.
+//   /api/health                         — pre-approved liveness probe for any
+//                                          future Next.js-side health route.
+//
+// Before 2026-05-15 the matcher contained `/api/(.*)` which left every API
+// route open to the world. The page route protection was always working;
+// only `/api/*` was the hole.
+export const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
   "/sign-up(.*)",
-  "/api/(.*)",
+  /^\/api(?:\/[^/]+)*\/share(?:\/.*)?$/,
+  "/api/service-health",
+  "/api/health",
 ]);
+
+export function isApiPath(pathname: string): boolean {
+  return pathname === "/api" || pathname.startsWith("/api/");
+}
 
 export default clerkMiddleware(async (auth, request) => {
   if (
@@ -43,9 +72,30 @@ export default clerkMiddleware(async (auth, request) => {
     return;
   }
 
-  if (!isPublicRoute(request)) {
-    await auth.protect();
+  if (isPublicRoute(request)) return;
+
+  // API routes: return a JSON 401 with the same shape as every other API
+  // error response (see web/lib/apiContracts.ts). Clerk's default for a
+  // protected route is to redirect to /sign-in, which is meaningless for an
+  // API client and would also surface as a noisy 302 in the browser console
+  // when the cookie expires mid-session.
+  if (isApiPath(request.nextUrl.pathname)) {
+    const { userId } = await auth();
+    if (!userId) {
+      const requestId = getRequestId();
+      const response = jsonApiError({
+        message: "Unauthorized",
+        status: 401,
+        code: "UNAUTHORIZED",
+        requestId,
+      });
+      return setNoStoreResponseHeaders(response, requestId);
+    }
+    return;
   }
+
+  // Page routes: keep Clerk's standard redirect-to-sign-in behavior.
+  await auth.protect();
 });
 
 export const config = {

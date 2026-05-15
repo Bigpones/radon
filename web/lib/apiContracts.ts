@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 
 export type ErrorCode =
   | "BAD_REQUEST"
+  | "UNAUTHORIZED"
   | "NOT_FOUND"
   | "CONFIG_ERROR"
   | "UPSTREAM_ERROR"
