@@ -170,16 +170,26 @@ class CashFlowSyncHandler(BaseHandler):
             self._record_failure(record_service_health, started_at, str(exc))
             raise
 
+        inner_error = result.get("error") if result.get("status") == "error" else None
+        if inner_error:
+            self._record_failure(record_service_health, started_at, str(inner_error))
+            # Raise so BaseHandler.run() does NOT latch `last_run`. With
+            # `last_run` unset, the next 30s daemon cycle re-evaluates
+            # `is_due`: throttle errors keep blocked_until at 24h+ so we
+            # skip the day; "not ready" / network errors set
+            # blocked_until at +5m so we retry within the same trading
+            # day instead of waiting 24h to find out IBKR Flex was
+            # ready 1 minute later. The 2026-05-14 incident was exactly
+            # that — a transient 60s timeout cost us 7 days of cash
+            # flow data because last_run was latched.
+            raise RuntimeError(str(inner_error))
+
         try:
-            inner_error = result.get("error") if result.get("status") == "error" else None
-            if inner_error:
-                self._record_failure(record_service_health, started_at, str(inner_error))
-            else:
-                self._mark_success()
-                record_service_health(
-                    self._SERVICE_NAME, "ok",
-                    started_at=started_at, finished_at=_now_iso(),
-                )
+            self._mark_success()
+            record_service_health(
+                self._SERVICE_NAME, "ok",
+                started_at=started_at, finished_at=_now_iso(),
+            )
         except Exception as exc:
             logger.warning("record_service_health failed: %s", exc)
 

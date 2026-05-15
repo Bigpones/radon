@@ -212,8 +212,23 @@ def _request_reference_code(token: str, query_id: str) -> str:
     raise RuntimeError("Flex SendRequest failed: unknown error")
 
 
-def fetch_cash_transactions(token: str, query_id: str, *, max_polls: int = 20, poll_sleep: float = 3.0) -> list[dict[str, Any]]:
+def fetch_cash_transactions(
+    token: str,
+    query_id: str,
+    *,
+    max_polls: int = 40,
+    poll_sleep: float = 2.0,
+    max_poll_sleep: float = 15.0,
+) -> list[dict[str, Any]]:
     """Fetch the NAV Flex Query and parse CashTransaction rows.
+
+    Polls with capped exponential backoff: 2s → 4s → 8s → 15s (capped),
+    repeated up to `max_polls` times. Worst case total wait is roughly
+    2 + 4 + 8 + 15*37 ≈ 9.5 minutes — long enough to ride out the
+    ~17:00 ET EOD spike when Flex is serving thousands of statement
+    requests at once. The previous fixed 20 × 3s = 60s budget was too
+    tight; the 2026-05-14 incident was a perfectly transient Flex
+    backend slowness that the script gave up on at exactly 60s.
 
     Returns a list of dicts ready to feed `upsert_cash_flow`.
 
@@ -227,13 +242,15 @@ def fetch_cash_transactions(token: str, query_id: str, *, max_polls: int = 20, p
     ref_code = _request_reference_code(token, query_id)
 
     xml_text = ""
+    sleep_s = poll_sleep
     for _ in range(max_polls):
-        time.sleep(poll_sleep)
+        time.sleep(sleep_s)
         params2 = urlencode({"t": token, "q": ref_code, "v": "3"})
         resp2 = urlopen(f"{_GET_URL}?{params2}", timeout=30)
         xml_text = resp2.read().decode("utf-8")
         if "<FlexStatements" in xml_text:
             break
+        sleep_s = min(sleep_s * 2, max_poll_sleep)
     else:
         raise RuntimeError(f"Flex statement not ready after {max_polls} polls")
 

@@ -118,11 +118,26 @@ class TestSoftFailure:
         s2 = record_soft_failure(s, now_utc=NOW + timedelta(hours=25))
         assert s2["throttle_count"] == before
 
-    def test_soft_failure_clears_embargo(self):
-        s = record_throttle(initial_state(), now_utc=NOW)
-        s2 = record_soft_failure(s, now_utc=NOW + timedelta(hours=25))
-        assert s2["blocked_until"] is None
-        assert is_blocked(s2, now_utc=NOW + timedelta(hours=26)) is False
+    def test_soft_failure_sets_short_embargo(self):
+        """A soft failure (e.g. "statement not ready") sets a 5-min
+        embargo so the handler retries within the same trading day on a
+        measured cadence rather than every 30s. Before 2026-05-15 this
+        function returned ``blocked_until=None`` and the daily handler's
+        latched ``last_run`` skipped the entire day on a single transient
+        timeout — 7 days of cash flow data went missing in the 2026-05-14
+        incident.
+        """
+        s = record_soft_failure(initial_state(), now_utc=NOW)
+        # Blocked immediately and for the next ~5 minutes.
+        assert is_blocked(s, now_utc=NOW) is True
+        assert is_blocked(s, now_utc=NOW + timedelta(minutes=4)) is True
+        # Cleared after the cooldown — handler can retry.
+        assert is_blocked(s, now_utc=NOW + timedelta(minutes=6)) is False
+
+    def test_soft_failure_supports_custom_cooldown(self):
+        s = record_soft_failure(initial_state(), now_utc=NOW, cooldown_seconds=30)
+        assert is_blocked(s, now_utc=NOW + timedelta(seconds=20)) is True
+        assert is_blocked(s, now_utc=NOW + timedelta(seconds=40)) is False
 
 
 class TestThrottleErrorType:

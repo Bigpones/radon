@@ -83,15 +83,27 @@ def record_success(state: Dict[str, Any]) -> Dict[str, Any]:
     return initial_state()
 
 
-def record_soft_failure(state: Dict[str, Any], *, now_utc: datetime) -> Dict[str, Any]:
-    """Network blip / parse error — do not escalate, do not embargo.
+SOFT_RETRY_COOLDOWN_SECS = 5 * 60  # 5-min spacing between within-day retries
 
-    Returns a copy with throttle_count preserved and `blocked_until`
-    cleared. The handler's daily window will retry at the next 17:00 ET.
+
+def record_soft_failure(
+    state: Dict[str, Any],
+    *,
+    now_utc: datetime,
+    cooldown_seconds: int = SOFT_RETRY_COOLDOWN_SECS,
+) -> Dict[str, Any]:
+    """Network blip / parse error / "statement not ready" — do not
+    escalate the throttle counter, but DO set a short embargo so the
+    handler retries on a measured cadence rather than every 30s.
+
+    The cooldown is intentionally bounded (5 min default) so a transient
+    EOD-spike "not ready" failure at 17:00 ET still recovers within the
+    same trading day. Throttle (1001/1018/1019) errors take a different
+    path with the exponential `record_throttle` ladder (24h+).
     """
     return {
         "throttle_count": int(state.get("throttle_count") or 0),
-        "blocked_until": None,
+        "blocked_until": (now_utc + timedelta(seconds=cooldown_seconds)).isoformat(),
     }
 
 

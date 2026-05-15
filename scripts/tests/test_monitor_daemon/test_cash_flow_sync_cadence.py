@@ -232,15 +232,80 @@ class TestCircuitBreakerCadence:
         assert "backoff_state" in state
         assert state["backoff_state"]["throttle_count"] == 1
 
-        h2 = self._fresh_handler()
-        h2.set_state(state)
-        # 1h later — still blocked.
+
+class TestSoftFailureRetriesWithinDay:
+    """A "statement not ready" / network blip must NOT burn the daily
+    slot. The handler must retry on a 5-min cadence within the same day
+    so a transient 17:00 ET Flex spike doesn't cost us 24h of data.
+
+    Production bug (2026-05-14): a single 60s polling timeout latched
+    last_run and the handler was silent for ~7 days until Joe noticed
+    the cash flows panel was stale. After the 2026-05-15 fix:
+      1. cash_flow_sync.fetch_cash_transactions has 40 polls with
+         exponential backoff (~9.5 min total).
+      2. execute() raises on inner_error so BaseHandler doesn't latch
+         last_run.
+      3. record_soft_failure sets blocked_until = now+5m so is_due
+         returns False during the cooldown, then True for retry.
+    """
+
+    def _fresh_handler(self):
+        from monitor_daemon.handlers.cash_flow_sync import CashFlowSyncHandler
+        return CashFlowSyncHandler()
+
+    def test_soft_failure_does_not_latch_last_run(self):
+        """execute() raises on a non-throttle inner_error so the
+        BaseHandler.run() wrapper skips its `self.last_run = datetime.now()`
+        line. Without this, the handler thinks today's slot is spent
+        and won't retry until tomorrow.
+        """
+        from monitor_daemon.handlers.cash_flow_sync import CashFlowSyncHandler
+
+        h = self._fresh_handler()
+        # Stub _execute_inner to return the same "not ready" error the
+        # subprocess wrapper produces on a polling timeout.
+        h._execute_inner = lambda: {  # type: ignore[method-assign]
+            "status": "error",
+            "error": "ERR: cash flow fetch failed: Flex statement not ready after 40 polls",
+        }
+        with pytest.raises(RuntimeError, match="not ready"):
+            h.execute()
+
+    def test_soft_failure_then_retry_after_cooldown(self):
+        """After a soft failure, is_due is False for 5 min then True."""
+        first = _et_to_utc(2026, 5, 14, 17, 30)
+        h = self._fresh_handler()
+        h._execute_inner = lambda: {  # type: ignore[method-assign]
+            "status": "error",
+            "error": "Flex statement not ready after 40 polls",
+        }
+
+        with patch(
+            "monitor_daemon.handlers.cash_flow_sync._now_utc", return_value=first
+        ), patch(
+            "monitor_daemon.handlers.cash_flow_sync.record_service_health",
+            create=True,
+        ):
+            try:
+                h.execute()
+            except RuntimeError:
+                pass  # expected
+
+        # 2 min after the soft failure: cooldown still active → not due.
+        two_min_later = first + timedelta(minutes=2)
         with patch(
             "monitor_daemon.handlers.cash_flow_sync._now_utc",
-            return_value=now + timedelta(hours=1),
+            return_value=two_min_later,
         ):
-            assert h2.is_due() is False
-        assert h2._backoff_state["throttle_count"] == 1
+            assert h.is_due() is False
+
+        # 6 min after: cooldown cleared → due again.
+        six_min_later = first + timedelta(minutes=6)
+        with patch(
+            "monitor_daemon.handlers.cash_flow_sync._now_utc",
+            return_value=six_min_later,
+        ):
+            assert h.is_due() is True
 
     def test_successful_run_resets_breaker(self):
         from monitor_daemon.handlers._throttle_backoff import record_throttle

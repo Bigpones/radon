@@ -232,6 +232,12 @@ class TestCashFlowSyncHeartbeat:
         assert _called_with_state(fake_db_writer, "cash-flow-sync", "ok")
 
     def test_records_error_when_subprocess_fails(self, monkeypatch, fake_db_writer):
+        """execute() now raises on inner_error so BaseHandler.run()
+        doesn't latch last_run — that lets the handler retry within the
+        same day instead of burning 24h on a single transient Flex
+        timeout (2026-05-14 incident). The error heartbeat still fires
+        before the raise.
+        """
         from monitor_daemon.handlers.cash_flow_sync import CashFlowSyncHandler
 
         monkeypatch.setenv("IB_FLEX_TOKEN", "token")
@@ -245,7 +251,8 @@ class TestCashFlowSyncHeartbeat:
         with patch("monitor_daemon.handlers.cash_flow_sync.subprocess.run", return_value=completed), \
              patch("monitor_daemon.handlers.cash_flow_sync.Path.exists", return_value=True):
             handler = CashFlowSyncHandler()
-            handler.execute()
+            with pytest.raises(RuntimeError):
+                handler.execute()
 
         assert _called_with_state(fake_db_writer, "cash-flow-sync", "error")
 
