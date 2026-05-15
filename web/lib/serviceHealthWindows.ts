@@ -66,21 +66,36 @@ const DAY = 24 * HOUR;
 export const SERVICE_FRESHNESS_WINDOWS: Record<string, Window> = {
   "newsfeed-scraper": { open: 5 * MIN, extended: 5 * MIN, closed: 5 * MIN, category: "scheduled" },
 
-  // Market-hours-only IB feeds. Closed-window covers the longest
+  // Market-hours-only IB feeds. The monitor daemon gates these on
+  // `requires_market_hours=True`, so they only run 09:30–16:00 ET. The
+  // ``extended`` window must match ``closed`` — pre-market (04:00–09:30
+  // ET) and after-hours (16:00–20:00 ET) are off-cycle for these
+  // writers and a tight extended window flags them as broken when
+  // they're behaving as designed. ``closed`` covers the longest
   // natural gap (Fri 16:00 ET → Mon 09:30 ET ≈ 65h) so a quiet
   // weekend doesn't trip the banner.
-  "orders-sync": { open: 10 * MIN, extended: 10 * MIN, closed: 3 * DAY, category: "scheduled" },
-  "portfolio-sync": { open: 10 * MIN, extended: 10 * MIN, closed: 3 * DAY, category: "scheduled" },
+  "orders-sync": { open: 10 * MIN, extended: 3 * DAY, closed: 3 * DAY, category: "scheduled" },
+  "portfolio-sync": { open: 10 * MIN, extended: 3 * DAY, closed: 3 * DAY, category: "scheduled" },
   // ``orders-read-compare`` only runs when /api/orders is hit, so even
   // though the dashboard polls it every 60s the writer itself has no
   // autonomous trigger and is treated as on-demand for the banner.
-  "orders-read-compare": { open: 10 * MIN, extended: 10 * MIN, closed: 3 * DAY, category: "on-demand" },
+  "orders-read-compare": { open: 10 * MIN, extended: 3 * DAY, closed: 3 * DAY, category: "on-demand" },
 
-  "journal-sync": { open: 10 * MIN, extended: 10 * MIN, closed: 10 * MIN, category: "scheduled" },
+  // ``journal-sync`` is also gated on market hours by the daemon. The
+  // previous 10-minute ``extended`` + ``closed`` windows surfaced every
+  // pre-market and after-hours window as an outage. Match the IB feed
+  // pattern above so the row only fires when the writer should have
+  // run inside market hours but didn't.
+  "journal-sync": { open: 10 * MIN, extended: 3 * DAY, closed: 3 * DAY, category: "scheduled" },
   "cash-flow-sync": { open: 25 * HOUR, extended: 25 * HOUR, closed: 25 * HOUR, category: "scheduled" },
 
-  "fill-monitor": { open: 5 * MIN, extended: 5 * MIN, closed: 1 * HOUR, category: "scheduled" },
-  "exit-orders": { open: 5 * MIN, extended: 5 * MIN, closed: 1 * HOUR, category: "scheduled" },
+  // Both ``fill-monitor`` and ``exit-orders`` only run during market
+  // hours via the monitor daemon. Their 1h closed window assumed the
+  // daemon fired during extended hours too, which it does not (DST fix
+  // 2026-05-14 confirmed the market-hours gate). Widen ``extended`` +
+  // ``closed`` to cover the worst-case weekend gap.
+  "fill-monitor": { open: 5 * MIN, extended: 3 * DAY, closed: 3 * DAY, category: "scheduled" },
+  "exit-orders": { open: 5 * MIN, extended: 3 * DAY, closed: 3 * DAY, category: "scheduled" },
 
   "flex-token-check": { open: 25 * HOUR, extended: 25 * HOUR, closed: 25 * HOUR, category: "scheduled" },
 

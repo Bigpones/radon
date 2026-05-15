@@ -38,7 +38,30 @@ describe("SERVICE_FRESHNESS_WINDOWS", () => {
     const closed = getFreshnessWindowMs("fill-monitor", "closed");
     expect(open).toBeLessThan(closed);
     expect(open).toBe(5 * 60_000); // 5 min open
-    expect(closed).toBe(60 * 60_000); // 1h closed
+    expect(closed).toBe(3 * 24 * 60 * 60_000); // 3 days closed (covers Fri close → Mon open)
+  });
+
+  it("collapses `extended` to `closed` for market-hours-only writers", () => {
+    // pre-market (04:00-09:30 ET) + after-hours (16:00-20:00 ET) map to
+    // MarketState=`extended`. fill-monitor, exit-orders, journal-sync,
+    // orders-sync, portfolio-sync don't run in extended hours — the
+    // monitor daemon gates them on `requires_market_hours=True`. So
+    // the `extended` window must match `closed`, or the banner falsely
+    // flags them every weekday morning between 04:00 and 09:30 ET.
+    // Surfaced 2026-05-15 as a pre-market false-degraded banner.
+    const services = [
+      "orders-sync",
+      "portfolio-sync",
+      "journal-sync",
+      "fill-monitor",
+      "exit-orders",
+      "orders-read-compare",
+    ];
+    for (const service of services) {
+      const extended = getFreshnessWindowMs(service, "extended");
+      const closed = getFreshnessWindowMs(service, "closed");
+      expect(extended).toBe(closed);
+    }
   });
 
   it("falls back to a 1h default for unknown service names", () => {

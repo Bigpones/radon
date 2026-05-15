@@ -41,12 +41,17 @@ class FreshnessWindow(TypedDict):
 # Windows in seconds.
 SCHEDULED_SERVICES: dict[str, FreshnessWindow] = {
     "newsfeed-scraper": {"open": 5 * _MIN, "closed": 5 * _MIN},
+    # Market-hours-only writers (gated by MonitorDaemon's
+    # requires_market_hours=True). Mirrors web/lib/serviceHealthWindows.ts;
+    # closed window absorbs the longest weekend gap so the banner doesn't
+    # fire overnight. extended is folded into closed on the TS side for
+    # the same reason — writers don't run in extended hours.
     "orders-sync":      {"open": 10 * _MIN, "closed": 3 * _DAY},
     "portfolio-sync":   {"open": 10 * _MIN, "closed": 3 * _DAY},
-    "journal-sync":     {"open": 10 * _MIN, "closed": 10 * _MIN},
+    "journal-sync":     {"open": 10 * _MIN, "closed": 3 * _DAY},
     "cash-flow-sync":   {"open": 25 * _HOUR, "closed": 25 * _HOUR},
-    "fill-monitor":     {"open": 5 * _MIN, "closed": 1 * _HOUR},
-    "exit-orders":      {"open": 5 * _MIN, "closed": 1 * _HOUR},
+    "fill-monitor":     {"open": 5 * _MIN, "closed": 3 * _DAY},
+    "exit-orders":      {"open": 5 * _MIN, "closed": 3 * _DAY},
     "flex-token-check": {"open": 25 * _HOUR, "closed": 25 * _HOUR},
     "cri-scan":         {"open": 35 * _MIN, "closed": 1 * _DAY},
     "vcg-scan":         {"open": 15 * _MIN, "closed": 1 * _DAY},
