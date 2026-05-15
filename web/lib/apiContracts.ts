@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { randomUUID } from "node:crypto";
 
 export type ErrorCode =
   | "BAD_REQUEST"
@@ -25,8 +24,14 @@ export type ApiOptions = {
 };
 
 export function getRequestId(): string {
+  // Web Crypto API — available on globalThis.crypto in Node 19+, Next.js
+  // Edge runtime, and every modern browser. Previously we imported
+  // randomUUID from node:crypto, but `web/middleware.ts` runs in the
+  // Edge runtime (no node:* modules) and pulling apiContracts.ts into
+  // the middleware blew up production with "Native module not found:
+  // node:crypto" the moment the auth-gate change shipped 2026-05-15.
   try {
-    return randomUUID();
+    return globalThis.crypto.randomUUID();
   } catch {
     return `rid_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   }
