@@ -149,16 +149,16 @@ function AnalyzingPanel({ ticker, status }: { ticker: string; status: string }) 
     <section className="section">
       <div className="section-body">
         <div className="ticker-flow-analyzing">
-          <div className="ticker-flow-analyzing-spinner" aria-hidden="true" />
-          <div className="ticker-flow-analyzing-body">
+          <div className="ticker-flow-analyzing-header">
+            <div className="ticker-flow-analyzing-spinner" aria-hidden="true" />
             <div className="ticker-flow-analyzing-title">{message}</div>
-            <ul className="ticker-flow-analyzing-steps">
-              <li>Pulling dark pool prints across the last 5 trading sessions</li>
-              <li>Reconstructing buy / sell pressure from NBBO mid-cross</li>
-              <li>Aggregating institutional options flow</li>
-              <li>Synthesizing directional verdict</li>
-            </ul>
           </div>
+          <ul className="ticker-flow-analyzing-steps">
+            <li>Pulling dark pool prints across the last 5 trading sessions</li>
+            <li>Reconstructing buy / sell pressure from NBBO mid-cross</li>
+            <li>Aggregating institutional options flow</li>
+            <li>Synthesizing directional verdict</li>
+          </ul>
         </div>
       </div>
     </section>
