@@ -160,8 +160,11 @@ test.describe("Flow Analysis per-ticker route", () => {
     await page.route("**/api/flow-analysis/NVDA**", async (route) => {
       const req = route.request();
       if (req.method() === "GET") {
+        // Route now returns 200 + { missing: true } instead of 404 so the
+        // browser console doesn't show a red error on the legitimate
+        // first-time-scan path.
         await route.fulfill({
-          status: 404,
+          status: 200,
           contentType: "application/json",
           body: JSON.stringify({ ticker: "NVDA", missing: true, cache_meta: { is_stale: true } }),
         });

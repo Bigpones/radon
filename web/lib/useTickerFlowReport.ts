@@ -8,10 +8,10 @@ import { isFlowReportStale } from "@/lib/flowReportStaleness";
  *
  * Flow:
  *   1. GET /api/flow-analysis/{TICKER}
- *      - 200 + fresh  → state = { data, status: "fresh" }
- *      - 200 + stale  → state = { data, status: "scanning" }, then POST
- *      - 404          → state = { data: null, status: "scanning" }, then POST
- *      - 5xx          → state = { error, status: "error" }
+ *      - 200 + fresh         → state = { data, status: "fresh" }
+ *      - 200 + stale         → state = { data, status: "scanning" }, then POST
+ *      - 200 + missing:true  → state = { data: null, status: "scanning" }, then POST
+ *      - 5xx                 → state = { error, status: "error" }
  *   2. POST /api/flow-analysis/{TICKER}
  *      - 200 → state = { data, status: "fresh" }
  *      - error → preserve cached data if any, expose error
@@ -21,6 +21,8 @@ export type FlowReportStatus = "idle" | "loading" | "scanning" | "fresh" | "erro
 
 export type FlowReportData = {
   ticker: string;
+  /** When true the cache is empty — no scan has run yet for this ticker. */
+  missing?: boolean;
   fetched_at?: string;
   lookback_days?: number;
   verdict?: { direction: "BULLISH" | "NEUTRAL" | "BEARISH"; confidence: number };
@@ -130,19 +132,18 @@ export function useTickerFlowReport(ticker: string | null): UseTickerFlowReportR
 
         if (res.ok) {
           const payload = (await res.json()) as FlowReportData;
+          // Missing cache → don't pollute state with an empty payload, just scan.
+          if (payload?.missing) {
+            setData(null);
+            await triggerScan(sym, signal);
+            return;
+          }
           setData(payload);
           if (isFlowReportStale(payload)) {
             await triggerScan(sym, signal);
           } else {
             setStatus("fresh");
           }
-          return;
-        }
-
-        // Missing cache → kick off a fresh scan immediately.
-        if (res.status === 404) {
-          setData(null);
-          await triggerScan(sym, signal);
           return;
         }
 

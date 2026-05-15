@@ -66,13 +66,18 @@ describe("/api/flow-analysis/[ticker]", () => {
   });
 
   describe("GET", () => {
-    it("404 when no cache file exists", async () => {
+    // Regression: previously 404'd, which surfaced as a noisy red error in the
+    // browser console even though it's a legitimate first-time-scan signal.
+    // The route now returns 200 + { missing: true } so the hook can branch
+    // without the network panel screaming.
+    it("200 + missing:true when no cache file exists (no console-noisy 404)", async () => {
       mockReadFile.mockRejectedValue(new Error("ENOENT"));
-      const res = await GET(makeRequest(), ctx("AAPL"));
-      expect(res.status).toBe(404);
+      const res = await GET(makeRequest(), ctx("EWY"));
+      expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.missing).toBe(true);
-      expect(body.ticker).toBe("AAPL");
+      expect(body.ticker).toBe("EWY");
+      expect(body.cache_meta).toBeTruthy();
     });
 
     it("200 + cache_meta when cache hit", async () => {

@@ -74,12 +74,12 @@ export async function GET(_req: Request, ctx: Params): Promise<Response> {
       requestId,
     );
   } catch {
+    // No cache yet (legitimate first-time scan). Return 200 + missing:true
+    // so the client can decide whether to trigger a POST without surfacing
+    // a noisy 404 in the browser console / Next.js logs.
     const cache_meta = buildCacheMeta(cachePath);
     return setNoStoreResponseHeaders(
-      NextResponse.json(
-        { ticker, cache_meta, missing: true },
-        { status: 404 },
-      ),
+      NextResponse.json({ ticker, cache_meta, missing: true }),
       requestId,
     );
   }
