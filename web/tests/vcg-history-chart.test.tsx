@@ -3,8 +3,8 @@
  */
 
 import React from "react";
-import { render } from "@testing-library/react";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render } from "@testing-library/react";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import VcgPanel from "../components/VcgPanel";
 import type { VcgData, VcgHistoryEntry } from "@/lib/useVcg";
@@ -27,6 +27,11 @@ const mockUseVcg = vi.fn();
 vi.mock("@/lib/useVcg", () => ({
   useVcg: (...args: unknown[]) => mockUseVcg(...args),
 }));
+
+afterEach(() => {
+  cleanup();
+  mockUseVcg.mockReset();
+});
 
 function buildHistory(count: number): VcgHistoryEntry[] {
   return Array.from({ length: count }, (_, i) => ({
@@ -141,9 +146,96 @@ describe("VcgPanel — 20-session history chart", () => {
     const { container } = render(React.createElement(VcgPanel, { prices: {} }));
     const html = container.innerHTML;
     const chartIdx = html.indexOf('data-testid="vcg-history-chart-section"');
-    const tableIdx = html.indexOf("VCG History (20d)");
+    const tableIdx = html.indexOf("VCG History — Recent 20 Sessions");
     expect(chartIdx).toBeGreaterThan(-1);
     expect(tableIdx).toBeGreaterThan(-1);
     expect(chartIdx).toBeLessThan(tableIdx);
+  });
+});
+
+describe("VcgPanel — chart range chips", () => {
+  it("shows 1M / 3M / 6M / 1Y / All chips when history is long enough", () => {
+    mockUseVcg.mockReturnValue({
+      data: buildVcgData({ history: buildHistory(300) }),
+      loading: false,
+      error: null,
+      lastSync: "2026-05-17T20:00:00Z",
+    });
+
+    const { getByTestId, getAllByRole } = render(
+      React.createElement(VcgPanel, { prices: {} }),
+    );
+    const strip = getByTestId("vcg-history-range-chips");
+    expect(strip).toBeTruthy();
+    const buttons = getAllByRole("button").filter((b) =>
+      ["1M", "3M", "6M", "1Y", "ALL"].includes(b.textContent?.trim().toUpperCase() ?? ""),
+    );
+    expect(buttons.length).toBe(5);
+  });
+
+  it("defaults to 1Y when ≥ 252 sessions are available", () => {
+    mockUseVcg.mockReturnValue({
+      data: buildVcgData({ history: buildHistory(300) }),
+      loading: false,
+      error: null,
+      lastSync: "2026-05-17T20:00:00Z",
+    });
+
+    const { getByTestId } = render(React.createElement(VcgPanel, { prices: {} }));
+    const oneYearChip = getByTestId("vcg-history-range-chips-1y");
+    expect(oneYearChip.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("defaults to All when history is short (e.g. 30 sessions)", () => {
+    mockUseVcg.mockReturnValue({
+      data: buildVcgData({ history: buildHistory(30) }),
+      loading: false,
+      error: null,
+      lastSync: "2026-05-17T20:00:00Z",
+    });
+
+    const { getByTestId } = render(React.createElement(VcgPanel, { prices: {} }));
+    // 30 sessions → 1M is the largest preset that fits → that becomes default.
+    const oneMonthChip = getByTestId("vcg-history-range-chips-1m");
+    expect(oneMonthChip.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("clicking a chip slices the chart title to the chosen range", () => {
+    mockUseVcg.mockReturnValue({
+      data: buildVcgData({ history: buildHistory(300) }),
+      loading: false,
+      error: null,
+      lastSync: "2026-05-17T20:00:00Z",
+    });
+
+    const { getByTestId, container } = render(
+      React.createElement(VcgPanel, { prices: {} }),
+    );
+
+    // Default 1Y on 300 sessions → 252 sessions visible.
+    expect(container.textContent).toContain("252 SESSIONS");
+
+    // Switch to 3M.
+    fireEvent.click(getByTestId("vcg-history-range-chips-3m"));
+    expect(container.textContent).toContain("63 SESSIONS");
+    expect(container.textContent).not.toContain("252 SESSIONS");
+
+    // Switch to All.
+    fireEvent.click(getByTestId("vcg-history-range-chips-all"));
+    expect(container.textContent).toContain("300 SESSIONS");
+  });
+
+  it("history table stays capped at the most-recent 20 sessions regardless of chart range", () => {
+    mockUseVcg.mockReturnValue({
+      data: buildVcgData({ history: buildHistory(300) }),
+      loading: false,
+      error: null,
+      lastSync: "2026-05-17T20:00:00Z",
+    });
+
+    const { container } = render(React.createElement(VcgPanel, { prices: {} }));
+    // Count the rows in the "Recent 20 Sessions" table.
+    const tbodyRows = container.querySelectorAll("table tbody tr");
+    expect(tbodyRows.length).toBe(20);
   });
 });

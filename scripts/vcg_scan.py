@@ -650,10 +650,13 @@ def build_json_output(
     vcg_trigger: float = VCG_RO_TRIGGER,
 ) -> Dict:
     """Build JSON output dict."""
-    # Recent history (last 20 sessions) — include per-day signal fields
+    # Full history — emit every session the model produced. The chart
+    # consumer slices by user-selected range (1M/3M/6M/1Y/All), matching
+    # the CRI pattern. Z-score and OLS windows are unchanged; we just
+    # stopped capping the emitted slice at 20.
     n = len(model["residuals"])
     history = []
-    for i in range(max(0, n - 20), n):
+    for i in range(n):
         date_idx = i + 1
         d = dates[date_idx] if date_idx < len(dates) else None
         vcg_i = model["vcg"][i]

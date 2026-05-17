@@ -1,13 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, TrendingUp, Zap } from "lucide-react";
 import InfoTooltip from "./InfoTooltip";
 import ShareReportModal from "./ShareReportModal";
 import CriHistoryChart, { type ChartSeries } from "./CriHistoryChart";
+import HistoryRangeChips from "./HistoryRangeChips";
 import { useVcg, type VcgData, type VcgHistoryEntry } from "@/lib/useVcg";
 import { MarketState } from "@/lib/useMarketHours";
 import { chartSeriesColor } from "@/lib/chartSystem";
+import {
+  defaultPresetForLength,
+  presetRange,
+  presetSessions,
+  type RangePresetSlug,
+} from "@/lib/historyRange";
 import type { PriceData } from "@/lib/pricesProtocol";
 
 type VcgPanelProps = {
@@ -132,6 +139,22 @@ export default function VcgPanel({ marketState }: VcgPanelProps) {
   const { data, loading, error, lastSync } = useVcg(marketState ?? null);
   const [sortCol, setSortCol] = useState<VcgSortCol | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  // Chart range preset (1M / 3M / 6M / 1Y / All). Default adapts to
+  // available history depth so a short backfill doesn't ship with a
+  // "1Y" chip selected on 3 months of data.
+  const historyLength = data?.history?.length ?? 0;
+  const [rangePreset, setRangePreset] = useState<RangePresetSlug>(() =>
+    defaultPresetForLength(historyLength),
+  );
+  // Re-clamp the active preset when history grows past the depth
+  // threshold (e.g. backend backfill extends from 3M to 1Y).
+  useEffect(() => {
+    const ideal = defaultPresetForLength(historyLength);
+    if (rangePreset === "all") return;
+    if (presetSessions(rangePreset) > historyLength) {
+      setRangePreset(ideal);
+    }
+  }, [historyLength, rangePreset]);
 
   function handleSort(col: VcgSortCol) {
     if (sortCol === col) {
@@ -394,40 +417,57 @@ export default function VcgPanel({ marketState }: VcgPanelProps) {
         </div>
       </div>
 
-      {/* ── 20-Session History Chart ──────────────────────
+      {/* ── History Chart ──────────────────────
           VCG z-score on the left, credit proxy price on the right —
           the divergence between the two IS the signal this panel
           is named after. Reuses the generic time-series chart
-          shared with RegimePanel/CRI. */}
-      {data.history && data.history.length >= 2 && (
-        <div className="section" data-testid="vcg-history-chart-section">
-          <CriHistoryChart<VcgHistoryEntry>
-            history={data.history}
-            series={[
-              {
-                key: "vcg",
-                label: "VCG Z-SCORE",
-                color: chartSeriesColor("primary"),
-                axis: "left",
-                format: (v) => (v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2)),
-              },
-              {
-                key: "credit",
-                label: `${data.credit_proxy} PRICE`,
-                color: chartSeriesColor("comparison"),
-                axis: "right",
-                format: (v) => v.toFixed(2),
-              },
-            ] as [ChartSeries<VcgHistoryEntry>, ChartSeries<VcgHistoryEntry>]}
-            title="VCG vs CREDIT — 20-SESSION HISTORY"
-          />
-        </div>
-      )}
+          shared with RegimePanel/CRI. Range chips slice the
+          underlying history (1M / 3M / 6M / 1Y / All) — vcg_scan
+          now emits the full Yahoo intersection, so chip clicks
+          reshape the chart without re-fetching. */}
+      {data.history && data.history.length >= 2 && (() => {
+        const [start, end] = presetRange(rangePreset, data.history.length);
+        const slice = data.history.slice(start, end + 1);
+        const chartTitle = `VCG vs CREDIT — ${slice.length} SESSION${slice.length === 1 ? "" : "S"}`;
+        return (
+          <div className="section" data-testid="vcg-history-chart-section">
+            <HistoryRangeChips
+              active={rangePreset}
+              onChange={setRangePreset}
+              maxSessions={data.history.length}
+              ariaLabel="VCG chart range"
+              dataTestId="vcg-history-range-chips"
+            />
+            <CriHistoryChart<VcgHistoryEntry>
+              history={slice}
+              series={[
+                {
+                  key: "vcg",
+                  label: "VCG Z-SCORE",
+                  color: chartSeriesColor("primary"),
+                  axis: "left",
+                  format: (v) => (v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2)),
+                },
+                {
+                  key: "credit",
+                  label: `${data.credit_proxy} PRICE`,
+                  color: chartSeriesColor("comparison"),
+                  axis: "right",
+                  format: (v) => v.toFixed(2),
+                },
+              ] as [ChartSeries<VcgHistoryEntry>, ChartSeries<VcgHistoryEntry>]}
+              title={chartTitle}
+            />
+          </div>
+        );
+      })()}
 
-      {/* ── History table (sortable) ────────────────────── */}
+      {/* ── History table (sortable) ──────────────────────
+          Always shows the most recent 20 sessions for a familiar
+          drill-down UX, regardless of the chart's selected range. */}
       <div className="section">
         <div className="section-header">
-          <div className="section-title">VCG History (20d)</div>
+          <div className="section-title">VCG History — Recent 20 Sessions</div>
         </div>
         <div className="section-body table-wrap">
           <table>
@@ -456,7 +496,7 @@ export default function VcgPanel({ marketState }: VcgPanelProps) {
               </tr>
             </thead>
             <tbody>
-              {sortHistory(data.history, sortCol, sortDir).map((h: VcgHistoryEntry) => (
+              {sortHistory(data.history.slice(-20), sortCol, sortDir).map((h: VcgHistoryEntry) => (
                 <tr key={h.date}>
                   <td>{h.date}</td>
                   <td className="right" style={{ color: (h.vcg ?? 0) > 2 ? "var(--fault)" : (h.vcg ?? 0) < -2 ? "var(--warning)" : "var(--text-primary)" }}>

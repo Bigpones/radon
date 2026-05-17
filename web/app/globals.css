@@ -4963,6 +4963,44 @@ tr {
   cursor: default;
 }
 
+/* Shared chip strip for any history chart range picker (VCG, future
+   regime charts). Visual parity with .regime-spread-range-chip; uses
+   aria-pressed instead of data-active so it composes with any button
+   component. */
+.history-range-chips {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.history-range-chip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border: 1px solid var(--border-dim);
+  background: var(--bg-panel-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease;
+}
+
+.history-range-chip:hover {
+  color: var(--text-secondary);
+  border-color: var(--text-muted);
+}
+
+.history-range-chip.is-active {
+  background: var(--signal-core);
+  color: var(--accent-text);
+  border-color: var(--signal-core);
+}
+
 .regime-spread-brush {
   position: relative;
   margin-top: 8px;
