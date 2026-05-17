@@ -117,6 +117,17 @@ export function createScraper(overrides = {}) {
     lastStoragePersistAt = Date.now();
   }
 
+  // Force the NEXT call to authenticateIfNeeded() to run the full auth
+  // flow (skipping the 6h re-auth gate). Used by the cycle when it
+  // detects paywall stubs mid-window — themarketear.com flipped the
+  // session to free-tier and we need a fresh login next cycle to recover.
+  // We intentionally don't run ensureAuthenticated() synchronously here
+  // because a single auth flow can take 30+ seconds and we don't want
+  // to block the cycle's persist/upsert pipeline.
+  function requestReauth() {
+    lastAuthAt = 0;
+  }
+
   async function persistStorageStateIfDue(handle) {
     if (typeof handle?.persistStorageState !== "function") return;
     const elapsed = Date.now() - lastStoragePersistAt;
@@ -197,11 +208,12 @@ export function createScraper(overrides = {}) {
         }
         return additions;
       },
+      requestReauth,
       paths,
     });
   }
 
-  return { paths, scrapeOnce, closeBrowser, authenticateIfNeeded };
+  return { paths, scrapeOnce, closeBrowser, authenticateIfNeeded, requestReauth };
 }
 
 export async function run({ intervalMs = INTERVAL_MS, signal, ...overrides } = {}) {

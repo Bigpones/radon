@@ -10,6 +10,27 @@
 // Tags are nice-to-have. Freshness is the user-facing contract. We
 // re-persist after tagging if the tagger added anything.
 
+import { PAYWALL_FULL_MESSAGE, PAYWALL_STUB_MARKER } from "./auth.js";
+
+// Cycle-level paywall guard. The 6h re-auth gate in index.js means a session
+// flipped to free-tier mid-window has no runtime guard — themarketear.com
+// keeps serving the /newsfeed URL but each article body is replaced with
+// the canonical paywall message. 2026-05-16: a server-side downgrade at
+// 17:45 UTC went undetected for ~21h, polluting posts.json with stub
+// content. Fix: scan each extracted body for the exact paywall string
+// and force re-auth on the next cycle while filtering the stubs out of
+// the current write.
+export function isPaywalledItem(item) {
+  if (!item || typeof item !== "object") return false;
+  const body = typeof item.content === "string" ? item.content : "";
+  if (!body) return false;
+  // Canonical full-string check first — that is the user-quoted message.
+  if (body.includes(PAYWALL_FULL_MESSAGE)) return true;
+  // Looser secondary check for prose variants that still embed the
+  // recognisable substring (handles whitespace / punctuation drift).
+  return body.includes(PAYWALL_STUB_MARKER);
+}
+
 export async function runScrapeCycle(deps) {
   const {
     cycleStartIso,
@@ -25,13 +46,45 @@ export async function runScrapeCycle(deps) {
     buildTextTagger,
     buildVisionTagger,
     onNewTags,
+    requestReauth,
     paths,
   } = deps;
 
   const cycleStart = Date.now();
 
   const scraped = await scrapePosts();
-  const items = scraped?.items ?? [];
+  const rawItems = scraped?.items ?? [];
+
+  // Partition before doing anything else — paywalled stubs must never reach
+  // mergePosts (which would persist them into posts.json) and must trigger
+  // re-auth even if the cycle returns zero clean items afterwards.
+  const paywalledItems = rawItems.filter(isPaywalledItem);
+  const items = rawItems.filter((item) => !isPaywalledItem(item));
+  const paywallDetected = paywalledItems.length > 0;
+
+  if (paywallDetected) {
+    console.warn(
+      `[newsfeed] paywall stubs detected in ${paywalledItems.length}/${rawItems.length} posts — forcing re-auth on next cycle`,
+    );
+    if (typeof requestReauth === "function") {
+      try {
+        await requestReauth();
+      } catch (err) {
+        console.warn(`[newsfeed] requestReauth failed: ${err.message}`);
+      }
+    }
+    try {
+      await recordServiceHealth("newsfeed-scraper", "error", {
+        startedAt: cycleStartIso,
+        finishedAt: new Date().toISOString(),
+        error: {
+          message: `paywall stubs detected in ${paywalledItems.length}/${rawItems.length} posts — re-auth scheduled`,
+        },
+      });
+    } catch (err) {
+      console.warn(`[newsfeed] paywall health write failed: ${err.message}`);
+    }
+  }
 
   if (items.length === 0) {
     // Heartbeat even on truly-empty cycles. Without this, a stale `error`
@@ -39,16 +92,25 @@ export async function runScrapeCycle(deps) {
     // banner red across quiet weekend periods. The 819fe14 fix added a
     // heartbeat for the nochange-after-changes branch but missed this
     // earlier short-circuit.
-    try {
-      await recordServiceHealth("newsfeed-scraper", "ok", {
-        startedAt: cycleStartIso,
-        finishedAt: new Date().toISOString(),
-      });
-    } catch (err) {
-      console.warn(`[newsfeed] heartbeat write failed: ${err.message}`);
+    //
+    // Exception: if every scraped item was a paywall stub, we already
+    // wrote a service_health `error` row above. Overwriting it with `ok`
+    // here would hide the regression from the banner — let the error
+    // stand until the next successful cycle resolves it.
+    if (!paywallDetected) {
+      try {
+        await recordServiceHealth("newsfeed-scraper", "ok", {
+          startedAt: cycleStartIso,
+          finishedAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.warn(`[newsfeed] heartbeat write failed: ${err.message}`);
+      }
     }
-    console.info(`[newsfeed] cycle empty ms=${Date.now() - cycleStart}`);
-    return { changed: false, count: 0 };
+    console.info(
+      `[newsfeed] cycle empty paywalled=${paywalledItems.length} ms=${Date.now() - cycleStart}`,
+    );
+    return { changed: false, count: 0, paywalled: paywalledItems.length };
   }
 
   const existing = await loadExistingPosts(paths.postsFile);
@@ -79,10 +141,15 @@ export async function runScrapeCycle(deps) {
       try {
         await upsertPosts(merged);
         dbWrites += 1;
-        await recordServiceHealth("newsfeed-scraper", "ok", {
-          startedAt: cycleStartIso,
-          finishedAt: new Date().toISOString(),
-        });
+        // Preserve the paywall `error` row written upstream — overwriting
+        // it with `ok` here would hide a partial-paywall regression from
+        // the banner. The next clean cycle resolves it back to ok.
+        if (!paywallDetected) {
+          await recordServiceHealth("newsfeed-scraper", "ok", {
+            startedAt: cycleStartIso,
+            finishedAt: new Date().toISOString(),
+          });
+        }
       } catch (err) {
         console.warn(`[newsfeed] db dual-write non-fatal: ${err.message}`);
         try {
@@ -145,22 +212,28 @@ export async function runScrapeCycle(deps) {
   }
 
   // Heartbeat for nochange cycles so a stale `error` row in service_health
-  // doesn't latch the banner red during quiet periods.
+  // doesn't latch the banner red during quiet periods. Skip when this
+  // cycle already wrote an `error` row for a paywall detection — we don't
+  // want the heartbeat to mask the regression.
   if (!changed && !imagesUpdated && !tagsUpdated) {
-    try {
-      await recordServiceHealth("newsfeed-scraper", "ok", {
-        startedAt: cycleStartIso,
-        finishedAt: new Date().toISOString(),
-      });
-    } catch (err) {
-      console.warn(`[newsfeed] heartbeat write failed: ${err.message}`);
+    if (!paywallDetected) {
+      try {
+        await recordServiceHealth("newsfeed-scraper", "ok", {
+          startedAt: cycleStartIso,
+          finishedAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.warn(`[newsfeed] heartbeat write failed: ${err.message}`);
+      }
     }
-    console.info(`[newsfeed] cycle nochange N=${merged.length} ms=${Date.now() - cycleStart}`);
-    return { changed: false, count: merged.length };
+    console.info(
+      `[newsfeed] cycle nochange N=${merged.length} paywalled=${paywalledItems.length} ms=${Date.now() - cycleStart}`,
+    );
+    return { changed: false, count: merged.length, paywalled: paywalledItems.length };
   }
 
   console.info(
-    `[newsfeed] cycle ok N=${merged.length} changed=${changed} imagesUpdated=${imagesUpdated} pushedToHetzner=${pushedToHetzner} tagsUpdated=${tagsUpdated} newTags=${newTagsAdded} dbWrites=${dbWrites} ms=${Date.now() - cycleStart}`,
+    `[newsfeed] cycle ok N=${merged.length} changed=${changed} imagesUpdated=${imagesUpdated} pushedToHetzner=${pushedToHetzner} tagsUpdated=${tagsUpdated} newTags=${newTagsAdded} paywalled=${paywalledItems.length} dbWrites=${dbWrites} ms=${Date.now() - cycleStart}`,
   );
-  return { changed: true, count: merged.length };
+  return { changed: true, count: merged.length, paywalled: paywalledItems.length };
 }

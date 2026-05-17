@@ -62,7 +62,15 @@ function isAuthenticatedNewsfeedUrl(url) {
 // silently, then the extractor scrapes paywall text into posts.json. Sniff
 // the DOM to disambiguate. 2026-05-16: ~25 posts shipped paywalled before
 // catching this; surfaced as "newsfeed broken — premium gone" by ops.
-const PAYWALL_STUB_MARKER = "part of our Premium coverage";
+//
+// `PAYWALL_STUB_MARKER` is the loose substring used by the auth DOM probe.
+// `PAYWALL_FULL_MESSAGE` is the canonical full-string match used by the
+// cycle-level runtime guard (cycle.js). The cycle uses the full string
+// because it scans already-extracted post `content`, where false positives
+// matter more than the auth probe's all-or-nothing branch.
+export const PAYWALL_STUB_MARKER = "part of our Premium coverage";
+export const PAYWALL_FULL_MESSAGE =
+  "This article is part of our Premium coverage, please click here to login and access it or sign up for a Premium account.";
 
 async function pageHasPremiumContent(page) {
   if (typeof page.evaluate !== "function") return true; // can't tell → trust

@@ -326,7 +326,7 @@ describe("runScrapeCycle ordering — persistence before tagging", () => {
       },
     });
 
-    expect(result).toEqual({ changed: false, count: 0 });
+    expect(result).toMatchObject({ changed: false, count: 0 });
     expect(order).not.toContain("persist");
     expect(order).not.toContain("upsert");
     expect(order).not.toContain("tag");
@@ -368,7 +368,7 @@ describe("runScrapeCycle ordering — persistence before tagging", () => {
       },
     });
 
-    expect(result).toEqual({ changed: false, count: 0 });
+    expect(result).toMatchObject({ changed: false, count: 0 });
     expect(healthCalls.length).toBe(1);
     expect(healthCalls[0]).toEqual({ service: "newsfeed-scraper", state: "ok" });
   });
