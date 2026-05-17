@@ -4,8 +4,10 @@ import { useState } from "react";
 import { AlertTriangle, TrendingUp, Zap } from "lucide-react";
 import InfoTooltip from "./InfoTooltip";
 import ShareReportModal from "./ShareReportModal";
+import CriHistoryChart, { type ChartSeries } from "./CriHistoryChart";
 import { useVcg, type VcgData, type VcgHistoryEntry } from "@/lib/useVcg";
 import { MarketState } from "@/lib/useMarketHours";
+import { chartSeriesColor } from "@/lib/chartSystem";
 import type { PriceData } from "@/lib/pricesProtocol";
 
 type VcgPanelProps = {
@@ -391,6 +393,36 @@ export default function VcgPanel({ marketState }: VcgPanelProps) {
           </div>
         </div>
       </div>
+
+      {/* ── 20-Session History Chart ──────────────────────
+          VCG z-score on the left, credit proxy price on the right —
+          the divergence between the two IS the signal this panel
+          is named after. Reuses the generic time-series chart
+          shared with RegimePanel/CRI. */}
+      {data.history && data.history.length >= 2 && (
+        <div className="section" data-testid="vcg-history-chart-section">
+          <CriHistoryChart<VcgHistoryEntry>
+            history={data.history}
+            series={[
+              {
+                key: "vcg",
+                label: "VCG Z-SCORE",
+                color: chartSeriesColor("primary"),
+                axis: "left",
+                format: (v) => (v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2)),
+              },
+              {
+                key: "credit",
+                label: `${data.credit_proxy} PRICE`,
+                color: chartSeriesColor("comparison"),
+                axis: "right",
+                format: (v) => v.toFixed(2),
+              },
+            ] as [ChartSeries<VcgHistoryEntry>, ChartSeries<VcgHistoryEntry>]}
+            title="VCG vs CREDIT — 20-SESSION HISTORY"
+          />
+        </div>
+      )}
 
       {/* ── History table (sortable) ────────────────────── */}
       <div className="section">

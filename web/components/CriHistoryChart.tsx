@@ -15,27 +15,32 @@ export interface CriHistoryEntry {
   vix_5d_roc: number;
 }
 
-export interface ChartSeries {
-  key: keyof CriHistoryEntry;
+// The chart was originally CRI-only. The internals are key-driven via d3
+// and never reference CRI-specific fields, so we expose it as a generic
+// time-series chart over any `{ date: string }` entry. The CRI usage in
+// RegimePanel keeps inferring `T = CriHistoryEntry` with zero code change;
+// VcgPanel now drives the same component with `T = VcgHistoryEntry`.
+export interface ChartSeries<T = CriHistoryEntry> {
+  key: keyof T;
   label: string;
   color: string;
   axis: "left" | "right";
   format?: (v: number) => string;
 }
 
-interface TooltipState {
+interface TooltipState<T> {
   visible: boolean;
   x: number;
   y: number;
-  d: CriHistoryEntry | null;
+  d: T | null;
 }
 
-interface CriHistoryChartProps {
-  history: CriHistoryEntry[];
-  series: [ChartSeries, ChartSeries];
+interface CriHistoryChartProps<T extends { date: string }> {
+  history: T[];
+  series: [ChartSeries<T>, ChartSeries<T>];
   title: string;
-  /** Override for today's live values — keys match CriHistoryEntry fields */
-  liveValues?: Partial<Record<keyof CriHistoryEntry, number>>;
+  /** Override for today's live values — keys match the entry type fields */
+  liveValues?: Partial<Record<keyof T, number>>;
 }
 
 const MARGIN = { top: 20, right: 56, bottom: 44, left: 48 };
@@ -72,15 +77,15 @@ export function shouldRotateCriHistoryXAxisLabels(innerWidth: number, tickCount:
   return tickCount > 5 || innerWidth < 560;
 }
 
-export default function CriHistoryChart({
+export default function CriHistoryChart<T extends { date: string }>({
   history,
   series,
   title,
   liveValues,
-}: CriHistoryChartProps) {
+}: CriHistoryChartProps<T>) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [tooltip, setTooltip] = useState<TooltipState>({
+  const [tooltip, setTooltip] = useState<TooltipState<T>>({
     visible: false,
     x: 0,
     y: 0,
@@ -102,7 +107,7 @@ export default function CriHistoryChart({
   }, []);
 
   // Merge live values into the last data point
-  const chartData: CriHistoryEntry[] = (() => {
+  const chartData: T[] = (() => {
     if (!history || history.length === 0) return [];
     if (!liveValues || Object.keys(liveValues).length === 0) return history;
     const result = [...history];
@@ -143,7 +148,7 @@ export default function CriHistoryChart({
       .range([0, innerW]);
 
     // Helper: build Y scale for a series
-    function buildYScale(s: ChartSeries) {
+    function buildYScale(s: ChartSeries<T>) {
       const vals = chartData
         .map((d) => d[s.key] as number | null | undefined)
         .filter((v): v is number => v != null && Number.isFinite(v));
@@ -172,7 +177,7 @@ export default function CriHistoryChart({
 
     // Draw a line series
     function drawLine(
-      s: ChartSeries,
+      s: ChartSeries<T>,
       yScale: d3.ScaleLinear<number, number>,
     ) {
       const validData = chartData.filter(
@@ -181,7 +186,7 @@ export default function CriHistoryChart({
       if (validData.length < 2) return;
 
       const line = d3
-        .line<CriHistoryEntry>()
+        .line<T>()
         .x((d) => xScale(new Date(d.date)))
         .y((d) => yScale(d[s.key] as number))
         .curve(d3.curveMonotoneX);
@@ -194,11 +199,11 @@ export default function CriHistoryChart({
         .attr("d", line);
 
       // Dots
-      g.selectAll(`.dot-${s.key}`)
+      g.selectAll(`.dot-${String(s.key)}`)
         .data(validData)
         .enter()
         .append("circle")
-        .attr("class", `dot-${s.key}`)
+        .attr("class", `dot-${String(s.key)}`)
         .attr("cx", (d) => xScale(new Date(d.date)))
         .attr("cy", (d) => yScale(d[s.key] as number))
         .attr("r", 2)
@@ -290,7 +295,7 @@ export default function CriHistoryChart({
     // Invisible overlay for tooltip — supports both mouse hover and touch drag.
     const updateTooltip = (clientX: number, clientY: number, mx: number) => {
       const hoveredDate = xScale.invert(mx);
-      const bisect = d3.bisector((d: CriHistoryEntry) => new Date(d.date)).left;
+      const bisect = d3.bisector((d: T) => new Date(d.date)).left;
       let idx = bisect(chartData, hoveredDate);
       idx = Math.max(0, Math.min(chartData.length - 1, idx));
       if (idx > 0) {
