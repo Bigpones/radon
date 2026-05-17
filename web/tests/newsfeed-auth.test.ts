@@ -46,12 +46,18 @@ function createFakeLocator(record: { calls: Array<{ method: string; args: unknow
 interface FakePageOpts {
   initialUrl?: string;
   postLoginUrl?: string;
+  // Result returned by `page.evaluate(...)` — the auth flow uses this to
+  // detect paywall-stub bodies on a session that has degraded to free
+  // tier. Default true = "looks like premium content," matching the
+  // happy path. Set false to simulate the silent-paywall regression.
+  premiumContentPresent?: boolean;
 }
 
 function createFakePage(opts: FakePageOpts = {}) {
   const calls: Array<{ method: string; args: unknown[] }> = [];
   const locatorRecord = { calls };
   let currentUrl = opts.initialUrl ?? "https://themarketear.com/the-newsletter";
+  const premium = opts.premiumContentPresent ?? true;
 
   const page = {
     url: () => currentUrl,
@@ -70,7 +76,7 @@ function createFakePage(opts: FakePageOpts = {}) {
     waitForResponse: async (..._args: unknown[]) => null,
     locator: (_sel: string) => createFakeLocator(locatorRecord),
     screenshot: async (...args: unknown[]) => calls.push({ method: "screenshot", args }),
-    evaluate: async () => null,
+    evaluate: async (..._args: unknown[]) => premium,
     on: () => {},
   };
   return { page, calls };
@@ -158,6 +164,44 @@ describe("ensureAuthenticated — storage state fresh path", () => {
     // Each warm reuse must persist; the stale-storage bug surfaced precisely
     // because the happy path skipped persistence.
     expect(persistCallCount).toBe(3);
+  });
+});
+
+// Regression 2026-05-17: themarketear.com kept serving /newsfeed even when
+// the session had degraded to free tier — same URL, same article cards,
+// but every body replaced with "part of our Premium coverage" stub text.
+// The URL-only auth check accepted this and the extractor silently saved
+// paywall stubs into posts.json. Fix: also sniff the DOM for premium
+// content before trusting the reused session.
+describe("ensureAuthenticated — silent paywall detection", () => {
+  it("forces login flow when /newsfeed returns paywall-stub bodies", async () => {
+    const { ensureAuthenticated } = await import("../../scripts/newsfeed/auth.js");
+
+    // /newsfeed loads (URL check passes) but pageHasPremiumContent returns
+    // false → tryReachNewsfeed must reject the reused session and run the
+    // full login flow. `waitForURL` brings the URL back to /newsfeed
+    // after the login submit, so the post-flow URL check passes.
+    const { page, calls } = createFakePage({
+      initialUrl: "https://themarketear.com/the-newsletter",
+      postLoginUrl: "https://themarketear.com/newsfeed",
+      premiumContentPresent: false,
+    });
+
+    let persistCallCount = 0;
+    const result = await ensureAuthenticated({
+      context: {},
+      page: page as never,
+      credentials: { email: "joe@x", password: "pw" },
+      persistStorageState: async () => {
+        persistCallCount += 1;
+      },
+    });
+
+    // Login flow must have run (proves we didn't trust the stub-only session).
+    expect(result).toEqual({ authenticated: true, reusedSession: false });
+    expect(calls.some((c) => c.method === "fill")).toBe(true);
+    // Fresh storage persisted after the login flow.
+    expect(persistCallCount).toBe(1);
   });
 });
 

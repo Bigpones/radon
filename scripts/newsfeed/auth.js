@@ -57,13 +57,41 @@ function isAuthenticatedNewsfeedUrl(url) {
   return true;
 }
 
+// Free-tier visitors land on /newsfeed too — same URL, same article cards,
+// but every body is replaced with this stub. URL-only auth checks pass
+// silently, then the extractor scrapes paywall text into posts.json. Sniff
+// the DOM to disambiguate. 2026-05-16: ~25 posts shipped paywalled before
+// catching this; surfaced as "newsfeed broken — premium gone" by ops.
+const PAYWALL_STUB_MARKER = "part of our Premium coverage";
+
+async function pageHasPremiumContent(page) {
+  if (typeof page.evaluate !== "function") return true; // can't tell → trust
+  try {
+    return await page.evaluate((marker) => {
+      const bodies = document.querySelectorAll("article.post .body .content");
+      if (bodies.length === 0) return false; // no articles → not authenticated
+      // Any post body that lacks the paywall marker proves the session is
+      // premium-tier. We don't require ALL posts to be non-stub because
+      // some archived items legitimately show the stub even to subscribers.
+      for (const node of bodies) {
+        const text = (node.textContent || "").trim();
+        if (text && !text.includes(marker)) return true;
+      }
+      return false;
+    }, PAYWALL_STUB_MARKER);
+  } catch {
+    return true; // probe failure → don't force re-login on every cycle
+  }
+}
+
 async function tryReachNewsfeed(page, { timeout }) {
   await page.goto(NEWSFEED_URL, { waitUntil: "domcontentloaded", timeout });
   if (typeof page.waitForLoadState === "function") {
     await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
   }
   const url = typeof page.url === "function" ? page.url() : "";
-  return isAuthenticatedNewsfeedUrl(url);
+  if (!isAuthenticatedNewsfeedUrl(url)) return false;
+  return await pageHasPremiumContent(page);
 }
 
 async function runLoginFlow(page, { email, password, timeouts }) {
