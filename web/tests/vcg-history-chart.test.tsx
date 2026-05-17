@@ -99,15 +99,11 @@ describe("VcgPanel — 20-session history chart", () => {
       React.createElement(VcgPanel, { prices: {} }),
     );
 
-    const section = getByTestId("vcg-history-chart-section");
-    expect(section).toBeTruthy();
-
-    const chart = container.querySelector('[data-testid="cri-history-chart"]');
-    expect(chart).toBeTruthy();
-
-    // Legend should mention both series labels
-    expect(container.textContent).toContain("VCG Z-SCORE");
-    expect(container.textContent).toContain("HYG PRICE");
+    expect(getByTestId("vcg-history-chart-section")).toBeTruthy();
+    expect(container.querySelector('[data-testid="vcg-signal-area-chart"]')).toBeTruthy();
+    expect(container.textContent).toContain("VCG Z-Score History");
+    // Current value pill should reflect the signal's latest VCG.
+    expect(getByTestId("vcg-chart-current-value").textContent).toContain("+1.45");
   });
 
   it("hides the chart section when history has fewer than 2 sessions", () => {
@@ -122,7 +118,10 @@ describe("VcgPanel — 20-session history chart", () => {
     expect(container.querySelector('[data-testid="vcg-history-chart-section"]')).toBeNull();
   });
 
-  it("uses the credit_proxy label dynamically (e.g. JNK instead of HYG)", () => {
+  it("renders the chart even when credit_proxy is non-default (e.g. JNK)", () => {
+    // The chart itself is now single-series VCG-only — credit proxy
+    // shows in the Signal Strip up top, not the chart. This test
+    // just confirms the panel doesn't crash on a non-HYG proxy.
     mockUseVcg.mockReturnValue({
       data: buildVcgData({ credit_proxy: "JNK" }),
       loading: false,
@@ -130,9 +129,9 @@ describe("VcgPanel — 20-session history chart", () => {
       lastSync: "2026-05-17T20:00:00Z",
     });
 
-    const { container } = render(React.createElement(VcgPanel, { prices: {} }));
-    expect(container.textContent).toContain("JNK PRICE");
-    expect(container.textContent).not.toContain("HYG PRICE");
+    const { getByTestId } = render(React.createElement(VcgPanel, { prices: {} }));
+    expect(getByTestId("vcg-history-chart-section")).toBeTruthy();
+    expect(getByTestId("vcg-signal-area-chart")).toBeTruthy();
   });
 
   it("renders the chart ABOVE the history table (chart-first reading order)", () => {
@@ -200,7 +199,7 @@ describe("VcgPanel — chart range chips", () => {
     expect(oneMonthChip.getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("clicking a chip slices the chart title to the chosen range", () => {
+  it("clicking a chip reslices the chart (bar count changes)", () => {
     mockUseVcg.mockReturnValue({
       data: buildVcgData({ history: buildHistory(300) }),
       loading: false,
@@ -208,21 +207,25 @@ describe("VcgPanel — chart range chips", () => {
       lastSync: "2026-05-17T20:00:00Z",
     });
 
-    const { getByTestId, container } = render(
-      React.createElement(VcgPanel, { prices: {} }),
-    );
+    const { getByTestId } = render(React.createElement(VcgPanel, { prices: {} }));
 
-    // Default 1Y on 300 sessions → 252 sessions visible.
-    expect(container.textContent).toContain("252 SESSIONS");
+    function barCount(): number {
+      const svg = getByTestId("vcg-signal-area-chart");
+      // Each visible session renders one positive/negative <rect> band
+      // with opacity 0.22; the hover-capture <rect> has no opacity.
+      return svg.querySelectorAll('rect[opacity="0.22"]').length;
+    }
+
+    // Default 1Y on 300 sessions → 252 visible bars.
+    expect(barCount()).toBe(252);
 
     // Switch to 3M.
     fireEvent.click(getByTestId("vcg-history-range-chips-3m"));
-    expect(container.textContent).toContain("63 SESSIONS");
-    expect(container.textContent).not.toContain("252 SESSIONS");
+    expect(barCount()).toBe(63);
 
     // Switch to All.
     fireEvent.click(getByTestId("vcg-history-range-chips-all"));
-    expect(container.textContent).toContain("300 SESSIONS");
+    expect(barCount()).toBe(300);
   });
 
   it("history table stays capped at the most-recent 20 sessions regardless of chart range", () => {

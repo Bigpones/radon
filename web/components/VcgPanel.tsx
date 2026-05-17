@@ -4,11 +4,10 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, TrendingUp, Zap } from "lucide-react";
 import InfoTooltip from "./InfoTooltip";
 import ShareReportModal from "./ShareReportModal";
-import CriHistoryChart, { type ChartSeries } from "./CriHistoryChart";
+import SignalAreaChart from "./SignalAreaChart";
 import HistoryRangeChips from "./HistoryRangeChips";
 import { useVcg, type VcgData, type VcgHistoryEntry } from "@/lib/useVcg";
 import { MarketState } from "@/lib/useMarketHours";
-import { chartSeriesColor } from "@/lib/chartSystem";
 import {
   defaultPresetForLength,
   presetRange,
@@ -418,19 +417,49 @@ export default function VcgPanel({ marketState }: VcgPanelProps) {
       </div>
 
       {/* ── History Chart ──────────────────────
-          VCG z-score on the left, credit proxy price on the right —
-          the divergence between the two IS the signal this panel
-          is named after. Reuses the generic time-series chart
-          shared with RegimePanel/CRI. Range chips slice the
-          underlying history (1M / 3M / 6M / 1Y / All) — vcg_scan
-          now emits the full Yahoo intersection, so chip clicks
-          reshape the chart without re-fetching. */}
+          Single-series area chart of VCG z-score over time. Mirrors
+          the "Correlation Risk Premium" treatment on /regime/cri —
+          positive bands above zero (stress rising), negative bands
+          below (bounce territory). Range chips slice the underlying
+          history (1M / 3M / 6M / 1Y / All); vcg_scan emits the full
+          Yahoo intersection so chip clicks reshape without re-fetch. */}
       {data.history && data.history.length >= 2 && (() => {
         const [start, end] = presetRange(rangePreset, data.history.length);
         const slice = data.history.slice(start, end + 1);
-        const chartTitle = `VCG vs CREDIT — ${slice.length} SESSION${slice.length === 1 ? "" : "S"}`;
+        const points = slice.map((h) => ({ date: h.date, value: h.vcg }));
+        const fmtVcg = (v: number) => (v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2));
         return (
           <div className="section" data-testid="vcg-history-chart-section">
+            <div className="section-header">
+              <div className="section-title">
+                VCG Z-Score History
+                <InfoTooltip text="Volatility-Credit Gap z-score over the selected range. Bars above zero = vol cheap relative to credit (stress signal building); bars below zero = vol rich (bounce territory)." />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <span
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "20px",
+                    fontWeight: 600,
+                    color: interpColor,
+                  }}
+                  data-testid="vcg-chart-current-value"
+                >
+                  {fmtZ(sig.vcg)}
+                </span>
+                <span
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "10px",
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: interpColor,
+                  }}
+                >
+                  {interpretationLabel(sig.interpretation)}
+                </span>
+              </div>
+            </div>
             <HistoryRangeChips
               active={rangePreset}
               onChange={setRangePreset}
@@ -438,25 +467,10 @@ export default function VcgPanel({ marketState }: VcgPanelProps) {
               ariaLabel="VCG chart range"
               dataTestId="vcg-history-range-chips"
             />
-            <CriHistoryChart<VcgHistoryEntry>
-              history={slice}
-              series={[
-                {
-                  key: "vcg",
-                  label: "VCG Z-SCORE",
-                  color: chartSeriesColor("primary"),
-                  axis: "left",
-                  format: (v) => (v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2)),
-                },
-                {
-                  key: "credit",
-                  label: `${data.credit_proxy} PRICE`,
-                  color: chartSeriesColor("comparison"),
-                  axis: "right",
-                  format: (v) => v.toFixed(2),
-                },
-              ] as [ChartSeries<VcgHistoryEntry>, ChartSeries<VcgHistoryEntry>]}
-              title={chartTitle}
+            <SignalAreaChart
+              data={points}
+              formatValue={fmtVcg}
+              dataTestId="vcg-signal-area-chart"
             />
           </div>
         );
