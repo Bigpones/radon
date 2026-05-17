@@ -22,7 +22,7 @@ Brand: `docs/brand-identity.md` · Structures: `docs/options-structures.{json,md
 | 1. Convexity | Gain ≥ 2× loss. Defined-risk only. |
 | 2. Edge | Specific, data-backed dark-pool / OTC signal that hasn't moved price. |
 | 3. Risk | Fractional Kelly. Hard cap 2.5% bankroll / position. |
-| 4. ~~No naked shorts~~ | **DISABLED 2026-04-30.** Detection logic preserved as `_*Impl`. Re-enable steps: `docs/naked-short-reenable.md`. |
+| 4. ~~No naked shorts~~ | **DISABLED 2026-04-30.** Detection logic preserved as `_*Impl`. Re-enable: `docs/naked-short-reenable.md`. |
 
 Any gate fails → stop. Name the gate.
 
@@ -49,19 +49,19 @@ Never skip to Yahoo / web without trying IB → UW first. Clients live in `scrip
 |---|---|---|
 | `IB_FLEX_TOKEN` | Flex Web Service token | All Flex pulls |
 | `IB_FLEX_QUERY_ID` | `1422766` (blotter) | `scripts/trade_blotter/flex_query.py` |
-| `IB_FLEX_NAV_QUERY_ID` | `1497709` (Cash Transactions, created 2026-05-05) | `scripts/cash_flow_sync.py`, `scripts/portfolio_performance.py` |
-| `IB_GATEWAY_MODE` | `docker` (since 2026-05-07; was `cloud` until then) | `scripts/api/ib_gateway.py` |
-| `IB_GATEWAY_COMPOSE_DIR` | `/home/radon/radon-cloud` | `scripts/api/ib_gateway.py` — compose project the container actually runs under (NOT in-tree default) |
+| `IB_FLEX_NAV_QUERY_ID` | `1497709` (Cash Transactions) | `scripts/cash_flow_sync.py`, `scripts/portfolio_performance.py` |
+| `IB_GATEWAY_MODE` | `docker` (since 2026-05-07) | `scripts/api/ib_gateway.py` |
+| `IB_GATEWAY_COMPOSE_DIR` | `/home/radon/radon-cloud` | `scripts/api/ib_gateway.py` — compose project the container actually runs under (NOT in-tree default). **Required on Hetzner; do not unset.** |
 
-The `1442520` (journal/Trade History) query is referenced indirectly via `scripts/journal_rehydrate.py` reading `IB_FLEX_QUERY_ID` at runtime — but on Hetzner the env points at `1422766`. Journal rehydrate has its own configuration. **Don't repurpose `IB_FLEX_NAV_QUERY_ID` for trade pulls** — it's tuned for `CashTransaction` only.
+Journal-rehydrate query `1442520` is referenced via `journal_rehydrate.py` reading `IB_FLEX_QUERY_ID` at runtime — on Hetzner that env points at `1422766`. **Don't repurpose `IB_FLEX_NAV_QUERY_ID` for trade pulls** — tuned for `CashTransaction` only.
 
-**Values with `$` in env files need quoting.** Any wrapper script that loads env via `set -a; . "$tmp"; set +a` (the historical pattern in `scripts/run_*_refresh.sh`) will shell-expand `$VARNAME` substrings inside values. Under `set -u`, an unset reference aborts the script silently from systemd. Either quote the value with single quotes in the .env file (`PASS='RX$abc!xyz'`) or use a non-shell loader — systemd's `EnvironmentFile=` directive and `python-dotenv` both parse literally without expansion. See `feedback_env_file_shell_expansion.md` for the case that surfaced this (MENTHORQ_PASS broke vcg-refresh on every 5-min tick for 2h).
+**`.env` values containing `$` need quoting.** Bash loaders `set -a; . file; set +a` shell-expand `$VAR` substrings; under `set -u` an unset reference aborts silently from systemd. Single-quote the value (`PASS='RX$abc!xyz'`) or use a non-shell loader (systemd `EnvironmentFile=`, `python-dotenv`). See `feedback_env_file_shell_expansion.md`.
 
 ---
 
 ## Architecture
 
-`npm run dev` runs four services. Filter logs with `npm run dev -- --only <next|ib|api|scraper>`.
+`npm run dev` runs four services. Filter logs: `npm run dev -- --only <next|ib|api|scraper>`.
 
 | Service | Port / cadence |
 |---|---|
@@ -77,15 +77,15 @@ Next.js routes call FastAPI via `radonFetch()` (`web/lib/radonApi.ts`). **No `sp
 All FastAPI routes JWT-protected; Next.js by `web/middleware.ts`; WebSocket via `scripts/api/ws_ticket.py` (30s TTL).
 
 - **FastAPI localhost bypass:** `client.host in {127.0.0.1, ::1}` → auth skipped (covers Next.js → FastAPI server-to-server). `scripts/api/auth.py:51-54`.
-- **Next.js localhost bypass:** auto-enabled when `NODE_ENV !== "production"`. Production builds (`next build && next start`) still enforce. Helpers in `web/middleware.ts`: `isLocalDevAuthBypassEnabled` (auto), `isLocalAuthlessTestBypassEnabled` (`RADON_AUTHLESS_TEST=1` for Playwright).
+- **Next.js localhost bypass:** auto when `NODE_ENV !== "production"`. Production builds enforce. Helpers in `web/middleware.ts`: `isLocalDevAuthBypassEnabled` (auto), `isLocalAuthlessTestBypassEnabled` (`RADON_AUTHLESS_TEST=1` for Playwright).
 - **Auth-exempt:** `/health`, `/ws-ticket/validate`, `/docs`, `/openapi.json`, all `*/share` routes.
 
 ### IB Gateway — Three Modes
 
 `IB_GATEWAY_MODE` env, persisted to `.env.ib-mode`. Toggle via `scripts/ib mode {local|cloud}`. Switching does NOT auto-reconnect — restart the dev stack.
 
-- **`docker`** (default for local; **also Hetzner since 2026-05-07**): `ghcr.io/gnzsnz/ib-gateway`, `restart: unless-stopped`. `npm run ib:start`. **Hetzner config gotcha:** the container is launched by `radon-ib-gateway.service` from `/home/radon/radon-cloud/` (radon-cloud repo), not the in-tree `<repo>/docker/ib-gateway/`. FastAPI's `_check_docker()` hard-defaulted to the in-tree path and silently saw `container_state="not_found"` while the container ran under another project — `IB_GATEWAY_COMPOSE_DIR=/home/radon/radon-cloud` overrides it. **Required on Hetzner; do not unset.**
-- **`cloud`** (laptop default for dev): Hetzner VM at `ib-gateway:4001` via Tailscale. TCP probe only — `POST /ib/restart` returns 503. Laptop aliases (SSH-wrapped, defined in `~/.zshrc`): `ibstart/stop/restart/status/logs/health` for IB Gateway only. **Whole-stack control on the VPS** uses `/usr/local/bin/radon` (also reachable from laptop via `ssh root@ib-gateway radon <cmd>`):
+- **`docker`** (default for local; also Hetzner since 2026-05-07): `ghcr.io/gnzsnz/ib-gateway`, `restart: unless-stopped`. `npm run ib:start`. **Hetzner gotcha:** container is launched by `radon-ib-gateway.service` from `/home/radon/radon-cloud/` (radon-cloud repo), not the in-tree `<repo>/docker/ib-gateway/`. `IB_GATEWAY_COMPOSE_DIR=/home/radon/radon-cloud` overrides FastAPI's in-tree default.
+- **`cloud`** (laptop default for dev): Hetzner VM at `ib-gateway:4001` via Tailscale. TCP probe only — `POST /ib/restart` returns 503. Laptop aliases (SSH-wrapped, in `~/.zshrc`): `ibstart/stop/restart/status/logs/health` for IB Gateway only. **Whole-stack control on VPS** uses `/usr/local/bin/radon` (or `ssh root@ib-gateway radon <cmd>`):
 
   | Command | Effect |
   |---|---|
@@ -94,14 +94,14 @@ All FastAPI routes JWT-protected; Next.js by `web/middleware.ts`; WebSocket via 
   | `radon restart` | stop then start |
   | `radon status` (or bare `radon`) | `systemctl list-units "radon-*"` |
 
-  Auto-enumerates every loaded `radon-*` unit on each run via `systemctl list-units 'radon-*' --all` — no hard-coded list to go stale when new timers land. Currently covers `radon-{ib-gateway,api,relay,monitor,newsfeed,nextjs}` plus the timer-fired oneshots `radon-{refresh,vcg-refresh,cta-sync,portfolio-sync}.{service,timer}` and `radon-watchdog-{intraday,continuous,daily,error}.{service,timer}`. **Source of truth checked in at `radon-cloud/scripts/operator-radon.sh`; installed by `setup-vps.sh:install_operator_cli()` so a `wipe-vps.sh` rebuild restores it automatically (fixed 2026-05-13).**
+  Auto-enumerates loaded `radon-*` units via `systemctl list-units 'radon-*' --all`. Covers `radon-{ib-gateway,api,relay,monitor,newsfeed,nextjs}` plus timer oneshots `radon-{refresh,vcg-refresh,cta-sync,portfolio-sync}.{service,timer}` and `radon-watchdog-{intraday,continuous,daily,error}.{service,timer}`. **Source at `radon-cloud/scripts/operator-radon.sh`; installed by `setup-vps.sh:install_operator_cli()`.**
 - **`launchd`** (legacy): `~/ibc/bin/`, Mon-Fri auto-lifecycle.
 
 Auto-recovery (docker mode): port + CLOSE_WAIT detection at startup (poll 45s); subprocess errors trigger health check first — only restart if port not listening or CLOSE_WAIT. Client ID collisions, VOL errors, transient timeouts do NOT trigger restart.
 
-**2FA-aware restart with exponential backoff (2026-05-07).** After every restart, IB Gateway sits at the IBKR Mobile push prompt with the API socket already open — `port_listening:true` falsely reports success. `restart_ib_gateway()` runs an explicit `managedAccounts()` probe post-restart; non-empty resets backoff, empty advances it (1m → 2m → 5m → 15m → 30m → 60m, capped). Refuses fresh restart attempts inside the window. `/health` exposes `auth_state` (`authenticated | awaiting_2fa | unreachable | unknown | remote`) and `restart_backoff` (attempt_count, next_attempt_in_secs, last_outcome). Pool's `managed_accounts` field per role is the underlying signal. **`POST /ib/reset-backoff`** is the operator escape hatch after manually approving 2FA. See `feedback_ib_gateway_2fa_verification.md` and `scripts/api/ib_gateway.py:restart_ib_gateway`.
+**2FA-aware restart with exponential backoff.** After restart, IB Gateway sits at IBKR Mobile push prompt with API socket open — `port_listening:true` falsely reports success. `restart_ib_gateway()` runs `managedAccounts()` probe post-restart; non-empty resets backoff, empty advances (1m → 2m → 5m → 15m → 30m → 60m, capped). Refuses fresh restarts inside window. `/health` exposes `auth_state` (`authenticated | awaiting_2fa | unreachable | unknown | remote`) and `restart_backoff` (attempt_count, next_attempt_in_secs, last_outcome). **`POST /ib/reset-backoff`** is the operator escape hatch after manually approving 2FA. See `scripts/api/ib_gateway.py:restart_ib_gateway`, `feedback_ib_gateway_2fa_verification.md`.
 
-**IB request bounding pattern (2026-05-14).** `ib_insync` has no built-in per-request timeout. When IB Gateway is logged in but the user session isn't authenticated (the 2FA-pending window), `qualifyContractsAsync` / `reqHistoricalDataAsync` / `reqMktData` block forever — `IB.connect()` returns fine, then any subsequent await never returns. Scripts that import `ib_insync` directly **must**: (1) wrap every IB await in `asyncio.wait_for(..., timeout=15)`, and (2) pre-check FastAPI `/health` for `auth_state == "authenticated"` before instantiating `IB()`; `/health` unreachable → optimistic fall-through (the per-request timeout is the real bound). Pattern landed in `scripts/cri_scan.py` (`_fetch_ib`, `_fetch_ib_current_quote`); see `feedback_ib_insync_no_request_timeouts.md` for the audit recipe.
+**IB request bounding pattern.** `ib_insync` has no per-request timeout. When IB Gateway is logged in but session awaiting 2FA, `qualifyContractsAsync`/`reqHistoricalDataAsync`/`reqMktData` block forever. Scripts importing `ib_insync` directly **must**: (1) wrap every IB await in `asyncio.wait_for(..., timeout=15)`, and (2) pre-check FastAPI `/health` for `auth_state == "authenticated"` before instantiating `IB()`; `/health` unreachable → optimistic fall-through. See `scripts/cri_scan.py:_fetch_ib`, `feedback_ib_insync_no_request_timeouts.md`.
 
 ### Client ID Ranges
 
@@ -120,73 +120,73 @@ Auto-recovery (docker mode): port + CLOSE_WAIT detection at startup (poll 45s); 
 
 Both modes read/write the **same Turso DB** (`libsql://radon-joemccann.aws-us-west-2.turso.io`) via embedded replica at `data/replica.db`. JSON files in `data/` are written alongside as fallback.
 
-- `scripts/cloud.sh` → `RADON_MODE=hetzner`. Schedulers run as systemd services on Hetzner VPS (`radon-{api,monitor,relay,refresh,nextjs}`); laptop runs only Next.js + newsfeed scraper. `app.radon.run` keeps serving when laptop is closed.
+- `scripts/cloud.sh` → `RADON_MODE=hetzner`. Schedulers run as systemd on Hetzner (`radon-{api,monitor,relay,refresh,nextjs}`); laptop runs only Next.js + newsfeed. `app.radon.run` keeps serving when laptop is closed.
 - `scripts/local.sh` → `RADON_MODE=local`. Laptop launchd plists own all schedulers.
 
-**Auto-deploy on push to main.** `.github/workflows/deploy.yml` SSHes to the Hetzner VPS as the `radon` user and runs `bash scripts/deploy.sh` from `~/radon-cloud/`. So `git push origin main` IS the deploy trigger — there is no separate manual step. Confirm with `gh run list --workflow=deploy.yml --limit 1`. After deploy, `sudo systemctl restart radon-api.service` may be needed to pick up changes that aren't auto-reload-safe (FastAPI does NOT auto-reload in production).
+**Auto-deploy on push to main.** `.github/workflows/deploy.yml` SSHes to Hetzner as `radon` user and runs `bash scripts/deploy.sh` from `~/radon-cloud/`. `git push origin main` IS the deploy. Confirm: `gh run list --workflow=deploy.yml --limit 1`. After deploy, `sudo systemctl restart radon-api.service` may be needed (FastAPI does NOT auto-reload in production).
 
 Schema: `scripts/db/migrations/0001_init.sql`. Writers: `scripts/db/writer.{js,py}`. Routes prefer DB, fall back to disk.
 
 **Image host:** `https://media.radon.run` (Caddy on Hetzner, fed by laptop rsync over Tailscale). Posts use absolute URLs. Public-IP fallback: `RADON_MEDIA_REMOTE=radon@5.78.148.38:/home/radon/radon-cloud/media/`.
 
-**Newsfeed is fully Hetzner-resident (cutover 2026-05-03).** `scripts/newsfeed/browser.js` + `auth.js` drive headless Playwright; auth via `THEMARKETEAR_EMAIL` / `THEMARKETEAR_PASSWORD` env. Session persisted to `data/newsfeed-storage.json` (gitignored, ~30d), full re-auth every ~6h. Polls every 120s. Hetzner runs it as `radon-newsfeed.service` (`Restart=on-failure`, `RestartSec=30`); steady-state cycle ~4s. The chrome-cdp / Chrome Debug.app dependency on the laptop is retired — close the lid and `app.radon.run` keeps showing fresh content. `deploy.sh` runs `npx playwright install chromium` after npm install; one-time `npx playwright install-deps chromium` (sudo) was applied during cutover. On Hetzner `RADON_MEDIA_REMOTE=/home/radon/radon-cloud/media/` (local fs path; rsync skips SSH self-loop). Local-laptop dev still works for iteration via `node scripts/newsfeed/index.js --once`.
+**Newsfeed is Hetzner-resident.** Headless Playwright (`scripts/newsfeed/browser.js` + `auth.js`); auth via `THEMARKETEAR_EMAIL` / `THEMARKETEAR_PASSWORD`. Session at `data/newsfeed-storage.json` (gitignored, ~30d), full re-auth every ~6h. Polls 120s. Hetzner: `radon-newsfeed.service` (`Restart=on-failure`, `RestartSec=30`). `deploy.sh` runs `npx playwright install chromium`. On Hetzner `RADON_MEDIA_REMOTE=/home/radon/radon-cloud/media/` (local fs path; rsync skips SSH self-loop). Local dev: `node scripts/newsfeed/index.js --once`.
 
-**Trades canonical store (shipped 2026-05-03, `6c6f90f`):** Turso `journal` table. Both `/journal` and `/orders` derive from it. `/orders` uses `web/lib/blotter/fromJournal.ts:journalRowsToBlotter()` with a **union+preference fallback to `data/blotter.json`** for legacy aggregate-only rows that lack explicit `realized_pnl` / `cost_basis` / `proceeds` (the persistence path commit `bbc776e` added to `journal_rehydrate.py` only applies to *new* rehydrate runs; existing rows pre-date it). When IB Flex Query 1442520 cooldown clears and a fresh rehydrate runs, journal rows gain explicit P&L fields and the deriver auto-prefers them; `data/blotter.json` decays to a redundant fallback with no code change. See `docs/cloud-services.md` § "Trades — single source of truth".
+**Trades canonical store:** Turso `journal` table. Both `/journal` and `/orders` derive from it. `/orders` uses `web/lib/blotter/fromJournal.ts:journalRowsToBlotter()` with union+preference fallback to `data/blotter.json` for legacy rows lacking explicit `realized_pnl`/`cost_basis`/`proceeds`. New rehydrate runs include them; `data/blotter.json` decays to redundant fallback. See `docs/cloud-services.md` § "Trades — single source of truth".
 
 ### Autonomous timers (Hetzner only)
 
-Several scans + syncs used to depend on a browser tab being open or on Joe's laptop running. They now have their own systemd timers on the VPS so data refreshes regardless of laptop state:
+Several scans/syncs have systemd timers on VPS so data refreshes regardless of laptop state:
 
-| Timer | Cadence | Wrapper | Endpoint hit |
+| Timer | Cadence | Wrapper | Endpoint |
 |---|---|---|---|
 | `radon-refresh.timer` | Mon–Fri */15min | `scripts/data_refresh.py` (cri+vcg) | direct script |
 | `radon-vcg-refresh.timer` | Mon–Fri 13–21 UTC every 5min | `scripts/run_vcg_refresh.sh` | `POST /vcg/scan` |
 | `radon-portfolio-sync.timer` | Mon–Fri 13–21 UTC every 60s | `scripts/run_portfolio_refresh.sh` | `POST /portfolio/sync` |
-| `radon-cta-sync.timer` | Mon–Fri 18:15, 19:00, 21:30 UTC | `scripts/run_cta_sync.sh` | `POST /menthorq/cta` (spawns Playwright) |
-| `radon-watchdog-{intraday,continuous,daily,error}.timer` | see below | `python -m scripts.watchdog --bucket <name>` | reads `service_health` |
+| `radon-cta-sync.timer` | Mon–Fri 18:15, 19:00, 21:30 UTC | `scripts/run_cta_sync.sh` | `POST /menthorq/cta` (Playwright) |
+| `radon-watchdog-{intraday,continuous,daily,error}.timer` | see watchdog section | `python -m scripts.watchdog --bucket <name>` | reads `service_health` |
 
-All unit files in `radon-cloud/services/`; `setup-vps.sh SERVICE_FILES` enumerates them so `wipe-vps.sh` rebuilds install them automatically.
+Unit files in `radon-cloud/services/`; `setup-vps.sh SERVICE_FILES` enumerates so `wipe-vps.sh` rebuilds install automatically.
 
-**Wrapper env-loader gotcha (2026-05-12):** `run_*_refresh.sh` historically used `set -a; . "$tmp"; set +a` which **shell-expands `$VARNAME` substrings inside values**. Under `set -u`, an unset reference aborted the script silently from systemd — `MENTHORQ_PASS=***REMOVED-MENTHORQ-CREDENTIAL***` crashed vcg-refresh on every 5-min tick for 2h until traced. All wrappers now use a literal parser (matches `run_cta_sync.sh`'s pattern). See `feedback_env_file_shell_expansion.md`.
+Wrapper env-loader: `run_*_refresh.sh` use literal parser (not `set -a; . file`) to avoid `$VAR` expansion. See `feedback_env_file_shell_expansion.md`.
 
-### Service health watchdog (shipped 2026-05-12)
+### Service health watchdog
 
-Four-bucket alerting system at `scripts/watchdog/` that monitors every `scheduled` service in `web/lib/serviceHealthWindows.ts` and notifies via Discord (P1-P3) + Pushover (P1 only). Buckets group by expected freshness:
+Four buckets at `scripts/watchdog/`, monitors every `scheduled` service in `web/lib/serviceHealthWindows.ts`, notifies via Discord (P1-P3) + Pushover (P1 only):
 
-- **`intraday`** (`vcg-scan`, `cri-scan`, `orders-sync`, `portfolio-sync`) — 5 min cadence, Mon–Fri 13:00–21:00 UTC.
+- **`intraday`** (`vcg-scan`, `cri-scan`, `orders-sync`, `portfolio-sync`) — 5 min, Mon–Fri 13:00–21:00 UTC.
 - **`continuous`** (`newsfeed-scraper`, `replica-watchdog`, `fill-monitor`, `exit-orders`, `journal-sync`) — 5 min, 24/7.
 - **`daily`** (`cash-flow-sync`, `flex-token-check`, `cta-sync`) — hourly, 24/7.
 - **`error`** — every scheduled service except `watchdog-alerts` (recursive-alert prevention), 5 min, 24/7.
 
-Anti-flood: **2-consecutive-failures hysteresis** (suppresses transient blips); **1h per-(service,severity) cooldown** in `watchdog_cooldowns` table; **`python -m scripts.watchdog ack <service>` CLI** for 4h muting via `watchdog_acks` table. Env vars in `radon-cloud/.env`: `DISCORD_WATCHDOG_WEBHOOK_URL`, `PUSHOVER_USER`, `PUSHOVER_TOKEN` — absent vars degrade gracefully (banner still gets the `watchdog-alerts` row).
+Anti-flood: **2-consecutive-failures hysteresis**; **1h per-(service,severity) cooldown** in `watchdog_cooldowns` table; **`python -m scripts.watchdog ack <service>` CLI** for 4h muting via `watchdog_acks` table. Env in `radon-cloud/.env`: `DISCORD_WATCHDOG_WEBHOOK_URL`, `PUSHOVER_USER`, `PUSHOVER_TOKEN` — absent vars degrade gracefully.
 
-**Service categories** (`web/lib/serviceHealthWindows.ts`): every service is tagged `scheduled` or `on-demand`. Stale `scheduled` rows fire the red banner. Stale `on-demand` rows (services that only run on user page visit — `gex-scan`, `discover`, `flow-analysis`, `analyst-ratings`, `orders-read-compare`) become `state="dormant"` and show in the amber "visit to refresh" chip rather than red.
+**Service categories** (`web/lib/serviceHealthWindows.ts`): every service tagged `scheduled` or `on-demand`. Stale `scheduled` → red banner. Stale `on-demand` (`gex-scan`, `discover`, `flow-analysis`, `analyst-ratings`, `orders-read-compare`) → `state="dormant"`, amber "visit to refresh" chip.
 
-**Event-driven writers use 24h windows:** `replica-watchdog` and `watchdog-alerts` only record `service_health` rows when something actually happens (a heal / an alert). Tight windows treat quiet healthy periods as stale; both use 24h to tolerate quiescence while still catching a dead writer process.
+**Event-driven writers use 24h windows:** `replica-watchdog` and `watchdog-alerts` only write on heal/alert events; tight windows treat quiet healthy periods as stale.
 
 ### Monitor daemon market-hours gate
 
-`scripts/monitor_daemon/daemon.py:is_market_hours()` gates handlers with `requires_market_hours=True` (`fill_monitor`, `exit_orders`, `journal_sync`). Uses `datetime.now(ZoneInfo("America/New_York"))` so EST↔EDT transitions happen automatically via tzdata; fail-open fallback to UTC-5 if zoneinfo is unavailable (better late than silent). The old hardcoded `timedelta(hours=-5)` shifted the window 1h every DST season — fixed 2026-05-14 in `7b2fd3f`. **Never reintroduce a fixed offset** for ET conversion anywhere in the codebase; see `feedback_hardcoded_timezone_offsets.md`.
+`scripts/monitor_daemon/daemon.py:is_market_hours()` gates handlers with `requires_market_hours=True` (`fill_monitor`, `exit_orders`, `journal_sync`). Uses `datetime.now(ZoneInfo("America/New_York"))` so EST↔EDT transitions auto via tzdata; fail-open fallback to UTC-5 if zoneinfo unavailable. **Never reintroduce a fixed offset** for ET conversion anywhere. See `feedback_hardcoded_timezone_offsets.md`.
 
 ### Production Build Constraint
 
-Next.js 16 prerender crashes on `/_global-error` + `/_not-found` (root ClerkProvider context isn't materialised in isolated workers). `web/package.json` build uses `next build --experimental-build-mode=compile`. `app/error.tsx`, `app/[ticker]/not-found.tsx`, `app/global-error.tsx` use plain `<a>` + pure JSX (no `next/link`, no `useEffect`, no `globals.css`).
+Next.js 16 prerender crashes on `/_global-error` + `/_not-found` (root ClerkProvider context not materialised in isolated workers). `web/package.json` build uses `next build --experimental-build-mode=compile`. `app/error.tsx`, `app/[ticker]/not-found.tsx`, `app/global-error.tsx` use plain `<a>` + pure JSX (no `next/link`, no `useEffect`, no `globals.css`).
 
 ---
 
 ## ⚠️ Cache Contract — Disk-Backed Routes
 
-Every Next.js GET handler reading live disk state (`data/*.json`, `data/menthorq_cache/`) **MUST** export `dynamic = "force-dynamic"`. Without it Next.js 16 statically prerenders the first response for the dev server's lifetime — that's the failure that surfaced the "CTA CACHE STALE" banner with fresh data on disk.
+Every Next.js GET handler reading live disk state (`data/*.json`, `data/menthorq_cache/`) **MUST** export `dynamic = "force-dynamic"`. Without it Next.js 16 statically prerenders the first response for the dev server's lifetime.
 
 Every client fetch hitting these routes **MUST** pass `cache: "no-store"`.
 
-Covered routes: `menthorq/cta`, `journal`, `discover`, `flow-analysis`, `blotter`, `vcg`, `internals`, `portfolio`, `performance`, `scanner`, `regime`, `gex`, `orders` (added 2026-05-07 with Phase 3.2 dual-read), `service-health`. Covered hooks: `useMenthorqCta`, `useSyncHook` (shared), `useJournal`, `usePortfolio`, `useDiscover`, `useOrders`. Contract test: `web/tests/api-routes-no-cache-contract.test.ts`, fails CI on regression.
+Covered routes: `menthorq/cta`, `journal`, `discover`, `flow-analysis`, `blotter`, `vcg`, `internals`, `portfolio`, `performance`, `scanner`, `regime`, `gex`, `orders`, `service-health`. Covered hooks: `useMenthorqCta`, `useSyncHook`, `useJournal`, `usePortfolio`, `useDiscover`, `useOrders`. Contract test: `web/tests/api-routes-no-cache-contract.test.ts`, fails CI on regression.
 
 ---
 
 ## Combo / BAG Order Guardrails
 
-1. **Never map combo `Order.action` from debit vs credit.** IB combo legs define structure. SELL envelope reverses legs. For entry / open: keep envelope BUY, preserve per-leg actions.
+1. **Never map combo `Order.action` from debit vs credit.** IB combo legs define structure. SELL envelope reverses legs. For entry/open: keep envelope BUY, preserve per-leg actions.
 2. **`ComboLeg.action` = structure, not direction.** Always `LONG → BUY`, `SHORT → SELL`. Flipping causes IB error 201.
 3. **Order-builder structure change → invalidate manual net price.** Recompute from normalized combo quote on single-leg ↔ combo transitions.
 4. **Combo natural market uses cross-fields:**
@@ -199,10 +199,10 @@ Covered routes: `menthorq/cta`, `journal`, `discover`, `flow-analysis`, `blotter
 ## Cancel / Modify Failure Propagation
 
 1. **Cancel/modify MUST use subprocess with original clientId.** Master client (0) sees all orders but can't modify (Error 10147/103). `ib_order_manage.py` reconnects as original.
-2. **Clear VOL fields before modify.** Reset `volatility` / `volatilityType` to IB sentinels (`1.7976931348623157e+308` / `2147483647`) to avoid Error 321.
+2. **Clear VOL fields before modify.** Reset `volatility`/`volatilityType` to IB sentinels (`1.7976931348623157e+308` / `2147483647`) to avoid Error 321.
 3. **Confirm against refreshed open-order snapshot**, not stale `Trade`. Disappearance after cancel = success.
 4. **Preserve upstream error detail.** Subprocess JSON → FastAPI `detail` → Next.js. Never collapse to generic 500.
-5. **Required regressions:** unit (refreshed confirmation), route (status propagation), browser (toast / error).
+5. **Required regressions:** unit (refreshed confirmation), route (status propagation), browser (toast/error).
 
 ---
 
@@ -228,7 +228,7 @@ Strict ordered fallback, MOST → LEAST specific:
 4. prev portfolio (`ticker|structure|expiry`, excluding today)
 5. **today** ← brand-new positions land here so same-day P&L branch fires
 
-**Never use a per-ticker blotter fallback** — different contracts have different open dates. Regression: AMD Risk Reversal P$320/C$330 was assigned an unrelated AMD 295P date (test: `test_combo_entry_date.py`).
+**Never use a per-ticker blotter fallback** — different contracts have different open dates. Regression test: `test_combo_entry_date.py`.
 
 ### Per-Leg P&L
 `Leg P&L = sign × (|MV| − |EC|)`. Sum = position P&L. Impl: `LegRow` in `PositionTable.tsx`.
@@ -245,7 +245,7 @@ Strict ordered fallback, MOST → LEAST specific:
 | BAG order | `resolveOrderLastPrice()` / `resolveOrderPriceData()` |
 | PriceBar | `resolvePriceBar()` — option for single-leg, underlying for multi-leg |
 
-**Never show underlying where user expects option / spread. Show "---" if unavailable.**
+**Never show underlying where user expects option/spread. Show "---" if unavailable.**
 
 ### Exposure Delta Sign
 `rawDelta = sign × lp.delta` where `sign = -1` for SHORT. LONG Call →+, SHORT Call →−, LONG Put →−, SHORT Put →+. Impl: `web/lib/exposureBreakdown.ts`.
@@ -261,10 +261,10 @@ TS port of `scripts/scenario_analysis.py:192-226`, verified to 4-decimal Python 
 | **T** | `(expiry@16:00 ET − now) / 365 days` |
 | **r** | `useRiskFreeRate()` → FRED DFF, 24h cache, fallback 0.0 |
 
-Combo: signed sum across legs. Files: `web/lib/blackScholes.ts`, `impliedValue.ts`, `useRiskFreeRate.ts`. Implied / Implied MV columns gated on `positions.some(p => p.structure_type !== "Stock")`.
+Combo: signed sum across legs. Files: `web/lib/blackScholes.ts`, `impliedValue.ts`, `useRiskFreeRate.ts`. Implied/Implied MV columns gated on `positions.some(p => p.structure_type !== "Stock")`.
 
 ### Position Structure (`detect_structure_type()` in `ib_sync.py`)
-Stock→equity. Long Call / Put→defined. Short Call / Put→undefined. Spreads→defined. Synthetic / Risk Reversal→undefined. Long Straddle→defined. Covered Call→defined. All-long combo→defined. Unrecognized→complex (→Undefined Risk table).
+Stock→equity. Long Call/Put→defined. Short Call/Put→undefined. Spreads→defined. Synthetic/Risk Reversal→undefined. Long Straddle→defined. Covered Call→defined. All-long combo→defined. Unrecognized→complex (→Undefined Risk table).
 
 ### Data Normalization
 JSON: `"ticker"`. IB contracts: `"symbol"`. Read defensively: `t.get("ticker") or t.get("symbol")`.
@@ -283,61 +283,59 @@ none:      otherwise
 cushion = excess_liquidity / net_liquidation
 ```
 
-`assessMargin()` is a pure function — derive on the client from `portfolio.account_summary`. Toast UX in `WorkspaceShell.tsx` near the existing `prevIbConnectedRef` block; `prevMarginLevelRef` ensures we only fire on transition to a higher rank (`none < warning < critical`). User dismisses via the existing `×` close button. **Never auto-dismiss** (`addToast(..., 0)`).
+`assessMargin()` is a pure function — derive on the client from `portfolio.account_summary`. Toast UX in `WorkspaceShell.tsx` near `prevIbConnectedRef`; `prevMarginLevelRef` ensures fire only on transition to higher rank (`none < warning < critical`). Dismiss via `×` close button. **Never auto-dismiss** (`addToast(..., 0)`).
 
-This is **Stage 1 (threshold-derived)** of the margin-alerting plan. **Stage 2** swaps the data source to authoritative IBKR Web API `/fyi/notifications` once OAuth Self-Service is activated for the account; the toast UI does not change. Plan: `~/.claude/plans/identify-all-issues-with-reactive-kernighan.md`.
-
-Tests: `web/tests/margin-warning.test.ts` (12 unit cases), `web/e2e/margin-warning-toast.spec.ts` (6 Playwright scenarios).
+Stage 1 (threshold-derived). **Stage 2** swaps source to IBKR Web API `/fyi/notifications` once OAuth Self-Service activates; toast UI unchanged. Plan: `~/.claude/plans/identify-all-issues-with-reactive-kernighan.md`. Tests: `web/tests/margin-warning.test.ts` (12), `web/e2e/margin-warning-toast.spec.ts` (6).
 
 ---
 
 ## Component Cheat Sheet
 
-Each tab follows the same pattern: hook + staleness lib + API route + panel + scanner + cache file. Diverging behavior noted below.
+Each tab: hook + staleness lib + API route + panel + scanner + cache file.
 
 | Tab | Files (under `web/`, `scripts/`) | Notes |
 |---|---|---|
-| **VCG** (vol-credit gap) | `useVcg.ts`, `vcgStaleness.ts`, `app/api/vcg/route.ts`, `VcgPanel.tsx`, `vcg_scan.py` (20-session), `data/vcg.json`, `scripts/run_vcg_refresh.sh`, `docker/services/timers/radon-vcg-refresh.timer`, `config/com.radon.vcg-refresh.plist` | RO: VIX>28 + VCG>2.5. EDR: VIX>25 + VCG 2.0–2.5. BOUNCE: VCG<-3.5. VVIX = severity amplifier, not gate. FastAPI: `POST /vcg/{scan,share}`, 60s cooldown. **Autonomous 5-min cadence** during ET trading hours via `radon-vcg-refresh.timer` (Hetzner) / `com.radon.vcg-refresh` (laptop). Wrapper POSTs `/vcg/scan` to keep the dual-write + service_health path identical to the browser-driven trigger; falls back to direct `vcg_scan.py` if FastAPI is unreachable. Banner window: 15min open (3 missed cycles). |
-| **GEX** (gamma exposure) | `useGex.ts`, `gexStaleness.ts`, `app/api/gex/route.ts`, `GexPanel.tsx`, `gex_scan.py`, `data/gex.json` | UW fields: `call_gex` positive, `put_gex` negative, `net = call_gex + put_gex` (no negation). Levels: GEX Flip, Max Magnet, Max Accelerator, Put / Call Wall. Bias: BULL / CAUTIOUS_BULL / NEUTRAL / CAUTIOUS_BEAR / BEAR from flip pos + net sign + magnet. Tests: 71. |
-| **CRI / Regime** | `web/lib/criStaleness.ts`, `regime` route triggers `cri_scan.py` | Stale if `data.date != today` OR (market_open AND mtime>60s). Closed + date=today → serve EOD. CRI payload's `history` array now carries the **full Yahoo intersection window** (~251 trading days / 13 months) rather than the previous 20-session cap — the chart consumer slices for display; statistical windows are explicit constants. |
-| **Regime market-closed** | `RegimePanel` | Use `data.{vix,vvix,spy}` only (no WS `last`). `activeCorr = data.cor1m`. `liveCri / intradayRvol = null`. Don't update VIX / VVIX timestamps. COR1M badge = DAILY. |
+| **VCG** (vol-credit gap) | `useVcg.ts`, `vcgStaleness.ts`, `app/api/vcg/route.ts`, `VcgPanel.tsx`, `vcg_scan.py` (20-session), `data/vcg.json`, `scripts/run_vcg_refresh.sh`, `docker/services/timers/radon-vcg-refresh.timer`, `config/com.radon.vcg-refresh.plist` | RO: VIX>28 + VCG>2.5. EDR: VIX>25 + VCG 2.0–2.5. BOUNCE: VCG<-3.5. VVIX = severity amplifier, not gate. FastAPI: `POST /vcg/{scan,share}`, 60s cooldown. Autonomous 5-min cadence during ET hours via `radon-vcg-refresh.timer` (Hetzner) / `com.radon.vcg-refresh` (laptop). Wrapper POSTs `/vcg/scan`; falls back to direct `vcg_scan.py` if FastAPI unreachable. Banner window: 15min open (3 missed cycles). |
+| **GEX** (gamma exposure) | `useGex.ts`, `gexStaleness.ts`, `app/api/gex/route.ts`, `GexPanel.tsx`, `gex_scan.py`, `data/gex.json` | UW fields: `call_gex` positive, `put_gex` negative, `net = call_gex + put_gex` (no negation). Levels: GEX Flip, Max Magnet, Max Accelerator, Put/Call Wall. Bias: BULL / CAUTIOUS_BULL / NEUTRAL / CAUTIOUS_BEAR / BEAR from flip pos + net sign + magnet. Tests: 71. |
+| **CRI / Regime** | `web/lib/criStaleness.ts`, `regime` route triggers `cri_scan.py` | Stale if `data.date != today` OR (market_open AND mtime>60s). Closed + date=today → serve EOD. CRI payload's `history` carries full Yahoo intersection (~251 trading days / 13 months); chart slices for display; statistical windows are explicit constants. |
+| **Regime market-closed** | `RegimePanel` | Use `data.{vix,vvix,spy}` only (no WS `last`). `activeCorr = data.cor1m`. `liveCri / intradayRvol = null`. Don't update VIX/VVIX timestamps. COR1M badge = DAILY. |
 | **Regime day-change** | `.regime-strip-day-chg` | VIX/VVIX/SPY: WS `last` vs `close`. RVOL: `intradayRvol - data.realized_vol`. COR1M: `data.cor1m_5d_change`. Arrow always **right** of change text via `display: flex; gap: 4px`. |
 | **Regime history** | `CriHistoryChart.tsx` | 20 sessions, 440px. Left: VIX `#05AD98` + VVIX `#8B5CF6`. Right: RVOL `#F5A623` + COR1M `#D946A8`. |
-| **CRI spread chart zoom** | `web/components/RegimeRelationshipView.tsx`, `web/lib/regimeRelationships.ts`, `web/tests/regime-relationship-zoom.test.tsx` | The "Correlation Risk Premium" panel on `/regime/cri` ships with **preset range chips** (`1M / 3M / 6M / 1Y / All`, default `1Y`) above the chart and a **brush minimap** below it (8px×40px draggable handles + draggable middle pan region, hand-built on pointer events; no `d3.brushX`). State lives in `useState<[start,end]>(presetRange("1y", history.length))` — re-clamped via effect when history grows/shrinks. Z-score statistical window stays scoped to the **last 20 sessions of the full history** via `Z_SCORE_WINDOW=20` in `regimeRelationships.ts`, not the visible slice — preserves the "20-session z-score overlay" semantics independent of zoom. Chip click snaps the brush; dragging the brush flips the active chip to `Custom`. Brand tokens only, 4px max radius. |
+| **CRI spread chart zoom** | `web/components/RegimeRelationshipView.tsx`, `web/lib/regimeRelationships.ts`, `web/tests/regime-relationship-zoom.test.tsx` | "Correlation Risk Premium" panel on `/regime/cri`: preset chips (`1M/3M/6M/1Y/All`, default `1Y`) above chart + brush minimap below (8px×40px handles + draggable middle pan, hand-built pointer events; no `d3.brushX`). State: `useState<[start,end]>(presetRange("1y", history.length))` re-clamped via effect. Z-score window stays scoped to last 20 sessions of full history via `Z_SCORE_WINDOW=20`, not visible slice. Chip click snaps brush; drag flips active chip to `Custom`. Brand tokens only, 4px max radius. |
 | **Options Chain sticky header** | `OptionsChainTab.tsx` | Three required CSS rules — all three or overlap returns: (1) `background: var(--bg-panel-raised)` on `.chain-header` + `.chain-side-label`; (2) `position: sticky; top: 0` / `top: 24px`; (3) `.chain-grid thead { position: relative; z-index: 10 }`. |
 | **Column visibility** | `useColumnVisibility(tableId, defaults)` | Persists to `localStorage` keyed `radon:columns:<tableId>`. Buckets: `positions-{defined,undefined,equity}`, `orders-open`. `<ColumnsToggle />` left of filter input in section header. |
-| **Margin Warning Toast** | `web/lib/marginWarning.ts`, `web/components/WorkspaceShell.tsx` (`prevMarginLevelRef` block), `web/tests/margin-warning.test.ts`, `web/e2e/margin-warning-toast.spec.ts` | Stage 1 — threshold-derived from `portfolio.account_summary`. Persistent toast (`addToast(..., 0)`), fires only on transition to a worse rank. See "Margin Warning Thresholds" in Calculations. Stage 2 will swap source to IBKR `/fyi/notifications` once OAuth Self-Service activates. |
-| **Cash Flows panel** (on `/orders`) | `scripts/cash_flow_sync.py` (Flex pull + classifier), `scripts/monitor_daemon/handlers/_throttle_backoff.py` (circuit breaker), `scripts/db/migrations/0002_cash_flows.sql`, `scripts/db/writer.py:upsert_cash_flow`, FastAPI `GET /cash-flows`, `web/app/api/cash-flows/route.ts`, `web/lib/useCashFlows.ts`, `web/components/CashFlowsSection.tsx`, daemon handler `scripts/monitor_daemon/handlers/cash_flow_sync.py` (daily at 17:00 ET since 2026-05-09) | Surfaces IBKR `CashTransaction` rows (deposits / withdrawals / dividends / interest / fees / withholding tax) on `/orders`. Reads `IB_FLEX_NAV_QUERY_ID` (1497709, *Cash Transactions* query). Idempotent on `transactionID`. Type classifier in `_classify()` — combined "Deposits/Withdrawals" rows disambiguate by amount sign. UI: positive = green, negative = red, persistent toast not used. **Cadence is once per ET trading day at 17:00 ET (1h after market close), not 4-hourly or daily-anytime.** Skips weekends and US trading holidays via `utils.market_calendar`. Late-fires after 18:00 ET if `last_run` is on a strictly earlier ET trading day so a daemon outage never silently skips a day. **Throttle-aware exponential backoff** on Flex codes 1001 / 1018 / 1019: 24h → 48h → 72h → 168h capped, persists across daemon restarts via `get_state` / `set_state`, resets on success. The Flex Web Service uses a sliding-window rate limit — every retry during throttle pushes the reset further out, so `cash_flow_sync.py` raises `FlexThrottleError` on the first throttle hit with no internal retry; the handler's circuit breaker handles the wait. Network blips still get one bounded retry inside the script. The daily window composes with the breaker: if the embargo says "not before tomorrow", we still wait until 17:00 ET. Tests: 36 pytest (15 classifier/normalize + 11 flex errors + 13 throttle backoff + 18 cadence — minus the 7 retired pre-fix cadence tests) + 4 vitest (route+hook) + 7 Playwright. |
-| **Mobile shell** (PWA, iPhone 16 393×852) | `web/lib/useViewport.ts`, `web/lib/breakpoints.ts`, `web/components/mobile/{MobileShell,MobileAppBar,MobileTabBar,MobileMoreDrawer,MobileTickerSearch,Card,CardRow,BottomSheet}.tsx`, `web/components/PwaRegister.tsx`, `web/public/{manifest.webmanifest,sw.js}` | `useViewport()` (≤640 mobile / 641-1023 tablet / ≥1024 desktop) drives `<MobileShell>` rendered from `WorkspaceShell` when `isMobile && hasMounted`. Sets `body[data-mobile="true"]`; global CSS hides desktop sidebar/header, pads main for the 56px top bar + 64px bottom tab bar (Dashboard / Positions / Orders / Scanner / More + drawer overflow). Manifest = standalone, theme #0a0f14, 192/512 icons. Hand-written SW (~80 LOC) caches static assets only — bypasses `/api`, `/_next/data`, `/ws` to preserve the cache contract. Search button opens full-screen overlay wrapping `TickerSearch` (16px input → no iOS zoom). |
-| **Mobile per-screen variants** | `web/components/mobile/{MobilePositionList,MobileOrderList,MobileBlotterList,MobileExecutedList,MobileJournalList,MobileChainLadder,MobileOrderTicket}.tsx` | Each branched in via `isMobile && hasMounted` from `PositionTable.tsx`, `WorkspaceSections.tsx` (open orders / today's executed / historical trades / journal sections), and `OptionsChainTab.tsx`. All P&L / combo math reused — no recalculation. Chain ladder is 2-col (calls / strike / puts), tap a cell → BottomSheet detail with Greeks; BUY/SELL footer adds an `OrderLeg` to the same `orderLegs` state the desktop builder uses. Pending strip → `MobileOrderTicket` (BottomSheet) with qty steppers + price ladder + DAY/GTC chips → posts `/api/orders/place` with the same body shape (combo guardrails 1-6 unchanged). |
-| **Mobile tests** | `web/tests/{use-viewport,mobile-bottom-sheet}.test.{ts,tsx}` (15 vitest); `web/e2e/mobile-{shell,positions,orders,blotter,executed-journal,chain-ladder,order-ticket,ticker-search,charts,a11y-pwa}.spec.ts` (48 Playwright cases at viewport 393×852 via `playwright.config.ts` `mobile` project) | Run via `npm test` (vitest) and `PLAYWRIGHT_PORT=3033 npx playwright test --config playwright.config.ts --project=mobile`. The mobile e2e suite stubs all API routes + skips WS prices; specs use `evaluate(el => el.click())` for interactive elements that render in `BottomSheet` footers below the 393×852 viewport (force:true alone fails with "outside viewport"). |
+| **Margin Warning Toast** | `web/lib/marginWarning.ts`, `web/components/WorkspaceShell.tsx` (`prevMarginLevelRef` block), `web/tests/margin-warning.test.ts`, `web/e2e/margin-warning-toast.spec.ts` | Stage 1 — threshold-derived from `portfolio.account_summary`. Persistent toast (`addToast(..., 0)`), fires only on transition to worse rank. See "Margin Warning Thresholds" in Calculations. |
+| **Cash Flows panel** (on `/orders`) | `scripts/cash_flow_sync.py` (Flex pull + classifier), `scripts/monitor_daemon/handlers/_throttle_backoff.py`, `scripts/db/migrations/0002_cash_flows.sql`, `scripts/db/writer.py:upsert_cash_flow`, FastAPI `GET /cash-flows`, `web/app/api/cash-flows/route.ts`, `web/lib/useCashFlows.ts`, `web/components/CashFlowsSection.tsx`, daemon handler `scripts/monitor_daemon/handlers/cash_flow_sync.py` | Surfaces IBKR `CashTransaction` rows (deposits/withdrawals/dividends/interest/fees/withholding) on `/orders`. Reads `IB_FLEX_NAV_QUERY_ID` (1497709). Idempotent on `transactionID`. `_classify()` disambiguates combined Deposits/Withdrawals by amount sign. UI: positive=green, negative=red. **Cadence: once per ET trading day at 17:00 ET (1h after close).** Skips weekends + US holidays via `utils.market_calendar`. Late-fires after 18:00 ET if `last_run` is on a strictly earlier ET trading day. **Throttle-aware exponential backoff** on Flex codes 1001/1018/1019: 24h → 48h → 72h → 168h capped, persists via `get_state`/`set_state`, resets on success. `cash_flow_sync.py` raises `FlexThrottleError` on first throttle hit (no internal retry); handler circuit breaker handles wait. Network blips get one bounded retry. Tests: 36 pytest + 4 vitest + 7 Playwright. |
+| **Mobile shell** (PWA, iPhone 16 393×852) | `web/lib/useViewport.ts`, `web/lib/breakpoints.ts`, `web/components/mobile/{MobileShell,MobileAppBar,MobileTabBar,MobileMoreDrawer,MobileTickerSearch,Card,CardRow,BottomSheet}.tsx`, `web/components/PwaRegister.tsx`, `web/public/{manifest.webmanifest,sw.js}` | `useViewport()` (≤640 mobile / 641-1023 tablet / ≥1024 desktop) drives `<MobileShell>` from `WorkspaceShell` when `isMobile && hasMounted`. Sets `body[data-mobile="true"]`; global CSS hides desktop sidebar/header, pads main for 56px top + 64px bottom (Dashboard/Positions/Orders/Scanner/More + drawer). Manifest standalone, theme #0a0f14, 192/512 icons. Hand-written SW (~80 LOC) caches static only — bypasses `/api`, `/_next/data`, `/ws` to preserve cache contract. Search opens full-screen overlay wrapping `TickerSearch` (16px input → no iOS zoom). |
+| **Mobile per-screen variants** | `web/components/mobile/{MobilePositionList,MobileOrderList,MobileBlotterList,MobileExecutedList,MobileJournalList,MobileChainLadder,MobileOrderTicket}.tsx` | Branched via `isMobile && hasMounted` from `PositionTable.tsx`, `WorkspaceSections.tsx`, `OptionsChainTab.tsx`. All P&L/combo math reused. Chain ladder 2-col (calls/strike/puts), tap cell → BottomSheet detail with Greeks; BUY/SELL footer adds `OrderLeg` to same `orderLegs` state desktop uses. Pending strip → `MobileOrderTicket` (BottomSheet): qty steppers + price ladder + DAY/GTC chips → posts `/api/orders/place` with same body shape (combo guardrails 1-6 unchanged). |
+| **Mobile tests** | `web/tests/{use-viewport,mobile-bottom-sheet}.test.{ts,tsx}` (15 vitest); `web/e2e/mobile-*.spec.ts` (48 Playwright at 393×852 via `playwright.config.ts` `mobile` project) | Run: `npm test` (vitest) and `PLAYWRIGHT_PORT=3033 npx playwright test --config playwright.config.ts --project=mobile`. Mobile e2e stubs API routes + skips WS prices; uses `evaluate(el => el.click())` for BottomSheet-footer elements below viewport. |
 
 ---
 
 ## Newsfeed Scraper
 
-Module split under `scripts/newsfeed/` (`paths`, `browser`, `auth`, `cdp`, `extract`, `media`, `store`, `tagger`, `vision_tagger`, `taxonomy`, `scheduler`, `index`). `scripts/newsfeed-scraper.js` is a back-compat shim. Output shape locked by `web/components/DashboardNewsFeed.tsx` (`MarketEarPost`).
+Module split under `scripts/newsfeed/` (`paths`, `browser`, `auth`, `cdp`, `extract`, `media`, `store`, `tagger`, `vision_tagger`, `taxonomy`, `scheduler`, `index`). `scripts/newsfeed-scraper.js` is back-compat shim. Output shape locked by `web/components/DashboardNewsFeed.tsx` (`MarketEarPost`).
 
 **Key behaviors:**
-- **Headless Playwright** (`browser.js` + `auth.js`) replaces the old chrome-cdp dependency. Required env: `THEMARKETEAR_EMAIL`, `THEMARKETEAR_PASSWORD`. Storage state at `data/newsfeed-storage.json` reuses the session across cycles; full re-auth every ~6h. `cdp.js` is a thin Playwright shim for backwards compatibility (`runCdpCommand`, `fetchCookieHeader`, `listTargets`, `selectMarketEarTab` still exported).
+- **Headless Playwright** (`browser.js` + `auth.js`) replaces chrome-cdp. Env: `THEMARKETEAR_EMAIL`, `THEMARKETEAR_PASSWORD`. Storage `data/newsfeed-storage.json` reuses session; full re-auth every ~6h. `cdp.js` is a Playwright shim for back-compat (`runCdpCommand`, `fetchCookieHeader`, `listTargets`, `selectMarketEarTab` still exported).
 - **IPv4 forced** for `themarketear.com` CDN (`https.Agent { family: 4 }`) and `api.cerebras.ai` (undici dispatcher) — both AAAA-unreachable from residential IPv6.
-- **Cookie-gated images:** `media.js` accepts `getCookieHeader` callback; `themarketear.com` cookies pulled via Playwright `context.cookies()` to follow `/images/<hash>.png` 301 → `*.cdn.digitaloceanspaces.com`.
+- **Cookie-gated images:** `media.js` accepts `getCookieHeader` callback; cookies via Playwright `context.cookies()` to follow `/images/<hash>.png` 301 → `*.cdn.digitaloceanspaces.com`.
 - **Rollover** at 500 KB → archive + keep ⌈N×0.2⌉. `mergePosts` preserves `tags` across cycles.
 
 **Tagging:**
-- Router: vision tagger (`claude-haiku-4-5`, ~$0.003/post) for posts with images, text tagger (Cerebras `gpt-oss-120b` → fallback `qwen-3-235b-a22b-instruct-2507`) for text-only.
-- gpt-oss-120b is a reasoning model — needs `max_tokens: 800` for chain-of-thought before final JSON.
-- Exactly **3 tags per post**, free-form. Existing taxonomy shown as context to encourage reuse.
-- **Naming rules** (enforced by `__normaliseTags`): UPPERCASE, multi-word UPPERCASE-KEBAB-CASE (`PUT-CALL-RATIO`), allowed `A-Z 0-9 - &`, case-insensitive dedup at taxonomy layer.
+- Router: vision tagger (`claude-haiku-4-5`, ~$0.003/post) for posts with images; text tagger (Cerebras `gpt-oss-120b` → fallback `qwen-3-235b-a22b-instruct-2507`) for text-only.
+- gpt-oss-120b needs `max_tokens: 800` (reasoning model — chain-of-thought before JSON).
+- Exactly **3 tags per post**, free-form. Existing taxonomy shown as context.
+- **Naming** (enforced by `__normaliseTags`): UPPERCASE, multi-word UPPERCASE-KEBAB-CASE (`PUT-CALL-RATIO`), allowed `A-Z 0-9 - &`, case-insensitive dedup.
 - `hydrateTags` skips posts with `tags.length >= 3` unless `force=true`.
-- `data/tag_taxonomy.json` is force-tracked despite `data/*.json` gitignore. Filter chip pool auto-derives from tags actually present.
-- Either `CEREBRAS_API_KEY` or `ANTHROPIC_API_KEY` is sufficient. Without both, tagging skipped (posts still scraped).
+- `data/tag_taxonomy.json` force-tracked despite `data/*.json` gitignore. Filter chip pool auto-derives from tags present.
+- Either `CEREBRAS_API_KEY` or `ANTHROPIC_API_KEY` sufficient. Without both, tagging skipped (posts still scraped).
 
-**Backfill:** `scripts/newsfeed/backfill_tags.js`. `--retag` re-tags every post (use after prompt or naming rule changes). Throttles to ~24 req/min under Cerebras 30 rpm.
+**Backfill:** `scripts/newsfeed/backfill_tags.js`. `--retag` re-tags everything (use after prompt/naming changes). Throttles to ~24 req/min under Cerebras 30 rpm.
 
-**`concurrently` env quirk:** `scripts/newsfeed/index.js` explicitly loads `web/.env` and root `.env` via `dotenv` because `concurrently` doesn't inherit env to children.
+**`concurrently` env quirk:** `scripts/newsfeed/index.js` explicitly loads `web/.env` + root `.env` via `dotenv` because `concurrently` doesn't inherit env.
 
-**Filter UI:** Per-post chips, AND-semantics with ≥2. Active filters as top bar with × + "Clear all". Pagination below list. Deep-link: `/dashboard?tags=BTC,vol`. URL writes happen in post-commit `useEffect` to avoid React's "Cannot update a component while rendering" warning.
+**Filter UI:** Per-post chips, AND-semantics with ≥2. Active filters as top bar with × + "Clear all". Pagination below. Deep-link: `/dashboard?tags=BTC,vol`. URL writes in post-commit `useEffect` to avoid React "Cannot update a component while rendering".
 
 **Env overrides:** `RADON_NEWSFEED_DATA_DIR`, `_POSTS_FILE`, `_ARCHIVE_DIR`, `_MEDIA_DIR`, `_PUBLIC_ROOT`, `CDP_CLI`.
 
@@ -353,7 +351,7 @@ Module split under `scripts/newsfeed/` (`paths`, `browser`, `auth`, `cdp`, `extr
 - **Atomic state:** `scripts/utils/atomic_io.py` — `atomic_save()` (temp + `os.replace()` + SHA-256), `verified_load()`.
 - **Batched WS relay:** `ib_realtime_server.js` — per-client last-write-wins, 100ms flush. 5000 msg/s → 10 batched/s.
 - **Stale tick detection:** 30s check, 45s no-ticks → auto-restart Gateway (120s cooldown).
-- **WS state machine** (`usePrices.ts`): `idle → connecting → open → closed`. `connStateRef` for idempotent connect, `socketGenRef` ignores stale events, diff-based sub/unsub, callback refs, exponential backoff (1s–30s, max 10).
+- **WS state machine** (`usePrices.ts`): `idle → connecting → open → closed`. `connStateRef` idempotent connect, `socketGenRef` ignores stale events, diff-based sub/unsub, callback refs, exponential backoff (1s–30s, max 10).
 - **Vectorized:** `kelly_size_batch()` (NumPy), `portfolio_greeks_vectorized()`. Cross-validated to 10⁻¹².
 - **IBClient resilience:** disconnect recovery (5 attempts, 2ⁿs cap 30s); pacing violations (162/366: 10s backoff); invalid contracts (200/354: no retry, `_failed_contracts`).
 - **Performance page:** Phase A sequential IB+cache; Phase B ThreadPool UW/Yahoo. `PERF_FETCH_WORKERS` env (default 8). Disk cache `data/price_history_cache/` TTL 15min/24h. SWR via `POST /performance/background`.
@@ -374,7 +372,7 @@ Module split under `scripts/newsfeed/` (`paths`, `browser`, `auth`, `cdp`, `extr
 
 ### Intraday Dark Pool Interpolation
 
-When evaluating during market hours, today's partial data is volume-weighted interpolated. **Always output BOTH actual and interpolated values.**
+During market hours, today's partial data is volume-weighted interpolated. **Always output BOTH actual and interpolated values.**
 
 `progress = minutes since 9:30 ET / 390`. Projected = actual / progress. Blend: `(projected × progress) + (prior_5d_avg × (1 - progress))`. Pace = actual / (avg_prior × progress).
 

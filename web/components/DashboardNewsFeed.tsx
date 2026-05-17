@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { ChevronLeft, ChevronRight, Link as LinkIcon, RefreshCw, Radio } from "lucide-react";
 
@@ -103,6 +103,19 @@ export default function DashboardNewsFeed() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const sectionRef = useRef<HTMLDivElement>(null);
+
+  const scrollToTop = useCallback(() => {
+    const node = sectionRef.current;
+    if (!node) return;
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    node.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "start",
+    });
+  }, []);
 
   const loadPosts = useCallback(async ({ signal, mode = "silent" }: FetchOptions = {}) => {
     if (mode === "initial") {
@@ -224,11 +237,15 @@ export default function DashboardNewsFeed() {
   const rangeEnd = Math.min(safePage * PAGE_SIZE, filteredPosts.length);
 
   const goPrev = useCallback(() => {
-    setCurrentPage((page) => Math.max(1, page - 1));
-  }, []);
+    if (safePage <= 1) return;
+    setCurrentPage(safePage - 1);
+    scrollToTop();
+  }, [safePage, scrollToTop]);
   const goNext = useCallback(() => {
-    setCurrentPage((page) => Math.min(totalPages, page + 1));
-  }, [totalPages]);
+    if (safePage >= totalPages) return;
+    setCurrentPage(safePage + 1);
+    scrollToTop();
+  }, [safePage, totalPages, scrollToTop]);
 
   const freshnessLabel = lastUpdated ? `Updated ${formatAbsolute(lastUpdated)}` : "Awaiting first capture";
 
@@ -245,7 +262,7 @@ export default function DashboardNewsFeed() {
   ) : null;
 
   return (
-    <div className="section dashboard-news">
+    <div className="section dashboard-news" ref={sectionRef}>
       <div className="section-header">
         <div className="section-title">
           <Radio size={14} />
