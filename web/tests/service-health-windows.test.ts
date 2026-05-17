@@ -121,7 +121,11 @@ describe("isStale", () => {
  * not in the windows table and fell back to the 1h default.
  */
 describe("market-hours-only services (weekend-aware closed window)", () => {
-  const SAT_NOON = Date.parse("2026-05-09T16:00:00Z"); // Sat noon ET-ish
+  // Use a Sunday-late check so a Friday-end finish exceeds 24h. The
+  // earlier Saturday-noon assertion masked the 2026-05-16 cri-scan /
+  // vcg-scan regression: ~20h gap fit inside their (then) 1-day
+  // closed window. The real weekend gap is Fri-end → Mon-open ≈ 65h.
+  const SUN_LATE = Date.parse("2026-05-10T20:00:00Z"); // Sun 4 PM ET, ~48h after FRI_4PM
   const FRI_4PM = Date.parse("2026-05-08T20:00:00Z"); // Fri 4 PM ET, last finish
 
   const friFinish = new Date(FRI_4PM).toISOString();
@@ -131,8 +135,10 @@ describe("market-hours-only services (weekend-aware closed window)", () => {
     "discover",
     "flow-analysis",
     "analyst-ratings",
-  ])("%s: a Friday-4PM finish does not flip to stale by Saturday noon", (service) => {
-    expect(isStale(service, friFinish, "closed", SAT_NOON)).toBe(false);
+    "cri-scan",
+    "vcg-scan",
+  ])("%s: a Friday-4PM finish does not flip to stale by Sunday evening", (service) => {
+    expect(isStale(service, friFinish, "closed", SUN_LATE)).toBe(false);
   });
 
   it.each([
@@ -144,6 +150,15 @@ describe("market-hours-only services (weekend-aware closed window)", () => {
     const NOW = Date.parse("2026-05-08T18:00:00Z"); // Fri 2 PM ET
     const sixtyMinAgo = new Date(NOW - 60 * 60_000).toISOString();
     expect(isStale(service, sixtyMinAgo, "open", NOW)).toBe(true);
+  });
+
+  it.each([
+    { service: "cri-scan", openMin: 35 },
+    { service: "vcg-scan", openMin: 15 },
+  ])("$service: still fires inside its open-window cadence", ({ service, openMin }) => {
+    const NOW = Date.parse("2026-05-08T18:00:00Z"); // Fri 2 PM ET
+    const justOver = new Date(NOW - (openMin + 5) * 60_000).toISOString();
+    expect(isStale(service, justOver, "open", NOW)).toBe(true);
   });
 });
 

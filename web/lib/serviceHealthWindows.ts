@@ -99,7 +99,13 @@ export const SERVICE_FRESHNESS_WINDOWS: Record<string, Window> = {
 
   "flex-token-check": { open: 25 * HOUR, extended: 25 * HOUR, closed: 25 * HOUR, category: "scheduled" },
 
-  "cri-scan": { open: 35 * MIN, extended: 35 * MIN, closed: 1 * DAY, category: "scheduled" },
+  // cri-scan + vcg-scan run on Mon-Fri-only systemd timers (see CLAUDE.md
+  // autonomous timers table). Closed-hour window must cover the
+  // Fri-end → Mon-open gap (~65h) or a quiet weekend flips the banner.
+  // Surfaced 2026-05-16: both flipped stale on a Saturday with clean
+  // Friday-evening finishes because the prior 1-day closed window was
+  // shorter than the weekend gap.
+  "cri-scan": { open: 35 * MIN, extended: 35 * MIN, closed: 3 * DAY, category: "scheduled" },
   // ``gex-scan`` still flows through ``record_service_health`` only when
   // a user POSTs the scan endpoint, so it's on-demand for banner purposes.
   "gex-scan": { open: 30 * MIN, extended: 30 * MIN, closed: 1 * DAY, category: "on-demand" },
@@ -107,8 +113,9 @@ export const SERVICE_FRESHNESS_WINDOWS: Record<string, Window> = {
   // (radon-vcg-refresh.timer / com.radon.vcg-refresh). The 15-min open
   // window tolerates 3 missed cycles before flagging — long enough to
   // absorb transient FastAPI or IB Gateway blips, short enough to
-  // surface a real outage well inside the trading day.
-  "vcg-scan": { open: 15 * MIN, extended: 15 * MIN, closed: 1 * DAY, category: "scheduled" },
+  // surface a real outage well inside the trading day. Closed window
+  // covers the weekend gap (see cri-scan note above).
+  "vcg-scan": { open: 15 * MIN, extended: 15 * MIN, closed: 3 * DAY, category: "scheduled" },
   // ``cta-sync`` has an autonomous Mon-Fri schedule on the VPS
   // (radon-cta-sync.timer fires 18:15, 19:00, 21:30 UTC) plus the
   // laptop launchd plist as a redundant local trigger. Stale > 25h
