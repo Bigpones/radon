@@ -8,63 +8,63 @@
     "GSAT",
     "SPHR",
     "CNK",
-    "CARG",
     "MSGE",
     "LION",
+    "CARG",
     "BATRK",
     "UNIT",
     "MGNI",
     "ZD",
-    "YELP",
     "WLY",
     "IMAX",
+    "BAND",
+    "YELP",
     "TRIP",
-    "CCOI",
     "LILAK",
     "TDAY",
-    "SCHL",
-    "IDT",
-    "AMC",
-    "SHEN",
-    "STGW",
-    "QNST",
     "RUM",
-    "BAND",
+    "IDT",
+    "SCHL",
+    "SHEN",
+    "CCOI",
+    "AMC",
+    "STGW",
+    "ATEX",
+    "QNST",
     "IHRT",
+    "EVC",
     "SBGI",
     "CARS",
-    "ATEX",
-    "GTN",
-    "CABO",
     "EVER",
-    "MCS",
-    "GRND",
-    "SSTK",
-    "OPTU",
-    "IBTA",
-    "BATRA",
-    "PUBM",
     "NXDR",
+    "GRND",
+    "BATRA",
+    "MCS",
+    "SSTK",
+    "PUBM",
+    "GTN",
+    "IBTA",
+    "NMAX",
+    "GOGO",
     "FUBO",
     "MAX",
-    "GOGO",
+    "AMCX",
+    "STRZ",
+    "ATNI",
+    "CABO",
+    "NEXN",
+    "BOC",
+    "LILA",
+    "WBTN",
     "BMBL",
     "SSP",
-    "NMAX",
-    "ATNI",
-    "AMCX",
-    "BOC",
-    "ANGI",
-    "LILA",
-    "NCMI",
-    "NEXN",
-    "WBTN",
-    "EVC",
-    "STRZ",
-    "SPOK",
-    "PLTK",
-    "RSVR",
     "ZIP",
+    "OPTU",
+    "PLTK",
+    "SPOK",
+    "RSVR",
+    "NCMI",
+    "ANGI",
     "TTGT",
     "CURI",
     "ADV",
@@ -73,10 +73,10 @@
     "EEX",
     "GETY",
     "TZOO",
-    "GAIA",
-    "MYPS",
-    "TEAD",
     "SEAT",
+    "TEAD",
+    "MYPS",
+    "GAIA",
     "AREN",
     "MRDN"
   ],
@@ -94,11 +94,11 @@
       "CNK"
     ],
     [
-      "CARG",
-      "MSGE"
+      "MSGE",
+      "LION"
     ],
     [
-      "LION",
+      "CARG",
       "BATRK"
     ],
     [
@@ -107,106 +107,106 @@
     ],
     [
       "ZD",
-      "YELP"
+      "WLY"
     ],
     [
-      "WLY",
-      "IMAX"
+      "IMAX",
+      "BAND"
     ],
     [
-      "TRIP",
-      "CCOI"
+      "YELP",
+      "TRIP"
     ],
     [
       "LILAK",
       "TDAY"
     ],
     [
-      "SCHL",
+      "RUM",
       "IDT"
     ],
     [
-      "AMC",
+      "SCHL",
       "SHEN"
     ],
     [
+      "CCOI",
+      "AMC"
+    ],
+    [
       "STGW",
-      "QNST"
+      "ATEX"
     ],
     [
-      "RUM",
-      "BAND"
+      "QNST",
+      "IHRT"
     ],
     [
-      "IHRT",
+      "EVC",
       "SBGI"
     ],
     [
       "CARS",
-      "ATEX"
-    ],
-    [
-      "GTN",
-      "CABO"
-    ],
-    [
-      "EVER",
-      "MCS"
-    ],
-    [
-      "GRND",
-      "SSTK"
-    ],
-    [
-      "OPTU",
-      "IBTA"
-    ],
-    [
-      "BATRA",
-      "PUBM"
+      "EVER"
     ],
     [
       "NXDR",
-      "FUBO"
+      "GRND"
     ],
     [
-      "MAX",
+      "BATRA",
+      "MCS"
+    ],
+    [
+      "SSTK",
+      "PUBM"
+    ],
+    [
+      "GTN",
+      "IBTA"
+    ],
+    [
+      "NMAX",
       "GOGO"
+    ],
+    [
+      "FUBO",
+      "MAX"
+    ],
+    [
+      "AMCX",
+      "STRZ"
+    ],
+    [
+      "ATNI",
+      "CABO"
+    ],
+    [
+      "NEXN",
+      "BOC"
+    ],
+    [
+      "LILA",
+      "WBTN"
     ],
     [
       "BMBL",
       "SSP"
     ],
     [
-      "NMAX",
-      "ATNI"
-    ],
-    [
-      "AMCX",
-      "BOC"
-    ],
-    [
-      "ANGI",
-      "LILA"
-    ],
-    [
-      "NCMI",
-      "NEXN"
-    ],
-    [
-      "WBTN",
-      "EVC"
-    ],
-    [
-      "STRZ",
-      "SPOK"
+      "ZIP",
+      "OPTU"
     ],
     [
       "PLTK",
-      "RSVR"
+      "SPOK"
     ],
     [
-      "ZIP",
+      "RSVR",
+      "NCMI"
+    ],
+    [
+      "ANGI",
       "TTGT"
     ],
     [
@@ -223,14 +223,14 @@
     ],
     [
       "TZOO",
-      "GAIA"
+      "SEAT"
     ],
     [
-      "MYPS",
-      "TEAD"
+      "TEAD",
+      "MYPS"
     ],
     [
-      "SEAT",
+      "GAIA",
       "AREN"
     ],
     [

@@ -4,7 +4,6 @@
   "tickers": [
     "APA",
     "COP",
-    "CTRA",
     "DVN",
     "FANG",
     "EOG",
@@ -27,12 +26,12 @@
       "APA"
     ],
     [
-      "CTRA",
-      "EQT"
-    ],
-    [
       "EXE",
       "TPL"
+    ],
+    [
+      "EQT",
+      "APA"
     ]
   ],
   "sector": "Energy",

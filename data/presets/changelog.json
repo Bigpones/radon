@@ -289,5 +289,43 @@
     ],
     "added_count": 1,
     "removed_count": 7
+  },
+  {
+    "timestamp": "2026-05-15T17:44:55.787539",
+    "index": "sp500",
+    "added": [
+      "VEEV"
+    ],
+    "removed": [
+      "CTRA"
+    ],
+    "added_count": 1,
+    "removed_count": 1
+  },
+  {
+    "timestamp": "2026-05-15T17:45:01.712978",
+    "index": "r2k",
+    "added": [
+      "AGNT",
+      "ONT",
+      "PLGO"
+    ],
+    "removed": [
+      "CTLP",
+      "EWCZ",
+      "EXPI",
+      "FIHL",
+      "LNKB",
+      "MEG",
+      "PKST",
+      "SNCY",
+      "STKL",
+      "TERN",
+      "TPH",
+      "UDMY",
+      "ZSPC"
+    ],
+    "added_count": 3,
+    "removed_count": 13
   }
 ]

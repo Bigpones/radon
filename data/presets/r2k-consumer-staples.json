@@ -1,193 +1,188 @@
 {
   "name": "r2k-consumer-staples",
-  "description": "Russell 2000 Consumer Staples (61 companies)",
+  "description": "Russell 2000 Consumer Staples (60 companies)",
   "tickers": [
     "PSMT",
-    "CALM",
     "COCO",
+    "CALM",
     "UNFI",
-    "WDFC",
     "CHEF",
-    "MZTI",
+    "WDFC",
     "ANDE",
+    "MZTI",
     "SPB",
+    "TPB",
+    "CENTA",
     "IPAR",
     "HLF",
-    "CENTA",
-    "TPB",
+    "UVV",
+    "IMKTA",
     "FDP",
     "JJSF",
-    "IMKTA",
-    "UVV",
-    "SMPL",
     "ENR",
     "DOLE",
-    "EPC",
+    "SMPL",
     "WMK",
     "FIZZ",
+    "ODC",
+    "EPC",
     "TR",
     "GO",
-    "ODC",
     "SENEA",
-    "STKL",
     "JBSS",
     "AVO",
-    "UTZ",
     "MAMA",
+    "UTZ",
     "CVGW",
-    "NATR",
-    "BGS",
-    "VITL",
     "VLGEA",
-    "CENT",
     "NGVC",
-    "NUS",
+    "NATR",
+    "CENT",
+    "BGS",
     "BYND",
+    "NUS",
     "HNST",
-    "OLPX",
-    "MGPI",
-    "NAGE",
-    "ALCO",
-    "USNA",
-    "LMNR",
     "WEST",
-    "LWAY",
+    "OLPX",
+    "VITL",
+    "MGPI",
+    "ALCO",
+    "LMNR",
+    "NAGE",
+    "USNA",
     "MED",
     "BRCC",
+    "LWAY",
     "SKIN",
-    "HFFG",
-    "ZVIA",
-    "HAIN",
-    "LFVN",
     "WALD",
-    "FTLF",
+    "HFFG",
+    "HAIN",
+    "ZVIA",
+    "LFVN",
     "ISPR",
+    "FTLF",
     "AFRI"
   ],
   "pairs": [
     [
       "PSMT",
-      "CALM"
+      "COCO"
     ],
     [
-      "COCO",
+      "CALM",
       "UNFI"
     ],
     [
-      "WDFC",
-      "CHEF"
+      "CHEF",
+      "WDFC"
     ],
     [
-      "MZTI",
-      "ANDE"
+      "ANDE",
+      "MZTI"
     ],
     [
       "SPB",
+      "TPB"
+    ],
+    [
+      "CENTA",
       "IPAR"
     ],
     [
       "HLF",
-      "CENTA"
+      "UVV"
     ],
     [
-      "TPB",
+      "IMKTA",
       "FDP"
     ],
     [
       "JJSF",
-      "IMKTA"
+      "ENR"
     ],
     [
-      "UVV",
+      "DOLE",
       "SMPL"
     ],
     [
-      "ENR",
-      "DOLE"
+      "WMK",
+      "FIZZ"
     ],
     [
-      "EPC",
-      "WMK"
+      "ODC",
+      "EPC"
     ],
     [
-      "FIZZ",
-      "TR"
-    ],
-    [
-      "GO",
-      "ODC"
+      "TR",
+      "GO"
     ],
     [
       "SENEA",
-      "STKL"
+      "JBSS"
     ],
     [
-      "JBSS",
-      "AVO"
-    ],
-    [
-      "UTZ",
+      "AVO",
       "MAMA"
     ],
     [
-      "CVGW",
-      "NATR"
-    ],
-    [
-      "BGS",
-      "VITL"
+      "UTZ",
+      "CVGW"
     ],
     [
       "VLGEA",
+      "NGVC"
+    ],
+    [
+      "NATR",
       "CENT"
     ],
     [
-      "NGVC",
-      "NUS"
+      "BGS",
+      "BYND"
     ],
     [
-      "BYND",
+      "NUS",
       "HNST"
     ],
     [
-      "OLPX",
+      "WEST",
+      "OLPX"
+    ],
+    [
+      "VITL",
       "MGPI"
     ],
     [
-      "NAGE",
-      "ALCO"
-    ],
-    [
-      "USNA",
+      "ALCO",
       "LMNR"
     ],
     [
-      "WEST",
-      "LWAY"
+      "NAGE",
+      "USNA"
     ],
     [
       "MED",
       "BRCC"
     ],
     [
-      "SKIN",
+      "LWAY",
+      "SKIN"
+    ],
+    [
+      "WALD",
       "HFFG"
     ],
     [
-      "ZVIA",
-      "HAIN"
+      "HAIN",
+      "ZVIA"
     ],
     [
       "LFVN",
-      "WALD"
-    ],
-    [
-      "FTLF",
       "ISPR"
     ],
     [
-      "AFRI",
-      "PSMT"
+      "FTLF",
+      "AFRI"
     ]
   ],
   "sector": "Consumer Staples",

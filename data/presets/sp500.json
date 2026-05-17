@@ -125,7 +125,6 @@
     "CSGP",
     "CSX",
     "CTAS",
-    "CTRA",
     "CTSH",
     "CTVA",
     "CVNA",
@@ -468,6 +467,7 @@
     "URI",
     "USB",
     "V",
+    "VEEV",
     "VICI",
     "VLO",
     "VLTO",
@@ -1222,10 +1222,6 @@
     [
       "OXY",
       "APA"
-    ],
-    [
-      "CTRA",
-      "EQT"
     ],
     [
       "EXE",
@@ -3299,7 +3295,6 @@
       "tickers": [
         "APA",
         "COP",
-        "CTRA",
         "DVN",
         "FANG",
         "EOG",
@@ -3322,12 +3317,12 @@
           "APA"
         ],
         [
-          "CTRA",
-          "EQT"
-        ],
-        [
           "EXE",
           "TPL"
+        ],
+        [
+          "EQT",
+          "APA"
         ]
       ],
       "vol_driver": "Oil/gas prices, OPEC, energy transition"
@@ -4071,7 +4066,8 @@
         "WSM",
         "WY",
         "SATS",
-        "CASY"
+        "CASY",
+        "VEEV"
       ],
       "pairs": [
         [

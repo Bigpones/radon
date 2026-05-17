@@ -2,17 +2,17 @@
   "name": "r2k-utilities",
   "description": "Russell 2000 Utilities (31 companies)",
   "tickers": [
-    "OKLO",
     "ORA",
+    "OKLO",
     "SWX",
     "TXNM",
-    "POR",
-    "BKH",
     "NJR",
+    "BKH",
+    "POR",
     "OGS",
     "SR",
-    "NWE",
     "BIPC",
+    "NWE",
     "OTTR",
     "AVA",
     "AWR",
@@ -36,27 +36,27 @@
   ],
   "pairs": [
     [
-      "OKLO",
-      "ORA"
+      "ORA",
+      "OKLO"
     ],
     [
       "SWX",
       "TXNM"
     ],
     [
-      "POR",
+      "NJR",
       "BKH"
     ],
     [
-      "NJR",
+      "POR",
       "OGS"
     ],
     [
       "SR",
-      "NWE"
+      "BIPC"
     ],
     [
-      "BIPC",
+      "NWE",
       "OTTR"
     ],
     [
@@ -97,7 +97,7 @@
     ],
     [
       "GWRS",
-      "OKLO"
+      "ORA"
     ]
   ],
   "sector": "Utilities",
