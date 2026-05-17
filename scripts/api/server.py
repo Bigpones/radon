@@ -111,11 +111,25 @@ async def lifespan(app: FastAPI):
     gw_status = await ensure_ib_gateway()
     logger.info("IB Gateway: %s", gw_status)
 
-    # IB pool — starts degraded if Gateway is still down after restart attempt
+    # IB pool — connect_all() blocks ~25-30s per client when IB Gateway is
+    # awaiting_2fa. Three clients × that timeout = ~80s lifespan stall,
+    # which prevents uvicorn from binding port 8321 inside the deploy
+    # script's 45s health-check window and triggers a false-positive
+    # rollback. Kick connect off as a background task instead — routes
+    # already tolerate a not-yet-connected pool, and /health exposes
+    # pool + auth_state so operators can see "connecting" without us
+    # blocking the listener.
     ib_pool = IBPool()
     app.state.ib_pool = ib_pool
-    pool_status = await ib_pool.connect_all()
-    logger.info("IB pool status: %s", pool_status)
+
+    async def _connect_ib_pool() -> None:
+        try:
+            pool_status = await ib_pool.connect_all()
+            logger.info("IB pool status: %s", pool_status)
+        except Exception:
+            logger.exception("IB pool background connect failed")
+
+    asyncio.create_task(_connect_ib_pool())
 
     # UW client — just verify token exists
     uw_available = bool(os.environ.get("UW_TOKEN"))
