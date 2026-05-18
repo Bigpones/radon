@@ -121,6 +121,7 @@ function SectionHeader({ label, collapsed, onToggle }: { label: string; collapse
 
 function AccountRow({
   acct,
+  todayUnrealized,
   collapsed,
   onToggle,
   onNetLiqClick,
@@ -129,6 +130,14 @@ function AccountRow({
   onDividendsClick,
 }: {
   acct: AccountSummary;
+  /** Client-computed day-move aggregate, used as the pre-market /
+   *  off-hours fallback when IB's `dailyPnL` stream is not active.
+   *  Pre-market (04:00-09:30 ET) and after-hours, IB returns NaN for
+   *  `reqPnL().dailyPnL`, so `acct.daily_pnl` lands as null. The
+   *  per-leg `last`/`close` math in `computeTodayUnrealizedPnl` still
+   *  works because pre-market quotes populate `prices[*].last` — the
+   *  Today's P&L breakout further down the page already uses this. */
+  todayUnrealized: { pnl: number; positionsWithData: number } | null;
   collapsed: boolean;
   onToggle: () => void;
   onNetLiqClick: () => void;
@@ -136,7 +145,14 @@ function AccountRow({
   onUnrealizedClick: () => void;
   onDividendsClick: () => void;
 }) {
-  const dailyAvailable = acct.daily_pnl != null;
+  const ibDaily = acct.daily_pnl;
+  const fallback =
+    ibDaily == null && todayUnrealized != null && todayUnrealized.positionsWithData > 0
+      ? todayUnrealized.pnl
+      : null;
+  const displayValue = ibDaily ?? fallback;
+  const displayLabel =
+    ibDaily != null ? "TODAY" : fallback != null ? "ESTIMATED (PRE-MARKET)" : "MARKET CLOSED";
   return (
     <>
       <SectionHeader label="ACCOUNT" collapsed={collapsed} onToggle={onToggle} />
@@ -146,9 +162,18 @@ function AccountRow({
           onClick={onNetLiqClick}
         />
         <MetricCard
-          card={{ label: "Day P&L", value: dailyAvailable ? fmtSignedExact(acct.daily_pnl!) : "---", change: dailyAvailable ? "TODAY" : "MARKET CLOSED", tone: dailyAvailable ? tone(acct.daily_pnl!) : "neutral" }}
+          card={{
+            label: "Day P&L",
+            value: displayValue != null ? fmtSignedExact(displayValue) : "---",
+            change: displayLabel,
+            tone: displayValue != null ? tone(displayValue) : "neutral",
+          }}
           onClick={onDayPnlClick}
         />
+        {/* When the fallback fires, the card is still clickable — the
+            Day P&L modal already uses the client-computed breakdown
+            via computeDayMoveBreakdown, so the drill-down is accurate
+            even when IB's aggregate is unavailable. */}
         <MetricCard
           card={{ label: "Unrealized P&L", value: fmtSignedExact(acct.unrealized_pnl), change: "OPEN POSITIONS", tone: acct.unrealized_pnl !== 0 ? tone(acct.unrealized_pnl) : "neutral" }}
           onClick={onUnrealizedClick}
@@ -599,6 +624,7 @@ export default function MetricCards({ portfolio, prices, realizedPnl, executedOr
       {acct ? (
         <AccountRow
           acct={acct}
+          todayUnrealized={todayUnrealized}
           collapsed={collapsed.account}
           onToggle={() => toggle("account")}
           onNetLiqClick={() => setNetLiqModalOpen(true)}

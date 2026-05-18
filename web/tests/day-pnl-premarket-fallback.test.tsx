@@ -1,0 +1,157 @@
+/**
+ * @vitest-environment jsdom
+ *
+ * Regression: the Day P&L card on /portfolio used to render "---" +
+ * "MARKET CLOSED" whenever `acct.daily_pnl` was null. IB does not
+ * stream `reqPnL().dailyPnL` outside regular trading hours, so the
+ * card blanked every pre-market session even though the per-leg
+ * day-move math (which the TODAY'S P&L breakdown already used)
+ * worked fine from `prices[*].last` and `prices[*].close`.
+ *
+ * Fix: when `acct.daily_pnl == null` and the client-computed
+ * `todayUnrealized` has positions with data, fall back to that
+ * aggregate and label the source as "ESTIMATED (PRE-MARKET)".
+ */
+
+import React from "react";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { cleanup, render } from "@testing-library/react";
+
+import MetricCards from "../components/MetricCards";
+
+beforeAll(() => {
+  if (typeof globalThis.ResizeObserver === "undefined") {
+    class Stub {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    (globalThis as unknown as { ResizeObserver: typeof Stub }).ResizeObserver = Stub;
+  }
+});
+
+afterEach(() => cleanup());
+
+vi.mock("@/lib/useMarketHours", () => ({
+  useMarketHours: () => ({ state: "closed", isOpen: false }),
+}));
+
+type Portfolio = Parameters<typeof MetricCards>[0]["portfolio"];
+
+function buildPortfolio(overrides: {
+  daily_pnl: number | null;
+  positions?: Portfolio["positions"];
+  prices?: Portfolio["prices"];
+}): Portfolio {
+  const positions = overrides.positions ?? [
+    {
+      id: "AAPL-stock",
+      ticker: "AAPL",
+      structure: "Stock",
+      // computeDayMoveBreakdown gates on structure_type === "Stock"
+      // for the equity branch (uses prices[ticker]).
+      structure_type: "Stock",
+      direction: "LONG",
+      qty: 100,
+      contracts: 100,
+      avg_entry: 180,
+      cost: 18000,
+      legs: [],
+      market_value: 19000,
+      pnl: 1000,
+      pnl_pct: 5.5,
+      entry_date: "2026-04-01",
+      ib_daily_pnl: null,
+    },
+  ];
+  return {
+    bankroll: 1_500_000,
+    net_leverage: 0.5,
+    total_deployed_dollars: 100_000,
+    total_pnl_pct: 1.0,
+    positions,
+    account_summary: {
+      net_liquidation: 1_534_469.61,
+      daily_pnl: overrides.daily_pnl,
+      unrealized_pnl: -224_266.34,
+      realized_pnl: 3_727,
+      buying_power: 4_000_000,
+      excess_liquidity: 800_000,
+      maint_margin_req: 250_000,
+      initial_margin_req: 0,
+      settled_cash: 0,
+      dividends: 0,
+      equity_with_loan: 1_534_469.61,
+      previous_day_ewl: 0,
+      reg_t_equity: 0,
+      sma: 0,
+      gross_position_value: 0,
+      available_funds: 0,
+      cushion: 0.5,
+    },
+  } as unknown as Portfolio;
+}
+
+function buildPrices(): Record<string, { last: number; close: number; mid?: number }> {
+  return {
+    AAPL: { last: 190, close: 180 }, // +$10/share × 100 shares × LONG = +$1,000 day move
+  };
+}
+
+describe("Day P&L card — pre-market fallback to client-computed aggregate", () => {
+  it("renders IB daily_pnl when available (regular hours)", () => {
+    const portfolio = buildPortfolio({ daily_pnl: -47_215 });
+    const { container } = render(
+      React.createElement(MetricCards, {
+        portfolio,
+        prices: buildPrices(),
+        realizedPnl: 3_727,
+        section: "portfolio",
+      } as unknown as Parameters<typeof MetricCards>[0]),
+    );
+
+    const text = container.textContent ?? "";
+    expect(text).toContain("Day P&L");
+    expect(text).toContain("-$47,215");
+    expect(text).toContain("TODAY");
+    expect(text).not.toContain("ESTIMATED");
+    expect(text).not.toContain("MARKET CLOSED");
+  });
+
+  it("falls back to client-computed aggregate when daily_pnl is null + prices present", () => {
+    const portfolio = buildPortfolio({ daily_pnl: null });
+    const { container } = render(
+      React.createElement(MetricCards, {
+        portfolio,
+        prices: buildPrices(),
+        realizedPnl: 0,
+        section: "portfolio",
+      } as unknown as Parameters<typeof MetricCards>[0]),
+    );
+
+    const text = container.textContent ?? "";
+    expect(text).toContain("Day P&L");
+    // AAPL: 100 long × ($190 - $180) = +$1,000
+    expect(text).toContain("+$1,000");
+    expect(text).toContain("ESTIMATED (PRE-MARKET)");
+    expect(text).not.toContain("MARKET CLOSED");
+  });
+
+  it('keeps "---" + "MARKET CLOSED" when both IB daily_pnl is null AND no prices/positions feed the fallback', () => {
+    const portfolio = buildPortfolio({ daily_pnl: null, positions: [] });
+    const { container } = render(
+      React.createElement(MetricCards, {
+        portfolio,
+        prices: {},
+        realizedPnl: 0,
+        section: "portfolio",
+      } as unknown as Parameters<typeof MetricCards>[0]),
+    );
+
+    const text = container.textContent ?? "";
+    expect(text).toContain("Day P&L");
+    // Final-fallback dash sits inside the value slot; assert via the label.
+    expect(text).toContain("MARKET CLOSED");
+    expect(text).not.toContain("ESTIMATED");
+  });
+});
