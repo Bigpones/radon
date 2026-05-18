@@ -145,6 +145,15 @@ export const SERVICE_FRESHNESS_WINDOWS: Record<string, Window> = {
   // when the writer process itself is down for a full day.
   "replica-watchdog": { open: 24 * HOUR, extended: 24 * HOUR, closed: 24 * HOUR, category: "scheduled" },
   "watchdog-alerts": { open: 24 * HOUR, extended: 24 * HOUR, closed: 24 * HOUR, category: "scheduled" },
+
+  // ``ib-watchdog`` polls FastAPI /health every 60s and is event-driven
+  // in nature — it writes service_health on every cycle so we can see
+  // its heartbeat, but acts (restarts the gateway) only after 3
+  // consecutive degraded readings. The 5-minute window absorbs one
+  // missed cycle without flagging while still catching a dead watchdog
+  // process within minutes. See `scripts/ib_watchdog.py` +
+  // `docs/ib-gateway-healthcheck-hardening.md`.
+  "ib-watchdog": { open: 5 * MIN, extended: 5 * MIN, closed: 5 * MIN, category: "scheduled" },
 };
 
 const DEFAULT_WINDOW: Window = {

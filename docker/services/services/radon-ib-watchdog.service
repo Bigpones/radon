@@ -1,0 +1,19 @@
+[Unit]
+Description=Radon IB Gateway API-aware watchdog (catches JVM API-thread hangs that Docker's TCP healthcheck misses)
+After=network.target radon-api.service
+Wants=radon-api.service
+
+[Service]
+Type=oneshot
+# Runs as root because the restart action is systemctl restart
+# radon-ib-gateway.service — needs systemd privileges. The probe
+# itself is read-only against localhost:8321/health.
+User=root
+WorkingDirectory=/home/radon/radon
+EnvironmentFile=/home/radon/radon-cloud/.env
+ExecStart=/home/radon/radon/.venv/bin/python -m scripts.ib_watchdog
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
