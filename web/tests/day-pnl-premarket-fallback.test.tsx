@@ -98,6 +98,21 @@ function buildPrices(): Record<string, { last: number; close: number; mid?: numb
   };
 }
 
+/**
+ * Find the AccountRow's Day P&L MetricCard text. The lower TodayPnlRow
+ * also renders "Day Move" / "MARKET CLOSED" sometimes, so scoped asserts
+ * are required to test the top card in isolation.
+ */
+function dayPnlCardText(container: HTMLElement): string {
+  const labels = container.querySelectorAll(".metric-label");
+  for (const label of Array.from(labels)) {
+    if ((label.textContent ?? "").trim() === "Day P&L") {
+      return label.parentElement?.textContent ?? "";
+    }
+  }
+  return "";
+}
+
 describe("Day P&L card — pre-market fallback to client-computed aggregate", () => {
   it("renders IB daily_pnl when available (regular hours)", () => {
     const portfolio = buildPortfolio({ daily_pnl: -47_215 });
@@ -110,12 +125,13 @@ describe("Day P&L card — pre-market fallback to client-computed aggregate", ()
       } as unknown as Parameters<typeof MetricCards>[0]),
     );
 
-    const text = container.textContent ?? "";
-    expect(text).toContain("Day P&L");
-    expect(text).toContain("-$47,215");
-    expect(text).toContain("TODAY");
-    expect(text).not.toContain("ESTIMATED");
-    expect(text).not.toContain("MARKET CLOSED");
+    const cardText = dayPnlCardText(container);
+    expect(cardText).toContain("Day P&L");
+    expect(cardText).toContain("-$47,215");
+    expect(cardText).toContain("TODAY");
+    expect(cardText).not.toContain("ESTIMATED");
+    expect(cardText).not.toContain("MARKET CLOSED");
+    expect(cardText).not.toContain("WAITING FOR IB");
   });
 
   it("falls back to client-computed aggregate when daily_pnl is null + prices present", () => {
@@ -129,12 +145,13 @@ describe("Day P&L card — pre-market fallback to client-computed aggregate", ()
       } as unknown as Parameters<typeof MetricCards>[0]),
     );
 
-    const text = container.textContent ?? "";
-    expect(text).toContain("Day P&L");
+    const cardText = dayPnlCardText(container);
+    expect(cardText).toContain("Day P&L");
     // AAPL: 100 long × ($190 - $180) = +$1,000
-    expect(text).toContain("+$1,000");
-    expect(text).toContain("ESTIMATED (PRE-MARKET)");
-    expect(text).not.toContain("MARKET CLOSED");
+    expect(cardText).toContain("+$1,000");
+    expect(cardText).toContain("ESTIMATED (PRE-MARKET)");
+    expect(cardText).not.toContain("MARKET CLOSED");
+    expect(cardText).not.toContain("WAITING FOR IB");
   });
 
   it('keeps "---" + "MARKET CLOSED" when both IB daily_pnl is null AND no prices/positions feed the fallback', () => {
@@ -148,10 +165,32 @@ describe("Day P&L card — pre-market fallback to client-computed aggregate", ()
       } as unknown as Parameters<typeof MetricCards>[0]),
     );
 
-    const text = container.textContent ?? "";
-    expect(text).toContain("Day P&L");
-    // Final-fallback dash sits inside the value slot; assert via the label.
-    expect(text).toContain("MARKET CLOSED");
-    expect(text).not.toContain("ESTIMATED");
+    const cardText = dayPnlCardText(container);
+    expect(cardText).toContain("Day P&L");
+    expect(cardText).toContain("MARKET CLOSED");
+    expect(cardText).not.toContain("ESTIMATED");
+    expect(cardText).not.toContain("WAITING FOR IB");
+  });
+
+  it('shows "WAITING FOR IB" (not "MARKET CLOSED") when positions exist but IB feed is empty', () => {
+    // IB Gateway crashed mid-day: daily_pnl is null AND the WS prices
+    // map is empty (no live ticks). The honest signal is "infrastructure
+    // is down", not "market is closed" — those are very different states
+    // and conflating them masks a real outage during trading hours.
+    const portfolio = buildPortfolio({ daily_pnl: null });
+    const { container } = render(
+      React.createElement(MetricCards, {
+        portfolio,
+        prices: {}, // ← empty, simulates IB Gateway unreachable
+        realizedPnl: 0,
+        section: "portfolio",
+      } as unknown as Parameters<typeof MetricCards>[0]),
+    );
+
+    const cardText = dayPnlCardText(container);
+    expect(cardText).toContain("Day P&L");
+    expect(cardText).toContain("WAITING FOR IB");
+    expect(cardText).not.toContain("MARKET CLOSED");
+    expect(cardText).not.toContain("ESTIMATED");
   });
 });

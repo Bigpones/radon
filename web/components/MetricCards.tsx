@@ -122,6 +122,8 @@ function SectionHeader({ label, collapsed, onToggle }: { label: string; collapse
 function AccountRow({
   acct,
   todayUnrealized,
+  hasPositions,
+  hasPrices,
   collapsed,
   onToggle,
   onNetLiqClick,
@@ -138,6 +140,12 @@ function AccountRow({
    *  works because pre-market quotes populate `prices[*].last` — the
    *  Today's P&L breakout further down the page already uses this. */
   todayUnrealized: { pnl: number; positionsWithData: number } | null;
+  /** True when the portfolio has at least one open position. */
+  hasPositions: boolean;
+  /** True when the WS prices map has at least one entry. Used to
+   *  distinguish "IB unreachable" (positions exist but no prices)
+   *  from "market closed" (no live ticks because markets are dark). */
+  hasPrices: boolean;
   collapsed: boolean;
   onToggle: () => void;
   onNetLiqClick: () => void;
@@ -151,8 +159,19 @@ function AccountRow({
       ? todayUnrealized.pnl
       : null;
   const displayValue = ibDaily ?? fallback;
-  const displayLabel =
-    ibDaily != null ? "TODAY" : fallback != null ? "ESTIMATED (PRE-MARKET)" : "MARKET CLOSED";
+  // Label precedence:
+  //   1. "TODAY"               — IB streamed dailyPnL (regular trading hours)
+  //   2. "ESTIMATED (PRE-MARKET)" — IB silent but we still have live quotes
+  //      and at least one position contributed a day-move
+  //   3. "WAITING FOR IB"      — positions exist but the WS prices feed is
+  //      empty, so the IB Gateway is unreachable (not "closed")
+  //   4. "MARKET CLOSED"       — no positions, or all positions stale (the
+  //      honest "nothing to compute" state)
+  let displayLabel: string;
+  if (ibDaily != null) displayLabel = "TODAY";
+  else if (fallback != null) displayLabel = "ESTIMATED (PRE-MARKET)";
+  else if (hasPositions && !hasPrices) displayLabel = "WAITING FOR IB";
+  else displayLabel = "MARKET CLOSED";
   return (
     <>
       <SectionHeader label="ACCOUNT" collapsed={collapsed} onToggle={onToggle} />
@@ -625,6 +644,8 @@ export default function MetricCards({ portfolio, prices, realizedPnl, executedOr
         <AccountRow
           acct={acct}
           todayUnrealized={todayUnrealized}
+          hasPositions={portfolio.positions.length > 0}
+          hasPrices={!!hasPrices}
           collapsed={collapsed.account}
           onToggle={() => toggle("account")}
           onNetLiqClick={() => setNetLiqModalOpen(true)}
