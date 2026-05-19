@@ -101,6 +101,35 @@ _auth_transition_state: Dict = {
 # handler. A wedge in pool reconnect must never block the probe loop.
 RECONNECT_TIMEOUT_SECS = 30.0
 
+# Default ceiling for the service_health heal step. A wedge in libsql (e.g.
+# WAL contention with another writer) must not block the auth-transition
+# handler — surfacing a stale banner is preferable to stalling /health.
+HEAL_TIMEOUT_SECS = 10.0
+
+# Substring patterns that classify a ``service_health.last_error`` as
+# "caused by IB Gateway being unreachable". Matched case-insensitively
+# against the JSON blob's ``message`` (or ``detail``) field.
+#
+# Sourced from the production patterns IB-dependent writers emit when
+# the Gateway is unreachable — kept symmetric with the runtime classifier
+# in ``scripts/api/server.py:_IB_CONN_REFUSED_PATTERNS`` so a future
+# additional pattern only needs to be added in one place. We deliberately
+# do NOT collapse the two lists into a shared constant: this module
+# imports cleanly without the server, and a stray import from server.py
+# would pull FastAPI into the IB Gateway helper's dependency surface.
+_IB_OUTAGE_ERROR_PATTERNS: tuple[str, ...] = (
+    "failed to connect to ib",
+    "127.0.0.1:4001",
+    "timeouterror",
+    "connection refused",
+    "econnrefused",
+    "connect call failed",
+    "api connection failed",
+    "ibconnectionerror",
+    "make sure api port",
+    "request timed out",
+)
+
 
 def _next_backoff_delay(attempt_count: int) -> int:
     """Return delay in seconds for the Nth consecutive failed attempt (1-indexed)."""
@@ -641,12 +670,141 @@ def _format_pool_state(pool) -> str:
     )
 
 
+def _error_message_looks_like_ib_outage(last_error_blob: Optional[str]) -> bool:
+    """Return True iff ``last_error`` plausibly indicates an IB outage.
+
+    ``last_error`` is the JSON-encoded blob written by ``record_service_health``
+    — typically ``{"message": "..."}`` or ``{"detail": "..."}``. We pull the
+    free-text message out (or fall back to the raw blob) and check for a
+    substring match against the production patterns IB-dependent writers
+    emit when the Gateway is unreachable.
+
+    Matching is case-insensitive. A row whose ``last_error`` does NOT look
+    like an IB outage (schema bug, payload validation failure, ...) is left
+    untouched — auto-healing those would mask real problems.
+    """
+    if not last_error_blob:
+        return False
+    try:
+        parsed = json.loads(last_error_blob)
+    except (json.JSONDecodeError, TypeError):
+        parsed = None
+    message: str
+    if isinstance(parsed, dict):
+        message = str(parsed.get("message") or parsed.get("detail") or last_error_blob)
+    else:
+        message = last_error_blob
+    haystack = message.lower()
+    return any(pattern in haystack for pattern in _IB_OUTAGE_ERROR_PATTERNS)
+
+
+def _query_ib_dependent_error_services() -> List[str]:
+    """Return names of IB-dependent services whose row in ``service_health``
+    is currently ``state=error`` AND whose ``last_error`` looks like an IB
+    outage. Anything else is left alone.
+
+    Uses lazy imports so this helper stays cheap to import in environments
+    without libsql / Turso credentials (e.g. unit-test runners that mock the
+    DB layer). Any read failure degrades to an empty list — auto-heal is a
+    nice-to-have, not a critical path.
+    """
+    try:
+        # ``_SCRIPTS_DIR`` is already on sys.path (added at module import) so
+        # the flat ``db.client`` / ``watchdog.services`` shape works under
+        # both ``python -m scripts.api.server`` and pytest.
+        from db.client import get_db  # type: ignore[import-not-found]
+        from watchdog.services import requires_ib  # type: ignore[import-not-found]
+    except ImportError as exc:
+        logger.debug("auth heal: dependencies unavailable (%s); skipping query", exc)
+        return []
+
+    try:
+        db = get_db()
+        rows = db.execute(
+            "SELECT service, last_error FROM service_health WHERE state = ?",
+            ("error",),
+        ).fetchall()
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        logger.warning("auth heal: failed to query service_health: %s", exc)
+        return []
+
+    healable: List[str] = []
+    for row in rows:
+        service = row[0]
+        last_error = row[1]
+        if not requires_ib(service):
+            continue
+        if not _error_message_looks_like_ib_outage(last_error):
+            continue
+        healable.append(service)
+    return healable
+
+
+async def _clear_service_health_error(service: str) -> None:
+    """Write ``state=ok`` with ``last_error=NULL`` for one service.
+
+    Goes through the same ``record_service_health`` writer interface every
+    handler uses — no raw SQL — so the JSON serialization, timestamping,
+    and dual-write semantics stay in one place.
+    """
+    try:
+        from db.writer import record_service_health  # type: ignore[import-not-found]
+    except ImportError as exc:
+        logger.debug("auth heal: writer unavailable (%s); cannot clear %s", exc, service)
+        return
+
+    # ``record_service_health`` is synchronous (libsql .execute / .commit).
+    # Run in a thread so a slow commit can't block the event loop.
+    await asyncio.to_thread(
+        record_service_health,
+        service,
+        "ok",
+        error=None,
+    )
+
+
+async def _heal_ib_dependent_service_health(timeout: float) -> List[str]:
+    """Heal any stale IB-outage ``error`` rows. Returns the list of healed names.
+
+    Bounded by ``timeout``. If the DB call hangs (replica wedge, contention),
+    we log a warning and return an empty list — the auth-transition handler
+    must not stall because of the banner-clear step.
+    """
+    async def _inner() -> List[str]:
+        services = await asyncio.to_thread(_query_ib_dependent_error_services)
+        if not services:
+            return []
+        for service in services:
+            await _clear_service_health_error(service)
+        return services
+
+    try:
+        healed = await asyncio.wait_for(_inner(), timeout=timeout)
+    except asyncio.TimeoutError:
+        logger.warning(
+            "auth heal: service_health clear timed out after %.1fs; banner may stay stale",
+            timeout,
+        )
+        return []
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        logger.warning("auth heal: clear step raised %s: %s", type(exc).__name__, exc)
+        return []
+
+    if healed:
+        logger.info(
+            "auth recovered: cleared %d stale error rows for IB-dependent services: %s",
+            len(healed), healed,
+        )
+    return healed
+
+
 async def handle_auth_state_transition(
     new_auth_state: str,
     pool,
     reconnect_timeout: float = RECONNECT_TIMEOUT_SECS,
+    heal_timeout: float = HEAL_TIMEOUT_SECS,
 ) -> bool:
-    """Detect awaiting_2fa → authenticated edges and kick a stale pool.
+    """Detect awaiting_2fa → authenticated edges and recover the data plane.
 
     The IB connection pool (sync/orders/data) can stay `connected=False` after
     IBKR 2FA approval even though the Gateway is fully authenticated to a fresh
@@ -654,22 +812,31 @@ async def handle_auth_state_transition(
     handler automates the same fix by calling `pool.reconnect_all()` whenever
     the auth_state edge fires AND at least one pool slot is disconnected.
 
+    On the same edge we ALSO clear stale ``service_health.state=error`` rows
+    for IB-dependent services whose ``last_error`` looks like an IB outage.
+    Without this step the UI banner keeps showing IB-related errors long
+    after IB is back — the writers don't naturally heartbeat until their
+    next market-hours cycle. The heal pass is independent of the pool
+    reconnect: rows can be stale even when the pool is fine (e.g. when a
+    handler raised on read and never wrote ``state=ok`` afterwards).
+
     Behavior:
       • First observation (previous=None): record state, take no action — we
         only act on real transitions, not first-probe assumptions.
       • previous == new: no transition, do nothing. Mid-session disconnects
         are handled by the per-role auto-reconnect in `_PoolContext`.
-      • previous == "awaiting_2fa" AND new == "authenticated": if any pool
-        slot is disconnected, schedule `pool.reconnect_all()` bounded by
-        `reconnect_timeout`. Returns True. If the pool is already fully
-        connected, returns False — no work to do.
+      • previous == "awaiting_2fa" AND new == "authenticated":
+          1. Heal stale IB-outage error rows in ``service_health`` (bounded
+             by ``heal_timeout``).
+          2. If any pool slot is disconnected, schedule
+             ``pool.reconnect_all()`` bounded by ``reconnect_timeout``.
+        Returns True iff the pool reconnect was attempted. (The heal step's
+        outcome is logged but doesn't change the return value — it's
+        orthogonal to "did we kick the pool".)
       • Any other transition: record state, take no action.
 
-    Returns True iff a reconnect was attempted (independent of whether the
-    reconnect itself succeeded — a timeout still counts as "we tried").
-
-    Bounded by `asyncio.wait_for` so a wedge in the pool's connect path never
-    blocks the calling probe loop.
+    Both follow-up steps are bounded by ``asyncio.wait_for`` so a wedge in
+    the pool's connect path OR in libsql cannot block the calling probe loop.
     """
     previous = _auth_transition_state["previous_auth_state"]
     # Always advance the tracker — even on the no-action paths — so the NEXT
@@ -682,6 +849,11 @@ async def handle_auth_state_transition(
     is_recovery_edge = previous == "awaiting_2fa" and new_auth_state == "authenticated"
     if not is_recovery_edge:
         return False
+
+    # Step 1: clear stale IB-outage error rows so the UI banner clears the
+    # moment IB recovers. Idempotent — if there's nothing to heal it's a
+    # silent no-op.
+    await _heal_ib_dependent_service_health(timeout=heal_timeout)
 
     if not _pool_has_disconnected_slot(pool):
         logger.info(
