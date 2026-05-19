@@ -461,6 +461,91 @@ def upsert_reconciliation_log(snapshot_at: str, payload: dict[str, Any]) -> None
     db.commit()
 
 
+def record_llm_token_index(
+    date_str: str,
+    index_value: float,
+    raw_avg_usd: float,
+    components: dict[str, Any],
+    methodology_version: int = 1,
+) -> None:
+    """Persist one daily LLM Token Expenditure Index row.
+
+    Idempotent on `date` — re-running the AA pull on the same UTC day
+    overwrites the row rather than appending. `components` is a dict like
+    ``{model_id: {input_per_mtok, output_per_mtok, weight}}`` and is
+    serialised to JSON for column storage.
+    """
+    db = get_db()
+    db.execute(
+        """
+        INSERT INTO llm_token_index
+          (date, index_value, raw_avg_usd, components, methodology_version, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(date) DO UPDATE SET
+          index_value         = excluded.index_value,
+          raw_avg_usd         = excluded.raw_avg_usd,
+          components          = excluded.components,
+          methodology_version = excluded.methodology_version,
+          created_at          = excluded.created_at
+        """,
+        (
+            date_str,
+            float(index_value),
+            float(raw_avg_usd),
+            json.dumps(components),
+            int(methodology_version),
+            int(datetime.now(timezone.utc).timestamp()),
+        ),
+    )
+    db.commit()
+
+
+def get_llm_token_index(limit_days: int = 180) -> list[dict[str, Any]]:
+    """Read the most recent N days of the LLM Token Index, sorted ASC.
+
+    Returns ``[{date, index_value, raw_avg_usd, methodology_version}]``.
+    `components` is intentionally omitted from the row shape so the chart
+    payload stays light; callers that need provenance should query the
+    table directly.
+    """
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT date, index_value, raw_avg_usd, methodology_version
+        FROM llm_token_index
+        ORDER BY date DESC
+        LIMIT ?
+        """,
+        (int(limit_days),),
+    ).fetchall()
+    out = [
+        {
+            "date": row[0],
+            "index_value": float(row[1]),
+            "raw_avg_usd": float(row[2]),
+            "methodology_version": int(row[3]),
+        }
+        for row in rows
+    ]
+    out.reverse()  # ASC for chart consumption
+    return out
+
+
+def get_llm_token_index_base_raw() -> Optional[float]:
+    """Return the raw_avg_usd of the FIRST persisted row (earliest date).
+
+    Used by ``llm_token_index.py`` to compute the day-N index value as
+    ``raw_today / raw_base`` so the series is normalised to 1.0 on the
+    first day persisted, matching Silicon Data's index treatment.
+    Returns None if the table is empty (caller must establish base).
+    """
+    db = get_db()
+    rows = db.execute(
+        "SELECT raw_avg_usd FROM llm_token_index ORDER BY date ASC LIMIT 1"
+    ).fetchall()
+    return float(rows[0][0]) if rows else None
+
+
 def record_service_health(
     service: str,
     state: str,

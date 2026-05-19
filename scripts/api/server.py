@@ -1462,6 +1462,49 @@ async def regime_share():
     return result.data
 
 
+# ── LLM Token Expenditure Index ─────────────────────────────────────
+
+_llm_token_index_cache: dict[str, Any] = {"data": None, "fetched_at": 0.0, "days": 0}
+_LLM_TOKEN_INDEX_TTL_S = 300  # 5 min — the underlying data updates once/day
+
+
+@app.get("/llm-token-index")
+async def llm_token_index(days: int = Query(default=180, ge=1, le=3650)):
+    """Last N days of the Radon LLM Token Expenditure Index, ASC by date.
+
+    Cached 5 min — the daily timer writes once at 06:30 UTC so anything
+    tighter is wasted DB hops. Empty table returns an empty list (NOT a
+    404) so the UI can render "no data yet" gracefully until the first
+    timer fires.
+    """
+    import time as _time
+    now = _time.monotonic()
+    if (
+        _llm_token_index_cache["data"] is not None
+        and _llm_token_index_cache["days"] == days
+        and now - _llm_token_index_cache["fetched_at"] < _LLM_TOKEN_INDEX_TTL_S
+    ):
+        return _llm_token_index_cache["data"]
+
+    try:
+        from db.writer import get_llm_token_index
+        rows = get_llm_token_index(limit_days=days)
+    except Exception as exc:
+        logger.warning("[llm-token-index] DB read failed: %s", exc)
+        rows = []
+
+    payload = {
+        "rows": rows,
+        "count": len(rows),
+        "days": days,
+        "fetched_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+    _llm_token_index_cache["data"] = payload
+    _llm_token_index_cache["fetched_at"] = now
+    _llm_token_index_cache["days"] = days
+    return payload
+
+
 @app.post("/internals/share")
 async def internals_share():
     """Generate internals share report using the shared CRI report builder."""

@@ -112,6 +112,12 @@ export const SERVICE_FRESHNESS_WINDOWS: Record<string, Window> = {
 
   "flex-token-check": { open: 25 * HOUR, extended: 25 * HOUR, closed: 25 * HOUR, category: "scheduled", requires_ib: false },
 
+  // ``llm-token-index`` runs once per UTC day at 06:30 via
+  // radon-llm-index.timer (Hetzner). 25h window covers the normal cadence
+  // plus a couple-hour drift; any longer silence indicates the timer or
+  // the Artificial Analysis API is broken. Pulls AA only — no IB.
+  "llm-token-index": { open: 25 * HOUR, extended: 25 * HOUR, closed: 25 * HOUR, category: "scheduled", requires_ib: false },
+
   // cri-scan + vcg-scan run on Mon-Fri-only systemd timers (see CLAUDE.md
   // autonomous timers table). Closed-hour window must cover the
   // Fri-end → Mon-open gap (~65h) or a quiet weekend flips the banner.

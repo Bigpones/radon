@@ -7,6 +7,7 @@ import CriHistoryChart from "./CriHistoryChart";
 import RegimeRelationshipView from "./RegimeRelationshipView";
 import VcgPanel from "./VcgPanel";
 import GexPanel from "./GexPanel";
+import LlmTokenIndexCard from "./LlmTokenIndexCard";
 import { DayChange, LiveBadge, PointChange, RegimeStrip, RegimeStripCell } from "./RegimeStrip";
 import ShareReportModal from "./ShareReportModal";
 import type { ChartSeries, CriHistoryEntry } from "./CriHistoryChart";
@@ -19,14 +20,14 @@ import { SECTION_TOOLTIPS } from "@/lib/sectionTooltips";
 import { computeCri, type CriLevel, type CriResult } from "@/lib/criCalc";
 import { MarketState } from "@/lib/useMarketHours";
 
-type RegimeTab = "cri" | "vcg" | "gex";
+type RegimeTab = "cri" | "vcg" | "gex" | "llm";
 
-const REGIME_TAB_VALUES: readonly RegimeTab[] = ["cri", "vcg", "gex"] as const;
+const REGIME_TAB_VALUES: readonly RegimeTab[] = ["cri", "vcg", "gex", "llm"] as const;
 
 /** Extract the tab segment from /regime/<tab>; defaults to "cri". */
 function tabFromPathname(pathname: string | null): RegimeTab {
   if (!pathname) return "cri";
-  const match = pathname.match(/^\/regime\/(cri|vcg|gex)(?:\/|$)/);
+  const match = pathname.match(/^\/regime\/(cri|vcg|gex|llm)(?:\/|$)/);
   if (match && (REGIME_TAB_VALUES as readonly string[]).includes(match[1])) {
     return match[1] as RegimeTab;
   }
@@ -281,6 +282,7 @@ export default function RegimePanel({
       <button className={`ticker-tab ${activeTab === "cri" ? "active" : ""}`} onClick={() => goToTab("cri")}>CRI</button>
       <button className={`ticker-tab ${activeTab === "vcg" ? "active" : ""}`} onClick={() => goToTab("vcg")}>VCG</button>
       <button className={`ticker-tab ${activeTab === "gex" ? "active" : ""}`} onClick={() => goToTab("gex")}>GEX</button>
+      <button className={`ticker-tab ${activeTab === "llm" ? "active" : ""}`} onClick={() => goToTab("llm")}>LLM</button>
     </div>
   );
 
@@ -298,6 +300,15 @@ export default function RegimePanel({
       <div className="regime-panel">
         {tabBar}
         <GexPanel marketState={marketState} />
+      </div>
+    );
+  }
+
+  if (activeTab === "llm") {
+    return (
+      <div className="regime-panel">
+        {tabBar}
+        <LlmTokenIndexCard />
       </div>
     );
   }

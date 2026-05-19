@@ -25,6 +25,7 @@ const DYNAMIC_ROUTES = [
   "app/api/regime/route.ts",
   "app/api/gex/route.ts",
   "app/api/cash-flows/route.ts",
+  "app/api/llm-token-index/route.ts",
   "app/api/service-health/route.ts",
 ];
 
@@ -44,6 +45,7 @@ const NO_STORE_HOOKS = [
   "lib/useDiscover.ts",
   "lib/useOrders.ts",
   "lib/useCashFlows.ts",
+  "lib/useLlmTokenIndex.ts",
   "lib/useServiceHealth.ts",
   "lib/useTickerFlowReport.ts",
 ];
