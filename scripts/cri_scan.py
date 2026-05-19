@@ -60,22 +60,13 @@ except Exception:
     pass
 
 from clients.ib_client import DEFAULT_HOST
+from utils.ib_preflight import (
+    IB_REQUEST_TIMEOUT_S,
+    ib_auth_state as _ib_auth_state,
+)
 
 # ── constants ─────────────────────────────────────────────────────
 ALL_TICKERS = ["VIX", "VVIX", "SPY", "COR1M"]
-
-# Per-IB-request timeout. `ib_insync` itself doesn't bound API calls,
-# so qualifyContractsAsync / reqHistoricalDataAsync hang forever when
-# the gateway is logged in but the user session isn't authenticated
-# (e.g. awaiting the IBKR Mobile 2FA push). 15s is comfortably above
-# normal latency (~1-3s) and well below the 120s subprocess budget.
-IB_REQUEST_TIMEOUT_S = 15
-
-# FastAPI health endpoint used to short-circuit the IB path before it
-# can hang. Unreachable health = proceed optimistically; the per-request
-# timeout is still the real safety net.
-FASTAPI_HEALTH_URL = "http://127.0.0.1:8321/health"
-FASTAPI_HEALTH_TIMEOUT_S = 3
 
 MA_WINDOW = 100        # SPX moving average window
 VOL_WINDOW = 20        # Realized vol window (annualized)
@@ -135,20 +126,6 @@ def _connect_ib_with_retry(
                 )
     return False
 
-
-def _ib_auth_state() -> Optional[str]:
-    """Probe FastAPI /health for IB Gateway auth_state. Returns None when
-    the endpoint is unreachable (graceful fail-open — let the IB path
-    attempt and rely on the per-request timeout as the safety net).
-    """
-    from urllib.request import Request, urlopen
-    try:
-        req = Request(FASTAPI_HEALTH_URL, headers={"User-Agent": "cri_scan"})
-        with urlopen(req, timeout=FASTAPI_HEALTH_TIMEOUT_S) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-        return (payload.get("ib_gateway") or {}).get("auth_state")
-    except Exception:
-        return None
 
 def _fetch_ib(tickers: List[str]) -> Dict[str, List[Tuple[str, float]]]:
     """Fetch 1Y daily bars from IB concurrently using asyncio.gather.
