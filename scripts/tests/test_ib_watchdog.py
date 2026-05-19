@@ -27,6 +27,14 @@ from ib_watchdog import (  # type: ignore[import-not-found]
 # --- Fixtures ---------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _redirect_2fa_lock_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Redirect the cross-process 2FA push lock to a tmp file so tests
+    do not touch the production /var/lib/radon path. The lock check was
+    layered into run_cycle in 2026-05-19 incident response."""
+    monkeypatch.setenv("IB_2FA_LOCK_PATH", str(tmp_path / "ib-2fa-push-lock.json"))
+
+
 @pytest.fixture
 def state_path(tmp_path: Path) -> Path:
     return tmp_path / "watchdog-state.json"

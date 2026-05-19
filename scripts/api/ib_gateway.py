@@ -16,12 +16,28 @@ import logging
 import os
 import socket
 import subprocess
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
+# scripts/utils lives under <repo>/scripts/utils; this module lives at
+# <repo>/scripts/api. Add the scripts dir to sys.path so the shared
+# 2FA push-lock module imports cleanly under any pytest rootdir.
+_SCRIPTS_DIR = Path(__file__).resolve().parent.parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
+from utils import ib_2fa_lock  # noqa: E402
+
 logger = logging.getLogger("radon.ib_gateway")
+
+# Identifier used when this module takes the shared 2FA push lock. Other
+# restart paths (ib_watchdog.py, ib_orderly_restart.py, …) use distinct
+# holder strings so a glance at /var/lib/radon/ib-2fa-push-lock.json tells
+# the operator which component is mid-2FA-cycle.
+IB_GATEWAY_LOCK_HOLDER = "scripts.api.ib_gateway.restart_ib_gateway"
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -95,23 +111,51 @@ def _next_backoff_delay(attempt_count: int) -> int:
 
 
 def restart_backoff_state() -> Dict:
-    """Snapshot of restart backoff state for /health and operator visibility."""
+    """Snapshot of restart backoff state for /health and operator visibility.
+
+    Includes ``push_lock`` so operators inspecting /health can tell at a
+    glance whether a fresh restart would be blocked by an in-flight 2FA
+    push from another holder.
+    """
     now = time.time()
+    lock = ib_2fa_lock.check_2fa_push_lock(now=now)
+    push_lock = None
+    if lock is not None:
+        push_lock = {
+            "holder": lock.holder,
+            "acquired_at": lock.acquired_at,
+            "expires_at": lock.expires_at,
+            "remaining_secs": max(0, int(lock.expires_at - now)),
+            "reason": lock.reason,
+        }
     return {
         "attempt_count": _restart_state["attempt_count"],
         "last_attempt_at": _restart_state["last_attempt_at"],
         "next_attempt_after": _restart_state["next_attempt_after"],
         "next_attempt_in_secs": max(0, int(_restart_state["next_attempt_after"] - now)),
         "last_outcome": _restart_state["last_outcome"],
+        "push_lock": push_lock,
     }
 
 
 def reset_restart_backoff() -> Dict:
-    """Manually clear backoff. Operator path: 'I just approved 2FA, try again now'."""
+    """Manually clear backoff. Operator path: 'I just approved 2FA, try again now'.
+
+    Also releases the shared 2FA push lock so any other restart path
+    (ib_watchdog, operator CLI) can proceed immediately. The two pieces
+    of state move in lockstep: the operator just told us the in-flight
+    push is approved, so neither the backoff window NOR the lock should
+    delay the next legitimate restart attempt.
+    """
     previous = {k: _restart_state[k] for k in ("attempt_count", "next_attempt_after", "last_outcome")}
     _restart_state["attempt_count"] = 0
     _restart_state["next_attempt_after"] = 0.0
-    return {"reset": True, "previous": previous}
+    released = ib_2fa_lock.release_2fa_push_lock()
+    return {
+        "reset": True,
+        "previous": previous,
+        "lock_released": released.to_dict() if released else None,
+    }
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -751,22 +795,80 @@ async def ensure_ib_gateway() -> Dict:
 
 
 async def restart_ib_gateway(pool=None) -> Dict:
-    """Restart IB Gateway. Honors exponential backoff if 2FA stays unapproved.
+    """Restart IB Gateway. Honors the cross-process 2FA push lock AND the
+    in-memory exponential backoff if 2FA stays unapproved.
 
-    Refuses fresh restart attempts inside the backoff window (1m, 2m, 5m, 15m,
-    30m, 60m, capped at 60m). After an attempt, probes `managedAccounts()` and
-    only resets the backoff counter when accounts are returned (= login
-    completed). A "port listening" success is NOT enough — Gateway sits with
-    the API socket open while waiting for the IBKR Mobile 2FA push.
+    Gating order on entry (both gates must pass before issuing a restart):
 
-    Optional `pool`: when provided, drives the auth-state transition handler
-    on a successful authenticated probe. This autonomously fixes the
-    documented "pool stuck after 2FA" failure mode (feedback_ib_pool_stuck_after_2fa.md).
+      1. **2FA push lock** (cross-process, disk-backed). Any restart path
+         that fires a fresh IBKR Mobile push — this function, the
+         ``ib_watchdog`` oneshot, the operator CLI — first checks the
+         lock. While the lock is held by ANOTHER holder, we refuse with
+         ``reason="2fa_push_in_flight"``. Same-holder re-entry refreshes
+         the lock and proceeds (idempotency for retries from inside the
+         same process). The lock guards against the stacked-push failure
+         documented in feedback_2fa_push_stacking.md: IBKR's backend
+         cannot reconcile multiple pending push tokens for the same
+         session — the user gets "unsuccessful" on every approval when
+         pushes pile up.
+      2. **In-memory backoff window** (per-process). Refuses fresh
+         restart attempts inside an exponentially growing window
+         (1m, 2m, 5m, 15m, 30m, 60m capped at 60m). Reset only when an
+         authenticated probe confirms login.
+
+    After an attempt we probe ``managedAccounts()`` and only treat the
+    restart as a success when accounts are returned — a "port listening"
+    success is NOT enough; Gateway sits with the API socket open while
+    waiting for the IBKR Mobile 2FA push.
+
+    On authenticated success: lock is RELEASED + backoff RESET so the
+    next legitimate restart (potentially hours later) is not blocked.
+    On awaiting_2fa or unreachable failure: lock REMAINS HELD until its
+    TTL expires (or the operator hits ``POST /ib/reset-backoff``).
+
+    Optional ``pool``: when provided, drives the auth-state transition
+    handler on a successful authenticated probe. This autonomously fixes
+    the documented "pool stuck after 2FA" failure mode
+    (feedback_ib_pool_stuck_after_2fa.md).
     """
     async with _restart_lock:
         now = time.time()
 
-        # Backoff gate
+        # --- Gate 1: cross-process 2FA push lock ---------------------------
+        # Refuse if a different restart path already fired a push.
+        # Same-holder acquire refreshes the lease and proceeds — that's
+        # the path for a manual retry from inside the FastAPI process
+        # after the same caller's previous attempt died mid-cycle.
+        acquired, current_lock = ib_2fa_lock.acquire_2fa_push_lock(
+            IB_GATEWAY_LOCK_HOLDER,
+            reason="restart_ib_gateway",
+            now=now,
+        )
+        if not acquired:
+            assert current_lock is not None  # acquire returns (False, lock)
+            wait_secs = max(0, int(current_lock.expires_at - now))
+            logger.warning(
+                "IB Gateway restart refused — 2FA push lock held by %r "
+                "(expires in %ds)",
+                current_lock.holder, wait_secs,
+            )
+            return {
+                "restarted": False,
+                "deferred": True,
+                "reason": "2fa_push_in_flight",
+                "lock_holder": current_lock.holder,
+                "lock_expires_in_secs": wait_secs,
+                "lock_acquired_at": current_lock.acquired_at,
+                "error": (
+                    f"Skipping restart — a 2FA push from {current_lock.holder!r} is "
+                    f"already in flight ({wait_secs}s remaining). Stacking another "
+                    "push causes IBKR to reject every approval. Approve the existing "
+                    "push on your phone (or wait for the lock to expire), then call "
+                    "POST /ib/reset-backoff to retry immediately."
+                ),
+            }
+
+        # --- Gate 2: per-process exponential backoff -----------------------
         if _restart_state["next_attempt_after"] > now:
             wait_secs = int(_restart_state["next_attempt_after"] - now)
             last_iso = (
@@ -792,6 +894,9 @@ async def restart_ib_gateway(pool=None) -> Dict:
             }
 
         if is_cloud_mode():
+            # Cloud mode never fires a local push — release the lock we
+            # just took so it doesn't artificially block other holders.
+            ib_2fa_lock.release_2fa_push_lock()
             return {
                 "restarted": False,
                 "gateway_mode": "cloud",
@@ -811,6 +916,9 @@ async def restart_ib_gateway(pool=None) -> Dict:
                 _restart_state["last_accounts"] = accounts
                 result["authenticated"] = True
                 result["auth_state"] = "authenticated"
+                # Release the lock — login completed, other restart paths
+                # can proceed when they need to (e.g. a future bounce).
+                ib_2fa_lock.release_2fa_push_lock()
                 logger.info("IB Gateway restart verified — accounts: %s", accounts)
                 # Drive the same auth-transition handler the periodic probe
                 # uses, so a successful restart that lands the system back at
@@ -829,12 +937,16 @@ async def restart_ib_gateway(pool=None) -> Dict:
                 result["attempt_count"] = _restart_state["attempt_count"]
                 logger.warning(
                     "IB Gateway restart: port up but managedAccounts empty — "
-                    "treating as awaiting_2fa, next attempt allowed in %ds (attempt #%d)",
+                    "treating as awaiting_2fa, next attempt allowed in %ds (attempt #%d). "
+                    "2FA push lock held for %ds.",
                     delay, _restart_state["attempt_count"],
+                    ib_2fa_lock.remaining_lock_secs(now=now),
                 )
                 # Record the awaiting_2fa observation in the transition tracker
                 # so the next "authenticated" sighting fires the recovery edge.
                 _auth_transition_state["previous_auth_state"] = "awaiting_2fa"
+                # Lock stays HELD — the user is approving the push we
+                # just fired, no other path should fire another.
         else:
             _restart_state["attempt_count"] += 1
             delay = _next_backoff_delay(_restart_state["attempt_count"])
@@ -844,9 +956,14 @@ async def restart_ib_gateway(pool=None) -> Dict:
             result["next_attempt_in_secs"] = delay
             result["attempt_count"] = _restart_state["attempt_count"]
             logger.warning(
-                "IB Gateway restart: port did not come up — next attempt allowed in %ds (attempt #%d)",
+                "IB Gateway restart: port did not come up — next attempt allowed in %ds (attempt #%d). "
+                "2FA push lock held for %ds.",
                 delay, _restart_state["attempt_count"],
+                ib_2fa_lock.remaining_lock_secs(now=now),
             )
             _auth_transition_state["previous_auth_state"] = "unreachable"
+            # Lock stays HELD — even on a fully-down restart, IBC may
+            # have started firing pushes before crashing; better to
+            # block the next attempt than to stack on a phantom push.
 
         return result

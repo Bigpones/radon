@@ -9,8 +9,21 @@ services:
       TWS_PASSWORD_FILE: /run/secrets/ib_password
       TRADING_MODE: ${TRADING_MODE:-live}
       READ_ONLY_API: ${READ_ONLY_API:-no}
-      TWOFA_TIMEOUT_ACTION: restart
-      RELOGIN_AFTER_TWOFA_TIMEOUT: "yes"
+      # IMPORTANT: do NOT enable IBC-side auto-relogin on 2FA timeout.
+      # Each relogin fires a fresh IBKR Mobile 2FA push; stacking pushes
+      # within ~3 min causes IBKR's backend to reject every approval the
+      # user taps. The radon stack governs restart cadence centrally via
+      # scripts/utils/ib_2fa_lock.py + scripts/api/ib_gateway.py
+      # (in-process backoff ladder) + scripts/ib_watchdog.py (sustained
+      # api-hang detection). Both consult a shared 10-min push lock so
+      # only one 2FA push is ever in flight at a time. Letting IBC
+      # ALSO relogin on its own would bypass the lock.
+      # `exit` makes IBC quit on 2FA timeout; the container's
+      # `restart: unless-stopped` + our autoheal label still recover,
+      # but go through a fresh container boot rather than an IBC
+      # in-container restart that the radon stack can't see.
+      TWOFA_TIMEOUT_ACTION: exit
+      RELOGIN_AFTER_TWOFA_TIMEOUT: "no"
       EXISTING_SESSION_DETECTED_ACTION: primary
       AUTO_RESTART_TIME: "23:58 ET"
       VNC_SERVER_PASSWORD: ${VNC_SERVER_PASSWORD:-}

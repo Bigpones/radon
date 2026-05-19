@@ -38,7 +38,23 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+# Cross-process advisory lock that prevents two restart paths (this
+# watchdog + scripts/api/ib_gateway.restart_ib_gateway) from firing two
+# IBKR Mobile 2FA pushes within minutes of each other. IBKR's backend
+# rejects every push approval when multiple are stacked; the lock is
+# the only structural defence.
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+from utils import ib_2fa_lock  # noqa: E402
+
 LOG = logging.getLogger("ib_watchdog")
+
+# Identifier used when the watchdog holds the 2FA push lock. Distinct
+# from the FastAPI restart_ib_gateway holder so an operator inspecting
+# /var/lib/radon/ib-2fa-push-lock.json sees which component fired the
+# active push.
+WATCHDOG_LOCK_HOLDER = "scripts.ib_watchdog.trigger_restart"
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -297,7 +313,54 @@ def run_cycle(
         )
         return state
 
-    # Threshold hit — restart.
+    # Threshold hit — but before restarting, check the cross-process 2FA
+    # push lock. If another holder (typically scripts.api.ib_gateway) is
+    # mid-2FA-push, restarting here would stack a second push on top —
+    # the failure pattern that motivated this lock. Skip this cycle and
+    # let the FastAPI path's push resolve first.
+    existing_lock = ib_2fa_lock.check_2fa_push_lock(now=clock())
+    if existing_lock is not None and existing_lock.holder != WATCHDOG_LOCK_HOLDER:
+        LOG.warning(
+            "api hang sustained %s cycles but 2FA push lock held by %r "
+            "(expires in %ds) — refusing restart to avoid stacking IBKR pushes",
+            state.degraded_count,
+            existing_lock.holder,
+            max(0, int(existing_lock.expires_at - clock())),
+        )
+        # IMPORTANT: keep the counter where it is. The hang is still
+        # real, and once the lock clears we want the next cycle to
+        # act immediately (no fresh 3-cycle warm-up).
+        state.last_outcome = (
+            f"2fa_push_in_flight:{existing_lock.holder}:"
+            f"degraded_{state.degraded_count}_of_{threshold}"
+        )
+        save_state(state_path, state)
+        record_service_health(
+            "ok",
+            error_message=(
+                f"deferred restart — 2FA push from {existing_lock.holder} in flight"
+            ),
+        )
+        return state
+
+    # Take the lock BEFORE issuing the restart. If acquire fails (extremely
+    # rare race), treat it the same as "another holder owns it" and skip.
+    acquired, lock_now = ib_2fa_lock.acquire_2fa_push_lock(
+        WATCHDOG_LOCK_HOLDER,
+        ttl_secs=ib_2fa_lock.DEFAULT_LOCK_TTL_SECS,
+        reason=f"api hang sustained {state.degraded_count} cycles",
+        now=clock(),
+    )
+    if not acquired:
+        LOG.warning(
+            "2FA push lock raced: now held by %r — refusing restart",
+            lock_now.holder if lock_now else "unknown",
+        )
+        state.last_outcome = "2fa_push_lock_race"
+        save_state(state_path, state)
+        record_service_health("ok")
+        return state
+
     LOG.warning(
         "api hang sustained %s cycles — triggering %s restart",
         state.degraded_count,

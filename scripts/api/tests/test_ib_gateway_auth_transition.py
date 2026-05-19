@@ -37,8 +37,13 @@ from scripts.api import ib_gateway
 
 
 @pytest.fixture(autouse=True)
-def _reset_module_state():
-    """Each test starts with clean restart and auth-transition state."""
+def _reset_module_state(tmp_path, monkeypatch):
+    """Each test starts with clean restart and auth-transition state.
+
+    Also redirects the cross-process 2FA push lock to a tmp file so we
+    never touch the production /var/lib/radon path during tests.
+    """
+    monkeypatch.setenv("IB_2FA_LOCK_PATH", str(tmp_path / "ib-2fa-push-lock.json"))
     ib_gateway._restart_state["attempt_count"] = 0
     ib_gateway._restart_state["next_attempt_after"] = 0.0
     ib_gateway._restart_state["last_attempt_at"] = 0.0
