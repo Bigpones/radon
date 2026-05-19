@@ -156,7 +156,21 @@ class CashFlowSyncHandler(BaseHandler):
     # Execution — one shot, no internal retries on throttle codes.
     # ------------------------------------------------------------------
     def execute(self) -> Dict[str, Any]:
-        """Wrap inner logic with service_health heartbeat (success+error)."""
+        """Wrap inner logic with service_health heartbeat (success+error).
+
+        Inner ``_execute_inner`` now raises ``RuntimeError`` on every
+        retryable failure path so the BaseHandler contract
+        (``HandlerSoftFailure``) fires uniformly. The outer wrapper still
+        records the failure heartbeat with throttle metadata before
+        re-raising — that's what advances the circuit breaker without
+        latching ``last_run`` and burning the daily slot.
+
+        2026-05-14 incident: a single 60s Flex timeout cost ~7 days of
+        cash flow data because the inner method RETURNED status=error
+        and BaseHandler latched ``last_run``. With both ``_execute_inner``
+        raising and ``BaseHandler.run()`` enforcing the contract, the bug
+        is structurally impossible.
+        """
         try:
             from db.writer import _now_iso, record_service_health  # type: ignore
         except Exception as exc:  # pragma: no cover — hosts without libsql
@@ -170,18 +184,15 @@ class CashFlowSyncHandler(BaseHandler):
             self._record_failure(record_service_health, started_at, str(exc))
             raise
 
+        # Defence in depth: if a future caller stubs ``_execute_inner``
+        # to return a soft-failure dict (status=error), promote it to a
+        # raised exception here so ``record_service_health`` fires
+        # before BaseHandler.run() applies the same contract enforcement.
+        # Two layers — ``execute()`` and ``BaseHandler.run()`` — make the
+        # 2026-05-14 latching bug impossible regardless of test stubs.
         inner_error = result.get("error") if result.get("status") == "error" else None
         if inner_error:
             self._record_failure(record_service_health, started_at, str(inner_error))
-            # Raise so BaseHandler.run() does NOT latch `last_run`. With
-            # `last_run` unset, the next 30s daemon cycle re-evaluates
-            # `is_due`: throttle errors keep blocked_until at 24h+ so we
-            # skip the day; "not ready" / network errors set
-            # blocked_until at +5m so we retry within the same trading
-            # day instead of waiting 24h to find out IBKR Flex was
-            # ready 1 minute later. The 2026-05-14 incident was exactly
-            # that — a transient 60s timeout cost us 7 days of cash
-            # flow data because last_run was latched.
             raise RuntimeError(str(inner_error))
 
         try:
@@ -261,12 +272,21 @@ class CashFlowSyncHandler(BaseHandler):
         return candidate.astimezone(timezone.utc)
 
     def _execute_inner(self) -> Dict[str, Any]:
+        """Run the sync subprocess. Raise on every retryable failure path.
+
+        Returning ``{"status": "error", ...}`` would let
+        ``BaseHandler.run()`` latch ``last_run`` and starve the panel for
+        24h. Raising routes failures through the contract's
+        ``HandlerSoftFailure`` lane so the next 30s daemon cycle re-evaluates
+        ``is_due`` (gated by the 5-min embargo from ``record_soft_failure``
+        or the 24h+ embargo from ``record_throttle``).
+        """
         if not os.environ.get("IB_FLEX_TOKEN") or not os.environ.get("IB_FLEX_NAV_QUERY_ID"):
             return {"status": "skip", "reason": "IB_FLEX_TOKEN / IB_FLEX_NAV_QUERY_ID not configured"}
 
         script = PROJECT_ROOT / "scripts" / "cash_flow_sync.py"
         if not script.exists():
-            return {"status": "error", "error": f"script not found: {script}"}
+            raise RuntimeError(f"script not found: {script}")
 
         try:
             result = subprocess.run(
@@ -277,15 +297,15 @@ class CashFlowSyncHandler(BaseHandler):
                 timeout=180,
             )
         except subprocess.TimeoutExpired:
-            return {"status": "error", "error": "cash_flow_sync timed out after 180s"}
+            raise RuntimeError("cash_flow_sync timed out after 180s") from None
         except Exception as exc:
-            return {"status": "error", "error": str(exc)}
+            raise RuntimeError(str(exc)) from exc
 
         if result.returncode != 0:
             tail = (result.stderr or result.stdout or "").splitlines()[-3:]
             error_msg = " | ".join(tail)
             logger.warning("cash_flow_sync failed: %s", error_msg)
-            return {"status": "error", "error": error_msg, "returncode": result.returncode}
+            raise RuntimeError(error_msg)
 
         last_line = (result.stdout or "").strip().splitlines()[-1] if result.stdout else ""
         return {"status": "ok", "summary": last_line}
