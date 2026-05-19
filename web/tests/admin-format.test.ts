@@ -9,8 +9,11 @@ import {
   authStateLabel,
   authStateTone,
   backoffSummary,
+  formatRelativeTime,
+  formatUptime,
   forcePushDisabledReason,
   isForcePushDisabled,
+  unitActivityLabel,
   unitTone,
 } from "../lib/adminFormat";
 
@@ -160,8 +163,28 @@ describe("unitTone", () => {
   it("failed -> negative", () => {
     expect(unitTone({ ...base, active_state: "failed", sub_state: "failed" })).toBe("negative");
   });
-  it("inactive -> warning", () => {
+  it("inactive without exit-code metadata -> warning", () => {
     expect(unitTone({ ...base, active_state: "inactive", sub_state: "dead" })).toBe("warning");
+  });
+  it("inactive oneshot with rc=0 -> positive (clean finish)", () => {
+    expect(
+      unitTone({
+        ...base,
+        active_state: "inactive",
+        sub_state: "dead",
+        last_exit_code: 0,
+      }),
+    ).toBe("positive");
+  });
+  it("inactive oneshot with non-zero rc -> negative", () => {
+    expect(
+      unitTone({
+        ...base,
+        active_state: "inactive",
+        sub_state: "dead",
+        last_exit_code: 1,
+      }),
+    ).toBe("negative");
   });
   it("activating -> warning", () => {
     expect(unitTone({ ...base, active_state: "activating", sub_state: "start" })).toBe("warning");
@@ -170,5 +193,104 @@ describe("unitTone", () => {
     expect(
       unitTone({ ...base, can_control: false, active_state: "active", sub_state: "running" }),
     ).toBe("neutral");
+  });
+});
+
+describe("formatRelativeTime", () => {
+  const now = Date.parse("2026-05-19T12:00:00Z");
+  it("returns 'just now' under 5s", () => {
+    expect(formatRelativeTime("2026-05-19T11:59:58Z", now)).toBe("just now");
+  });
+  it("returns Ns ago for 5-59s", () => {
+    expect(formatRelativeTime("2026-05-19T11:59:30Z", now)).toBe("30s ago");
+  });
+  it("returns Nm ago for 1-59 minutes", () => {
+    expect(formatRelativeTime("2026-05-19T11:55:00Z", now)).toBe("5m ago");
+  });
+  it("returns Nh ago for 1-23 hours", () => {
+    expect(formatRelativeTime("2026-05-19T09:00:00Z", now)).toBe("3h ago");
+  });
+  it("returns 'yesterday' between 24h and 48h", () => {
+    expect(formatRelativeTime("2026-05-18T10:00:00Z", now)).toBe("yesterday");
+  });
+  it("returns Nd ago beyond 48h", () => {
+    expect(formatRelativeTime("2026-05-16T12:00:00Z", now)).toBe("3d ago");
+  });
+  it("clamps future timestamps to 'just now' (clock skew safeguard)", () => {
+    expect(formatRelativeTime("2026-05-19T12:01:00Z", now)).toBe("just now");
+  });
+  it("returns 'unknown' for non-parseable input", () => {
+    expect(formatRelativeTime("not-a-date", now)).toBe("unknown");
+  });
+});
+
+describe("formatUptime", () => {
+  it("returns Ns for sub-minute", () => {
+    expect(formatUptime(45)).toBe("45s");
+  });
+  it("returns Nm for sub-hour", () => {
+    expect(formatUptime(125)).toBe("2m");
+  });
+  it("returns Nh when minutes are zero", () => {
+    expect(formatUptime(3 * 3600)).toBe("3h");
+  });
+  it("returns Nh Nm for hours + minutes", () => {
+    expect(formatUptime(3 * 3600 + 22 * 60)).toBe("3h 22m");
+  });
+  it("returns Nd Nh for days + hours", () => {
+    expect(formatUptime(2 * 86_400 + 4 * 3600)).toBe("2d 4h");
+  });
+  it("returns Nd when hours are zero", () => {
+    expect(formatUptime(12 * 86_400)).toBe("12d");
+  });
+  it("clamps negatives + non-finite values to 0s", () => {
+    expect(formatUptime(-1)).toBe("0s");
+    expect(formatUptime(Number.NaN)).toBe("0s");
+  });
+});
+
+describe("unitActivityLabel", () => {
+  const baseUnit = {
+    unit: "radon-api.service",
+    load_state: "loaded",
+    active_state: "active",
+    sub_state: "running",
+    description: "Radon API",
+    can_control: true,
+  };
+  const now = Date.parse("2026-05-19T12:00:00Z");
+  it("prefers uptime for currently-running daemons", () => {
+    expect(unitActivityLabel({ ...baseUnit, uptime_secs: 3 * 3600 + 22 * 60 }, now))
+      .toBe("running 3h 22m");
+  });
+  it("falls back to last-ran timestamp for oneshots", () => {
+    expect(
+      unitActivityLabel(
+        {
+          ...baseUnit,
+          active_state: "inactive",
+          sub_state: "dead",
+          last_active_at: "2026-05-19T11:55:00Z",
+          last_exit_code: 0,
+        },
+        now,
+      ),
+    ).toBe("last ran 5m ago (rc=0)");
+  });
+  it("omits rc when no exit code is available (daemon that stopped)", () => {
+    expect(
+      unitActivityLabel(
+        {
+          ...baseUnit,
+          active_state: "inactive",
+          sub_state: "dead",
+          last_active_at: "2026-05-19T11:55:00Z",
+        },
+        now,
+      ),
+    ).toBe("last ran 5m ago");
+  });
+  it("returns 'never run' when both timestamps are missing", () => {
+    expect(unitActivityLabel(baseUnit, now)).toBe("never run");
   });
 });

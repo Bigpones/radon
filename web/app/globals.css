@@ -8328,6 +8328,30 @@ body[data-mobile="true"] td.right {
   margin-top: 2px;
 }
 
+.admin-unit-activity {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* Row-level success flash: brand-accent left border + fading background.
+ * Pure CSS transition (no JS animation) so React doesn't have to wake the
+ * row up every frame. Class is added by ServiceControlPanel for the unit
+ * that was just acted on; cleared after FLASH_DURATION_MS in
+ * AdminWorkspace. */
+.admin-row-flash > td {
+  background-color: color-mix(in srgb, var(--accent-bg) 18%, transparent);
+  box-shadow: inset 2px 0 0 0 var(--accent-bg);
+  transition: background-color 1800ms var(--ease-out);
+}
+
+.admin-row-flash-error > td {
+  background-color: color-mix(in srgb, var(--negative) 18%, transparent);
+  box-shadow: inset 2px 0 0 0 var(--negative);
+  transition: background-color 1800ms var(--ease-out);
+}
+
 .admin-status-dot {
   width: 8px;
   height: 8px;

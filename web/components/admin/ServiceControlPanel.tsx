@@ -6,7 +6,8 @@ import type {
   ServicesListResponse,
   UnitStatus,
 } from "@/lib/adminTypes";
-import { unitTone } from "@/lib/adminFormat";
+import { unitActivityLabel, unitTone } from "@/lib/adminFormat";
+import type { FlashTarget } from "./AdminWorkspace";
 import ConfirmDialog from "./ConfirmDialog";
 
 type ServiceControlPanelProps = {
@@ -14,6 +15,7 @@ type ServiceControlPanelProps = {
   loading: boolean;
   error: string | null;
   onAction: (unit: string, action: ServiceAction) => Promise<void>;
+  flashTarget?: FlashTarget | null;
 };
 
 type PendingAction = {
@@ -31,6 +33,7 @@ export default function ServiceControlPanel({
   loading,
   error,
   onAction,
+  flashTarget = null,
 }: ServiceControlPanelProps) {
   const [pending, setPending] = useState<PendingAction>(null);
   const [confirm, setConfirm] = useState<PendingAction>(null);
@@ -112,6 +115,7 @@ export default function ServiceControlPanel({
               supported={services?.supported ?? false}
               pending={pending}
               onRequest={requestAction}
+              flashTarget={flashTarget}
             />
           ))}
         </tbody>
@@ -146,24 +150,38 @@ function ServiceRow({
   supported,
   pending,
   onRequest,
+  flashTarget,
 }: {
   unit: UnitStatus;
   supported: boolean;
   pending: PendingAction;
   onRequest: (unit: string, action: ServiceAction) => void;
+  flashTarget: FlashTarget | null;
 }) {
   const tone = unitTone(unit);
   const disabled = !supported || !unit.can_control;
   const isUnitPending = pending?.unit === unit.unit;
+  const activity = unitActivityLabel(unit);
+  const flashClass = resolveFlashClass(unit.unit, flashTarget);
 
   return (
-    <tr data-testid={`service-row-${unit.unit}`}>
+    <tr
+      data-testid={`service-row-${unit.unit}`}
+      className={flashClass}
+      data-flash={flashClass ? "true" : undefined}
+    >
       <td>
         <div className="admin-unit-cell">
           <span className={`admin-status-dot admin-status-dot-${tone}`} aria-hidden />
           <span className="admin-unit-name">{unit.unit}</span>
         </div>
         {unit.description && <div className="admin-unit-desc">{unit.description}</div>}
+        <div
+          className="admin-unit-activity"
+          data-testid={`service-activity-${unit.unit}`}
+        >
+          {activity}
+        </div>
       </td>
       <td>{unit.active_state}</td>
       <td>{unit.sub_state}</td>
@@ -185,4 +203,10 @@ function ServiceRow({
       </td>
     </tr>
   );
+}
+
+/** Class name added to a row that was just acted on (success or failure). */
+function resolveFlashClass(unit: string, flash: FlashTarget | null): string {
+  if (!flash || flash.unit !== unit) return "";
+  return flash.ok ? "admin-row-flash" : "admin-row-flash-error";
 }

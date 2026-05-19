@@ -19,12 +19,26 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import shutil
 from dataclasses import dataclass, asdict
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 logger = logging.getLogger("radon.services")
+
+# Sentinels emitted by systemctl when a timestamp slot has never been written
+# (e.g. ExecMainExitTimestamp on a service that has never finished running).
+_NEVER_TIMESTAMPS = frozenset({"", "n/a", "0"})
+
+# Locale-stable timestamp format. systemctl emits timestamps in the host's
+# active locale; we force LC_ALL=C in :func:`_systemctl` so they arrive in
+# this format regardless of how the box is configured.
+_SYSTEMCTL_TIMESTAMP_FORMATS = (
+    "%a %Y-%m-%d %H:%M:%S %Z",
+    "%a %Y-%m-%d %H:%M:%S",
+)
 
 # Whitelisted unit-name pattern. Any unit listed by /admin/services or passed
 # to /admin/services/<unit>/<action> must match. This keeps the panel from
@@ -54,6 +68,15 @@ class UnitStatus:
     sub_state: str         # "running" | "dead" | "exited" | ...
     description: str
     can_control: bool
+    # When the unit last became active OR last finished (oneshots). UTC ISO8601.
+    # ``None`` means "never run" or "timestamp unreadable".
+    last_active_at: Optional[str] = None
+    # Most recent exit code, populated for ``Type=oneshot`` services. ``None``
+    # for long-running daemons (where the value would always be 0 / unset).
+    last_exit_code: Optional[int] = None
+    # Seconds since the unit became active, populated only for currently-running
+    # daemons (``ActiveState=active`` AND ``SubState=running``).
+    uptime_secs: Optional[int] = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -83,12 +106,16 @@ async def _systemctl(*args: str, timeout: float = 15.0) -> tuple[str, str, int]:
     """Run a systemctl invocation and return (stdout, stderr, returncode).
 
     Wraps subprocess so all callers share the same timeout and decode rules.
+    Forces ``LC_ALL=C`` so timestamp strings come back in a single parseable
+    locale regardless of host configuration.
     """
+    env = {"LC_ALL": "C", "LANG": "C"}
     proc = await asyncio.create_subprocess_exec(
         "systemctl",
         *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        env={**_inherit_systemctl_env(), **env},
     )
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
@@ -102,6 +129,12 @@ async def _systemctl(*args: str, timeout: float = 15.0) -> tuple[str, str, int]:
         return ("", "systemctl timed out", -1)
 
 
+def _inherit_systemctl_env() -> Dict[str, str]:
+    """Return the minimum env systemctl needs (PATH + DBus session)."""
+    keep = {"PATH", "HOME", "USER", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"}
+    return {k: v for k, v in os.environ.items() if k in keep}
+
+
 def _parse_show_output(raw: str) -> Dict[str, str]:
     """Parse ``systemctl show -p key1,key2 unit`` output into a dict."""
     fields: Dict[str, str] = {}
@@ -111,6 +144,96 @@ def _parse_show_output(raw: str) -> Dict[str, str]:
         key, value = line.split("=", 1)
         fields[key.strip()] = value.strip()
     return fields
+
+
+def parse_systemctl_timestamp(raw: str) -> Optional[str]:
+    """Convert systemctl's human timestamp into a UTC ISO8601 string.
+
+    systemctl with ``LC_ALL=C`` emits values like
+    ``"Tue 2026-05-19 18:41:51 UTC"``. Returns ``None`` for the "never set"
+    sentinel (empty / ``"0"`` / ``"n/a"``) so callers can render "never run".
+    """
+    if not raw or raw.strip().lower() in _NEVER_TIMESTAMPS:
+        return None
+    text = raw.strip()
+    for fmt in _SYSTEMCTL_TIMESTAMP_FORMATS:
+        try:
+            dt = datetime.strptime(text, fmt)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            else:
+                dt = dt.astimezone(timezone.utc)
+            return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        except ValueError:
+            continue
+    return None
+
+
+def _parse_int(raw: str) -> Optional[int]:
+    """Return int(raw) or ``None`` when raw is empty / non-numeric."""
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _derive_last_active(parsed: Dict[str, str]) -> Optional[str]:
+    """Pick the most relevant "last activity" timestamp for the unit.
+
+    Long-running daemons report their start time via ``ActiveEnterTimestamp``.
+    Oneshot units transition back to ``inactive`` after each run; the most
+    useful timestamp there is ``ExecMainExitTimestamp`` (last finish) which
+    falls through to ``InactiveEnterTimestamp`` if the exec slot is empty.
+    """
+    candidates = (
+        parsed.get("ExecMainExitTimestamp", ""),
+        parsed.get("InactiveEnterTimestamp", ""),
+        parsed.get("ActiveEnterTimestamp", ""),
+    )
+    iso_values = [parse_systemctl_timestamp(c) for c in candidates]
+    iso_values = [v for v in iso_values if v]
+    if not iso_values:
+        return None
+    # Lexicographic max works on ISO8601 strings ending in Z.
+    return max(iso_values)
+
+
+def _derive_uptime_secs(parsed: Dict[str, str]) -> Optional[int]:
+    """Seconds since ``ActiveEnterTimestamp`` for a currently-running unit.
+
+    Returns ``None`` unless the unit is ``active`` + ``running`` (anything
+    else, like a oneshot that already exited, doesn't have a meaningful
+    uptime to display).
+    """
+    if parsed.get("ActiveState") != "active":
+        return None
+    if parsed.get("SubState") != "running":
+        return None
+    iso = parse_systemctl_timestamp(parsed.get("ActiveEnterTimestamp", ""))
+    if not iso:
+        return None
+    try:
+        start = datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    delta = (datetime.now(timezone.utc) - start).total_seconds()
+    if delta < 0:
+        return 0
+    return int(delta)
+
+
+def _derive_last_exit_code(parsed: Dict[str, str]) -> Optional[int]:
+    """Most recent exec exit code, or ``None`` if the unit has never run.
+
+    Only meaningful for ``Type=oneshot``; for long-running daemons systemd
+    reports the running PID's last status which would be misleading.
+    """
+    service_type = parsed.get("Type", "")
+    if service_type != "oneshot":
+        return None
+    return _parse_int(parsed.get("ExecMainStatus", ""))
 
 
 async def list_units() -> List[str]:
@@ -165,6 +288,12 @@ async def show_unit(unit: str) -> UnitStatus:
         "-p", "ActiveState",
         "-p", "SubState",
         "-p", "Description",
+        "-p", "Type",
+        "-p", "ActiveEnterTimestamp",
+        "-p", "InactiveEnterTimestamp",
+        "-p", "ExecMainStartTimestamp",
+        "-p", "ExecMainExitTimestamp",
+        "-p", "ExecMainStatus",
     )
     if rc != 0:
         return UnitStatus(unit, "unknown", "unknown", "unknown", "", can_control=False)
@@ -178,6 +307,9 @@ async def show_unit(unit: str) -> UnitStatus:
         sub_state=parsed.get("SubState", "unknown"),
         description=parsed.get("Description", ""),
         can_control=load_state == "loaded",
+        last_active_at=_derive_last_active(parsed),
+        last_exit_code=_derive_last_exit_code(parsed),
+        uptime_secs=_derive_uptime_secs(parsed),
     )
 
 

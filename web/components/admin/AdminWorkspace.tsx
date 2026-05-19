@@ -7,6 +7,13 @@ import type {
   ServiceAction,
   ServicesListResponse,
 } from "@/lib/adminTypes";
+
+/** Latest action result; drives the row-level success/failure flash. */
+export type FlashTarget = {
+  unit: string;
+  at: number;
+  ok: boolean;
+};
 import { useViewport } from "@/lib/useViewport";
 import Sidebar from "@/components/Sidebar";
 import IbGatewayCard from "./IbGatewayCard";
@@ -15,6 +22,17 @@ import ServiceControlPanel from "./ServiceControlPanel";
 import RestartLog from "./RestartLog";
 
 const HEALTH_POLL_MS = 5_000;
+// Aligned with HEALTH_POLL_MS for now — both endpoints hit local FastAPI and
+// have similar refresh budgets. Tune independently if /admin/services proves
+// expensive under load (current implementation runs a single ``systemctl
+// list-units`` per call, so this is comfortable).
+const SERVICES_POLL_MS = 5_000;
+// Tighter cadence while a unit is in a transitional state (``activating``,
+// ``reloading``, ``deactivating``). Mirrors the operator's "did it work?"
+// glance pattern after clicking restart.
+const SERVICES_TRANSITIONAL_POLL_MS = 2_000;
+// How long to keep the success-flash class on the row that was just acted on.
+const FLASH_DURATION_MS = 2_000;
 
 /**
  * Shell for the /admin route. Owns:
@@ -37,9 +55,16 @@ export default function AdminWorkspace() {
 
   const [log, setLog] = useState<RestartLogEntry[]>([]);
 
+  // Row-level success flash: ``{ unit, at, ok }`` set on action completion,
+  // cleared after FLASH_DURATION_MS. Drives the ``admin-row-flash`` class
+  // on the matching ServiceRow.
+  const [flashTarget, setFlashTarget] = useState<FlashTarget | null>(null);
+
   // Lock against concurrent polls; the panel hits localhost FastAPI so we
   // don't want overlapping fetches when a card re-renders.
   const healthInflightRef = useRef(false);
+  const servicesInflightRef = useRef(false);
+  const flashTimerRef = useRef<number | null>(null);
 
   const fetchHealth = useCallback(async () => {
     if (healthInflightRef.current) return;
@@ -62,6 +87,8 @@ export default function AdminWorkspace() {
   }, []);
 
   const fetchServices = useCallback(async () => {
+    if (servicesInflightRef.current) return;
+    servicesInflightRef.current = true;
     try {
       const res = await fetch("/api/admin/services", { cache: "no-store" });
       if (!res.ok) {
@@ -75,15 +102,38 @@ export default function AdminWorkspace() {
       setServicesError(err instanceof Error ? err.message : "service list failed");
     } finally {
       setServicesLoading(false);
+      servicesInflightRef.current = false;
     }
   }, []);
+
+  // True while any visible unit is in a transitional state — drives a faster
+  // poll cadence so the operator sees activating -> active without waiting.
+  const hasTransitionalUnit = hasTransitionalRow(services);
 
   useEffect(() => {
     void fetchHealth();
     void fetchServices();
-    const id = window.setInterval(fetchHealth, HEALTH_POLL_MS);
-    return () => window.clearInterval(id);
-  }, [fetchHealth, fetchServices]);
+    const healthId = window.setInterval(fetchHealth, HEALTH_POLL_MS);
+    const servicesInterval = hasTransitionalUnit
+      ? SERVICES_TRANSITIONAL_POLL_MS
+      : SERVICES_POLL_MS;
+    const servicesId = window.setInterval(fetchServices, servicesInterval);
+    return () => {
+      window.clearInterval(healthId);
+      window.clearInterval(servicesId);
+    };
+  }, [fetchHealth, fetchServices, hasTransitionalUnit]);
+
+  // Cleanup the flash timer on unmount so we don't call setState on a
+  // disposed component.
+  useEffect(() => {
+    return () => {
+      if (flashTimerRef.current !== null) {
+        window.clearTimeout(flashTimerRef.current);
+        flashTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const appendLog = useCallback((entry: RestartLogEntry) => {
     setLog((prev) => [entry, ...prev].slice(0, 25));
@@ -130,9 +180,21 @@ export default function AdminWorkspace() {
     void fetchHealth();
   }, [appendLog, fetchHealth]);
 
+  const flashRow = useCallback((unit: string, ok: boolean) => {
+    if (flashTimerRef.current !== null) {
+      window.clearTimeout(flashTimerRef.current);
+    }
+    setFlashTarget({ unit, at: Date.now(), ok });
+    flashTimerRef.current = window.setTimeout(() => {
+      setFlashTarget(null);
+      flashTimerRef.current = null;
+    }, FLASH_DURATION_MS);
+  }, []);
+
   const runServiceAction = useCallback(
     async (unit: string, action: ServiceAction) => {
       const at = new Date().toISOString();
+      let succeeded = false;
       try {
         const res = await fetch(`/api/admin/services/${unit}/${action}`, {
           method: "POST",
@@ -143,6 +205,7 @@ export default function AdminWorkspace() {
           const detail = typeof body.error === "string" ? body.error : `HTTP ${res.status}`;
           appendLog({ at, action: "service-action", target: `${unit} ${action}`, ok: false, detail });
         } else {
+          succeeded = true;
           appendLog({
             at,
             action: "service-action",
@@ -155,10 +218,11 @@ export default function AdminWorkspace() {
         const detail = err instanceof Error ? err.message : "service control failed";
         appendLog({ at, action: "service-action", target: `${unit} ${action}`, ok: false, detail });
       }
+      flashRow(unit, succeeded);
       void fetchServices();
       void fetchHealth();
     },
-    [appendLog, fetchHealth, fetchServices],
+    [appendLog, fetchHealth, fetchServices, flashRow],
   );
 
   if (hasMounted && isMobile) {
@@ -201,10 +265,25 @@ export default function AdminWorkspace() {
             loading={servicesLoading}
             error={servicesError}
             onAction={runServiceAction}
+            flashTarget={flashTarget}
           />
           <RestartLog entries={log} />
         </div>
       </main>
     </div>
+  );
+}
+
+/**
+ * True when any visible unit is in a transitional state. Used to bump
+ * polling cadence so the operator sees ``activating`` -> ``active``
+ * quickly after firing a restart.
+ */
+function hasTransitionalRow(services: ServicesListResponse | null): boolean {
+  if (!services?.units) return false;
+  return services.units.some((u) =>
+    u.active_state === "activating"
+    || u.active_state === "reloading"
+    || u.active_state === "deactivating",
   );
 }

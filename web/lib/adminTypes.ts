@@ -63,6 +63,13 @@ export type UnitStatus = {
   sub_state: string;
   description: string;
   can_control: boolean;
+  // When the unit last became active OR last finished (oneshots). UTC ISO8601.
+  // ``null`` when the unit has never been started.
+  last_active_at?: string | null;
+  // Most recent exit code, populated only for ``Type=oneshot`` services.
+  last_exit_code?: number | null;
+  // Seconds since the unit became active (currently-running daemons only).
+  uptime_secs?: number | null;
 };
 
 export type ServicesListResponse = {
