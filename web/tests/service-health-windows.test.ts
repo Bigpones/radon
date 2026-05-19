@@ -11,6 +11,7 @@ import {
   getFreshnessWindowMs,
   getServiceCategory,
   isStale,
+  requiresIb,
   type MarketState,
   type ServiceCategory,
 } from "../lib/serviceHealthWindows";
@@ -263,5 +264,94 @@ describe("getServiceCategory", () => {
     // surface — defaulting to ``scheduled`` keeps the banner honest
     // about silent daemons.
     expect(getServiceCategory("brand-new-handler")).toBe("scheduled");
+  });
+});
+
+/**
+ * ``requires_ib`` flags which services depend on IB Gateway upstream. The
+ * watchdog uses it to group alerts when IB Gateway is the root cause —
+ * e.g. ``awaiting_2fa`` should fire ONE grouped Pushover alert rather
+ * than N per-service alerts. UI may also key off this in future.
+ *
+ * Verified against writer source code (scripts/vcg_scan.py,
+ * scripts/cri_scan.py, scripts/ib_orders.py, scripts/ib_sync.py,
+ * scripts/monitor_daemon/handlers/{fill_monitor,exit_orders,
+ * journal_sync}.py). UW-only services (gex-scan, scanner, discover,
+ * flow-analysis) are FALSE regardless of how they were initially
+ * categorised — the alert grouping must reflect actual data-flow
+ * dependencies, not aspirational ones.
+ */
+describe("SERVICE_FRESHNESS_WINDOWS — requires_ib field", () => {
+  it("every entry declares requires_ib explicitly", () => {
+    for (const [service, entry] of Object.entries(SERVICE_FRESHNESS_WINDOWS)) {
+      expect(
+        entry.requires_ib,
+        `service ${service} is missing the requires_ib field`,
+      ).toBeDefined();
+      expect(typeof entry.requires_ib).toBe("boolean");
+    }
+  });
+
+  it.each<[string, boolean]>([
+    ["vcg-scan", true],
+    ["cri-scan", true],
+    ["orders-sync", true],
+    ["portfolio-sync", true],
+    ["fill-monitor", true],
+    ["exit-orders", true],
+    ["journal-sync", true],
+    ["orders-read-compare", true],
+    ["newsfeed-scraper", false],
+    ["replica-watchdog", false],
+    ["cash-flow-sync", false],
+    ["flex-token-check", false],
+    ["cta-sync", false],
+    ["analyst-ratings", false],
+    ["watchdog-alerts", false],
+    ["gex-scan", false],
+    ["scanner", false],
+    ["discover", false],
+    ["flow-analysis", false],
+    ["ib-watchdog", false],
+  ])("%s requires_ib = %s", (service, expected) => {
+    expect(SERVICE_FRESHNESS_WINDOWS[service]?.requires_ib).toBe(expected);
+  });
+
+  it("count of requires_ib=true matches the verified IB-dependent set", () => {
+    const ibTrue = new Set(
+      Object.entries(SERVICE_FRESHNESS_WINDOWS)
+        .filter(([, w]) => w.requires_ib === true)
+        .map(([k]) => k),
+    );
+    // Exactly the writers whose source code calls IB directly. Adding
+    // a new IB-backed handler? Update this set + the writer audit
+    // comment above.
+    const expected = new Set([
+      "vcg-scan",
+      "cri-scan",
+      "orders-sync",
+      "portfolio-sync",
+      "fill-monitor",
+      "exit-orders",
+      "journal-sync",
+      "orders-read-compare",
+    ]);
+    expect(ibTrue).toEqual(expected);
+  });
+});
+
+describe("requiresIb helper", () => {
+  it("returns the configured flag for a known IB-dependent service", () => {
+    expect(requiresIb("vcg-scan")).toBe(true);
+    expect(requiresIb("orders-sync")).toBe(true);
+  });
+
+  it("returns the configured flag for a non-IB service", () => {
+    expect(requiresIb("newsfeed-scraper")).toBe(false);
+    expect(requiresIb("cta-sync")).toBe(false);
+  });
+
+  it("returns false for unknown services so grouping never silences a misnamed writer", () => {
+    expect(requiresIb("brand-new-handler-not-registered")).toBe(false);
   });
 });

@@ -29,6 +29,21 @@ def _ts_scheduled_services() -> set[str]:
     return set(pattern.findall(text))
 
 
+def _ts_requires_ib() -> dict[str, bool]:
+    """Parse web/lib/serviceHealthWindows.ts and return a mapping of
+    service name → requires_ib flag. Only entries that declare
+    ``requires_ib`` are returned; missing flags surface as a contract
+    failure in the test below.
+    """
+    text = _TS_FILE.read_text(encoding="utf-8")
+    # Match: "service-name": { ... requires_ib: true|false ... }
+    pattern = re.compile(
+        r'"([a-z][a-z0-9\-]*)"\s*:\s*\{[^}]*?requires_ib:\s*(true|false)',
+        re.MULTILINE | re.DOTALL,
+    )
+    return {name: (flag == "true") for name, flag in pattern.findall(text)}
+
+
 class TestServiceCatalogContract:
     def test_python_lists_every_scheduled_ts_service(self):
         from watchdog import services as svc_mod
@@ -59,6 +74,108 @@ class TestServiceCatalogContract:
             assert "closed" in window and isinstance(window["closed"], int), name
             assert window["open"] > 0, name
             assert window["closed"] > 0, name
+
+    def test_every_service_declares_requires_ib_explicitly(self):
+        """Every entry MUST set ``requires_ib`` so alert-grouping logic
+        knows whether the service depends on IB Gateway upstream.
+
+        Defaulting silently would mask misclassifications; we want an
+        explicit value the watchdog can trust.
+        """
+        from watchdog import services as svc_mod
+
+        for name, window in svc_mod.SCHEDULED_SERVICES.items():
+            assert "requires_ib" in window, (
+                f"{name} is missing the requires_ib flag in SCHEDULED_SERVICES"
+            )
+            assert isinstance(window["requires_ib"], bool), (
+                f"{name}.requires_ib must be a bool, got {type(window['requires_ib']).__name__}"
+            )
+
+    def test_requires_ib_true_set_matches_verified_writers(self):
+        """The IB-dependent set is locked to what the writer source code
+        actually does (verified by reading scripts/vcg_scan.py,
+        scripts/cri_scan.py, scripts/ib_orders.py, scripts/ib_sync.py,
+        scripts/monitor_daemon/handlers/{fill_monitor,exit_orders,
+        journal_sync}.py).
+
+        Drift here should fail loudly so we don't quietly group alerts
+        on services that aren't actually IB-dependent.
+        """
+        from watchdog import services as svc_mod
+
+        ib_dependent = {
+            name for name, w in svc_mod.SCHEDULED_SERVICES.items()
+            if w.get("requires_ib") is True
+        }
+        expected = {
+            "vcg-scan",
+            "cri-scan",
+            "orders-sync",
+            "portfolio-sync",
+            "fill-monitor",
+            "exit-orders",
+            "journal-sync",
+        }
+        assert ib_dependent == expected, (
+            f"requires_ib=true mismatch.\n"
+            f"  expected: {sorted(expected)}\n"
+            f"  actual:   {sorted(ib_dependent)}"
+        )
+
+    def test_non_ib_services_marked_false(self):
+        """Services with no IB call path must be requires_ib=false."""
+        from watchdog import services as svc_mod
+
+        non_ib_expected = {
+            "newsfeed-scraper",
+            "replica-watchdog",
+            "cash-flow-sync",
+            "flex-token-check",
+            "cta-sync",
+            "watchdog-alerts",
+        }
+        for name in non_ib_expected:
+            entry = svc_mod.SCHEDULED_SERVICES.get(name)
+            assert entry is not None, f"{name} missing from SCHEDULED_SERVICES"
+            assert entry["requires_ib"] is False, (
+                f"{name} must be requires_ib=False (verified: no IB call path)"
+            )
+
+    def test_requires_ib_matches_ts_for_scheduled_services(self):
+        """Every scheduled service named in TS must carry the SAME
+        requires_ib flag as the Python entry. Drift between the two
+        files would let alert-grouping logic diverge from UI behaviour.
+        """
+        from watchdog import services as svc_mod
+
+        ts_requires = _ts_requires_ib()
+        py_services = svc_mod.SCHEDULED_SERVICES
+
+        # Each scheduled service in Python must have an IB flag in TS too.
+        mismatches: list[str] = []
+        for name, py_entry in py_services.items():
+            if name not in ts_requires:
+                mismatches.append(f"{name}: missing from TS requires_ib")
+                continue
+            if py_entry["requires_ib"] != ts_requires[name]:
+                mismatches.append(
+                    f"{name}: py={py_entry['requires_ib']} ts={ts_requires[name]}"
+                )
+        assert not mismatches, "TS/Python drift on requires_ib:\n  " + "\n  ".join(mismatches)
+
+    def test_requires_ib_helper_returns_bool(self):
+        """Public helper for the watchdog: ``requires_ib(service)``
+        returns the flag for a known service and ``False`` for unknown
+        names (safer default — don't suppress alerts on a service we
+        haven't classified yet).
+        """
+        from watchdog import services as svc_mod
+
+        assert svc_mod.requires_ib("vcg-scan") is True
+        assert svc_mod.requires_ib("cri-scan") is True
+        assert svc_mod.requires_ib("newsfeed-scraper") is False
+        assert svc_mod.requires_ib("unknown-service-name") is False
 
 
 class TestBuckets:

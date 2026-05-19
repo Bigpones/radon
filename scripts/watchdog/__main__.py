@@ -45,7 +45,7 @@ except Exception:
 
 
 def _cmd_bucket(args: argparse.Namespace) -> int:
-    from scripts.watchdog import check, cooldown as cooldown_mod, notify
+    from scripts.watchdog import check, grouping, notify
 
     notify.log_startup_warning()
     now = datetime.now(timezone.utc)
@@ -54,20 +54,19 @@ def _cmd_bucket(args: argparse.Namespace) -> int:
         print(f"[watchdog] bucket={args.bucket} skipped (off-window)")
         return 0
 
-    fired_count = 0
+    fired = [o for o in report.outcomes if o.fired]
     for outcome in report.outcomes:
         line = f"  {outcome.service:24s} {outcome.status:8s} fired={outcome.fired}"
         print(line)
-        if not outcome.fired:
-            continue
-        if outcome.severity and not cooldown_mod.cooldown_allows_fire(
-            service=outcome.service, severity=outcome.severity, now=outcome.now
-        ):
-            print(f"    -> suppressed by cooldown ({outcome.severity})")
-            continue
-        notify.dispatch(outcome)
-        fired_count += 1
-    print(f"[watchdog] bucket={args.bucket} fired={fired_count}/{len(report.outcomes)}")
+
+    # Root-cause-aware dispatch: when IB Gateway is the upstream root
+    # cause (auth_state ∈ awaiting_2fa, unreachable) AND ≥2 IB-dependent
+    # services degraded in this cycle, collapse them into one Pushover
+    # message + individual service_health rows. Otherwise per-service
+    # cooldown-gated dispatch fires normally. See scripts/watchdog/grouping.py.
+    grouping.dispatch_with_grouping(outcomes=fired, now=now)
+
+    print(f"[watchdog] bucket={args.bucket} fired={len(fired)}/{len(report.outcomes)}")
 
     # Heartbeat the watchdog-alerts row when this bucket cycle dispatched
     # nothing. notify._emit_service_health() writes ``error`` on every
@@ -76,7 +75,7 @@ def _cmd_bucket(args: argparse.Namespace) -> int:
     # watchdog-alerts even after the underlying issue heals. Same
     # heartbeat-on-success pattern as replica-watchdog (see
     # feedback_service_health_heartbeat.md).
-    if fired_count == 0:
+    if not fired:
         notify.heartbeat_ok(bucket=args.bucket, now=now)
     return 0
 

@@ -35,36 +35,46 @@ _DAY = 24 * _HOUR
 class FreshnessWindow(TypedDict):
     open: int
     closed: int
+    # True when the writer's data-flow depends on IB Gateway. The watchdog
+    # groups alerts on these services into a single "IB Gateway awaiting
+    # 2FA" message when ``/health.auth_state`` flags an upstream IB
+    # problem — see scripts/watchdog/check.py:check_bucket. False for
+    # writers that talk to UW, Flex Web Service, Playwright sources, or
+    # nothing IB-related; their alerts are routed normally.
+    #
+    # The flag is verified against each writer's source code, not against
+    # an aspirational taxonomy — see test_services.py contract tests.
+    requires_ib: bool
 
 
 # Every scheduled service in web/lib/serviceHealthWindows.ts.
 # Windows in seconds.
 SCHEDULED_SERVICES: dict[str, FreshnessWindow] = {
-    "newsfeed-scraper": {"open": 5 * _MIN, "closed": 5 * _MIN},
+    "newsfeed-scraper": {"open": 5 * _MIN, "closed": 5 * _MIN, "requires_ib": False},
     # Market-hours-only writers (gated by MonitorDaemon's
     # requires_market_hours=True). Mirrors web/lib/serviceHealthWindows.ts;
     # closed window absorbs the longest weekend gap so the banner doesn't
     # fire overnight. extended is folded into closed on the TS side for
     # the same reason — writers don't run in extended hours.
-    "orders-sync":      {"open": 10 * _MIN, "closed": 3 * _DAY},
-    "portfolio-sync":   {"open": 10 * _MIN, "closed": 3 * _DAY},
-    "journal-sync":     {"open": 10 * _MIN, "closed": 3 * _DAY},
-    "cash-flow-sync":   {"open": 25 * _HOUR, "closed": 25 * _HOUR},
-    "fill-monitor":     {"open": 5 * _MIN, "closed": 3 * _DAY},
-    "exit-orders":      {"open": 5 * _MIN, "closed": 3 * _DAY},
-    "flex-token-check": {"open": 25 * _HOUR, "closed": 25 * _HOUR},
-    "cri-scan":         {"open": 35 * _MIN, "closed": 1 * _DAY},
-    "vcg-scan":         {"open": 15 * _MIN, "closed": 1 * _DAY},
-    "cta-sync":         {"open": 25 * _HOUR, "closed": 72 * _HOUR},
+    "orders-sync":      {"open": 10 * _MIN, "closed": 3 * _DAY, "requires_ib": True},
+    "portfolio-sync":   {"open": 10 * _MIN, "closed": 3 * _DAY, "requires_ib": True},
+    "journal-sync":     {"open": 10 * _MIN, "closed": 3 * _DAY, "requires_ib": True},
+    "cash-flow-sync":   {"open": 25 * _HOUR, "closed": 25 * _HOUR, "requires_ib": False},
+    "fill-monitor":     {"open": 5 * _MIN, "closed": 3 * _DAY, "requires_ib": True},
+    "exit-orders":      {"open": 5 * _MIN, "closed": 3 * _DAY, "requires_ib": True},
+    "flex-token-check": {"open": 25 * _HOUR, "closed": 25 * _HOUR, "requires_ib": False},
+    "cri-scan":         {"open": 35 * _MIN, "closed": 1 * _DAY, "requires_ib": True},
+    "vcg-scan":         {"open": 15 * _MIN, "closed": 1 * _DAY, "requires_ib": True},
+    "cta-sync":         {"open": 25 * _HOUR, "closed": 72 * _HOUR, "requires_ib": False},
     # Event-driven writer — only records a row when it heals. Match
     # the 24h window from web/lib/serviceHealthWindows.ts so the dash
     # banner and the watchdog agree on what "stale" means here.
-    "replica-watchdog": {"open": 24 * _HOUR, "closed": 24 * _HOUR},
+    "replica-watchdog": {"open": 24 * _HOUR, "closed": 24 * _HOUR, "requires_ib": False},
     # ``watchdog-alerts`` is the meta-row this very service writes when
     # alerting on OTHER services. Same event-driven shape as
     # replica-watchdog — 24h window. NOT included in any bucket below
     # to avoid recursive alerting (watchdog alerting on its own alerts row).
-    "watchdog-alerts":  {"open": 24 * _HOUR, "closed": 24 * _HOUR},
+    "watchdog-alerts":  {"open": 24 * _HOUR, "closed": 24 * _HOUR, "requires_ib": False},
 }
 
 
@@ -104,3 +114,15 @@ def freshness_window_for(service: str, market_state: str) -> int:
     if window is None:
         return 1 * _HOUR
     return window["open"] if market_state == "open" else window["closed"]
+
+
+def requires_ib(service: str) -> bool:
+    """True iff ``service`` is in the IB-dependent set. Unknown services
+    return False so we never silently suppress alerts on a writer we
+    haven't classified — false negative is safer than a false silence
+    when IB Gateway is the suspected root cause.
+    """
+    entry = SCHEDULED_SERVICES.get(service)
+    if entry is None:
+        return False
+    return bool(entry.get("requires_ib", False))

@@ -34,6 +34,18 @@ type Window = {
   extended: number;
   closed: number;
   category: ServiceCategory;
+  /**
+   * True iff the writer's data-flow depends on IB Gateway. The
+   * watchdog (scripts/watchdog/check.py) keys off this to group alerts
+   * into a single "IB Gateway awaiting 2FA / unreachable" message when
+   * the upstream root cause is IB rather than N independent failures.
+   *
+   * Verified against each writer's source code (see test_services.py),
+   * not against an aspirational taxonomy. UW-only / Flex-only /
+   * Playwright-only writers are FALSE even if they live on the same
+   * dashboard as IB-backed services.
+   */
+  requires_ib: boolean;
 };
 
 const MIN = 60_000;
@@ -64,7 +76,7 @@ const DAY = 24 * HOUR;
  * 1h default and fire the banner overnight + on weekends.
  */
 export const SERVICE_FRESHNESS_WINDOWS: Record<string, Window> = {
-  "newsfeed-scraper": { open: 5 * MIN, extended: 5 * MIN, closed: 5 * MIN, category: "scheduled" },
+  "newsfeed-scraper": { open: 5 * MIN, extended: 5 * MIN, closed: 5 * MIN, category: "scheduled", requires_ib: false },
 
   // Market-hours-only IB feeds. The monitor daemon gates these on
   // `requires_market_hours=True`, so they only run 09:30–16:00 ET. The
@@ -74,30 +86,31 @@ export const SERVICE_FRESHNESS_WINDOWS: Record<string, Window> = {
   // they're behaving as designed. ``closed`` covers the longest
   // natural gap (Fri 16:00 ET → Mon 09:30 ET ≈ 65h) so a quiet
   // weekend doesn't trip the banner.
-  "orders-sync": { open: 10 * MIN, extended: 3 * DAY, closed: 3 * DAY, category: "scheduled" },
-  "portfolio-sync": { open: 10 * MIN, extended: 3 * DAY, closed: 3 * DAY, category: "scheduled" },
+  "orders-sync": { open: 10 * MIN, extended: 3 * DAY, closed: 3 * DAY, category: "scheduled", requires_ib: true },
+  "portfolio-sync": { open: 10 * MIN, extended: 3 * DAY, closed: 3 * DAY, category: "scheduled", requires_ib: true },
   // ``orders-read-compare`` only runs when /api/orders is hit, so even
   // though the dashboard polls it every 60s the writer itself has no
   // autonomous trigger and is treated as on-demand for the banner.
-  "orders-read-compare": { open: 10 * MIN, extended: 3 * DAY, closed: 3 * DAY, category: "on-demand" },
+  // Still goes through FastAPI /orders/refresh → IB pool, so requires_ib=true.
+  "orders-read-compare": { open: 10 * MIN, extended: 3 * DAY, closed: 3 * DAY, category: "on-demand", requires_ib: true },
 
   // ``journal-sync`` is also gated on market hours by the daemon. The
   // previous 10-minute ``extended`` + ``closed`` windows surfaced every
   // pre-market and after-hours window as an outage. Match the IB feed
   // pattern above so the row only fires when the writer should have
   // run inside market hours but didn't.
-  "journal-sync": { open: 10 * MIN, extended: 3 * DAY, closed: 3 * DAY, category: "scheduled" },
-  "cash-flow-sync": { open: 25 * HOUR, extended: 25 * HOUR, closed: 25 * HOUR, category: "scheduled" },
+  "journal-sync": { open: 10 * MIN, extended: 3 * DAY, closed: 3 * DAY, category: "scheduled", requires_ib: true },
+  "cash-flow-sync": { open: 25 * HOUR, extended: 25 * HOUR, closed: 25 * HOUR, category: "scheduled", requires_ib: false },
 
   // Both ``fill-monitor`` and ``exit-orders`` only run during market
   // hours via the monitor daemon. Their 1h closed window assumed the
   // daemon fired during extended hours too, which it does not (DST fix
   // 2026-05-14 confirmed the market-hours gate). Widen ``extended`` +
   // ``closed`` to cover the worst-case weekend gap.
-  "fill-monitor": { open: 5 * MIN, extended: 3 * DAY, closed: 3 * DAY, category: "scheduled" },
-  "exit-orders": { open: 5 * MIN, extended: 3 * DAY, closed: 3 * DAY, category: "scheduled" },
+  "fill-monitor": { open: 5 * MIN, extended: 3 * DAY, closed: 3 * DAY, category: "scheduled", requires_ib: true },
+  "exit-orders": { open: 5 * MIN, extended: 3 * DAY, closed: 3 * DAY, category: "scheduled", requires_ib: true },
 
-  "flex-token-check": { open: 25 * HOUR, extended: 25 * HOUR, closed: 25 * HOUR, category: "scheduled" },
+  "flex-token-check": { open: 25 * HOUR, extended: 25 * HOUR, closed: 25 * HOUR, category: "scheduled", requires_ib: false },
 
   // cri-scan + vcg-scan run on Mon-Fri-only systemd timers (see CLAUDE.md
   // autonomous timers table). Closed-hour window must cover the
@@ -105,24 +118,26 @@ export const SERVICE_FRESHNESS_WINDOWS: Record<string, Window> = {
   // Surfaced 2026-05-16: both flipped stale on a Saturday with clean
   // Friday-evening finishes because the prior 1-day closed window was
   // shorter than the weekend gap.
-  "cri-scan": { open: 35 * MIN, extended: 35 * MIN, closed: 3 * DAY, category: "scheduled" },
+  "cri-scan": { open: 35 * MIN, extended: 35 * MIN, closed: 3 * DAY, category: "scheduled", requires_ib: true },
   // ``gex-scan`` still flows through ``record_service_health`` only when
   // a user POSTs the scan endpoint, so it's on-demand for banner purposes.
-  "gex-scan": { open: 30 * MIN, extended: 30 * MIN, closed: 1 * DAY, category: "on-demand" },
+  // Source: scripts/gex_scan.py uses UWClient only — no IB dependency.
+  "gex-scan": { open: 30 * MIN, extended: 30 * MIN, closed: 1 * DAY, category: "on-demand", requires_ib: false },
   // ``vcg-scan`` has an autonomous 5-min cadence during market hours
   // (radon-vcg-refresh.timer / com.radon.vcg-refresh). The 15-min open
   // window tolerates 3 missed cycles before flagging — long enough to
   // absorb transient FastAPI or IB Gateway blips, short enough to
   // surface a real outage well inside the trading day. Closed window
   // covers the weekend gap (see cri-scan note above).
-  "vcg-scan": { open: 15 * MIN, extended: 15 * MIN, closed: 3 * DAY, category: "scheduled" },
+  "vcg-scan": { open: 15 * MIN, extended: 15 * MIN, closed: 3 * DAY, category: "scheduled", requires_ib: true },
   // ``cta-sync`` has an autonomous Mon-Fri schedule on the VPS
   // (radon-cta-sync.timer fires 18:15, 19:00, 21:30 UTC) plus the
   // laptop launchd plist as a redundant local trigger. Stale > 25h
   // means the timer failed across both regimes; 25h tolerates a long
   // weekend (Friday 21:30 UTC → Monday 18:15 UTC ≈ 69h) plus any
   // single missed firing.
-  "cta-sync": { open: 25 * HOUR, extended: 25 * HOUR, closed: 72 * HOUR, category: "scheduled" },
+  // MenthorQ source via Playwright — no IB dependency.
+  "cta-sync": { open: 25 * HOUR, extended: 25 * HOUR, closed: 72 * HOUR, category: "scheduled", requires_ib: false },
 
   // Market-hours-only writers: triggered by the FastAPI scan endpoints
   // during the trading day, dormant on nights and weekends. The
@@ -130,10 +145,16 @@ export const SERVICE_FRESHNESS_WINDOWS: Record<string, Window> = {
   // (Friday 16:00 ET → Monday 09:30 ET ≈ 65h) without flipping to
   // stale. Per-service intraday cadence varies but ≤30 min during
   // market hours catches genuine outages quickly.
-  "scanner": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY, category: "on-demand" },
-  "discover": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY, category: "on-demand" },
-  "flow-analysis": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY, category: "on-demand" },
-  "analyst-ratings": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY, category: "on-demand" },
+  // scanner / discover / flow-analysis: UW-only, no IB dependency
+  // (verified against scripts/scanner.py, scripts/discover.py,
+  // scripts/fetch_flow.py — all import from clients.uw_client only).
+  // analyst-ratings: IB-primary with UW fallback; classified false so
+  // IB-down alert grouping stays accurate — the writer still records a
+  // healthy ok row when IB is unreachable but UW serves the data.
+  "scanner": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY, category: "on-demand", requires_ib: false },
+  "discover": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY, category: "on-demand", requires_ib: false },
+  "flow-analysis": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY, category: "on-demand", requires_ib: false },
+  "analyst-ratings": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY, category: "on-demand", requires_ib: false },
 
   // ``replica-watchdog`` and ``watchdog-alerts`` are EVENT-DRIVEN
   // writers: they only record a service_health row when something
@@ -143,8 +164,8 @@ export const SERVICE_FRESHNESS_WINDOWS: Record<string, Window> = {
   // within minutes of the last event — even though "nothing happened"
   // is the desired healthy state. Use a 24h window so we still notice
   // when the writer process itself is down for a full day.
-  "replica-watchdog": { open: 24 * HOUR, extended: 24 * HOUR, closed: 24 * HOUR, category: "scheduled" },
-  "watchdog-alerts": { open: 24 * HOUR, extended: 24 * HOUR, closed: 24 * HOUR, category: "scheduled" },
+  "replica-watchdog": { open: 24 * HOUR, extended: 24 * HOUR, closed: 24 * HOUR, category: "scheduled", requires_ib: false },
+  "watchdog-alerts": { open: 24 * HOUR, extended: 24 * HOUR, closed: 24 * HOUR, category: "scheduled", requires_ib: false },
 
   // ``ib-watchdog`` polls FastAPI /health every 60s and is event-driven
   // in nature — it writes service_health on every cycle so we can see
@@ -153,7 +174,9 @@ export const SERVICE_FRESHNESS_WINDOWS: Record<string, Window> = {
   // missed cycle without flagging while still catching a dead watchdog
   // process within minutes. See `scripts/ib_watchdog.py` +
   // `docs/ib-gateway-healthcheck-hardening.md`.
-  "ib-watchdog": { open: 5 * MIN, extended: 5 * MIN, closed: 5 * MIN, category: "scheduled" },
+  // ib-watchdog MONITORS IB but doesn't depend on IB being healthy to
+  // run — suppressing it during IB outages would defeat its purpose.
+  "ib-watchdog": { open: 5 * MIN, extended: 5 * MIN, closed: 5 * MIN, category: "scheduled", requires_ib: false },
 };
 
 const DEFAULT_WINDOW: Window = {
@@ -165,6 +188,10 @@ const DEFAULT_WINDOW: Window = {
   // likely a misnamed scheduled service than a brand-new on-demand
   // surface.
   category: "scheduled",
+  // Default to ``false`` so a new/unknown service never gets silently
+  // suppressed by IB-down alert grouping. Misclassified as needs-IB
+  // would be a worse failure than an extra per-service alert.
+  requires_ib: false,
 };
 
 /**
@@ -184,6 +211,18 @@ export function getFreshnessWindowMs(service: string, market: MarketState): numb
 export function getServiceCategory(service: string): ServiceCategory {
   const entry = SERVICE_FRESHNESS_WINDOWS[service] ?? DEFAULT_WINDOW;
   return entry.category;
+}
+
+/**
+ * True iff ``service`` is in the IB-dependent set. Unknown services
+ * return false so we never silently group/suppress alerts on a writer
+ * we haven't classified yet. Mirrors ``requires_ib(service)`` in
+ * scripts/watchdog/services.py; a Python<->TS contract test in
+ * scripts/tests/test_watchdog/test_services.py guards drift.
+ */
+export function requiresIb(service: string): boolean {
+  const entry = SERVICE_FRESHNESS_WINDOWS[service] ?? DEFAULT_WINDOW;
+  return entry.requires_ib;
 }
 
 /**
