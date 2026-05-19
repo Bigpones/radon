@@ -304,3 +304,76 @@ class TestDeriveHelpers:
     def test_derive_last_exit_code_handles_empty_status(self) -> None:
         parsed = {"Type": "oneshot", "ExecMainStatus": ""}
         assert admin_services._derive_last_exit_code(parsed) is None
+
+
+class TestRestartFullStack:
+    """Covers the new ``restart_full_stack`` wrapper around the operator CLI."""
+
+    def test_refuses_when_operator_cli_missing(self) -> None:
+        with patch.object(admin_services, "is_operator_cli_available", return_value=False):
+            result = asyncio.run(admin_services.restart_full_stack())
+        assert result.ok is False
+        assert result.returncode == -1
+        assert result.unit == "radon-stack"
+        assert result.action == "restart"
+        assert "operator CLI" in result.detail
+
+    def test_happy_path_runs_radon_restart(self) -> None:
+        class _FakeProc:
+            returncode = 0
+
+            async def communicate(self):
+                return (b"restarted 24 radon units\n", b"")
+
+        async def _fake_exec(*_args, **_kw):
+            return _FakeProc()
+
+        with patch.object(admin_services, "is_operator_cli_available", return_value=True), \
+             patch.object(admin_services.asyncio, "create_subprocess_exec", side_effect=_fake_exec):
+            result = asyncio.run(admin_services.restart_full_stack())
+        assert result.ok is True
+        assert result.returncode == 0
+        assert result.unit == "radon-stack"
+        assert "restarted 24 radon units" in result.detail
+
+    def test_non_zero_exit_returns_failure(self) -> None:
+        class _FakeProc:
+            returncode = 1
+
+            async def communicate(self):
+                return (b"", b"radon stop failed: permission denied\n")
+
+        async def _fake_exec(*_args, **_kw):
+            return _FakeProc()
+
+        with patch.object(admin_services, "is_operator_cli_available", return_value=True), \
+             patch.object(admin_services.asyncio, "create_subprocess_exec", side_effect=_fake_exec):
+            result = asyncio.run(admin_services.restart_full_stack())
+        assert result.ok is False
+        assert result.returncode == 1
+        assert "permission denied" in result.detail
+
+    def test_timeout_reports_clearly(self) -> None:
+        kill_called = {"value": False}
+
+        class _HangProc:
+            returncode = None
+
+            async def communicate(self):
+                await asyncio.sleep(10)  # longer than the timeout we will set
+                return (b"", b"")
+
+            def kill(self) -> None:
+                kill_called["value"] = True
+
+        async def _fake_exec(*_args, **_kw):
+            return _HangProc()
+
+        with patch.object(admin_services, "is_operator_cli_available", return_value=True), \
+             patch.object(admin_services, "STACK_RESTART_TIMEOUT_S", 0.05), \
+             patch.object(admin_services.asyncio, "create_subprocess_exec", side_effect=_fake_exec):
+            result = asyncio.run(admin_services.restart_full_stack())
+        assert result.ok is False
+        assert result.returncode == -1
+        assert "timed out" in result.detail.lower()
+        assert kill_called["value"] is True

@@ -985,6 +985,20 @@ async def admin_service_action(unit: str, action: str):
     return result.to_dict()
 
 
+@app.post("/admin/stack/restart")
+async def admin_stack_restart():
+    """Run the operator CLI's ``radon restart`` to cycle every radon-* unit.
+
+    The TCP response may not survive the restart (FastAPI itself is one of
+    the units cycled). The Next.js route handles this by treating a dropped
+    request after ~2s as "restart in flight, poll /health to verify".
+    """
+    result = await admin_services.restart_full_stack()
+    if not result.ok:
+        raise HTTPException(status_code=400 if result.returncode == -1 else 502, detail=result.to_dict())
+    return result.to_dict()
+
+
 # ---------------------------------------------------------------------------
 # Phase 1: Stateless UW-only endpoints (subprocess-based)
 # ---------------------------------------------------------------------------

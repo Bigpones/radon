@@ -89,7 +89,7 @@ export type ServiceActionResult = {
 
 export type RestartLogEntry = {
   at: string;             // ISO timestamp written by the client
-  action: "force-2fa" | "reset-backoff" | "service-action";
+  action: "force-2fa" | "reset-backoff" | "service-action" | "stack-restart";
   target: string;         // unit name or "ib-gateway"
   ok: boolean;
   detail: string;

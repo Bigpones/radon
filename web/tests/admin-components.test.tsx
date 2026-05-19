@@ -140,6 +140,7 @@ describe("<Ib2faControls />", () => {
         health={health}
         onForcePush={vi.fn()}
         onResetBackoff={vi.fn()}
+        onRestartStack={vi.fn()}
       />,
     );
     const btn = screen.getByTestId("force-2fa-button") as HTMLButtonElement;
@@ -154,6 +155,7 @@ describe("<Ib2faControls />", () => {
         health={buildHealth()}
         onForcePush={onForcePush}
         onResetBackoff={vi.fn()}
+        onRestartStack={vi.fn()}
       />,
     );
     fireEvent.click(screen.getByTestId("force-2fa-button"));
@@ -169,6 +171,7 @@ describe("<Ib2faControls />", () => {
         health={buildHealth()}
         onForcePush={onForcePush}
         onResetBackoff={vi.fn()}
+        onRestartStack={vi.fn()}
       />,
     );
     fireEvent.click(screen.getByTestId("force-2fa-button"));
@@ -176,6 +179,66 @@ describe("<Ib2faControls />", () => {
     // Allow the microtask queue to flush the awaited call.
     await Promise.resolve();
     expect(onForcePush).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders Restart All Services button", () => {
+    render(
+      <Ib2faControls
+        health={buildHealth()}
+        onForcePush={vi.fn()}
+        onResetBackoff={vi.fn()}
+        onRestartStack={vi.fn()}
+      />,
+    );
+    const btn = screen.getByTestId("restart-stack-button") as HTMLButtonElement;
+    expect(btn).toBeTruthy();
+    expect(btn.disabled).toBe(false);
+  });
+
+  it("clicking Restart All opens confirmation, does not fire handler directly", () => {
+    const onRestartStack = vi.fn().mockResolvedValue(undefined);
+    render(
+      <Ib2faControls
+        health={buildHealth()}
+        onForcePush={vi.fn()}
+        onResetBackoff={vi.fn()}
+        onRestartStack={onRestartStack}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("restart-stack-button"));
+    expect(screen.getByTestId("admin-confirm")).toBeTruthy();
+    expect(onRestartStack).not.toHaveBeenCalled();
+  });
+
+  it("fires onRestartStack after the confirm action is clicked", async () => {
+    const onRestartStack = vi.fn().mockResolvedValue(undefined);
+    render(
+      <Ib2faControls
+        health={buildHealth()}
+        onForcePush={vi.fn()}
+        onResetBackoff={vi.fn()}
+        onRestartStack={onRestartStack}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("restart-stack-button"));
+    fireEvent.click(screen.getByTestId("admin-confirm-action"));
+    await Promise.resolve();
+    expect(onRestartStack).toHaveBeenCalledTimes(1);
+  });
+
+  it("confirmation modal warns about the 2FA approval requirement", () => {
+    render(
+      <Ib2faControls
+        health={buildHealth()}
+        onForcePush={vi.fn()}
+        onResetBackoff={vi.fn()}
+        onRestartStack={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("restart-stack-button"));
+    const confirm = screen.getByTestId("admin-confirm");
+    expect(confirm.textContent).toMatch(/2FA/i);
+    expect(confirm.textContent).toMatch(/IB Gateway/i);
   });
 });
 

@@ -360,3 +360,77 @@ async def control_unit(unit: str, action: str) -> ActionResult:
     stdout, stderr, rc = await _systemctl(action, unit, timeout=60.0)
     detail = stderr or stdout or f"systemctl exited with rc={rc}"
     return ActionResult(unit, action, rc == 0, detail, rc)
+
+
+# Path to the operator CLI installed by radon-cloud/scripts/setup-vps.sh.
+# Restart-all goes through this wrapper rather than enumerating units in
+# Python because the wrapper knows the correct stop/start ordering (IB Gateway
+# first) and reads the current list of radon-* units from systemctl directly.
+OPERATOR_CLI_PATH = "/usr/local/bin/radon"
+
+# Walltime ceiling for a full stack restart. radon restart on the live VPS
+# typically takes 60-90s; 180s gives headroom for IB Gateway boot + 2FA
+# socket-listening probe without leaving the HTTP request hanging forever.
+STACK_RESTART_TIMEOUT_S = 180.0
+
+
+def is_operator_cli_available() -> bool:
+    """True when the radon operator CLI is installed and executable.
+
+    Mirrors :func:`is_systemd_available` for the higher-level wrapper.
+    """
+    return os.access(OPERATOR_CLI_PATH, os.X_OK)
+
+
+async def restart_full_stack() -> ActionResult:
+    """Run ``radon restart`` to stop+start every ``radon-*`` systemd unit.
+
+    Uses the operator CLI installed at :data:`OPERATOR_CLI_PATH` because the
+    wrapper knows the correct stop/start ordering (IB Gateway first) and
+    auto-discovers the unit set via ``systemctl list-units 'radon-*'``.
+    Returns the same :class:`ActionResult` shape as :func:`control_unit` so
+    the route handler treats it uniformly.
+
+    Notes:
+        - Bounded by :data:`STACK_RESTART_TIMEOUT_S`. On timeout the result
+          reports ``ok=False`` with ``returncode=-1`` and the operator can
+          recover via SSH.
+        - This call kills the calling process indirectly via the systemd
+          cascade (``radon-api.service`` is one of the units). The HTTP
+          response may not make it back to the client. Callers must treat a
+          dropped TCP connection AFTER a successful ``radon stop`` as a
+          success indicator and verify by polling ``/health`` once the
+          backend comes back.
+    """
+    if not is_operator_cli_available():
+        return ActionResult(
+            "radon-stack", "restart", False,
+            "operator CLI not available at /usr/local/bin/radon — "
+            "service control requires the Hetzner deployment.",
+            -1,
+        )
+
+    env = {**_inherit_systemctl_env(), "LC_ALL": "C", "LANG": "C"}
+    proc = await asyncio.create_subprocess_exec(
+        OPERATOR_CLI_PATH, "restart",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=env,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=STACK_RESTART_TIMEOUT_S,
+        )
+        rc = proc.returncode if proc.returncode is not None else -1
+        out = stdout.decode("utf-8", errors="replace").strip()
+        err = stderr.decode("utf-8", errors="replace").strip()
+        detail = err or out or f"radon restart exited with rc={rc}"
+        return ActionResult("radon-stack", "restart", rc == 0, detail, rc)
+    except asyncio.TimeoutError:
+        proc.kill()
+        return ActionResult(
+            "radon-stack", "restart", False,
+            f"radon restart timed out after {STACK_RESTART_TIMEOUT_S:.0f}s "
+            "— check VPS state via SSH",
+            -1,
+        )

@@ -179,6 +179,43 @@ export default function AdminWorkspace() {
     void fetchHealth();
   }, [appendLog, fetchHealth]);
 
+  const restartStack = useCallback(async () => {
+    const at = new Date().toISOString();
+    try {
+      const res = await fetch("/api/admin/stack/restart", { method: "POST", cache: "no-store" });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok || res.status === 202) {
+        const detail = body.in_flight
+          ? "restart in flight: FastAPI cycled, polling for recovery"
+          : typeof body.detail === "string"
+            ? body.detail.slice(0, 120)
+            : "stack restart fired";
+        appendLog({ at, action: "stack-restart", target: "all radon-*", ok: true, detail });
+      } else {
+        const detail = typeof body.error === "string" ? body.error : `HTTP ${res.status}`;
+        appendLog({ at, action: "stack-restart", target: "all radon-*", ok: false, detail });
+      }
+    } catch (err) {
+      // Network drop is the EXPECTED path because FastAPI is one of the
+      // units being restarted. Treat as in-flight and rely on the next
+      // health poll to confirm recovery.
+      const detail = err instanceof Error ? err.message : "stack restart failed";
+      const looksLikeRestartDrop =
+        detail.includes("aborted") ||
+        detail.includes("Failed to fetch") ||
+        detail.includes("ECONNRESET");
+      appendLog({
+        at,
+        action: "stack-restart",
+        target: "all radon-*",
+        ok: looksLikeRestartDrop,
+        detail: looksLikeRestartDrop ? "restart in flight (connection cycled)" : detail,
+      });
+    }
+    void fetchHealth();
+    void fetchServices();
+  }, [appendLog, fetchHealth, fetchServices]);
+
   const flashRow = useCallback((unit: string, ok: boolean) => {
     if (flashTimerRef.current !== null) {
       window.clearTimeout(flashTimerRef.current);
@@ -253,6 +290,7 @@ export default function AdminWorkspace() {
             health={health}
             onForcePush={forcePush}
             onResetBackoff={resetBackoff}
+            onRestartStack={restartStack}
           />
           <ServiceControlPanel
             services={services}

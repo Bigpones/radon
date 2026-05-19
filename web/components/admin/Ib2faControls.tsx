@@ -12,6 +12,7 @@ type Ib2faControlsProps = {
   health: AdminHealthPayload | null;
   onForcePush: () => Promise<void>;
   onResetBackoff: () => Promise<void>;
+  onRestartStack: () => Promise<void>;
   onAfter?: () => void;
 };
 
@@ -24,12 +25,15 @@ export default function Ib2faControls({
   health,
   onForcePush,
   onResetBackoff,
+  onRestartStack,
   onAfter,
 }: Ib2faControlsProps) {
   const [showForceConfirm, setShowForceConfirm] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showRestartConfirm, setShowRestartConfirm] = useState(false);
   const [pendingForce, setPendingForce] = useState(false);
   const [pendingReset, setPendingReset] = useState(false);
+  const [pendingRestart, setPendingRestart] = useState(false);
 
   const pushLock = health?.ib_gateway?.restart_backoff?.push_lock ?? null;
   const disableForce = isForcePushDisabled({ pushLock, pending: pendingForce });
@@ -53,6 +57,17 @@ export default function Ib2faControls({
     } finally {
       setPendingReset(false);
       setShowResetConfirm(false);
+      onAfter?.();
+    }
+  };
+
+  const runRestart = async () => {
+    setPendingRestart(true);
+    try {
+      await onRestartStack();
+    } finally {
+      setPendingRestart(false);
+      setShowRestartConfirm(false);
       onAfter?.();
     }
   };
@@ -85,6 +100,17 @@ export default function Ib2faControls({
         >
           Reset Backoff
         </button>
+
+        <button
+          type="button"
+          className="admin-btn admin-btn-danger"
+          onClick={() => setShowRestartConfirm(true)}
+          disabled={pendingRestart}
+          title="Run radon restart on the VPS: stops then starts every radon-* unit in order"
+          data-testid="restart-stack-button"
+        >
+          {pendingRestart ? "Restarting..." : "Restart All Services"}
+        </button>
       </div>
 
       {disableReason && (
@@ -111,6 +137,16 @@ export default function Ib2faControls({
         pending={pendingReset}
         onConfirm={runReset}
         onCancel={() => setShowResetConfirm(false)}
+      />
+      <ConfirmDialog
+        open={showRestartConfirm}
+        title="Restart all radon services?"
+        body="Runs radon restart on the VPS: stops every radon-* systemd unit, then starts them in dependency order (IB Gateway first). Takes about 60 to 90 seconds. The page will briefly lose its connection while FastAPI cycles. IB Gateway will need a fresh 2FA approval on your phone when it comes back up."
+        confirmLabel="Restart all"
+        destructive
+        pending={pendingRestart}
+        onConfirm={runRestart}
+        onCancel={() => setShowRestartConfirm(false)}
       />
     </section>
   );
