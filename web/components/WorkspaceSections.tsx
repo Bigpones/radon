@@ -65,6 +65,7 @@ import ModifyOrderModal from "./ModifyOrderModal";
 import type { ModifyOrderRequest } from "@/lib/orderModify";
 import RegimePanel from "./RegimePanel";
 import CtaPage from "./CtaPage";
+import AdminWorkspace from "./admin/AdminWorkspace";
 import PerformancePanel from "./PerformancePanel";
 import InfoTooltip from "./InfoTooltip";
 import SharePnlButton, { type SharePnlData } from "./SharePnlButton";
@@ -2756,6 +2757,8 @@ export default function WorkspaceSections({ section, portfolio, portfolioLastSyn
       return <RegimePanel prices={prices ?? {}} marketState={marketState} />;
     case "cta":
       return <CtaPage />;
+    case "admin":
+      return <AdminWorkspace />;
     case "ticker-detail":
       return tickerParam ? (
         <TickerWorkspace ticker={tickerParam} theme={theme ?? "dark"} />

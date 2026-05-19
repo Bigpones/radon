@@ -15,7 +15,6 @@ export type FlashTarget = {
   ok: boolean;
 };
 import { useViewport } from "@/lib/useViewport";
-import Sidebar from "@/components/Sidebar";
 import IbGatewayCard from "./IbGatewayCard";
 import Ib2faControls from "./Ib2faControls";
 import ServiceControlPanel from "./ServiceControlPanel";
@@ -237,13 +236,8 @@ export default function AdminWorkspace() {
     );
   }
 
-  const ibConnected = Boolean(
-    health?.ib_gateway?.auth_state === "authenticated" || health?.ib_gateway?.port_listening,
-  );
-
   return (
     <div className="admin-shell" data-testid="admin-page">
-      <Sidebar activeSection="admin" actionTone="var(--accent-bg)" ibConnected={ibConnected} />
       <main className="admin-page">
         <header className="admin-page-header">
           <h1 className="admin-page-title">Operator</h1>

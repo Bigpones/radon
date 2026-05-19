@@ -393,7 +393,7 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
             </div>
           ) : null}
 
-          {activeSection !== "dashboard" && activeSection !== "ticker-detail" ? <MetricCards portfolio={portfolio} prices={prices} realizedPnl={todayRealizedPnl} executedOrders={executedOrders} section={activeSection} /> : null}
+          {activeSection !== "dashboard" && activeSection !== "ticker-detail" && activeSection !== "admin" ? <MetricCards portfolio={portfolio} prices={prices} realizedPnl={todayRealizedPnl} executedOrders={executedOrders} section={activeSection} /> : null}
 
           {activeSection !== "dashboard" ? (
             <WorkspaceSections
