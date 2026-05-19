@@ -61,7 +61,15 @@ export interface OrderSummary {
   totalCost: number | null;   // quantity * price * 100 for options
   totalLabel?: string;        // override for close/debit/credit semantics
   maxGain?: number | null;    // For spreads
-  maxLoss?: number | null;    // For spreads
+  maxLoss?: number | null;    // For spreads (positive magnitude when bounded)
+  /** When true, the order has no theoretical max loss bound. UI should
+   *  render "UNBOUNDED" instead of a number. */
+  maxLossUnbounded?: boolean;
+  /** When true, the order has no theoretical max gain bound (long call). */
+  maxGainUnbounded?: boolean;
+  /** Gate 1 warning surface: human-readable reason this order is
+   *  not pure defined-risk. UI renders an "Undefined risk" badge. */
+  undefinedRiskReason?: string | null;
   breakeven?: number | null;  // For options/spreads
   estimatedPnl?: number | null;
   estimatedPnlLabel?: string;

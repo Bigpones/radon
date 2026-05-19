@@ -38,9 +38,17 @@ export function OrderConfirmSummary({
   className = "",
 }: OrderConfirmSummaryProps) {
   const variantClass = variant === "info" ? "order-confirm-summary-info" : "";
+  const showMaxGain = summary.maxGainUnbounded === true || summary.maxGain != null;
+  const showMaxLoss = summary.maxLossUnbounded === true || summary.maxLoss != null;
+  const hasUndefinedRisk =
+    summary.maxLossUnbounded === true ||
+    (summary.undefinedRiskReason != null && summary.undefinedRiskReason.length > 0);
 
   return (
-    <div className={`order-confirm-summary ${variantClass} ${className}`.trim()}>
+    <div
+      className={`order-confirm-summary ${variantClass} ${className}`.trim()}
+      data-undefined-risk={hasUndefinedRisk ? "true" : undefined}
+    >
       <div className="order-confirm-description">{summary.description}</div>
       <div className="order-confirm-metrics">
         {summary.totalCost != null && (
@@ -49,19 +57,22 @@ export function OrderConfirmSummary({
             <span className="order-confirm-metric-value">{formatCurrency(summary.totalCost)}</span>
           </span>
         )}
-        {summary.maxGain != null && (
+        {showMaxGain && (
           <span className="order-confirm-metric">
             <span className="order-confirm-metric-label">Max Gain:</span>
             <span className="order-confirm-metric-value order-confirm-positive">
-              {formatCurrency(summary.maxGain)}
+              {summary.maxGainUnbounded === true ? "UNBOUNDED" : formatCurrency(summary.maxGain)}
             </span>
           </span>
         )}
-        {summary.maxLoss != null && (
+        {showMaxLoss && (
           <span className="order-confirm-metric">
             <span className="order-confirm-metric-label">Max Loss:</span>
-            <span className="order-confirm-metric-value order-confirm-negative">
-              {formatCurrency(summary.maxLoss)}
+            <span
+              className="order-confirm-metric-value order-confirm-negative"
+              data-unbounded={summary.maxLossUnbounded === true ? "true" : undefined}
+            >
+              {summary.maxLossUnbounded === true ? "UNBOUNDED" : formatCurrency(summary.maxLoss)}
             </span>
           </span>
         )}
@@ -80,6 +91,20 @@ export function OrderConfirmSummary({
           </span>
         )}
       </div>
+      {hasUndefinedRisk && (
+        <div
+          className="order-confirm-undefined-risk"
+          role="alert"
+          data-testid="order-undefined-risk-warning"
+        >
+          <span className="order-confirm-undefined-risk-label">GATE 1: Undefined risk</span>
+          <span className="order-confirm-undefined-risk-detail">
+            {summary.maxLossUnbounded === true
+              ? `${summary.undefinedRiskReason ?? "Uncovered short option"} — loss is theoretically unbounded.`
+              : `${summary.undefinedRiskReason ?? "Naked short exposure"} — max loss reflects assignment-at-zero stress, not a defined-risk cap.`}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

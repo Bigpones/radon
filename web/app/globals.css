@@ -3427,6 +3427,11 @@ tr.leg-row td {
 .order-confirm-metric-value { color: var(--text-primary); }
 .order-confirm-positive { color: var(--positive); }
 .order-confirm-negative { color: var(--negative); }
+.order-confirm-metric-value[data-unbounded="true"] { color: var(--fault); font-weight: 600; letter-spacing: 0.04em; }
+.order-confirm-summary[data-undefined-risk="true"] { border-color: var(--fault); background: rgba(232, 93, 108, 0.08); }
+.order-confirm-undefined-risk { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--fault); border-radius: 4px; background: rgba(232, 93, 108, 0.12); font-family: var(--font-mono); }
+.order-confirm-undefined-risk-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--fault); font-weight: 600; }
+.order-confirm-undefined-risk-detail { font-size: 11px; color: var(--text-primary); }
 
 /* Existing orders in ticker detail */
 .existing-orders-section { margin-bottom: 16px; }

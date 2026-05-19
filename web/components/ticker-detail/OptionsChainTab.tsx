@@ -25,6 +25,7 @@ import {
   ALL_STRIKES,
 } from "@/lib/optionsChainUtils";
 import { OrderPriceStrip, OrderLegPills, OrderConfirmSummary, type OrderLeg as UnifiedOrderLeg, type OrderSummary } from "@/lib/order";
+import { computeOrderRisk } from "@/lib/orderRisk";
 import { useViewport } from "@/lib/useViewport";
 import MobileChainLadder from "@/components/mobile/MobileChainLadder";
 
@@ -296,45 +297,37 @@ function OrderBuilder({
     }
   }, [signedNetPrices.mid, priceManuallySet, structureKey]);
 
-  // Calculate order summary for confirmation
+  // Calculate order summary for confirmation. Per-leg max-loss math via
+  // computeOrderRisk so naked short legs (risk reversals, short straddles,
+  // jade lizards) surface correct dollar exposure instead of the legacy
+  // "max loss = net debit" assumption.
   const orderSummary: OrderSummary | null = useMemo(() => {
     if (!isValidPrice) return null;
-    
+
     const totalCost = parsedPrice * totalQty * 100;
     const description = `${structure || "Option"} @ ${fmtPrice(parsedPrice)}`;
-    
-    // For vertical spreads, calculate max gain/loss
-    if (legs.length === 2) {
-      const strikes = legs.map((l) => l.strike);
-      const width = Math.abs(strikes[0] - strikes[1]);
-      const maxWidth = width * totalQty * 100;
-      
-      if (isDebit) {
-        // Debit spread: max loss = premium paid, max gain = width - premium
-        return {
-          description,
-          totalCost,
-          maxGain: maxWidth - totalCost,
-          maxLoss: totalCost,
-        };
-      } else {
-        // Credit spread: max gain = premium received, max loss = width - premium
-        return {
-          description,
-          totalCost: -totalCost, // Negative because we receive
-          maxGain: totalCost,
-          maxLoss: maxWidth - totalCost,
-        };
-      }
-    }
-    
-    // Single leg or complex: max loss = premium paid (for debit)
+    const isCredit = isDebit === false;
+    // netPremium: positive for debit, negative for credit, per-combo per-share.
+    const netPremium = isCredit ? -Math.abs(parsedPrice) : parsedPrice;
+    const riskLegs = (normalizedOrder?.legs ?? legs).map((l) => ({
+      action: l.action,
+      right: l.right,
+      strike: l.strike,
+      expiry: l.expiry,
+      quantity: l.quantity,
+    }));
+    const risk = computeOrderRisk(riskLegs, netPremium, totalQty);
+
     return {
       description,
-      totalCost: isDebit ? totalCost : -totalCost,
-      ...(isDebit ? { maxLoss: totalCost } : {}),
+      totalCost: isCredit ? -totalCost : totalCost,
+      maxGain: risk.maxGain,
+      maxLoss: risk.maxLoss,
+      maxLossUnbounded: risk.maxLossUnbounded,
+      maxGainUnbounded: risk.maxGainUnbounded,
+      undefinedRiskReason: risk.undefinedRiskReason,
     };
-  }, [isValidPrice, parsedPrice, totalQty, structure, legs, isDebit]);
+  }, [isValidPrice, parsedPrice, totalQty, structure, legs, isDebit, normalizedOrder]);
 
   const handlePlace = useCallback(async () => {
     if (!confirmStep) {

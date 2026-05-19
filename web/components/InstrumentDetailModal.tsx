@@ -8,6 +8,7 @@ import Modal from "./Modal";
 import OrderErrorBanner from "./OrderErrorBanner";
 import { InstrumentOrderQuoteTelemetry } from "./QuoteTelemetry";
 import { OrderConfirmSummary, type OrderSummary } from "@/lib/order";
+import { computeOrderRisk } from "@/lib/orderRisk";
 
 export type InstrumentDetailProps = {
   leg: PortfolioLeg | null;
@@ -133,17 +134,49 @@ function LegOrderForm({
   const right = leg.type === "Call" ? "C" : "P";
   const expiryClean = expiry.replace(/-/g, "");
 
-  // Calculate order summary for confirmation (single option)
+  // Calculate order summary for confirmation (single option). Uses
+  // computeOrderRisk so SELL naked legs render UNBOUNDED (call) or
+  // surface assignment-at-zero exposure (put) instead of silently dropping
+  // the field.
   const orderSummary: OrderSummary | null = useMemo(() => {
     if (!isValid) return null;
     const totalCost = parsedQty * parsedPrice * 100;
     const description = `${action} ${parsedQty}x ${ticker} ${strikeStr}${right} @ ${fmtPrice(parsedPrice)}`;
+    const optionRight: "C" | "P" | null = right === "C" ? "C" : right === "P" ? "P" : null;
+    if (optionRight == null || leg.strike == null) {
+      return {
+        description,
+        totalCost: action === "SELL" ? -totalCost : totalCost,
+      };
+    }
+    // When closing a held leg (LONG → action=SELL, SHORT → action=BUY) the
+    // trade reduces exposure; for open-fresh SELL legs the model surfaces
+    // the naked-short risk. We pass the trade's action verbatim so the
+    // confirmation reflects the order being placed.
+    const isClosingHeld =
+      (leg.direction === "LONG" && action === "SELL") ||
+      (leg.direction === "SHORT" && action === "BUY");
+    if (isClosingHeld) {
+      return {
+        description,
+        totalCost: action === "SELL" ? -totalCost : totalCost,
+      };
+    }
+    const risk = computeOrderRisk(
+      [{ action, right: optionRight, strike: leg.strike, expiry, quantity: 1 }],
+      parsedPrice,
+      parsedQty,
+    );
     return {
       description,
       totalCost: action === "SELL" ? -totalCost : totalCost,
-      ...(action === "BUY" ? { maxLoss: totalCost } : {}),
+      maxGain: risk.maxGain,
+      maxLoss: risk.maxLoss,
+      maxLossUnbounded: risk.maxLossUnbounded,
+      maxGainUnbounded: risk.maxGainUnbounded,
+      undefinedRiskReason: risk.undefinedRiskReason,
     };
-  }, [isValid, parsedQty, parsedPrice, action, ticker, strikeStr, right]);
+  }, [isValid, parsedQty, parsedPrice, action, ticker, strikeStr, right, leg.strike, leg.direction, expiry]);
 
   const handlePlace = useCallback(async () => {
     if (!confirmStep) {

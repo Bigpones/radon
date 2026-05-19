@@ -14,6 +14,7 @@ import OrderErrorBanner from "@/components/OrderErrorBanner";
 import type { ModifyOrderRequest } from "@/lib/orderModify";
 import { checkNakedShortRisk, type NakedShortPortfolio, type OrderPayload } from "@/lib/nakedShortGuard";
 import { OrderConfirmSummary, type OrderSummary } from "@/lib/order";
+import { computeOrderRisk } from "@/lib/orderRisk";
 import { fmtSignedPrice, toneClass } from "@/lib/format";
 
 type OrderTabProps = {
@@ -289,21 +290,55 @@ function NewOrderForm({
   const parsedPrice = parseFloat(limitPrice);
   const isValid = !isNaN(parsedQty) && parsedQty > 0 && !isNaN(parsedPrice) && parsedPrice > 0;
 
-  // Calculate order summary for confirmation (single leg: stock or single option)
+  // Calculate order summary for confirmation (single leg: stock or single option).
+  // For options we route through computeOrderRisk so naked short calls render
+  // UNBOUNDED and naked short puts surface their assignment-at-zero exposure.
   const orderSummary: OrderSummary | null = useMemo(() => {
     if (!isValid) return null;
-    
-    const isOption = position?.legs?.length === 1;
+
+    const isOption =
+      position?.legs?.length === 1 &&
+      position.legs[0].strike != null &&
+      (position.legs[0].type === "Call" || position.legs[0].type === "Put");
     const multiplier = isOption ? 100 : 1;
     const totalCost = parsedQty * parsedPrice * multiplier;
     const type = isOption ? position?.structure ?? "Option" : "Stock";
     const description = `${action} ${parsedQty}${isOption ? "x" : ""} ${ticker} ${type} @ ${fmtPrice(parsedPrice)}`;
-    
+
+    if (!isOption || position == null) {
+      return {
+        description,
+        totalCost: action === "SELL" ? -totalCost : totalCost,
+      };
+    }
+
+    const onlyLeg = position.legs[0];
+    const right: "C" | "P" = onlyLeg.type === "Call" ? "C" : "P";
+    // Translate the form action into the leg's effective direction for the
+    // bought/sold contract. (For a held LONG option, action=SELL closes it
+    // and has no naked-short exposure — but we still route through the
+    // model with quantity=parsedQty; sideMaxLoss returns 0 for the closing
+    // case via the SELL path. We keep the close-debit semantics intact via
+    // the totalCost sign below.)
+    const legAction: "BUY" | "SELL" =
+      action === "BUY" ? "BUY" : (onlyLeg.direction === "LONG" ? "SELL" : "BUY");
+    const riskLegs = [{
+      action: legAction,
+      right,
+      strike: onlyLeg.strike as number,
+      expiry: position.expiry,
+      quantity: 1,
+    }];
+    const risk = computeOrderRisk(riskLegs, parsedPrice, parsedQty);
+
     return {
       description,
       totalCost: action === "SELL" ? -totalCost : totalCost,
-      // Single options: max loss = premium paid (for buys)
-      ...(isOption && action === "BUY" ? { maxLoss: totalCost } : {}),
+      maxGain: risk.maxGain,
+      maxLoss: risk.maxLoss,
+      maxLossUnbounded: risk.maxLossUnbounded,
+      maxGainUnbounded: risk.maxGainUnbounded,
+      undefinedRiskReason: risk.undefinedRiskReason,
     };
   }, [isValid, parsedQty, parsedPrice, action, ticker, position]);
 
@@ -641,50 +676,51 @@ function ComboOrderForm({
     ? ((parseFloat(spreadWidth) / Math.abs(netPrices.mid)) * 100).toFixed(1)
     : null;
 
-  // Calculate order summary for confirmation
+  // Calculate order summary for confirmation. For BUY (opening / adding
+  // to a held combo) we use the per-leg risk model so risk reversals,
+  // short straddles, and ratio spreads surface their true exposure
+  // instead of the legacy "max loss = net debit" assumption.
   const orderSummary: OrderSummary | null = useMemo(() => {
     if (!isValid) return null;
-    
+
     const totalCost = parsedQty * parsedPrice * 100;
     const description = `${action} ${parsedQty}x ${position.structure} @ ${fmtSignedPrice(parsedPrice)}`;
-    
-    // For vertical spreads, calculate max gain/loss
-    // Bull Call Spread: LONG lower strike call, SHORT higher strike call
-    // Bear Put Spread: LONG higher strike put, SHORT lower strike put
-    const strikes = position.legs.map((l) => l.strike).filter((s): s is number => s != null);
-    const hasSpread = strikes.length === 2 && position.legs.length === 2;
-    
-    if (hasSpread) {
-      const width = Math.abs(strikes[0] - strikes[1]);
-      const maxWidth = width * parsedQty * 100;
-      
-      // For a held combo, SELL is the close/flatten path. Show close-specific
-      // cash-flow semantics instead of generic opening-spread payoff terms.
-      if (action === "SELL") {
-        const closeCashFlow = totalCost;
-        return {
-          description,
-          totalCost: Math.abs(closeCashFlow),
-          totalLabel: `${closeCashFlow >= 0 ? "Close Credit" : "Close Debit"}:`,
-          estimatedPnl: closeCashFlow - resolveEntryCost(position),
-          estimatedPnlLabel: "Est. Realized P&L:",
-        };
-      } else {
-        // Buying to open
-        return {
-          description,
-          totalCost,
-          maxGain: maxWidth - totalCost,
-          maxLoss: totalCost,
-        };
-      }
+
+    // SELL is the close/flatten path for a held combo. Show close-specific
+    // cash-flow semantics instead of opening-spread payoff terms.
+    if (action === "SELL") {
+      const closeCashFlow = totalCost;
+      return {
+        description,
+        totalCost: Math.abs(closeCashFlow),
+        totalLabel: `${closeCashFlow >= 0 ? "Close Credit" : "Close Debit"}:`,
+        estimatedPnl: closeCashFlow - resolveEntryCost(position),
+        estimatedPnlLabel: "Est. Realized P&L:",
+      };
     }
-    
+
+    // Buying to open: per-leg risk model
+    const riskLegs = legsWithActions
+      .filter((l) => l.strike != null)
+      .map((l) => ({
+        action: l.legAction,
+        right: l.right,
+        strike: l.strike as number,
+        expiry: l.expiry,
+        quantity: 1, // legs are already per-combo ratios in this view
+      }));
+    const risk = computeOrderRisk(riskLegs, parsedPrice, parsedQty);
+
     return {
       description,
-      totalCost: action === "SELL" ? -totalCost : totalCost,
+      totalCost,
+      maxGain: risk.maxGain,
+      maxLoss: risk.maxLoss,
+      maxLossUnbounded: risk.maxLossUnbounded,
+      maxGainUnbounded: risk.maxGainUnbounded,
+      undefinedRiskReason: risk.undefinedRiskReason,
     };
-  }, [isValid, parsedQty, parsedPrice, action, position]);
+  }, [isValid, parsedQty, parsedPrice, action, position, legsWithActions]);
 
   return (
     <div className="order-form">
