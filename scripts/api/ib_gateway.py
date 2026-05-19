@@ -71,6 +71,20 @@ _restart_state: Dict = {
     "last_accounts": [],           # most recent managedAccounts() probe result
 }
 
+# Auth-state transition tracking — drives auto-reconnect when IBKR 2FA resolves
+# (awaiting_2fa → authenticated) while the FastAPI pool clients are still stuck
+# disconnected. Documented in feedback_ib_pool_stuck_after_2fa.md as the
+# follow-up to feedback_ib_gateway_2fa_verification.md. Without this hook the
+# manual recovery is `systemctl restart radon-api.service`.
+_auth_transition_state: Dict = {
+    "previous_auth_state": None,   # last observed auth_state ("authenticated", "awaiting_2fa", ...)
+    "last_reconnect_at": 0.0,      # epoch seconds; last time auto-reconnect fired
+}
+
+# Default ceiling for the pool reconnect call from inside the auth-transition
+# handler. A wedge in pool reconnect must never block the probe loop.
+RECONNECT_TIMEOUT_SECS = 30.0
+
 
 def _next_backoff_delay(attempt_count: int) -> int:
     """Return delay in seconds for the Nth consecutive failed attempt (1-indexed)."""
@@ -559,6 +573,105 @@ async def _probe_authenticated(timeout: float = 8.0) -> tuple[bool, List[str]]:
     return await asyncio.to_thread(_do_probe)
 
 
+def _pool_has_disconnected_slot(pool) -> bool:
+    """Return True if any pool role is `connected=False` in its current status."""
+    if pool is None:
+        return False
+    try:
+        status = pool.status() or {}
+    except Exception:
+        return False
+    return any(not role_info.get("connected", False) for role_info in status.values())
+
+
+def _format_pool_state(pool) -> str:
+    """Compact one-line pool state for logs, e.g. "sync=False orders=True data=False"."""
+    if pool is None:
+        return "<no pool>"
+    try:
+        status = pool.status() or {}
+    except Exception:
+        return "<status unavailable>"
+    return " ".join(
+        f"{role}={role_info.get('connected', False)}" for role, role_info in status.items()
+    )
+
+
+async def handle_auth_state_transition(
+    new_auth_state: str,
+    pool,
+    reconnect_timeout: float = RECONNECT_TIMEOUT_SECS,
+) -> bool:
+    """Detect awaiting_2fa → authenticated edges and kick a stale pool.
+
+    The IB connection pool (sync/orders/data) can stay `connected=False` after
+    IBKR 2FA approval even though the Gateway is fully authenticated to a fresh
+    probe. The manual recovery is `systemctl restart radon-api.service`. This
+    handler automates the same fix by calling `pool.reconnect_all()` whenever
+    the auth_state edge fires AND at least one pool slot is disconnected.
+
+    Behavior:
+      • First observation (previous=None): record state, take no action — we
+        only act on real transitions, not first-probe assumptions.
+      • previous == new: no transition, do nothing. Mid-session disconnects
+        are handled by the per-role auto-reconnect in `_PoolContext`.
+      • previous == "awaiting_2fa" AND new == "authenticated": if any pool
+        slot is disconnected, schedule `pool.reconnect_all()` bounded by
+        `reconnect_timeout`. Returns True. If the pool is already fully
+        connected, returns False — no work to do.
+      • Any other transition: record state, take no action.
+
+    Returns True iff a reconnect was attempted (independent of whether the
+    reconnect itself succeeded — a timeout still counts as "we tried").
+
+    Bounded by `asyncio.wait_for` so a wedge in the pool's connect path never
+    blocks the calling probe loop.
+    """
+    previous = _auth_transition_state["previous_auth_state"]
+    # Always advance the tracker — even on the no-action paths — so the NEXT
+    # observation can correctly compute the transition.
+    _auth_transition_state["previous_auth_state"] = new_auth_state
+
+    if previous is None or previous == new_auth_state:
+        return False
+
+    is_recovery_edge = previous == "awaiting_2fa" and new_auth_state == "authenticated"
+    if not is_recovery_edge:
+        return False
+
+    if not _pool_has_disconnected_slot(pool):
+        logger.info(
+            "auth transition: %s -> %s; pool fully connected (%s); no reconnect needed",
+            previous, new_auth_state, _format_pool_state(pool),
+        )
+        return False
+
+    logger.info(
+        "auth transition: %s -> %s; pool state: %s; triggering reconnect",
+        previous, new_auth_state, _format_pool_state(pool),
+    )
+    _auth_transition_state["last_reconnect_at"] = time.time()
+
+    try:
+        await asyncio.wait_for(pool.reconnect_all(), timeout=reconnect_timeout)
+        logger.info(
+            "auth transition: pool reconnect complete; new state: %s",
+            _format_pool_state(pool),
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "auth transition: pool reconnect timed out after %.1fs; pool state: %s",
+            reconnect_timeout, _format_pool_state(pool),
+        )
+    except Exception as e:
+        logger.warning(
+            "auth transition: pool reconnect raised %s: %s; pool state: %s",
+            type(e).__name__, e, _format_pool_state(pool),
+        )
+
+    return True
+
+
 def _derive_auth_state(check_result: Dict, pool_status: Optional[dict]) -> str:
     """Derive auth_state from a check result + optional pool status.
 
@@ -579,12 +692,20 @@ def _derive_auth_state(check_result: Dict, pool_status: Optional[dict]) -> str:
     return "awaiting_2fa"
 
 
-async def check_ib_gateway(pool_status: Optional[dict] = None) -> Dict:
+async def check_ib_gateway(
+    pool_status: Optional[dict] = None,
+    pool=None,
+) -> Dict:
     """Check IB Gateway health. Returns status dict for /health endpoint.
 
     Pass `pool_status` (typically `IBPool.status()`) so the response can
     distinguish "logged in" from "port listening but awaiting 2FA". Without
     it, auth_state is "remote" (cloud mode) or "unknown" (no pool to probe).
+
+    Pass `pool` (the IBPool instance itself) to enable autonomous recovery on
+    the awaiting_2fa → authenticated transition. The /health endpoint already
+    has both — passing them through keeps recovery on the same cadence as the
+    auth-state probe and avoids a second scheduler.
     """
     if is_cloud_mode():
         result = await _check_cloud()
@@ -601,6 +722,8 @@ async def check_ib_gateway(pool_status: Optional[dict] = None) -> Dict:
             # awaiting_2fa, so report "remote" and defer to the host that
             # actually owns the Gateway.
             result["auth_state"] = "remote"
+        if pool is not None and result["auth_state"] != "remote":
+            await handle_auth_state_transition(result["auth_state"], pool)
         return result
 
     if is_docker_mode():
@@ -610,6 +733,10 @@ async def check_ib_gateway(pool_status: Optional[dict] = None) -> Dict:
 
     result["auth_state"] = _derive_auth_state(result, pool_status)
     result["restart_backoff"] = restart_backoff_state()
+
+    if pool is not None:
+        await handle_auth_state_transition(result["auth_state"], pool)
+
     return result
 
 
@@ -623,7 +750,7 @@ async def ensure_ib_gateway() -> Dict:
         return await _ensure_launchd()
 
 
-async def restart_ib_gateway() -> Dict:
+async def restart_ib_gateway(pool=None) -> Dict:
     """Restart IB Gateway. Honors exponential backoff if 2FA stays unapproved.
 
     Refuses fresh restart attempts inside the backoff window (1m, 2m, 5m, 15m,
@@ -631,6 +758,10 @@ async def restart_ib_gateway() -> Dict:
     only resets the backoff counter when accounts are returned (= login
     completed). A "port listening" success is NOT enough — Gateway sits with
     the API socket open while waiting for the IBKR Mobile 2FA push.
+
+    Optional `pool`: when provided, drives the auth-state transition handler
+    on a successful authenticated probe. This autonomously fixes the
+    documented "pool stuck after 2FA" failure mode (feedback_ib_pool_stuck_after_2fa.md).
     """
     async with _restart_lock:
         now = time.time()
@@ -681,6 +812,12 @@ async def restart_ib_gateway() -> Dict:
                 result["authenticated"] = True
                 result["auth_state"] = "authenticated"
                 logger.info("IB Gateway restart verified — accounts: %s", accounts)
+                # Drive the same auth-transition handler the periodic probe
+                # uses, so a successful restart that lands the system back at
+                # `authenticated` while the pool is still stale auto-recovers
+                # the pool without a separate operator step.
+                if pool is not None:
+                    await handle_auth_state_transition("authenticated", pool)
             else:
                 _restart_state["attempt_count"] += 1
                 delay = _next_backoff_delay(_restart_state["attempt_count"])
@@ -695,6 +832,9 @@ async def restart_ib_gateway() -> Dict:
                     "treating as awaiting_2fa, next attempt allowed in %ds (attempt #%d)",
                     delay, _restart_state["attempt_count"],
                 )
+                # Record the awaiting_2fa observation in the transition tracker
+                # so the next "authenticated" sighting fires the recovery edge.
+                _auth_transition_state["previous_auth_state"] = "awaiting_2fa"
         else:
             _restart_state["attempt_count"] += 1
             delay = _next_backoff_delay(_restart_state["attempt_count"])
@@ -707,5 +847,6 @@ async def restart_ib_gateway() -> Dict:
                 "IB Gateway restart: port did not come up — next attempt allowed in %ds (attempt #%d)",
                 delay, _restart_state["attempt_count"],
             )
+            _auth_transition_state["previous_auth_state"] = "unreachable"
 
         return result

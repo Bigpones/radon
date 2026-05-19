@@ -158,6 +158,21 @@ class IBPool:
             logger.warning("IB pool: %s reconnect failed: %s", role, e)
             return False
 
+    async def reconnect_all(self) -> Dict[str, bool]:
+        """Drop and re-establish every pool role. Idempotent.
+
+        Used by the auth-state transition handler when IBKR 2FA resolves while
+        pool clients are still stuck in a disconnected state — a documented
+        failure mode where the gateway returns `managedAccounts()` to a fresh
+        probe but the pool's long-lived sockets don't auto-recover.
+
+        Per-role disconnect errors are swallowed (the connection is dead
+        anyway). Each role gets a fresh connection attempt via `connect_all()`.
+        """
+        logger.info("IB pool: reconnect_all — dropping all pool clients")
+        await self.disconnect_all()
+        return await self.connect_all()
+
     def status(self) -> dict:
         """Return pool status for health endpoint.
 

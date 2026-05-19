@@ -894,7 +894,10 @@ async def _fetch_risk_reversal_history(
 @app.get("/health")
 async def health():
     pool_status = ib_pool.status() if ib_pool else None
-    gw = await check_ib_gateway(pool_status=pool_status)
+    # Pass the pool itself so the auth-state transition handler can autorecover
+    # from the documented "pool stuck after 2FA" failure mode without an
+    # operator step. See feedback_ib_pool_stuck_after_2fa.md.
+    gw = await check_ib_gateway(pool_status=pool_status, pool=ib_pool)
     return {
         "status": "ok",
         "test_mode": test_mode,
@@ -930,7 +933,7 @@ async def ib_restart():
     completed login. Use POST /ib/reset-backoff after approving 2FA to retry
     immediately.
     """
-    result = await restart_ib_gateway()
+    result = await restart_ib_gateway(pool=ib_pool)
     if not result.get("restarted"):
         # Surface deferred (backoff) and unauthenticated outcomes as 503 so the
         # caller treats them as failure, but include the structured payload for
