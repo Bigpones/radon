@@ -151,14 +151,14 @@ Wrapper env-loader: `run_*_refresh.sh` use literal parser (not `set -a; . file`)
 
 ### Service health watchdog
 
-Four buckets at `scripts/watchdog/`, monitors every `scheduled` service in `web/lib/serviceHealthWindows.ts`, notifies via Discord (P1-P3) + Pushover (P1 only):
+Four buckets at `scripts/watchdog/`, monitors every `scheduled` service in `web/lib/serviceHealthWindows.ts`, notifies via Pushover (P1 only) + always-on `service_health` row:
 
 - **`intraday`** (`vcg-scan`, `cri-scan`, `orders-sync`, `portfolio-sync`) — 5 min, Mon–Fri 13:00–21:00 UTC.
 - **`continuous`** (`newsfeed-scraper`, `replica-watchdog`, `fill-monitor`, `exit-orders`, `journal-sync`) — 5 min, 24/7.
 - **`daily`** (`cash-flow-sync`, `flex-token-check`, `cta-sync`) — hourly, 24/7.
 - **`error`** — every scheduled service except `watchdog-alerts` (recursive-alert prevention), 5 min, 24/7.
 
-Anti-flood: **2-consecutive-failures hysteresis**; **1h per-(service,severity) cooldown** in `watchdog_cooldowns` table; **`python -m scripts.watchdog ack <service>` CLI** for 4h muting via `watchdog_acks` table. Env in `radon-cloud/.env`: `DISCORD_WATCHDOG_WEBHOOK_URL`, `PUSHOVER_USER`, `PUSHOVER_TOKEN` — absent vars degrade gracefully.
+Anti-flood: **2-consecutive-failures hysteresis**; **1h per-(service,severity) cooldown** in `watchdog_cooldowns` table; **`python -m scripts.watchdog ack <service>` CLI** for 4h muting via `watchdog_acks` table. Env in `radon-cloud/.env`: `PUSHOVER_USER`, `PUSHOVER_TOKEN` — absent vars degrade gracefully (alerts still land in `service_health`). Discord support was removed 2026-05-19.
 
 **Service categories** (`web/lib/serviceHealthWindows.ts`): every service tagged `scheduled` or `on-demand`. Stale `scheduled` → red banner. Stale `on-demand` (`gex-scan`, `discover`, `flow-analysis`, `analyst-ratings`, `orders-read-compare`) → `state="dormant"`, amber "visit to refresh" chip.
 
@@ -295,7 +295,7 @@ Each tab: hook + staleness lib + API route + panel + scanner + cache file.
 
 | Tab | Files (under `web/`, `scripts/`) | Notes |
 |---|---|---|
-| **VCG** (vol-credit gap) | `useVcg.ts`, `vcgStaleness.ts`, `app/api/vcg/route.ts`, `VcgPanel.tsx`, `vcg_scan.py` (20-session), `data/vcg.json`, `scripts/run_vcg_refresh.sh`, `docker/services/timers/radon-vcg-refresh.timer`, `config/com.radon.vcg-refresh.plist` | RO: VIX>28 + VCG>2.5. EDR: VIX>25 + VCG 2.0–2.5. BOUNCE: VCG<-3.5. VVIX = severity amplifier, not gate. FastAPI: `POST /vcg/{scan,share}`, 60s cooldown. Autonomous 5-min cadence during ET hours via `radon-vcg-refresh.timer` (Hetzner) / `com.radon.vcg-refresh` (laptop). Wrapper POSTs `/vcg/scan`; falls back to direct `vcg_scan.py` if FastAPI unreachable. Banner window: 15min open (3 missed cycles). |
+| **VCG** (vol-credit gap) | `useVcg.ts`, `vcgStaleness.ts`, `app/api/vcg/route.ts`, `VcgPanel.tsx`, `vcg_scan.py` (20-session), `data/vcg.json`, `scripts/run_vcg_refresh.sh`, `radon-cloud/services/radon-vcg-refresh.timer`, `config/com.radon.vcg-refresh.plist` | RO: VIX>28 + VCG>2.5. EDR: VIX>25 + VCG 2.0–2.5. BOUNCE: VCG<-3.5. VVIX = severity amplifier, not gate. FastAPI: `POST /vcg/{scan,share}`, 60s cooldown. Autonomous 5-min cadence during ET hours via `radon-vcg-refresh.timer` (Hetzner) / `com.radon.vcg-refresh` (laptop). Wrapper POSTs `/vcg/scan`; falls back to direct `vcg_scan.py` if FastAPI unreachable. Banner window: 15min open (3 missed cycles). |
 | **GEX** (gamma exposure) | `useGex.ts`, `gexStaleness.ts`, `app/api/gex/route.ts`, `GexPanel.tsx`, `gex_scan.py`, `data/gex.json` | UW fields: `call_gex` positive, `put_gex` negative, `net = call_gex + put_gex` (no negation). Levels: GEX Flip, Max Magnet, Max Accelerator, Put/Call Wall. Bias: BULL / CAUTIOUS_BULL / NEUTRAL / CAUTIOUS_BEAR / BEAR from flip pos + net sign + magnet. Tests: 71. |
 | **CRI / Regime** | `web/lib/criStaleness.ts`, `regime` route triggers `cri_scan.py` | Stale if `data.date != today` OR (market_open AND mtime>60s). Closed + date=today → serve EOD. CRI payload's `history` carries full Yahoo intersection (~251 trading days / 13 months); chart slices for display; statistical windows are explicit constants. |
 | **Regime market-closed** | `RegimePanel` | Use `data.{vix,vvix,spy}` only (no WS `last`). `activeCorr = data.cor1m`. `liveCri / intradayRvol = null`. Don't update VIX/VVIX timestamps. COR1M badge = DAILY. |

@@ -93,7 +93,7 @@ Full architecture and the Phase 0-6 migration history live in [`docs/cloud-servi
 Things that shipped in the last few weeks and are worth knowing about:
 
 - **Autonomous Hetzner timers** for `vcg-scan`, `portfolio-sync`, and `cta-sync` replaced the previous browser-driven refresh model. Data stays fresh even when no tab is open.
-- **Service-health watchdog** with four buckets (`intraday`, `continuous`, `daily`, `error`), Discord + Pushover routing, cooldown, hysteresis, and `python -m scripts.watchdog ack <service>` to silence noise.
+- **Service-health watchdog** with four buckets (`intraday`, `continuous`, `daily`, `error`), Pushover routing (P1 only), cooldown, hysteresis, and `python -m scripts.watchdog ack <service>` to silence noise.
 - **Replica watchdog** auto-heals libsql `WalConflict` errors on the Next.js embedded replica. Long-running writers must set `RADON_DB_NO_REPLICA=1`.
 - **Banner categories.** `scheduled` services flip red on stale; `on-demand` services show an amber dormant chip and are excluded from alerting.
 - **`/usr/local/bin/radon`** operator CLI auto-enumerates every loaded `radon-*` unit, so new timers don't require script edits. Installed durably by `setup-vps.sh`.

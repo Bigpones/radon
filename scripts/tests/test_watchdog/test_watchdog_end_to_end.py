@@ -1,8 +1,11 @@
 """End-to-end: a stale service_health row through the full pipeline.
 
-Two consecutive runs against a stale service produce exactly one Discord
-call (mocked), one `service_health` row for `watchdog-alerts`, and the
-cooldown table reflects the notification.
+Two consecutive runs against a stale service produce exactly one
+Pushover call (mocked), one `service_health` row for `watchdog-alerts`,
+and the cooldown table reflects the notification.
+
+Discord support was removed 2026-05-19; Pushover is the only external
+channel now exercised by this end-to-end.
 """
 from __future__ import annotations
 
@@ -34,7 +37,8 @@ def _seed(db_conn, service: str, state: str, updated_at: datetime, error: dict |
 def test_stale_intraday_service_pipeline(db_conn, monkeypatch):
     from watchdog import check, notify
 
-    monkeypatch.setenv("DISCORD_WATCHDOG_WEBHOOK_URL", "https://discord.example/x")
+    monkeypatch.setenv("PUSHOVER_USER", "u")
+    monkeypatch.setenv("PUSHOVER_TOKEN", "t")
 
     now = datetime(2026, 5, 13, 15, 0, tzinfo=timezone.utc)
     _seed(db_conn, "vcg-scan", "ok", now - timedelta(minutes=30))
@@ -42,10 +46,11 @@ def test_stale_intraday_service_pipeline(db_conn, monkeypatch):
     for other in ("cri-scan", "orders-sync", "portfolio-sync"):
         _seed(db_conn, other, "ok", now - timedelta(minutes=2))
 
-    discord_calls = []
+    pushover_calls = []
 
     def fake_http_post(url, payload, headers=None):
-        discord_calls.append((url, payload))
+        if "pushover" in url:
+            pushover_calls.append((url, payload))
         return (204, b"")
 
     with patch("watchdog.notify._http_post", side_effect=fake_http_post):
@@ -55,7 +60,7 @@ def test_stale_intraday_service_pipeline(db_conn, monkeypatch):
             if outcome.fired:
                 notify.dispatch(outcome)
 
-        assert discord_calls == []
+        assert pushover_calls == []
 
         # Second pass: hysteresis trips, fires.
         report2 = check.check_bucket(bucket="intraday", now=now + timedelta(minutes=5))
@@ -63,9 +68,9 @@ def test_stale_intraday_service_pipeline(db_conn, monkeypatch):
             if outcome.fired:
                 notify.dispatch(outcome)
 
-        # Exactly one Discord call referencing vcg-scan.
-        assert len(discord_calls) == 1
-        assert "vcg-scan" in discord_calls[0][1]["content"]
+        # Exactly one Pushover call referencing vcg-scan.
+        assert len(pushover_calls) == 1
+        assert "vcg-scan" in pushover_calls[0][1]["title"]
 
     # service_health 'watchdog-alerts' row written.
     rows = db_conn.execute(

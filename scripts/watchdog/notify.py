@@ -7,9 +7,9 @@ even with no external channel configured.
 
 Severity routing:
 
- * P1 → Pushover (if configured) + Discord + service_health
- * P2 → Discord + service_health
- * P3 → Discord + service_health
+ * P1 → Pushover (if configured) + service_health
+ * P2 → service_health
+ * P3 → service_health
 
 If no external channel is configured, only `service_health` fires and
 a one-line warning prints on startup so the operator notices.
@@ -33,10 +33,6 @@ log = logging.getLogger("watchdog.notify")
 
 # ── env-driven channel registry ─────────────────────────────────────
 
-def _discord_webhook() -> Optional[str]:
-    return os.environ.get("DISCORD_WATCHDOG_WEBHOOK_URL") or None
-
-
 def _pushover_creds() -> Optional[tuple[str, str]]:
     user = os.environ.get("PUSHOVER_USER")
     token = os.environ.get("PUSHOVER_TOKEN")
@@ -51,8 +47,6 @@ def _resend_creds() -> Optional[tuple[str, str]]:
 
 def enabled_channels() -> set[str]:
     channels = {"service_health"}
-    if _discord_webhook():
-        channels.add("discord")
     if _pushover_creds():
         channels.add("pushover")
     if _resend_creds():
@@ -66,7 +60,7 @@ def log_startup_warning() -> None:
     if not external:
         sys.stderr.write(
             "[watchdog] warning: no external notification channel configured "
-            "(set DISCORD_WATCHDOG_WEBHOOK_URL or PUSHOVER_USER+PUSHOVER_TOKEN). "
+            "(set PUSHOVER_USER+PUSHOVER_TOKEN). "
             "Alerts will only land in the service_health table.\n"
         )
     else:
@@ -100,19 +94,6 @@ def _format_summary(outcome: CheckOutcome) -> str:
     emoji = _EMOJI.get(outcome.severity or "", "")
     sev = outcome.severity or ""
     return f"{emoji} [{sev}] `{outcome.service}` — {outcome.message}"
-
-
-def _emit_discord(outcome: CheckOutcome) -> None:
-    url = _discord_webhook()
-    if not url:
-        return
-    payload = {"content": _format_summary(outcome)}
-    try:
-        status, _ = _http_post(url, payload)
-        if status >= 400:
-            log.warning("discord webhook returned %d", status)
-    except Exception as exc:  # pragma: no cover - transport failures
-        log.warning("discord webhook failed: %s", exc)
 
 
 def _emit_pushover(outcome: CheckOutcome) -> None:
@@ -195,7 +176,6 @@ def dispatch(outcome: CheckOutcome) -> None:
         return
 
     _emit_service_health(outcome)
-    _emit_discord(outcome)
     _emit_pushover(outcome)
 
     if outcome.severity:
