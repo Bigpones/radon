@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   LineChart,
   Search,
+  Settings,
   Shield,
   Sparkles,
   Wrench,
@@ -35,6 +36,7 @@ export const navItems: WorkspaceNavItem[] = [
   { label: "Journal", route: "journal", href: "/journal", icon: Wrench },
   { label: "Regime", route: "regime", href: "/regime/cri", icon: Shield },
   { label: "CTA", route: "cta", href: "/cta", icon: Activity },
+  { label: "Operator", route: "admin", href: "/admin", icon: Settings },
   // { label: "Internals", route: "internals", href: "/internals", icon: Activity },
 ];
 
@@ -49,6 +51,7 @@ export const quickPromptsBySection: Record<WorkspaceSection, string[]> = {
   journal: ["journal --limit 25", "portfolio", "analyze nfLx", "help"],
   regime: ["cri-scan", "portfolio", "scan --top 12", "help"],
   cta: ["menthorq-cta", "cri-scan", "portfolio", "help"],
+  admin: ["help"],
   "ticker-detail": ["portfolio", "scan --top 12", "help"],
 };
 
@@ -63,5 +66,6 @@ export const sectionDescription: Record<WorkspaceSection, string> = {
   journal: "Trade decision logs and history review.",
   regime: "Crash Risk Index — real-time CTA deleveraging monitor.",
   cta: "CTA positioning, vol-targeting exposure model and institutional flow.",
+  admin: "Operator controls for IB Gateway 2FA and Radon services.",
   "ticker-detail": "Instrument research surface — company, book, chain, position, orders, news, ratings, seasonality.",
 };

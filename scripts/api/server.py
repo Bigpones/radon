@@ -48,6 +48,7 @@ from api.ib_gateway import (
     is_launchd_mode,
     reset_restart_backoff,
 )
+from api import services as admin_services
 from clients.ib_client import DEFAULT_GATEWAY_PORT
 from api.pool_order_manage import pool_cancel_order, pool_modify_order
 from api.auth import verify_clerk_jwt, verify_api_key, is_local_or_tailnet
@@ -953,6 +954,35 @@ async def ib_restart():
 async def ib_reset_backoff():
     """Clear restart backoff state. Operator path: 'I just approved 2FA, try now'."""
     return reset_restart_backoff()
+
+
+# ---------------------------------------------------------------------------
+# Operator admin — service control (systemd-backed)
+# ---------------------------------------------------------------------------
+
+@app.get("/admin/services")
+async def admin_services_list():
+    """List radon-* systemd units with current load/active/sub state.
+
+    On non-systemd hosts (laptop dev), returns the placeholder catalogue with
+    ``supported=False`` so the UI can render a graceful "not controllable
+    from here" state. Status payload is identical to the systemd path.
+    """
+    supported = admin_services.is_systemd_available()
+    units = await admin_services.list_units_with_status()
+    return {
+        "supported": supported,
+        "units": [u.to_dict() for u in units],
+    }
+
+
+@app.post("/admin/services/{unit}/{action}")
+async def admin_service_action(unit: str, action: str):
+    """Run ``systemctl <action> <unit>``. Allowlist-gated to radon-* units."""
+    result = await admin_services.control_unit(unit, action)
+    if not result.ok:
+        raise HTTPException(status_code=400 if result.returncode == -1 else 502, detail=result.to_dict())
+    return result.to_dict()
 
 
 # ---------------------------------------------------------------------------

@@ -170,6 +170,7 @@ describe("navItems", () => {
       "journal",
       "regime",
       "cta",
+      "admin",
     ]);
   });
 });
@@ -190,6 +191,7 @@ describe("quickPromptsBySection", () => {
     "journal",
     "regime",
     "cta",
+    "admin",
     "ticker-detail",
   ];
 
@@ -239,6 +241,7 @@ describe("sectionDescription", () => {
     "journal",
     "regime",
     "cta",
+    "admin",
     "ticker-detail",
   ];
 
