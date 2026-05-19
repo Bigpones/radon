@@ -110,6 +110,13 @@ class TestPushoverPayload:
 
 class TestServiceHealthLog:
     def test_writes_watchdog_alerts_row(self, db_conn, monkeypatch, sample_alert):
+        """Contract change 2026-05-19: ``watchdog-alerts`` reflects
+        DISPATCHER HEALTH, not the dispatched alert. A successful
+        dispatch leaves the row at state=ok with no downstream content
+        in last_error. See feedback_banner_only_actionable.md and the
+        ``test_dispatcher_writer_semantics`` suite for the full
+        contract.
+        """
         from watchdog import notify
 
         monkeypatch.delenv("PUSHOVER_USER", raising=False)
@@ -118,8 +125,9 @@ class TestServiceHealthLog:
             "SELECT service, state, last_error FROM service_health WHERE service='watchdog-alerts'"
         ).fetchall()
         assert len(rows) == 1
-        assert rows[0][1] == "error"
-        assert "vcg-scan" in rows[0][2]
+        assert rows[0][1] == "ok"
+        # Downstream alert content must NOT leak into last_error.
+        assert rows[0][2] is None or "vcg-scan" not in (rows[0][2] or "")
 
 
 class TestHeartbeatOk:
@@ -141,26 +149,41 @@ class TestHeartbeatOk:
         assert "heartbeat_at" in rows[0][2]
         assert "continuous" in rows[0][2]
 
-    def test_heartbeat_overwrites_prior_error_row(self, db_conn, sample_alert):
-        """When an earlier cycle wrote `=error`, the next clean cycle
-        must overwrite it back to `=ok`.
+    def test_heartbeat_overwrites_prior_dispatcher_error(self, db_conn, sample_alert):
+        """When an earlier cycle hit a dispatcher failure (e.g. Pushover
+        5xx) and wrote ``state=error``, the next clean heartbeat must
+        overwrite the row back to ``state=ok``.
+
+        Note: post-2026-05-19 a successful dispatch does NOT write
+        ``state=error`` — only dispatcher failures do. So the test
+        simulates a dispatcher failure by patching ``_http_post`` to
+        return 500.
         """
         from watchdog import notify
+        from unittest.mock import patch
 
-        # Earlier cycle: dispatch fired an alert.
-        notify.dispatch(sample_alert)
-        row_after_dispatch = db_conn.execute(
-            "SELECT state FROM service_health WHERE service='watchdog-alerts'"
-        ).fetchone()
-        assert row_after_dispatch[0] == "error"
+        # Earlier cycle: dispatch hits a Pushover 5xx → row flips to error.
+        import os
+        os.environ["PUSHOVER_USER"] = "u"
+        os.environ["PUSHOVER_TOKEN"] = "t"
+        try:
+            with patch("watchdog.notify._http_post", return_value=(500, b"oops")):
+                notify.dispatch(sample_alert)
+            row_after_dispatch = db_conn.execute(
+                "SELECT state FROM service_health WHERE service='watchdog-alerts'"
+            ).fetchone()
+            assert row_after_dispatch[0] == "error"
 
-        # Next clean cycle: heartbeat ok overwrites it.
-        now = datetime(2026, 5, 14, 15, 0, tzinfo=timezone.utc)
-        notify.heartbeat_ok(bucket="continuous", now=now)
-        row_after_heartbeat = db_conn.execute(
-            "SELECT state FROM service_health WHERE service='watchdog-alerts'"
-        ).fetchone()
-        assert row_after_heartbeat[0] == "ok"
+            # Next clean cycle: heartbeat ok overwrites it.
+            now = datetime(2026, 5, 14, 15, 0, tzinfo=timezone.utc)
+            notify.heartbeat_ok(bucket="continuous", now=now)
+            row_after_heartbeat = db_conn.execute(
+                "SELECT state FROM service_health WHERE service='watchdog-alerts'"
+            ).fetchone()
+            assert row_after_heartbeat[0] == "ok"
+        finally:
+            del os.environ["PUSHOVER_USER"]
+            del os.environ["PUSHOVER_TOKEN"]
 
 
 class TestStartupWarning:

@@ -72,12 +72,19 @@ def test_stale_intraday_service_pipeline(db_conn, monkeypatch):
         assert len(pushover_calls) == 1
         assert "vcg-scan" in pushover_calls[0][1]["title"]
 
-    # service_health 'watchdog-alerts' row written.
+    # service_health 'watchdog-alerts' row written, reflecting DISPATCHER
+    # HEALTH (state=ok because the dispatch succeeded). Downstream alert
+    # content (vcg-scan, severity, etc.) goes to journalctl, NOT here —
+    # see scripts/watchdog/notify.py module docstring.
     rows = db_conn.execute(
         "SELECT service, state, last_error FROM service_health WHERE service='watchdog-alerts'"
     ).fetchall()
     assert len(rows) == 1
-    assert "vcg-scan" in rows[0][2]
+    assert rows[0][1] == "ok", f"dispatcher succeeded, row state must be ok; got {rows[0][1]!r}"
+    assert rows[0][2] is None or "vcg-scan" not in (rows[0][2] or ""), (
+        f"downstream alert detail must not leak into watchdog-alerts.last_error; "
+        f"got {rows[0][2]!r}"
+    )
 
     # Hysteresis row reached threshold + cooldown row stamped post-dispatch.
     hysteresis = db_conn.execute(

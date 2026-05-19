@@ -348,11 +348,18 @@ class TestHealthFetchFailure:
 
 class TestServiceHealthRowsAlwaysWrite:
     """Even when the grouped Pushover alert subsumes per-service push
-    alerts, each service's individual service_health=error row must
-    still write so the dashboard banner shows the truth.
+    alerts, the meta-row ``watchdog-alerts`` must reflect dispatcher
+    health and the underlying per-service rows must remain intact.
+
+    Contract change 2026-05-19: ``watchdog-alerts.last_error`` no
+    longer carries downstream alert content — it's reserved for real
+    dispatcher failures. Downstream truth lives in each service's own
+    row (vcg-scan, cri-scan, etc.) which is written by that service's
+    writer, not by the dispatcher. See
+    ``test_dispatcher_writer_semantics.py``.
     """
 
-    def test_individual_service_health_rows_persist(self, db_conn, monkeypatch, fresh_now):
+    def test_grouped_dispatch_does_not_leak_into_meta_row(self, db_conn, monkeypatch, fresh_now):
         from watchdog import check, grouping
 
         # Only vcg + cri seeded as stale ``ok`` rows; orders-sync /
@@ -371,23 +378,23 @@ class TestServiceHealthRowsAlwaysWrite:
              patch("watchdog.grouping.fetch_health", return_value={"auth_state": "awaiting_2fa"}):
             grouping.dispatch_with_grouping(outcomes=fired, now=fresh_now + timedelta(minutes=10))
 
-        # Even though the Pushover channel was grouped, ``watchdog-alerts``
-        # must still record the failure so the dashboard banner sees it.
-        # _emit_service_health is called per outcome so the table reflects
-        # the latest underlying service. SQLite ``INSERT OR REPLACE``
-        # collapses to one row but ``last_error`` carries one of the IB
-        # services — proof we didn't silently skip the table write.
+        # ``watchdog-alerts`` row reflects dispatcher health only —
+        # state=ok because the (mocked) Pushover succeeded.
         watchdog_rows = db_conn.execute(
-            "SELECT last_error FROM service_health WHERE service='watchdog-alerts'"
+            "SELECT state, last_error FROM service_health WHERE service='watchdog-alerts'"
         ).fetchall()
         assert len(watchdog_rows) >= 1
-        merged = " ".join(r[0] or "" for r in watchdog_rows)
+        state, last_error = watchdog_rows[0][0], watchdog_rows[0][1] or ""
+        assert state == "ok", (
+            f"successful grouped dispatch must leave row state=ok; got {state!r}"
+        )
         ib_services_in_payload = sum(
             1 for svc in ("vcg-scan", "cri-scan", "orders-sync", "portfolio-sync")
-            if svc in merged
+            if svc in last_error
         )
-        assert ib_services_in_payload >= 1, (
-            f"watchdog-alerts row missing IB-service detail: {merged}"
+        assert ib_services_in_payload == 0, (
+            f"downstream service detail must NOT live in watchdog-alerts.last_error; "
+            f"got {last_error!r}"
         )
 
         # Original ok rows for vcg + cri still exist (we never delete

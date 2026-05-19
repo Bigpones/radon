@@ -17,8 +17,9 @@ isolated stale on an IB service is more likely a one-off retry than a
 gateway outage.
 
 The ``service_health`` table is still written for each underlying
-service via ``notify._emit_service_health`` so the dashboard banner
-reflects the truth even when the push channel is grouped.
+service's OWN row is the one to consult for downstream truth; the
+meta-row ``watchdog-alerts`` reflects DISPATCHER HEALTH ONLY (see
+``notify`` module docstring).
 
 Discord is intentionally NOT touched here — a parallel agent is removing
 Discord from the watchdog. Only Pushover is grouped.
@@ -34,7 +35,7 @@ import json
 import logging
 import os
 from datetime import datetime
-from typing import Iterable
+from typing import Iterable, Optional
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
@@ -117,6 +118,7 @@ def dispatch_with_grouping(*, outcomes: Iterable[CheckOutcome], now: datetime) -
     non_ib_failing = [o for o in fired if not _ib_dependent(o)]
 
     grouped_handled: set[str] = set()
+    grouped_dispatcher_error: Optional[str] = None
     if len(ib_failing) >= GROUPING_THRESHOLD:
         # fetch_health is best-effort but a raised exception (test-double
         # or future bug) must not abort the whole dispatch — fall through
@@ -128,19 +130,21 @@ def dispatch_with_grouping(*, outcomes: Iterable[CheckOutcome], now: datetime) -
             health_payload = {"auth_state": "unknown"}
         auth_state = health_payload.get("auth_state") or "unknown"
         if auth_state in GROUPING_AUTH_STATES:
-            grouped_handled = _dispatch_grouped(
+            grouped_handled, grouped_dispatcher_error = _dispatch_grouped(
                 ib_outcomes=ib_failing,
                 auth_state=auth_state,
                 now=now,
             )
 
     # Everything not absorbed into the grouped alert falls through to the
-    # regular per-service path (service_health row + Pushover + cooldown).
+    # regular per-service path (cooldown gate + Pushover). The per-service
+    # service_health row for the FAILING service has already been written
+    # by the underlying writer (e.g. ib_sync, vcg_scan). watchdog-alerts is
+    # NOT written per-outcome — see notify._write_dispatcher_health.
     for outcome in fired:
         if outcome.service in grouped_handled:
-            # Service_health row still needs to be written so the dashboard
-            # banner sees the failure — we just skip the per-service push.
-            notify._emit_service_health(outcome)
+            # Subsumed into the grouped Pushover; nothing more to do.
+            notify._log_alert_event(outcome)
             continue
         if outcome.severity and not cooldown_mod.cooldown_allows_fire(
             service=outcome.service, severity=outcome.severity, now=outcome.now
@@ -148,6 +152,12 @@ def dispatch_with_grouping(*, outcomes: Iterable[CheckOutcome], now: datetime) -
             log.info("suppressed by cooldown (%s/%s)", outcome.service, outcome.severity)
             continue
         notify.dispatch(outcome)
+
+    # If grouping fired, emit a single dispatcher-health row reflecting
+    # whether the grouped push succeeded (notify.dispatch handles its own
+    # per-outcome row for the non-grouped fallback path).
+    if grouped_handled:
+        notify._write_dispatcher_health(now=now, dispatcher_error=grouped_dispatcher_error)
 
     # No-op for non_ib_failing — they're handled by the loop above.
     _ = non_ib_failing
@@ -158,9 +168,9 @@ def _dispatch_grouped(
     ib_outcomes: list[CheckOutcome],
     auth_state: str,
     now: datetime,
-) -> set[str]:
-    """Send the single grouped Pushover; return the set of service
-    names whose per-service push should be suppressed.
+) -> tuple[set[str], Optional[str]]:
+    """Send the single grouped Pushover; return ``(suppressed_services,
+    dispatcher_error)``.
 
     Cooldown applies to the grouped key. If we're inside the cooldown
     window we skip the push but STILL return the suppression set —
@@ -168,30 +178,45 @@ def _dispatch_grouped(
     """
     services = [o.service for o in ib_outcomes]
 
+    log.info(
+        "dispatched alert service=%s severity=%s kind=%s "
+        "downstream_services=%s downstream_count=%d auth_state=%s",
+        GROUPED_ALERT_KEY,
+        GROUPED_ALERT_SEVERITY,
+        "grouped",
+        ",".join(sorted(services)),
+        len(services),
+        auth_state,
+    )
+
     if not cooldown_mod.cooldown_allows_fire(
         service=GROUPED_ALERT_KEY,
         severity=GROUPED_ALERT_SEVERITY,
         now=now,
     ):
         log.info("grouped IB alert suppressed by cooldown")
-        return set(services)
+        return set(services), None
 
     message = _format_grouped_message(auth_state=auth_state, services=services)
     title = f"radon watchdog: IB Gateway {auth_state}"
-    _emit_grouped_pushover(title=title, message=message)
+    dispatcher_error = _emit_grouped_pushover(title=title, message=message)
 
     cooldown_mod.mark_notified(
         service=GROUPED_ALERT_KEY,
         severity=GROUPED_ALERT_SEVERITY,
         now=now,
     )
-    return set(services)
+    return set(services), dispatcher_error
 
 
-def _emit_grouped_pushover(*, title: str, message: str) -> None:
+def _emit_grouped_pushover(*, title: str, message: str) -> Optional[str]:
+    """Return a dispatcher error string on failure, ``None`` on success
+    (or when Pushover is unconfigured — absence of an external channel
+    is not a dispatcher failure).
+    """
     creds = notify._pushover_creds()
     if not creds:
-        return
+        return None
     user, token = creds
     payload = {
         "token": token,
@@ -201,6 +226,16 @@ def _emit_grouped_pushover(*, title: str, message: str) -> None:
         "priority": 1,
     }
     try:
-        notify._http_post("https://api.pushover.net/1/messages.json", payload)
-    except Exception as exc:  # pragma: no cover - transport failures
-        log.warning("grouped pushover failed: %s", exc)
+        status, body = notify._http_post(
+            "https://api.pushover.net/1/messages.json", payload
+        )
+    except Exception as exc:  # noqa: BLE001 — channel transport failures must surface
+        log.warning("grouped pushover transport failure: %s", exc)
+        return f"pushover transport failed: {exc}"
+    if status >= 400:
+        log.warning("grouped pushover non-2xx (%s): %r", status, body[:200])
+        return (
+            f"pushover {status}: "
+            f"{body[:200].decode('utf-8', 'replace').strip() or 'no body'}"
+        )
+    return None
