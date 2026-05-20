@@ -42,7 +42,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TRADE_LOG = Path(__file__).parent.parent.parent.parent / "data" / "trade_log.json"
 DEFAULT_IB_PORT = 4001
-DEFAULT_CLIENT_ID = 72  # daemon range (70-89)
+# "auto" rotates across SUBPROCESS_ID_RANGE on each cycle. See
+# fill_monitor.py for the rationale.
+DEFAULT_CLIENT_ID: int | str = "auto"
 
 
 class JournalSyncHandler(BaseHandler):
@@ -57,7 +59,7 @@ class JournalSyncHandler(BaseHandler):
         self,
         trade_log_path: Optional[Path] = None,
         ib_port: int = DEFAULT_IB_PORT,
-        client_id: int = DEFAULT_CLIENT_ID,
+        client_id: "int | str" = DEFAULT_CLIENT_ID,
     ):
         super().__init__()
         self.trade_log_path = trade_log_path or DEFAULT_TRADE_LOG

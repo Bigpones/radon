@@ -16,15 +16,56 @@ import { createReconnectStrategy, type ReconnectState } from "./reconnectStrateg
 
 export type ConnectionState = "connected" | "ib_offline" | "relay_offline";
 
+/** Authoritative IB auth state from FastAPI /health.ib_gateway.auth_state.
+ *  Mirrors scripts/api/ib_gateway.py auth-state machine. */
+export type IBAuthState =
+  | "authenticated"
+  | "awaiting_2fa"
+  | "unreachable"
+  | "unknown"
+  | "remote";
+
+/** Authoritative IB service state from FastAPI /health.ib_gateway.service_state. */
+export type IBServiceState = "healthy" | "unhealthy" | "starting" | "unknown";
+
+/** Display-level status the footer/banner derive from the combined signal.
+ *  Single source of truth so footer (sidebar) and banner (ConnectionBanner)
+ *  never disagree again. Resolution priority (highest first):
+ *    relay_offline > unreachable > awaiting_2fa > unhealthy > ib_offline > connected
+ */
+export type IBDisplayStatus =
+  | "connected"
+  | "awaiting_2fa"
+  | "unhealthy"
+  | "unreachable"
+  | "ib_offline"
+  | "relay_offline";
+
 export type IBStatusState = {
   /** WebSocket to our realtime server is open */
   wsConnected: boolean;
-  /** IB Gateway is connected (reported by server) */
+  /** IB Gateway is connected (reported by relay WS) — DO NOT trust this for
+   *  UI labels; the WS flag derives from the relay's long-held ib_insync
+   *  socket which can stay "connected" while IB Gateway is actually sitting
+   *  at the 2FA prompt (half-open socket, TCP alive but API mute). The
+   *  authoritative signal is `authState` below, polled from FastAPI /health
+   *  which checks Docker container health, pool client managed_accounts,
+   *  and ibc auth_state. */
   ibConnected: boolean;
   /** Timestamp when connection was lost (null = connected) */
   disconnectedSince: number | null;
-  /** Derived three-state connection status */
+  /** Derived three-state legacy connection status (WS+ibConnected). Kept
+   *  for ConnectionBanner backward-compat. New consumers should read
+   *  `displayStatus` instead. */
   connectionState: ConnectionState;
+  /** Authoritative IB auth state from FastAPI /health. */
+  authState: IBAuthState | null;
+  /** Authoritative IB service state from FastAPI /health. */
+  serviceState: IBServiceState | null;
+  /** True when FastAPI cannot reach IB Gateway (port closed or API mute). */
+  upstreamDead: boolean | null;
+  /** Single derived label for the footer / banner. */
+  displayStatus: IBDisplayStatus;
 };
 
 type StatusMessage = {
@@ -43,12 +84,44 @@ const IBStatusContext = createContext<IBStatusState>({
   ibConnected: false,
   disconnectedSince: null,
   connectionState: "relay_offline",
+  authState: null,
+  serviceState: null,
+  upstreamDead: null,
+  displayStatus: "relay_offline",
 });
 
 /* ─── Staleness constants ─────────────────────────────── */
 
 const STALENESS_CHECK_INTERVAL_MS = 15_000;
 const STALENESS_THRESHOLD_MS = 60_000;
+const HEALTH_POLL_MS = 15_000;
+
+type HealthPayload = {
+  ib_gateway?: {
+    auth_state?: IBAuthState;
+    service_state?: IBServiceState;
+    upstream_dead?: boolean;
+  };
+};
+
+function deriveDisplayStatus(args: {
+  wsConnected: boolean;
+  ibConnected: boolean;
+  authState: IBAuthState | null;
+  serviceState: IBServiceState | null;
+  upstreamDead: boolean | null;
+}): IBDisplayStatus {
+  // /health is the source of truth when we have it. Order matters — pick the
+  // most severe applicable state first.
+  if (!args.wsConnected) return "relay_offline";
+  if (args.upstreamDead === true || args.authState === "unreachable") return "unreachable";
+  if (args.authState === "awaiting_2fa") return "awaiting_2fa";
+  if (args.serviceState === "unhealthy") return "unhealthy";
+  if (args.authState === "authenticated" && args.serviceState === "healthy") return "connected";
+  // Fall back to the legacy WS-relay flag when /health hasn't responded yet.
+  if (args.ibConnected) return "connected";
+  return "ib_offline";
+}
 
 /* ─── Provider ────────────────────────────────────────── */
 
@@ -57,6 +130,9 @@ export function IBStatusProvider({ children }: { children: ReactNode }) {
   const [wsConnected, setWsConnected] = useState(false);
   const [ibConnected, setIbConnected] = useState(true); // assume connected until told otherwise
   const [disconnectedSince, setDisconnectedSince] = useState<number | null>(null);
+  const [authState, setAuthState] = useState<IBAuthState | null>(null);
+  const [serviceState, setServiceState] = useState<IBServiceState | null>(null);
+  const [upstreamDead, setUpstreamDead] = useState<boolean | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const mountedRef = useRef(true);
@@ -214,7 +290,45 @@ export function IBStatusProvider({ children }: { children: ReactNode }) {
     };
   }, [connect, clearReconnectTimer, clearStalenessTimer]);
 
-  // Derive three-state connection status
+  // Poll /api/admin/health (proxy to FastAPI /health) for the authoritative
+  // IB state. This is the only signal that catches the "TCP socket alive but
+  // session sitting at 2FA prompt" case — the relay WS reports ib_connected
+  // based on its long-held ib_insync socket which stays "open" through such
+  // half-open scenarios and is structurally unable to distinguish them.
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const poll = async () => {
+      try {
+        const res = await fetch("/api/admin/health", { cache: "no-store" });
+        if (!res.ok) throw new Error(`health ${res.status}`);
+        const payload = (await res.json()) as HealthPayload;
+        if (cancelled) return;
+        const gw = payload.ib_gateway ?? {};
+        setAuthState(gw.auth_state ?? null);
+        setServiceState(gw.service_state ?? null);
+        setUpstreamDead(typeof gw.upstream_dead === "boolean" ? gw.upstream_dead : null);
+      } catch {
+        // Don't clear cached values on transient fetch failure — surface as
+        // null only if we never had a response. A 502 here is itself a signal,
+        // but treating it as "unreachable" requires knowing the cause; the
+        // safer move is to leave previous state and let the next poll resolve.
+        if (cancelled) return;
+        setAuthState((prev) => prev);
+      } finally {
+        if (!cancelled) timer = setTimeout(poll, HEALTH_POLL_MS);
+      }
+    };
+
+    poll();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
+
+  // Derive three-state connection status (legacy)
   const connectionState: ConnectionState =
     wsConnected && ibConnected
       ? "connected"
@@ -222,9 +336,26 @@ export function IBStatusProvider({ children }: { children: ReactNode }) {
         ? "ib_offline"
         : "relay_offline";
 
+  const displayStatus = deriveDisplayStatus({
+    wsConnected,
+    ibConnected,
+    authState,
+    serviceState,
+    upstreamDead,
+  });
+
   return (
     <IBStatusContext.Provider
-      value={{ wsConnected, ibConnected, disconnectedSince, connectionState }}
+      value={{
+        wsConnected,
+        ibConnected,
+        disconnectedSince,
+        connectionState,
+        authState,
+        serviceState,
+        upstreamDead,
+        displayStatus,
+      }}
     >
       {children}
     </IBStatusContext.Provider>

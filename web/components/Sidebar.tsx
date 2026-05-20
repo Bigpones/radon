@@ -3,15 +3,42 @@
 import Link from "next/link";
 import type { WorkspaceSection } from "@/lib/types";
 import { navItems } from "@/lib/data";
+import { useIBStatusContext, type IBDisplayStatus } from "@/lib/IBStatusContext";
 
 type SidebarProps = {
   activeSection: WorkspaceSection;
   actionTone: string;
+  /** @deprecated kept for callers that haven't migrated. The authoritative
+   *  status now comes from useIBStatusContext().displayStatus inside this
+   *  component — see the IB Gateway 2FA contradictions fix. */
   ibConnected?: boolean;
   lastSync?: string | null;
 };
 
-export default function Sidebar({ activeSection, actionTone, ibConnected = true, lastSync }: SidebarProps) {
+/** Footer label per derived display status. Keep tight — overflowing the
+ *  sidebar reflows the status row. */
+function statusLabel(status: IBDisplayStatus): { text: string; cls: "live" | "warn" | "dead" } {
+  switch (status) {
+    case "connected":
+      return { text: "CONNECTED", cls: "live" };
+    case "awaiting_2fa":
+      return { text: "AWAITING 2FA", cls: "warn" };
+    case "unhealthy":
+      return { text: "DEGRADED", cls: "warn" };
+    case "unreachable":
+      return { text: "UNREACHABLE", cls: "dead" };
+    case "ib_offline":
+      return { text: "OFFLINE", cls: "dead" };
+    case "relay_offline":
+      return { text: "RELAY OFFLINE", cls: "dead" };
+  }
+}
+
+export default function Sidebar({ activeSection, actionTone, lastSync }: SidebarProps) {
+  const { displayStatus } = useIBStatusContext();
+  const { text, cls } = statusLabel(displayStatus);
+  const dotClass =
+    cls === "live" ? "status-dot-live" : cls === "warn" ? "status-dot-warn" : "status-dot-dead";
   const syncTime = lastSync ? new Date(lastSync).toLocaleTimeString() : "—";
 
   return (
@@ -43,8 +70,8 @@ export default function Sidebar({ activeSection, actionTone, ibConnected = true,
         <div className="status-row">
           <span>IB Gateway</span>
           <span className="status-dot-wrap">
-            <span className={`status-dot ${ibConnected ? "status-dot-live" : "status-dot-dead"}`} />
-            {ibConnected ? "CONNECTED" : "OFFLINE"}
+            <span className={`status-dot ${dotClass}`} />
+            {text}
           </span>
         </div>
         <div className="status-row">

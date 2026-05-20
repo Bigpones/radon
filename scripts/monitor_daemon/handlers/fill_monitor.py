@@ -33,7 +33,16 @@ logger = logging.getLogger(__name__)
 # Default paths
 DEFAULT_TRADE_LOG = Path(__file__).parent.parent.parent.parent / "data" / "trade_log.json"
 DEFAULT_IB_PORT = 4001
-DEFAULT_CLIENT_ID = 70
+# "auto" rotates across SUBPROCESS_ID_RANGE (20-49) on each connect,
+# surviving the common failure mode where a previous cycle's socket
+# is sitting in CLOSE_WAIT on the same hardcoded ID. Hardcoded 70 was
+# replaced 2026-05-20 — when IB Gateway briefly hiccupped (pool
+# reconnect, 2FA window, network blip), the next handler cycle hit
+# "client id already in use" on the stale socket and surfaced as
+# "Failed to connect to IB on 127.0.0.1:4001 after 1 attempt(s)" in
+# the service-health banner, persisting until the half-open socket
+# timed out. See feedback_ib_client_id_ranges.md.
+DEFAULT_CLIENT_ID: int | str = "auto"
 
 
 class FillMonitorHandler(BaseHandler):
@@ -47,7 +56,7 @@ class FillMonitorHandler(BaseHandler):
         self,
         trade_log_path: Optional[Path] = None,
         ib_port: int = DEFAULT_IB_PORT,
-        client_id: int = DEFAULT_CLIENT_ID,
+        client_id: "int | str" = DEFAULT_CLIENT_ID,
         send_notifications: bool = True
     ):
         super().__init__()

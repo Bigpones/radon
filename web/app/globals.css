@@ -278,6 +278,11 @@ body {
   animation: none;
 }
 
+.status-dot-warn {
+  background: var(--warning);
+  animation: pulse 2s ease-in-out infinite;
+}
+
 @keyframes pulse {
   0%,
   100% {
@@ -3335,6 +3340,7 @@ tr.leg-row td {
   font-size: 10px;
   line-height: 1.45;
   color: var(--text-secondary);
+  white-space: pre-line;
 }
 .order-success { font-family: var(--font-mono); font-size: 11px; color: var(--positive); padding: 8px 10px; border: 1px solid var(--positive); background: color-mix(in srgb, var(--positive) 5%, transparent); }
 .order-submit { margin-top: 4px; }
@@ -6421,6 +6427,10 @@ body[data-mobile="true"] .toast-container {
 
 .mobile-app-bar__status--offline {
   color: var(--negative);
+}
+
+.mobile-app-bar__status--warn {
+  color: var(--warning);
 }
 
 .mobile-app-bar__search {

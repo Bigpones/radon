@@ -85,17 +85,29 @@ class GatewayState:
     port_listening: bool
     upstream_dead: bool
     auth_state: str  # "authenticated" | "awaiting_2fa" | "unreachable" | …
+    # The next three default to "no active recovery" — that's the
+    # only safe assumption for tests built against the old dataclass
+    # shape and matches the literal /health payload when FastAPI has
+    # not yet attempted a restart this process lifetime.
+    push_lock_active: bool = False
+    backoff_attempt_count: int = 0
+    next_attempt_in_secs: float = 0.0
 
     @classmethod
     def from_health_payload(cls, payload: dict) -> Optional["GatewayState"]:
         gw = payload.get("ib_gateway") or {}
         if not isinstance(gw, dict):
             return None
+        backoff = gw.get("restart_backoff") or {}
+        push_lock = backoff.get("push_lock") if isinstance(backoff, dict) else None
         return cls(
             service_state=str(gw.get("service_state", "unknown")),
             port_listening=bool(gw.get("port_listening", False)),
             upstream_dead=bool(gw.get("upstream_dead", False)),
             auth_state=str(gw.get("auth_state", "unknown")),
+            push_lock_active=isinstance(push_lock, dict) and bool(push_lock.get("holder")),
+            backoff_attempt_count=int(backoff.get("attempt_count", 0)) if isinstance(backoff, dict) else 0,
+            next_attempt_in_secs=float(backoff.get("next_attempt_in_secs", 0.0)) if isinstance(backoff, dict) else 0.0,
         )
 
 
@@ -131,15 +143,43 @@ def is_api_hang(state: GatewayState) -> bool:
 
     TCP socket is bound (port_listening) but the upstream API isn't
     responding to handshakes (upstream_dead). This is distinct from
-    awaiting_2fa (which has its own backoff) and from a fully-down
-    gateway (port_listening would be False — Docker `restart: always`
-    handles that).
+    awaiting_2fa (handled by `is_stuck_awaiting_2fa`) and from a
+    fully-down gateway (port_listening would be False — Docker
+    `restart: always` handles that).
     """
     if not state.port_listening:
         return False  # Port down → Docker restart policy handles it
     if state.auth_state == "awaiting_2fa":
-        return False  # 2FA backoff in ib_gateway.py handles this
+        return False  # Handled by stuck-2FA path below
     return state.upstream_dead
+
+
+def is_stuck_awaiting_2fa(state: GatewayState) -> bool:
+    """The second failure mode: IB Gateway sits at the 2FA push prompt
+    indefinitely because nothing is driving recovery.
+
+    FastAPI's `restart_ib_gateway` has its own in-process backoff
+    ladder, but that's only consulted when something else triggers a
+    restart — there is no proactive heartbeat that ticks it forward.
+    On a fresh FastAPI start (attempt_count=0, no push_lock), the
+    system will sit awaiting_2fa forever waiting for an operator to
+    notice and click "Force 2FA Push" in /admin.
+
+    We fire when ALL of:
+      - auth_state is awaiting_2fa (gateway is genuinely stuck)
+      - no push lock holder (nothing else has a push in flight)
+      - no scheduled retry pending (`next_attempt_in_secs <= 0`)
+    The push lock is the cross-process safety against stacking — IBKR
+    rejects every approval when multiple pushes are pending. See
+    `feedback_2fa_push_stacking.md`.
+    """
+    if state.auth_state != "awaiting_2fa":
+        return False
+    if state.push_lock_active:
+        return False  # A push is already pending; let it resolve
+    if state.next_attempt_in_secs > 0:
+        return False  # FastAPI has a scheduled retry queued
+    return True
 
 
 # --- State persistence ------------------------------------------------------
@@ -150,12 +190,18 @@ class WatchdogState:
     degraded_count: int = 0
     last_restart_at: float = 0.0
     last_outcome: str = "init"  # human-readable status for ops
+    # Consecutive cycles where IB Gateway has been stuck at the 2FA push
+    # prompt with no other recovery driver active. Separate counter from
+    # `degraded_count` (the api-hang case) so the two failure modes don't
+    # cross-pollute thresholds.
+    stuck_2fa_count: int = 0
 
     def to_dict(self) -> dict:
         return {
             "degraded_count": self.degraded_count,
             "last_restart_at": self.last_restart_at,
             "last_outcome": self.last_outcome,
+            "stuck_2fa_count": self.stuck_2fa_count,
         }
 
     @classmethod
@@ -164,6 +210,7 @@ class WatchdogState:
             degraded_count=int(data.get("degraded_count", 0)),
             last_restart_at=float(data.get("last_restart_at", 0.0)),
             last_outcome=str(data.get("last_outcome", "init")),
+            stuck_2fa_count=int(data.get("stuck_2fa_count", 0)),
         )
 
 
@@ -246,6 +293,95 @@ def record_service_health(
         LOG.warning("service_health write failed: %s", exc)
 
 
+# --- Stuck-awaiting-2FA handler ---------------------------------------------
+
+# Three cycles (~3 min) of confirmed stuck-2FA before firing a fresh push.
+# Lower than the api-hang threshold (also 3) but separate so a user who's
+# slow to approve a push isn't punished by an immediate re-fire.
+DEFAULT_STUCK_2FA_THRESHOLD = 3
+
+
+def _handle_stuck_awaiting_2fa(
+    *,
+    state: "WatchdogState",
+    state_path: Path,
+    restart_unit: str,
+    dry_run: bool,
+    clock: callable,
+    threshold: int = DEFAULT_STUCK_2FA_THRESHOLD,
+) -> "WatchdogState":
+    """Increment the stuck-2FA counter and, when threshold is hit, fire a
+    fresh push by restarting the IB Gateway unit. Respects the cross-process
+    2FA push lock so we never stack a second push on a pending one — that
+    pattern is what motivated the lock in the first place (see
+    `feedback_2fa_push_stacking.md`).
+    """
+    state.stuck_2fa_count += 1
+    LOG.warning(
+        "IB Gateway stuck awaiting 2FA (cycle %s/%s, no push in flight)",
+        state.stuck_2fa_count,
+        threshold,
+    )
+
+    if state.stuck_2fa_count < threshold:
+        state.last_outcome = (
+            f"stuck_2fa_{state.stuck_2fa_count}_of_{threshold}"
+        )
+        save_state(state_path, state)
+        record_service_health("ok")
+        return state
+
+    # Threshold hit. Respect any in-flight push the FastAPI side may have
+    # acquired between our /health probe and now.
+    existing_lock = ib_2fa_lock.check_2fa_push_lock(now=clock())
+    if existing_lock is not None and existing_lock.holder != WATCHDOG_LOCK_HOLDER:
+        LOG.warning(
+            "stuck_2fa threshold hit but 2FA push lock raced — held by %r — "
+            "deferring this cycle",
+            existing_lock.holder,
+        )
+        state.last_outcome = f"stuck_2fa_lock_raced:{existing_lock.holder}"
+        save_state(state_path, state)
+        record_service_health("ok")
+        return state
+
+    acquired, lock_now = ib_2fa_lock.acquire_2fa_push_lock(
+        WATCHDOG_LOCK_HOLDER,
+        ttl_secs=ib_2fa_lock.DEFAULT_LOCK_TTL_SECS,
+        reason=f"stuck awaiting 2FA for {state.stuck_2fa_count} cycles",
+        now=clock(),
+    )
+    if not acquired:
+        LOG.warning(
+            "stuck_2fa: failed to acquire push lock — held by %r",
+            lock_now.holder if lock_now else "unknown",
+        )
+        state.last_outcome = "stuck_2fa_lock_race"
+        save_state(state_path, state)
+        record_service_health("ok")
+        return state
+
+    LOG.warning(
+        "stuck_2fa sustained %s cycles — firing fresh push via %s restart",
+        state.stuck_2fa_count,
+        restart_unit,
+    )
+    ok = trigger_restart(restart_unit, dry_run=dry_run)
+    state.last_restart_at = clock()
+    state.stuck_2fa_count = 0  # Reset; next cycle observes recovery
+    state.last_outcome = f"stuck_2fa_push_fired:{'ok' if ok else 'fail'}"
+    save_state(state_path, state)
+    record_service_health(
+        "ok",
+        error_message=(
+            f"fired fresh 2FA push (restarted {restart_unit}); approve on IBKR Mobile"
+            if ok
+            else f"FAILED to restart {restart_unit} for stuck-2FA recovery"
+        ),
+    )
+    return state
+
+
 # --- Main cycle -------------------------------------------------------------
 
 
@@ -270,15 +406,18 @@ def run_cycle(
     if health is None:
         # Can't tell — record but don't act. Keeps the watchdog from
         # restarting the gateway when FastAPI itself is the broken thing.
+        # Reset stuck_2fa_count too: we have no evidence the 2FA prompt
+        # is still pending, so don't let the counter age across an outage.
         state.last_outcome = "probe_unreachable"
+        state.stuck_2fa_count = 0
         save_state(state_path, state)
         record_service_health("ok", error_message=None)
         return state
 
     if not is_api_hang(health):
-        # Healthy, or a state we don't act on (awaiting_2fa, port-down).
-        # Reset the counter so a one-off blip doesn't bleed into the
-        # next legitimate hang detection.
+        # api-hang counter resets unconditionally — it only counts the
+        # `upstream_dead with authenticated auth_state` pattern, and
+        # we're not seeing that.
         if state.degraded_count > 0:
             LOG.info(
                 "gateway no longer api-degraded "
@@ -288,6 +427,35 @@ def run_cycle(
                 state.degraded_count,
             )
         state.degraded_count = 0
+
+        # Stuck-awaiting-2FA branch: separate failure mode from api-hang.
+        if is_stuck_awaiting_2fa(health):
+            return _handle_stuck_awaiting_2fa(
+                state=state,
+                state_path=state_path,
+                restart_unit=restart_unit,
+                dry_run=dry_run,
+                clock=clock,
+                threshold=threshold,
+            )
+
+        # If we're still in awaiting_2fa but a push lock holder OR a
+        # scheduled retry is active, recovery is in flight — freeze the
+        # stuck counter where it is. Don't reset (so the next cycle after
+        # the lock clears acts promptly) and don't increment (so the user
+        # has time to approve the in-flight push without us re-firing).
+        if health.auth_state == "awaiting_2fa":
+            state.last_outcome = (
+                f"awaiting_2fa_recovery_in_flight:"
+                f"push_lock={health.push_lock_active}"
+                f":next_attempt={int(health.next_attempt_in_secs)}s"
+            )
+            save_state(state_path, state)
+            record_service_health("ok")
+            return state
+
+        # Genuinely healthy — clear both counters.
+        state.stuck_2fa_count = 0
         state.last_outcome = f"healthy:{health.service_state}/{health.auth_state}"
         save_state(state_path, state)
         record_service_health("ok")

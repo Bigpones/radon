@@ -14,8 +14,24 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 const STORAGE_KEY = "theme";
 
-function readInitialTheme(): Theme {
-  if (typeof document === "undefined") return "dark";
+// SSR always renders "dark" (the server has no access to the user's
+// preference or localStorage). React hydration requires the client's
+// first render to match that exactly — so the provider's initial state
+// is hard-pinned here. The actual preference is applied post-mount via
+// an effect that calls setThemeState; that's a normal state update and
+// does not count as a hydration mismatch.
+//
+// This is the structural fix for React #418: previously the initial
+// useState read localStorage / matchMedia / <html data-theme>, which
+// returns "light" on the client for users who selected light mode while
+// the server still rendered "dark". Any descendant branching on
+// `theme` (ClerkThemeBridge, WorkspaceShell's actionTone, kit/page's
+// Sun/Moon icon) then produced a different tree during hydration than
+// what was sent down from SSR.
+const SSR_THEME: Theme = "dark";
+
+function readClientTheme(): Theme {
+  if (typeof document === "undefined") return SSR_THEME;
   const attr = document.documentElement.getAttribute("data-theme");
   if (attr === "dark" || attr === "light") return attr;
   try {
@@ -41,7 +57,20 @@ function applyThemeSideEffects(next: Theme) {
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() => readInitialTheme());
+  // Pin first render to the SSR default. Reading the real preference here
+  // would diverge from the server-rendered HTML and trigger React #418.
+  const [theme, setThemeState] = useState<Theme>(SSR_THEME);
+
+  // Post-mount: read the user's actual preference and reconcile state.
+  // The pre-paint `ThemeBootstrap` inline script already applied
+  // `data-theme` to <html> synchronously so the visible chrome doesn't
+  // flash — this effect just brings React's state in line with the DOM.
+  useEffect(() => {
+    const next = readClientTheme();
+    if (next !== theme) setThemeState(next);
+    // Intentionally empty deps: this runs once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     applyThemeSideEffects(theme);

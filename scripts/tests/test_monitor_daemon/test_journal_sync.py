@@ -66,9 +66,15 @@ class TestJournalSyncHandlerBasics:
         handler = JournalSyncHandler()
         assert handler.requires_market_hours is True
 
-    def test_uses_daemon_range_client_id(self):
+    def test_uses_auto_client_id_allocation(self):
+        # As of 2026-05-20 the daemon handlers no longer hardcode a
+        # daemon-range clientID — they pass `client_id="auto"` to
+        # IBClient.connect() which rotates across SUBPROCESS_ID_RANGE
+        # (20-49) on every cycle. This survives the half-open-socket
+        # case where the prior cycle's clientID is still in CLOSE_WAIT
+        # on IB Gateway. See feedback_ib_client_id_ranges.md.
         handler = JournalSyncHandler()
-        assert 70 <= handler.client_id <= 89
+        assert handler.client_id == "auto"
 
 
 class TestJournalSyncHandlerExecute:

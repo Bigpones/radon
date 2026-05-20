@@ -155,25 +155,114 @@ def test_expired_lock_does_not_block_watchdog(state_path):
     restart_mock.assert_called_once()
 
 
-# --- Awaiting-2FA path still skipped (unchanged) ---------------------------
+# --- Awaiting-2FA path: api-hang counter resets, stuck-2FA counter advances ---
 
 
-def test_awaiting_2fa_payload_still_skipped_and_does_not_acquire_lock(state_path):
-    """Sanity: ``auth_state=awaiting_2fa`` is the IBC dialog state and
-    has its own backoff in scripts/api/ib_gateway.py. The watchdog
-    treats it as "not my problem" (existing behavior) and must NOT
-    accidentally claim the 2FA lock."""
+def test_awaiting_2fa_payload_increments_stuck_counter_without_lock(state_path):
+    """`auth_state=awaiting_2fa` with no push lock active and no scheduled
+    retry is the stuck-2FA failure mode introduced 2026-05-20. A single
+    cycle must reset the api-hang counter (different failure mode) and
+    increment `stuck_2fa_count` toward the 3-cycle threshold WITHOUT
+    acquiring the push lock yet — the threshold gates the lock acquire."""
     payload = {
         "ib_gateway": {
             "service_state": "unhealthy",
             "port_listening": True,
             "upstream_dead": True,
             "auth_state": "awaiting_2fa",
+            "restart_backoff": {
+                "attempt_count": 0,
+                "next_attempt_in_secs": 0,
+                "push_lock": None,
+            },
         }
     }
     save_state(state_path, WatchdogState(degraded_count=2))
     result, restart_mock = _drive(state_path, payload)
 
-    restart_mock.assert_not_called()
-    assert result.degraded_count == 0  # reset because it's "not our hang"
+    restart_mock.assert_not_called()  # under threshold
+    assert result.degraded_count == 0  # api-hang counter resets
+    assert result.stuck_2fa_count == 1  # stuck-2FA counter starts
+    assert ib_2fa_lock.check_2fa_push_lock() is None  # no lock yet
+
+
+def test_stuck_2fa_threshold_fires_fresh_push(state_path):
+    """3 consecutive cycles of stuck-awaiting_2fa with no push in flight
+    must trigger a restart, which fires a fresh IBKR Mobile push. This is
+    the self-heal path that eliminates the human-in-the-loop dependency
+    visible to the user as the recurring 'IB connected vs banner degraded'
+    contradiction."""
+    payload = {
+        "ib_gateway": {
+            "service_state": "unhealthy",
+            "port_listening": True,
+            "upstream_dead": True,
+            "auth_state": "awaiting_2fa",
+            "restart_backoff": {
+                "attempt_count": 0,
+                "next_attempt_in_secs": 0,
+                "push_lock": None,
+            },
+        }
+    }
     assert ib_2fa_lock.check_2fa_push_lock() is None
+    save_state(state_path, WatchdogState(stuck_2fa_count=2))
+    result, restart_mock = _drive(state_path, payload)
+
+    restart_mock.assert_called_once()
+    assert "stuck_2fa_push_fired" in result.last_outcome
+    held = ib_2fa_lock.check_2fa_push_lock()
+    assert held is not None
+    assert "ib_watchdog" in held.holder
+
+
+def test_stuck_2fa_does_not_fire_when_push_lock_active(state_path):
+    """If FastAPI has already fired a push and the user is approving it,
+    the watchdog must NOT stack a second push. The push_lock_active flag
+    in /health gates the entire stuck-2FA path."""
+    payload = {
+        "ib_gateway": {
+            "service_state": "unhealthy",
+            "port_listening": True,
+            "upstream_dead": True,
+            "auth_state": "awaiting_2fa",
+            "restart_backoff": {
+                "attempt_count": 1,
+                "next_attempt_in_secs": 0,
+                "push_lock": {
+                    "holder": "scripts.api.ib_gateway.restart_ib_gateway",
+                    "expires_at": 9999999999.0,
+                    "remaining_secs": 500,
+                    "reason": "user-initiated",
+                },
+            },
+        }
+    }
+    save_state(state_path, WatchdogState(stuck_2fa_count=2))
+    result, restart_mock = _drive(state_path, payload)
+
+    restart_mock.assert_not_called()
+    assert result.stuck_2fa_count == 2  # frozen, not incremented
+
+
+def test_stuck_2fa_does_not_fire_when_backoff_scheduled(state_path):
+    """If FastAPI has a scheduled retry coming (next_attempt_in_secs > 0),
+    the watchdog defers — that scheduled retry will fire the push itself."""
+    payload = {
+        "ib_gateway": {
+            "service_state": "unhealthy",
+            "port_listening": True,
+            "upstream_dead": True,
+            "auth_state": "awaiting_2fa",
+            "restart_backoff": {
+                "attempt_count": 2,
+                "next_attempt_in_secs": 45,
+                "push_lock": None,
+            },
+        }
+    }
+    save_state(state_path, WatchdogState(stuck_2fa_count=2))
+    result, restart_mock = _drive(state_path, payload)
+
+    restart_mock.assert_not_called()
+    assert result.stuck_2fa_count == 2  # frozen

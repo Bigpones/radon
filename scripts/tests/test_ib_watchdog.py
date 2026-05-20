@@ -124,9 +124,11 @@ class TestHealthyCycle:
         assert result.degraded_count == 0
         restart.assert_not_called()
 
-    def test_awaiting_2fa_resets_counter(self, state_path):
-        # We intentionally do NOT count awaiting_2fa as part of our
-        # degradation signal — different remediation path entirely.
+    def test_awaiting_2fa_resets_api_hang_counter_and_starts_stuck_counter(self, state_path):
+        # awaiting_2fa is NOT an api-hang — the api-hang counter must reset.
+        # But awaiting_2fa with no push lock and no scheduled retry IS the
+        # stuck-2FA failure mode — that counter must start incrementing so
+        # the threshold trips a fresh push after 3 cycles.
         save_state(state_path, WatchdogState(degraded_count=2))
         result, restart = _drive_cycle(
             state_path,
@@ -137,7 +139,8 @@ class TestHealthyCycle:
             ),
         )
         assert result.degraded_count == 0
-        restart.assert_not_called()
+        assert result.stuck_2fa_count == 1
+        restart.assert_not_called()  # threshold is 3, not yet hit
 
 
 # --- run_cycle: degraded paths ----------------------------------------------
