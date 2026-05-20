@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, syncDb } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -47,6 +47,20 @@ function rowToPost(row: PostRow) {
 export async function GET() {
   try {
     const db = getDb();
+    // Force a replica pull before SELECT. The newsfeed scraper writes
+    // direct-to-cloud (`RADON_DB_NO_REPLICA=1` in scripts/newsfeed/index.js)
+    // and Next.js reads from the embedded replica — when the replica's
+    // background `syncInterval: 60` worker silently stalls, the dashboard
+    // serves rows that are hours behind Turso. Observed on Hetzner
+    // 2026-05-20 with an 11h drift. Failure here is non-fatal: a network
+    // blip must not blank the feed, so we fall through to the cached
+    // replica rows.
+    try {
+      await syncDb();
+    } catch (syncErr) {
+      const message = syncErr instanceof Error ? syncErr.message : String(syncErr);
+      console.warn(`[newsfeed/posts] replica sync non-fatal: ${message}`);
+    }
     const result = await db.execute({
       sql: `SELECT id, title, content, timestamp, images, raw_images, tags, tags_text, tags_vision, created_at, updated_at
             FROM posts
