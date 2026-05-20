@@ -374,6 +374,71 @@ class TestPortfolioOperations:
         assert positions == []
 
     @patch("clients.ib_client.IB")
+    def test_get_positions_forces_refresh_before_reading_cache(self, MockIB):
+        """Regression guard for the stale-avgCost bug (2026-05-20).
+
+        ``ib_insync.positions()`` returns an in-memory cache. When a fill
+        lands seconds before sync, the ``positionEvent`` for the new fills
+        updates ``pos.position`` (size) immediately but ``pos.avgCost``
+        lags by a tick while TWS recomputes the running VWAP server-side.
+        Sync then writes a mismatched (size_new / avg_old) pair into
+        portfolio.json — manifesting as the AAOI risk reversal showing
+        QTY: 75 but AVG ENTRY: $1.01 (the pre-add 50-contract value).
+
+        Fix: ``get_positions()`` must call ``reqPositions()`` to drain
+        pending updates before reading the cache.
+        """
+        mock_ib = MockIB.return_value
+        mock_ib.isConnected.return_value = True
+        mock_ib.positions.return_value = [
+            _make_position("AAOI", "OPT", 75, 23.81),
+        ]
+
+        client = IBClient()
+        client.connect(client_id=1)
+        client.get_positions()
+
+        # The refresh must happen BEFORE the cache read so the cache
+        # contains the latest TWS state.
+        mock_ib.reqPositions.assert_called_once()
+        mock_ib.sleep.assert_called()  # short drain wait
+        mock_ib.positions.assert_called_once()
+
+    @patch("clients.ib_client.IB")
+    def test_get_positions_refresh_false_skips_reqPositions(self, MockIB):
+        """Tight read loops can opt out of the per-call refresh."""
+        mock_ib = MockIB.return_value
+        mock_ib.isConnected.return_value = True
+        mock_ib.positions.return_value = []
+
+        client = IBClient()
+        client.connect(client_id=1)
+        client.get_positions(refresh=False)
+
+        mock_ib.reqPositions.assert_not_called()
+        mock_ib.positions.assert_called_once()
+
+    @patch("clients.ib_client.IB")
+    def test_get_positions_falls_back_to_cache_when_refresh_errors(self, MockIB):
+        """If reqPositions itself errors (gateway hiccup), the caller still
+        gets the (possibly slightly stale) cache rather than a hard
+        failure — better degraded data than none."""
+        mock_ib = MockIB.return_value
+        mock_ib.isConnected.return_value = True
+        mock_ib.reqPositions.side_effect = ConnectionError("gateway hiccup")
+        mock_ib.positions.return_value = [
+            _make_position("AAPL", "STK", 100, 150.0),
+        ]
+
+        client = IBClient()
+        client.connect(client_id=1)
+        positions = client.get_positions()
+
+        mock_ib.reqPositions.assert_called_once()
+        mock_ib.positions.assert_called_once()
+        assert len(positions) == 1
+
+    @patch("clients.ib_client.IB")
     def test_get_portfolio(self, MockIB):
         mock_ib = MockIB.return_value
         mock_ib.isConnected.return_value = True

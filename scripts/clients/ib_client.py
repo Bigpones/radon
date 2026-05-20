@@ -499,9 +499,39 @@ class IBClient:
 
     # -- portfolio operations -----------------------------------------------
 
-    def get_positions(self) -> list:
-        """Return current positions (``ib.positions()``)."""
+    def get_positions(self, refresh: bool = True) -> list:
+        """Return current positions.
+
+        By default forces a fresh ``reqPositions`` round-trip before reading
+        the ib_insync cache, then waits briefly for TWS to push the updated
+        snapshot. This eliminates the "fresh contract count, stale avgCost"
+        window we hit when a fill lands seconds before sync: the
+        ``positionEvent`` for the new fills updates ``pos.position``
+        immediately but ``pos.avgCost`` lags by a tick or two while TWS
+        recomputes the running VWAP server-side. ``ib.positions()`` alone
+        returns the cache, so without the refresh the sync writes a
+        mismatched (size_new / avg_old) pair into ``portfolio.json``. See
+        feedback_ib_position_cache_stale_avgcost.md (forthcoming).
+
+        Set ``refresh=False`` for tight read loops where you've already
+        forced a refresh on a parent call and want to avoid the ~1 s
+        sleep. The default is the safe one.
+        """
         self._require_connection()
+        if refresh:
+            try:
+                self._ib.reqPositions()
+                # ib_insync's positionEvent fires per-position as TWS pushes;
+                # 1 s is enough for the full set in steady state and bounded
+                # so a slow gateway doesn't stall the caller.
+                self._ib.sleep(1)
+            except Exception as exc:
+                # Don't fail the whole sync if reqPositions itself errors —
+                # fall back to the (possibly slightly stale) cache.
+                self.logger.warning(
+                    "reqPositions refresh failed (%s); falling back to cache",
+                    exc,
+                )
         return self._ib.positions()
 
     def get_portfolio(self, account: str = "") -> list:
