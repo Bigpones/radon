@@ -1,4 +1,8 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&display=swap");
+/* Typography is self-hosted via next/font/google in app/layout.tsx
+   (MOVE 6). The old `@import url("https://fonts.googleapis.com/...")`
+   line lived here and made a render-blocking third-party request for
+   Inter on every cold load. next/font fingerprints the woff2 files at
+   build time and serves them from the same origin. */
 
 @tailwind base;
 @tailwind components;
@@ -7,8 +11,11 @@
 :root {
   --sidebar-width: 220px;
   --header-height: 48px;
-  --font-sans: "Inter", -apple-system, sans-serif;
-  --font-mono: "IBM Plex Mono", monospace;
+  /* next/font/google injects `--font-sans` and `--font-mono` on <html>.
+     Fallback values here keep the cascade sane when CSS loads before
+     hydration; the next/font variable will override on mount. */
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
   --ease-out: cubic-bezier(0.25, 1, 0.5, 1);
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
@@ -19,32 +26,39 @@
 }
 
 [data-theme="dark"] {
-  --bg-base: #0a0f14;
+  /* Canonical Radon tokens — per brand/radon-design-tokens.json and brand-identity.md § 2. */
+  --bg-canvas: #0a0f14;
   --bg-panel: #0f1519;
   --bg-panel-raised: #151c22;
-  --bg-hover: #151c22;
-  --border-dim: #1e293b;
-  --border-focus: #05AD98;
-  --text-primary: #e2e8f0;
-  --text-secondary: #94a3b8;
-  --text-muted: #475569;
-  --accent-bg: #05AD98;
-  --accent-text: #0a0f14;
-  --scrollbar-track: #0a0f14;
-  --scrollbar-thumb: #1e293b;
-  --positive: #05AD98;
-  --negative: #E85D6C;
-  --warning: #F5A623;
-  --info: #8B5CF6;
-  --banner-negative: #E85D6C;
-  --banner-positive: #05AD98;
+  --line-grid: #1e293b;
   --signal-core: #05AD98;
   --signal-strong: #0FCFB5;
   --signal-deep: #048A7A;
+  --warn: #F5A623;
+  --fault: #E85D6C;
   --dislocation: #D946A8;
   --extreme: #8B5CF6;
-  --fault: #E85D6C;
   --neutral: #94a3b8;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #475569;
+  --border-focus: var(--signal-core);
+
+  /* Legacy aliases — kept for backwards compatibility with existing
+     selectors. New code should reference the canonical tokens above. */
+  --bg-base: var(--bg-canvas);
+  --bg-hover: var(--bg-panel-raised);
+  --border-dim: var(--line-grid);
+  --warning: var(--warn);
+  --positive: var(--signal-core);
+  --negative: var(--fault);
+  --info: var(--extreme);
+  --banner-negative: var(--fault);
+  --banner-positive: var(--signal-core);
+  --accent-bg: var(--signal-core);
+  --accent-text: var(--bg-canvas);
+  --scrollbar-track: var(--bg-canvas);
+  --scrollbar-thumb: var(--line-grid);
   --chart-grid: rgba(148, 163, 184, 0.16);
   --chart-axis: #1e293b;
   --chart-axis-muted: #94a3b8;
@@ -63,32 +77,38 @@
 }
 
 [data-theme="light"] {
-  --bg-base: #FFFFFF;
+  /* Canonical Radon tokens — per brand/radon-design-tokens.json § color.light. */
+  --bg-canvas: #FFFFFF;
   --bg-panel: #FFFFFF;
   --bg-panel-raised: #F1F5F9;
-  --bg-hover: #f1f5f9;
-  --border-dim: #BBBFBF;
-  --border-focus: #05AD98;
-  --text-primary: #000000;
-  --text-secondary: #636363;
-  --text-muted: #878787;
-  --accent-bg: #05AD98;
-  --accent-text: #FFFFFF;
-  --scrollbar-track: #FFFFFF;
-  --scrollbar-thumb: #BBBFBF;
-  --positive: #048A7A;
-  --negative: #D4183D;
-  --warning: #D4910A;
-  --info: #7C3AED;
-  --banner-negative: #D4183D;
-  --banner-positive: #048A7A;
+  --line-grid: #BBBFBF;
   --signal-core: #05AD98;
   --signal-strong: #048A7A;
   --signal-deep: #037066;
+  --warn: #D4910A;
+  --fault: #D4183D;
   --dislocation: #C026A0;
   --extreme: #7C3AED;
-  --fault: #D4183D;
   --neutral: #878787;
+  --text-primary: #000000;
+  --text-secondary: #636363;
+  --text-muted: #878787;
+  --border-focus: var(--signal-core);
+
+  /* Legacy aliases — see [data-theme="dark"]. */
+  --bg-base: var(--bg-canvas);
+  --bg-hover: var(--bg-panel-raised);
+  --border-dim: var(--line-grid);
+  --warning: var(--warn);
+  --positive: var(--signal-strong);
+  --negative: var(--fault);
+  --info: var(--extreme);
+  --banner-negative: var(--fault);
+  --banner-positive: var(--signal-strong);
+  --accent-bg: var(--signal-core);
+  --accent-text: var(--bg-canvas);
+  --scrollbar-track: var(--bg-canvas);
+  --scrollbar-thumb: var(--line-grid);
   --chart-grid: rgba(100, 116, 139, 0.22);
   --chart-axis: #BBBFBF;
   --chart-axis-muted: #636363;
@@ -180,28 +200,41 @@ body {
 }
 
 .sidebar-header {
-  height: var(--header-height);
-  padding: 0 16px;
+  min-height: 60px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border-dim);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   flex-shrink: 0;
   box-sizing: border-box;
 }
 
-.logo-icon {
-  width: 12px;
-  height: 12px;
-  background: var(--text-primary);
+.logo-mark {
+  display: block;
+  flex-shrink: 0;
 }
 
 .logo-text {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
+  line-height: 1;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.logo-text-sub {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--text-muted);
+  line-height: 1;
 }
 
 .sidebar-nav {
@@ -312,6 +345,8 @@ body {
   flex-shrink: 0;
 }
 
+/* Legacy breadcrumb — superseded by .telemetry-rail. Retained as a
+   no-op selector in case any orphan markup still mounts it. */
 .breadcrumb {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -319,9 +354,90 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+.breadcrumb span { color: var(--text-primary); }
 
-.breadcrumb span {
+/* ───────────────────────────────────────────────────────────
+   Telemetry rail (replaces "WORKSPACE / DASHBOARD" breadcrumb).
+   Reads like instrument-panel meta: section · sample · feed · integrity.
+   Spec: brand-identity.md § 4 metadata rail + § 8 voice.
+   ─────────────────────────────────────────────────────────── */
+.telemetry-rail {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.rail-section {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
   color: var(--text-primary);
+  text-transform: none;
+  flex-shrink: 0;
+}
+
+.rail-sep {
+  color: var(--text-muted);
+  opacity: 0.65;
+  flex-shrink: 0;
+}
+
+.rail-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.rail-k {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+}
+
+.rail-v {
+  color: var(--text-secondary);
+}
+
+.rail-integrity {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.rail-integrity-ok   { color: var(--signal-core); }
+.rail-integrity-warn { color: var(--warn); }
+.rail-integrity-dead { color: var(--fault); }
+
+.rail-integrity-dot {
+  width: 6px;
+  height: 6px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.rail-integrity-dot-ok   { background: var(--signal-core); animation: pulse 2.4s ease-in-out infinite; }
+.rail-integrity-dot-warn { background: var(--warn);        animation: pulse 2.4s ease-in-out infinite; }
+.rail-integrity-dot-dead { background: var(--fault);       animation: none; }
+
+@media (max-width: 1100px) {
+  /* On narrow viewports, retain section + integrity, drop the metadata pairs. */
+  .telemetry-rail .rail-meta,
+  .telemetry-rail .rail-sep:nth-of-type(-n+2) {
+    display: none;
+  }
 }
 
 .header-actions {
@@ -376,6 +492,84 @@ body {
   min-height: 0;
   overflow-y: auto;
   padding: 20px;
+}
+
+/* ───────────────────────────────────────────────────────────
+   Footer telemetry strip — collapses the three legacy banners
+   (ConnectionBanner / FlexTokenBanner / ServiceHealthBanner) into one
+   instrument-readout strip pinned to the bottom of .main. See MOVE 11
+   in reports/ui-ux-audit-2026-05-20.html.
+   ─────────────────────────────────────────────────────────── */
+.footer-strip {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 18px;
+  min-height: 26px;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--bg-canvas) 92%, transparent);
+  border-top: 1px solid var(--line-grid);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.footer-strip__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.footer-strip__dot {
+  width: 6px;
+  height: 6px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.footer-strip__dot--ok   { background: var(--signal-core); animation: pulse 2.4s ease-in-out infinite; }
+.footer-strip__dot--warn { background: var(--warn);        animation: pulse 2.4s ease-in-out infinite; }
+.footer-strip__dot--dead { background: var(--fault);       animation: none; }
+
+.footer-strip__k {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+}
+
+.footer-strip__v {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.footer-strip__chip--warn .footer-strip__v { color: var(--warn); }
+.footer-strip__chip--dead .footer-strip__v { color: var(--fault); }
+
+.footer-strip__sep {
+  color: var(--text-muted);
+  opacity: 0.45;
+  flex-shrink: 0;
+}
+
+.footer-strip__spacer { flex: 1; }
+
+.footer-strip__brand {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--text-muted);
+  font-size: 9px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 760px) {
+  .footer-strip { display: none; }
 }
 
 .section-label-mono {
@@ -463,6 +657,71 @@ body {
   transition: color 300ms ease-in-out;
 }
 
+/* ───────────────────────────────────────────────────────────
+   SpectralLoader — brand-true loading state (brand-identity.md § 6).
+   Replaces the generic shimmer pattern below for new panels. Existing
+   shimmer rule is retained for back-compat with old metric-card states.
+   ─────────────────────────────────────────────────────────── */
+.spectral-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 28px 16px;
+}
+
+.spectral-loader__spectrum {
+  display: flex;
+  align-items: end;
+  gap: 3px;
+}
+
+.spectral-loader__spectrum span {
+  width: 4px;
+  display: block;
+  border-radius: 1px 1px 0 0;
+  height: calc(100% * var(--baseline, 0.5));
+  transform-origin: bottom center;
+  animation: spectral-pulse 1.2s ease-in-out infinite;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+.spectral-loader--core .spectral-loader__spectrum span {
+  background: linear-gradient(180deg, var(--signal-strong), var(--signal-deep));
+}
+
+.spectral-loader--warn .spectral-loader__spectrum span {
+  background: linear-gradient(180deg, var(--warn), color-mix(in srgb, var(--warn) 55%, var(--bg-panel)));
+}
+
+.spectral-loader__label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+@keyframes spectral-pulse {
+  0%,
+  100% {
+    transform: scaleY(0.45);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spectral-loader__spectrum span {
+    animation: none;
+    transform: scaleY(0.75);
+    opacity: 0.85;
+  }
+}
+
 /* Skeleton shimmer for loading metric cards */
 .metric-card-loading .metric-value,
 .metric-card-loading .metric-change {
@@ -502,6 +761,8 @@ body {
   background: var(--bg-panel);
   border: 1px solid var(--border-dim);
   margin-bottom: 20px;
+  position: relative;
+  overflow: hidden;
 }
 
 .section-header {
@@ -525,6 +786,83 @@ body {
 
 .section-body {
   padding: 0;
+}
+
+/* ───────────────────────────────────────────────────────────
+   Instrument-panel grammar primitives (brand-identity.md § 4).
+   Opt-in classes that any panel can use to express the brand:
+     .panel-edge-trace  — 2px left signal trace (calibrated edge marker)
+     .panel-eyebrow     — uppercase mono module ID ("FLOW MODULE / 01")
+     .panel-title       — sans-serif panel name
+     .panel-meta-rail   — bottom telemetry rail (engine / basis / confidence)
+   The classes are independent so panels can adopt them piecemeal.
+   ─────────────────────────────────────────────────────────── */
+.panel-edge-trace {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg, var(--signal-core), transparent 80%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.panel-edge-trace-warn { background: linear-gradient(180deg, var(--warn), transparent 80%); }
+.panel-edge-trace-fault { background: linear-gradient(180deg, var(--fault), transparent 80%); }
+.panel-edge-trace-dislocation { background: linear-gradient(180deg, var(--dislocation), transparent 80%); }
+.panel-edge-trace-extreme { background: linear-gradient(180deg, var(--extreme), transparent 80%); }
+
+.panel-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  line-height: 1.2;
+  margin-bottom: 4px;
+  display: block;
+}
+
+.panel-title {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  line-height: 1.25;
+  color: var(--text-primary);
+  text-transform: none;
+}
+
+.panel-meta-rail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line-grid);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.panel-meta-rail-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.panel-meta-rail-item .k {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+}
+
+.panel-meta-rail-item .v {
+  color: var(--text-secondary);
 }
 
 .chart-panel {

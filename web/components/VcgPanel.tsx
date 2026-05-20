@@ -6,6 +6,7 @@ import InfoTooltip from "./InfoTooltip";
 import ShareReportModal from "./ShareReportModal";
 import SignalAreaChart from "./SignalAreaChart";
 import HistoryRangeChips from "./HistoryRangeChips";
+import SpectralLoader from "./SpectralLoader";
 import { useVcg, type VcgData, type VcgHistoryEntry } from "@/lib/useVcg";
 import { MarketState } from "@/lib/useMarketHours";
 import {
@@ -178,8 +179,8 @@ export default function VcgPanel({ marketState }: VcgPanelProps) {
             Volatility-Credit Gap
           </div>
         </div>
-        <div className="section-body" style={{ padding: "24px", textAlign: "center" }}>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-muted)" }}>Loading VCG scan...</span>
+        <div className="section-body">
+          <SpectralLoader label="Sampling 20-session basis" />
         </div>
       </div>
     );

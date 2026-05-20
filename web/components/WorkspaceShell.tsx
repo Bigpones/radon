@@ -28,9 +28,7 @@ import { useViewport } from "@/lib/useViewport";
 const WorkspaceSections = dynamic(() => import("@/components/WorkspaceSections"), {
   loading: () => null,
 });
-import ConnectionBanner from "@/components/ConnectionBanner";
-import FlexTokenBanner from "@/components/FlexTokenBanner";
-import ServiceHealthBanner from "@/components/ServiceHealthBanner";
+import FooterTelemetryStrip from "@/components/FooterTelemetryStrip";
 import { useTickerDetail } from "@/lib/TickerDetailContext";
 import { assessMargin, rankOf, type MarginLevel } from "@/lib/marginWarning";
 import { useTheme } from "@/lib/ThemeContext";
@@ -221,15 +219,15 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
   useEffect(() => {
     if (prevIbConnectedRef.current !== null && prevIbConnectedRef.current !== ibConnected) {
       if (ibConnected) {
-        addToast("success", "IB Gateway reconnected", 4000);
+        addToast("success", "IB Gateway · uplink restored", 4000);
       } else if (ibIssue === "ibc_mfa_required") {
         addToast(
           "warning",
-          ibStatusMessage ?? "Interactive Brokers Gateway is reconnecting. Check the push notification from Interactive Brokers on your phone to approve MFA.",
+          ibStatusMessage ?? "IB Gateway · awaiting 2FA. Approve the IBKR Mobile push to restore the uplink.",
           8000,
         );
       } else {
-        addToast("error", "IB Gateway connection lost", 6000);
+        addToast("error", "IB Gateway · uplink lost. Reconnect in progress.", 6000);
       }
     }
     prevIbConnectedRef.current = ibConnected;
@@ -275,7 +273,7 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
     lastSearchUnavailableToastRef.current = now;
     addToast(
       "warning",
-      "IB Gateway disconnected — ticker search unavailable",
+      "IB Gateway uplink lost. Instrument search unavailable.",
       5000,
     );
   }, [addToast]);
@@ -318,10 +316,10 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
   }, []);
 
   const syncLabel = lastSync
-    ? `Last sync: ${new Date(lastSync).toLocaleTimeString()}`
+    ? `Last sample ${new Date(lastSync).toLocaleTimeString([], { hour12: false })}`
     : error
-      ? `Sync error`
-      : "No sync yet";
+      ? "Sync failed. Reconstruction incomplete."
+      : "Awaiting first sample";
 
   return (
     <div className="app-shell" suppressHydrationWarning>
@@ -338,6 +336,7 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
           onToggleTheme={toggleTheme}
           theme={resolvedTheme}
           onSearchUnavailable={handleSearchUnavailable}
+          lastSync={lastSync}
         >
           <div className="sync-controls">
             <span className={`sync-status ${error ? "sync-error" : syncing ? "sync-active" : ""}`}>
@@ -354,15 +353,6 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
             </button>
           </div>
         </Header>
-
-        <ConnectionBanner
-          ibConnected={ibConnected}
-          wsConnected={wsConnected}
-          ibIssue={ibIssue}
-          ibStatusMessage={ibStatusMessage}
-        />
-        <FlexTokenBanner />
-        <ServiceHealthBanner />
 
         <div className="content">
           {activeSection === "dashboard" ? (
@@ -387,6 +377,8 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
             />
           ) : null}
         </div>
+
+        <FooterTelemetryStrip />
       </main>
 
       <ToastContainer toasts={toasts} onDismiss={removeToast} />

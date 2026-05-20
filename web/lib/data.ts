@@ -1,16 +1,16 @@
 import {
-  Activity,
-  BarChart3,
-  Circle,
-  ClipboardList,
-  LayoutDashboard,
-  LineChart,
-  Search,
-  Settings,
-  Shield,
-  Sparkles,
-  Wrench,
-} from "lucide-react";
+  CTAGlyph,
+  DashboardGlyph,
+  DiscoverGlyph,
+  FlowGlyph,
+  JournalGlyph,
+  OperatorGlyph,
+  OrdersGlyph,
+  PerformanceGlyph,
+  PortfolioGlyph,
+  RegimeGlyph,
+  ScannerGlyph,
+} from "@/components/icons/RadonGlyphs";
 import type { WorkspaceNavItem, WorkspaceSection } from "./types";
 
 export const PI_COMMANDS = ["scan", "discover", "evaluate", "portfolio", "journal", "sync", "leap-scan", "help"] as const;
@@ -26,18 +26,17 @@ export const PI_COMMAND_ALIASES: Record<string, string> = {
 };
 
 export const navItems: WorkspaceNavItem[] = [
-  { label: "Dashboard", route: "dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Portfolio", route: "portfolio", href: "/portfolio", icon: Circle },
-  { label: "Performance", route: "performance", href: "/performance", icon: BarChart3, hidden: true },
-  { label: "Orders", route: "orders", href: "/orders", icon: ClipboardList },
-  { label: "Scanner", route: "scanner", href: "/scanner", icon: Sparkles },
-  { label: "Discover", route: "discover", href: "/discover", icon: Search },
-  { label: "Flow Analysis", route: "flow-analysis", href: "/flow-analysis", icon: LineChart },
-  { label: "Journal", route: "journal", href: "/journal", icon: Wrench },
-  { label: "Regime", route: "regime", href: "/regime/cri", icon: Shield },
-  { label: "CTA", route: "cta", href: "/cta", icon: Activity },
-  { label: "Operator", route: "admin", href: "/admin", icon: Settings },
-  // { label: "Internals", route: "internals", href: "/internals", icon: Activity },
+  { label: "Dashboard", route: "dashboard", href: "/dashboard", icon: DashboardGlyph },
+  { label: "Portfolio", route: "portfolio", href: "/portfolio", icon: PortfolioGlyph },
+  { label: "Performance", route: "performance", href: "/performance", icon: PerformanceGlyph, hidden: true },
+  { label: "Orders", route: "orders", href: "/orders", icon: OrdersGlyph },
+  { label: "Scanner", route: "scanner", href: "/scanner", icon: ScannerGlyph },
+  { label: "Discover", route: "discover", href: "/discover", icon: DiscoverGlyph },
+  { label: "Flow Analysis", route: "flow-analysis", href: "/flow-analysis", icon: FlowGlyph },
+  { label: "Journal", route: "journal", href: "/journal", icon: JournalGlyph },
+  { label: "Regime", route: "regime", href: "/regime/cri", icon: RegimeGlyph },
+  { label: "CTA", route: "cta", href: "/cta", icon: CTAGlyph },
+  { label: "Operator", route: "admin", href: "/admin", icon: OperatorGlyph },
 ];
 
 export const quickPromptsBySection: Record<WorkspaceSection, string[]> = {

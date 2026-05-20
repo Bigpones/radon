@@ -1,6 +1,15 @@
-import type { LayoutDashboard } from "lucide-react";
+import type { ComponentType } from "react";
 
 export type MessageRole = "assistant" | "user";
+
+/** Visual signature any nav glyph must satisfy. Covers both the legacy
+ *  lucide-react components and the Radon glyph set defined in
+ *  components/icons/RadonGlyphs.tsx. */
+export type NavIcon = ComponentType<{
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}>;
 
 export type Message = {
   id: string;
@@ -45,7 +54,7 @@ export type WorkspaceNavItem = {
   label: string;
   route: WorkspaceSection;
   href: string;
-  icon: typeof LayoutDashboard;
+  icon: NavIcon;
   hidden?: boolean;
 };
 

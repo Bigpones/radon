@@ -533,6 +533,14 @@ describe("POST /api/previous-close — extended", () => {
   it("falls back to Yahoo when UW fails", async () => {
     delete process.env.UW_TOKEN;
 
+    // Use the daily-close array shape Yahoo actually returns. The previous
+    // version of this test relied on `meta.chartPreviousClose` which the
+    // route now ignores — see web/tests/previous-close-yahoo-daily-array.test.ts
+    // and route.ts:fetchFromYahoo for the rationale (NAK/RR/MSFT bug).
+    const dayMs = 24 * 60 * 60 * 1000;
+    const yesterdayTs = Math.floor((Date.now() - dayMs) / 1000);
+    const todayTs = Math.floor(Date.now() / 1000);
+
     mockFetch.mockImplementation(async (url: string | URL) => {
       const urlStr = typeof url === "string" ? url : url.toString();
       if (urlStr.includes("yahoo")) {
@@ -540,7 +548,11 @@ describe("POST /api/previous-close — extended", () => {
           ok: true,
           json: async () => ({
             chart: {
-              result: [{ meta: { chartPreviousClose: 175.30 } }],
+              result: [{
+                meta: { regularMarketPreviousClose: 175.30 },
+                timestamp: [yesterdayTs, todayTs],
+                indicators: { quote: [{ close: [175.30, 176.10] }] },
+              }],
             },
           }),
         };

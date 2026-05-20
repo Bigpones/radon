@@ -1,8 +1,29 @@
 import type { Metadata, Viewport } from "next";
+import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import Providers from "@/components/Providers";
 import PwaRegister from "@/components/PwaRegister";
 import ThemeBootstrap from "@/components/ThemeBootstrap";
 import "./globals.css";
+
+// Self-hosted via next/font/google — replaces the render-blocking
+// `@import url("https://fonts.googleapis.com/...")` line that previously
+// fronted globals.css. Plex Sans + Plex Mono together create the
+// IBM-workstation-circa-1985 identity called out in the audit (MOVE 6).
+// `variable` exposes the family as a CSS custom property so existing
+// `var(--font-sans)` / `var(--font-mono)` references continue to work.
+const plexSans = IBM_Plex_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-sans",
+  display: "swap",
+});
+
+const plexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-mono",
+  display: "swap",
+});
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -54,7 +75,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${plexSans.variable} ${plexMono.variable}`}
+    >
       <head>
         <ThemeBootstrap />
       </head>

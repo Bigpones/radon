@@ -20,7 +20,7 @@ type SidebarProps = {
 function statusLabel(status: IBDisplayStatus): { text: string; cls: "live" | "warn" | "dead" } {
   switch (status) {
     case "connected":
-      return { text: "CONNECTED", cls: "live" };
+      return { text: "NOMINAL", cls: "live" };
     case "awaiting_2fa":
       return { text: "AWAITING 2FA", cls: "warn" };
     case "unhealthy":
@@ -44,8 +44,18 @@ export default function Sidebar({ activeSection, actionTone, lastSync }: Sidebar
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <div className="logo-icon" />
-        <span className="logo-text">Radon</span>
+        <img
+          src="/brand/radon-monogram.svg"
+          alt=""
+          width={28}
+          height={28}
+          className="logo-mark"
+          aria-hidden
+        />
+        <span className="logo-text">
+          Radon
+          <span className="logo-text-sub">terminal</span>
+        </span>
       </div>
 
       <nav className="sidebar-nav">
@@ -68,19 +78,19 @@ export default function Sidebar({ activeSection, actionTone, lastSync }: Sidebar
 
       <div className="sidebar-footer">
         <div className="status-row">
-          <span>IB Gateway</span>
+          <span>Uplink</span>
           <span className="status-dot-wrap">
             <span className={`status-dot ${dotClass}`} />
             {text}
           </span>
         </div>
         <div className="status-row">
-          <span>Last Sync</span>
+          <span>Last Sample</span>
           <span>{syncTime}</span>
         </div>
         <div className="status-row">
           <span>Source</span>
-          <span>IB Gateway</span>
+          <span>IB · UW</span>
         </div>
       </div>
     </aside>

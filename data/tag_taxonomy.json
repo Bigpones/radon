@@ -165,6 +165,10 @@
     "HYPERSCALERS",
     "STOXX-EUROPE-600",
     "ROTATION",
-    "DEALER-GAMMA"
+    "DEALER-GAMMA",
+    "CROWDING",
+    "CASH",
+    "COST-MANAGEMENT",
+    "SPENDING"
   ]
 }

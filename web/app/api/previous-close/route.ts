@@ -140,6 +140,69 @@ async function fetchFromUW(symbol: string): Promise<number | null> {
 
 /* ── Yahoo Finance source ───────────────────────────────── */
 
+/**
+ * "YYYY-MM-DD" formatted in America/New_York. Used to filter Yahoo's
+ * daily close array against today (ET) — a close timestamped *today*
+ * is the current session, not yesterday's close. Comparing date strings
+ * lexicographically is safe because the format is zero-padded.
+ */
+function todayEtDateString(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function unixSecondsToEtDateString(seconds: number): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(seconds * 1000));
+}
+
+/**
+ * Walk Yahoo's daily close array newest → oldest and return the most
+ * recent valid close whose ET date is strictly before today. Handles
+ * gappy series (null cells) by continuing the walk.
+ */
+function lastClosePriorToTodayEt(
+  timestamps: unknown,
+  closes: unknown,
+): number | null {
+  if (!Array.isArray(timestamps) || !Array.isArray(closes)) return null;
+  if (timestamps.length !== closes.length) return null;
+  const todayEt = todayEtDateString();
+  for (let i = closes.length - 1; i >= 0; i--) {
+    const t = timestamps[i];
+    const c = closes[i];
+    if (typeof t !== "number" || typeof c !== "number" || !(c > 0)) continue;
+    if (unixSecondsToEtDateString(t) < todayEt) return c;
+  }
+  return null;
+}
+
+/**
+ * Read yesterday's close from Yahoo Finance.
+ *
+ * Yahoo's chart endpoint exposes three meta fields that look superficially
+ * like "previous close" but only one of them is. `meta.chartPreviousClose`
+ * is the close on the day immediately BEFORE the requested range starts —
+ * for `range=5d` that is ~6 trading days ago, not yesterday. Preferring it
+ * silently produced wildly wrong Day Chg % for any symbol whose IB CLOSE
+ * tick was missing (NAK / RR / MSFT, observed 2026-05-20).
+ *
+ * Correct read order:
+ *   1. `indicators.quote[0].close[]` walked back from the newest entry
+ *      whose timestamp lands on an ET date earlier than today.
+ *   2. `meta.regularMarketPreviousClose` as a fallback when the daily
+ *      array is absent (rare).
+ *   3. Nothing else — return null and let the UI show "---" rather than
+ *      a confidently wrong number.
+ */
 async function fetchFromYahoo(symbol: string): Promise<number | null> {
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=5d&interval=1d`;
@@ -149,12 +212,18 @@ async function fetchFromYahoo(symbol: string): Promise<number | null> {
     });
     if (!res.ok) return null;
     const data = await res.json();
-    const meta = data?.chart?.result?.[0]?.meta;
-    const prev =
-      meta?.chartPreviousClose ??
-      meta?.previousClose ??
-      meta?.regularMarketPreviousClose;
-    if (typeof prev === "number" && prev > 0) return prev;
+    const result = data?.chart?.result?.[0];
+    if (!result) return null;
+
+    const dailyClose = lastClosePriorToTodayEt(
+      result.timestamp,
+      result.indicators?.quote?.[0]?.close,
+    );
+    if (dailyClose != null) return dailyClose;
+
+    const regularPrev = result.meta?.regularMarketPreviousClose;
+    if (typeof regularPrev === "number" && regularPrev > 0) return regularPrev;
+
     return null;
   } catch {
     return null;

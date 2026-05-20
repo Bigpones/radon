@@ -9,7 +9,26 @@ import {
   SemanticStates,
   DenseNumericTable,
 } from "@/components/kit";
+import { MarkovStateGraph } from "@/components/instruments";
 import { useTheme } from "@/lib/ThemeContext";
+
+const MARKOV_DEMO_STATES = [
+  { id: "r1", label: "REGIME 1" },
+  { id: "r2", label: "REGIME 2", current: true },
+  { id: "r3", label: "REGIME 3" },
+  { id: "r4", label: "REGIME 4" },
+];
+
+const MARKOV_DEMO_TRANSITIONS = [
+  { from: "r1", to: "r2", probability: 0.55 },
+  { from: "r2", to: "r3", probability: 0.27 },
+  { from: "r2", to: "r2", probability: 0.62 },
+  { from: "r2", to: "r1", probability: 0.11 },
+  { from: "r3", to: "r4", probability: 0.41 },
+  { from: "r3", to: "r2", probability: 0.18 },
+  { from: "r4", to: "r1", probability: 0.9 },
+  { from: "r1", to: "r3", probability: 0.22 },
+];
 
 export default function KitPage() {
   const { theme, toggleTheme } = useTheme();
@@ -74,6 +93,58 @@ export default function KitPage() {
       </div>
 
       <DenseNumericTable />
+
+      <div
+        style={{
+          background: "var(--bg-panel)",
+          border: "1px solid var(--border-dim)",
+          borderRadius: 4,
+          padding: 24,
+          marginTop: 16,
+        }}
+      >
+        <div className="flex justify-between items-start" style={{ marginBottom: 16 }}>
+          <div>
+            <p
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: "var(--text-muted)",
+                marginBottom: 4,
+              }}
+            >
+              Markov Engine / Lattice
+            </p>
+            <h3
+              style={{
+                fontSize: 14,
+                fontWeight: 600,
+                color: "var(--text-primary)",
+              }}
+            >
+              State Transition Graph
+            </h3>
+          </div>
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              color: "var(--signal-core)",
+            }}
+          >
+            Shifting
+          </span>
+        </div>
+        <MarkovStateGraph
+          states={MARKOV_DEMO_STATES}
+          transitions={MARKOV_DEMO_TRANSITIONS}
+          caption="60d sample"
+        />
+      </div>
     </div>
   );
 }

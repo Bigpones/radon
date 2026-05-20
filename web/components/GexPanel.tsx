@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { Activity, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { useGex, type GexData, type GexBucket, type GexLevel, type GexHistoryEntry, type IvData, type MqLevels, type SourceDelta, type SourceDeltaEntry } from "@/lib/useGex";
 import { isGexDataStale } from "@/lib/gexStaleness";
 import { MarketState } from "@/lib/useMarketHours";
 import InfoTooltip from "./InfoTooltip";
 import ShareReportModal from "./ShareReportModal";
+import GexLaplaceContour from "./instruments/GexLaplaceContour";
 
 type GexPanelProps = {
   marketState?: MarketState;
@@ -125,142 +126,10 @@ function LevelCard({ label, level, labelColor }: {
   );
 }
 
-/* ─── GEX Profile Bar Chart ──────────────────────────── */
+/* ─── GEX Profile sort helper (consumed by GexLaplaceContour upstream) ─ */
 
 export function getDisplayProfile(profile: GexBucket[]): GexBucket[] {
   return [...profile].sort((a, b) => b.strike - a.strike);
-}
-
-function GexProfileChart({ profile, spot }: { profile: GexBucket[]; spot: number }) {
-  const svgRef = useRef<SVGSVGElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const chartData = useMemo(() => {
-    if (!profile.length) return { buckets: [], maxAbs: 1 };
-    const buckets = getDisplayProfile(profile);
-    const maxAbs = Math.max(...buckets.map((b) => Math.abs(b.net_gex)), 1);
-    return { buckets, maxAbs };
-  }, [profile]);
-
-  const barHeight = 22;
-  const labelWidth = 80;
-  const rightLabelWidth = 160;
-  const chartWidth = 600;
-  const barAreaWidth = chartWidth - labelWidth - rightLabelWidth;
-  const midX = labelWidth + barAreaWidth / 2;
-  const totalHeight = chartData.buckets.length * (barHeight + 4) + 8;
-
-  return (
-    <div ref={containerRef} className="gex-profile-chart" style={{ overflowX: "auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-        <span className="gex-chart-title">GEX Profile &mdash; Net gamma by strike</span>
-        <span className="gex-chart-legend">
-          <span style={{ color: "var(--signal-core)" }}>&#9632; Positive (stabilizing)</span>
-          {" "}
-          <span style={{ color: "var(--fault)" }}>&#9632; Negative (destabilizing)</span>
-        </span>
-      </div>
-      <svg
-        ref={svgRef}
-        viewBox={`0 0 ${chartWidth} ${totalHeight}`}
-        width="100%"
-        height={totalHeight}
-        style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}
-      >
-        {/* Center line */}
-        <line x1={midX} y1={0} x2={midX} y2={totalHeight} stroke="var(--border-dim)" strokeWidth={1} />
-
-        {chartData.buckets.map((bucket, i) => {
-          const y = i * (barHeight + 4) + 4;
-          const barWidthPx = (Math.abs(bucket.net_gex) / chartData.maxAbs) * (barAreaWidth / 2);
-          const isPositive = bucket.net_gex >= 0;
-          const barX = isPositive ? midX : midX - barWidthPx;
-          const barColor = isPositive ? "var(--signal-core)" : "var(--fault)";
-
-          const isSpot = bucket.tag === "SPOT";
-          const tagColor = bucket.tag === "GEX FLIP" ? "var(--warning)"
-            : bucket.tag === "SPOT" ? "var(--signal-strong)"
-            : bucket.tag?.includes("MAGNET") ? "var(--signal-core)"
-            : bucket.tag?.includes("ACCEL") ? "var(--fault)"
-            : "var(--text-secondary)";
-
-          return (
-            <g key={bucket.strike}>
-              {/* Strike label (left) */}
-              <text
-                x={labelWidth - 8}
-                y={y + barHeight / 2 + 4}
-                textAnchor="end"
-                fill={isSpot ? "var(--signal-strong)" : "var(--text-secondary)"}
-                fontWeight={isSpot ? 700 : 400}
-              >
-                {bucket.strike.toLocaleString()}
-              </text>
-              {/* Pct from spot */}
-              <text
-                x={4}
-                y={y + barHeight / 2 + 4}
-                textAnchor="start"
-                fill="var(--text-muted)"
-                fontSize={9}
-              >
-                {fmtPct(bucket.pct_from_spot)}
-              </text>
-              {/* Bar */}
-              <rect
-                x={barX}
-                y={y}
-                width={Math.max(barWidthPx, 1)}
-                height={barHeight}
-                fill={barColor}
-                rx={2}
-                opacity={0.85}
-              />
-              {/* Right label: GEX value + tag */}
-              <text
-                x={chartWidth - rightLabelWidth + 8}
-                y={y + barHeight / 2 + 4}
-                textAnchor="start"
-                fill={isPositive ? "var(--signal-core)" : "var(--fault)"}
-                fontSize={10}
-              >
-                {fmtGex(bucket.net_gex)}
-              </text>
-              {bucket.tag && (
-                <text
-                  x={chartWidth - 8}
-                  y={y + barHeight / 2 + 4}
-                  textAnchor="end"
-                  fill={tagColor}
-                  fontWeight={700}
-                  fontSize={10}
-                >
-                  {bucket.tag === "MAX MAGNET" ? "MAX MAGNET \u25B2"
-                    : bucket.tag === "MAX ACCELERATOR" ? "MAX ACCEL \u25BC"
-                    : bucket.tag === "GEX FLIP" ? "GEX FLIP \u25C4"
-                    : bucket.tag === "SPOT" ? "\u25C4 SPOT"
-                    : bucket.tag}
-                </text>
-              )}
-              {/* Spot indicator line */}
-              {isSpot && (
-                <line
-                  x1={labelWidth}
-                  y1={y + barHeight + 2}
-                  x2={chartWidth - rightLabelWidth}
-                  y2={y + barHeight + 2}
-                  stroke="var(--signal-strong)"
-                  strokeWidth={1}
-                  strokeDasharray="4 2"
-                  opacity={0.5}
-                />
-              )}
-            </g>
-          );
-        })}
-      </svg>
-    </div>
-  );
 }
 
 /* ─── Expected Range Bar ─────────────────────────────── */
@@ -741,8 +610,27 @@ export default function GexPanel({ marketState }: GexPanelProps) {
           <MqLevelsPanel mq={data.mq as MqLevels} sourceDelta={data.source_delta as SourceDelta | null} />
         )}
 
-        {/* ── GEX Profile Chart ── */}
-        <GexProfileChart profile={data.profile} spot={data.spot} />
+        {/* ── GEX Profile Chart — Laplace curvature field ── */}
+        <div className="gex-profile-chart" data-testid="gex-laplace-chart">
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+            <span className="gex-chart-title">GEX Profile &mdash; curvature field by strike</span>
+            <span className="gex-chart-legend">
+              <span style={{ color: "var(--signal-core)" }}>&#9632; Positive curvature (stabilizing)</span>
+              {" "}
+              <span style={{ color: "var(--dislocation)" }}>&#9632; Negative curvature (destabilizing)</span>
+            </span>
+          </div>
+          <GexLaplaceContour
+            profile={data.profile}
+            spotPrice={data.spot}
+            flipStrike={levels.gex_flip?.strike ?? null}
+            maxMagnet={levels.max_magnet?.strike ?? null}
+            maxAccelerator={levels.max_accelerator?.strike ?? null}
+            putWall={levels.put_wall?.strike ?? null}
+            callWall={levels.call_wall?.strike ?? null}
+            ticker={data.ticker}
+          />
+        </div>
 
         {/* ── Bottom Row: Expected Range + Bias ── */}
         <div className="gex-bottom-row">
