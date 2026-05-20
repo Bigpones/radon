@@ -167,12 +167,19 @@ function ExpectedRangeBar({ data }: { data: GexData }) {
   anchors.push({ pct: pct(high), value: high, label: "RANGE HIGH" });
   anchors.sort((a, b) => a.pct - b.pct);
 
-  // Greedy two-row collision: each anchor takes the highest row whose
-  // last-occupied pct is ≥ COLLISION_PCT away. Anchors render value above
-  // label (~36 px tall block); the label width at the smallest font is
-  // ~64 px, which is ~6.5 % of a typical 1000 px bar — round up to 8 %.
-  const COLLISION_PCT = 8;
-  const lastPctByRow: number[] = [-Infinity, -Infinity];
+  // Greedy three-row collision avoidance. Each anchor renders as a
+  // value-above-label stack centred on its pct. Real label widths in
+  // production are ~12 % of the bar (mono values like "7,432.97" plus the
+  // uppercase label below clip ~110 px on a 900 px bar), so the previous
+  // 8 % gap was too tight — clusters of three anchors at the low end of
+  // the range (e.g. MAX ACCEL / RANGE LOW / GEX FLIP) silently stacked on
+  // the same row and read as a garbled blob (commit f79fd5d follow-up).
+  //
+  // A third row handles the 3-anchor cluster cleanly; if a cluster ever
+  // exceeds three, the overflow falls back to the bottom row and accepts
+  // the visual collision rather than dropping the label outright.
+  const COLLISION_PCT = 12;
+  const lastPctByRow: number[] = [-Infinity, -Infinity, -Infinity];
   const placed = anchors.map((a) => {
     const row = lastPctByRow.findIndex((p) => a.pct - p >= COLLISION_PCT);
     const finalRow = row === -1 ? lastPctByRow.length - 1 : row; // overflow → bottom row

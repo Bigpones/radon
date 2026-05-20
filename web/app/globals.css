@@ -6789,11 +6789,13 @@ tr {
 }
 
 /* Anchored level labels under the bar. Each anchor is absolutely placed
-   at its pct, value above label. Two staggered rows prevent collision. */
+   at its pct, value above label. Three staggered rows prevent collision
+   when a cluster of three anchors lands in the same neighbourhood (e.g.
+   MAX ACCEL / RANGE LOW / GEX FLIP all within ~17 % of bar width). */
 .gex-range-anchors {
   position: relative;
   margin-top: 6px;
-  height: 64px; /* enough for two stacked rows of value+label */
+  height: 96px; /* enough for three stacked rows of value+label */
 }
 .gex-range-anchor {
   position: absolute;
@@ -6805,6 +6807,7 @@ tr {
 }
 .gex-range-anchor-row-0 { top: 0; }
 .gex-range-anchor-row-1 { top: 32px; }
+.gex-range-anchor-row-2 { top: 64px; }
 .gex-range-anchor-value {
   font-size: 10px;
   color: var(--text-secondary);
