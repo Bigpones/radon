@@ -1,7 +1,36 @@
 import path from "path";
 import fs from "fs-extra";
+import { absolutizeMediaUrl, MEDIA_ORIGIN } from "./media.js";
 
 export const MAX_POSTS_FILE_BYTES = 500 * 1024;
+
+// Defensive guard at the persistence seam. Any post arriving here MUST
+// carry absolute media URLs — the dashboard, Turso, and image hosts all
+// depend on it. Anything we can rewrite is rewritten; anything we can't
+// is dropped from the images array and logged once so the contract bug
+// surfaces without breaking the cycle.
+function normalisePostImageUrls(post) {
+  if (!post || typeof post !== "object") return post;
+  if (!Array.isArray(post.images) || post.images.length === 0) return post;
+
+  const cleaned = [];
+  for (const src of post.images) {
+    const next = absolutizeMediaUrl(src);
+    if (typeof next === "string" && (next.startsWith("https://") || next.startsWith("http://"))) {
+      cleaned.push(next);
+    } else {
+      console.warn(
+        `[newsfeed] dropping non-absolute image url for post=${post.id}: ${JSON.stringify(src)} ` +
+          `(expected ${MEDIA_ORIGIN}/<file> or http(s)://...)`,
+      );
+    }
+  }
+
+  if (cleaned.length === post.images.length && cleaned.every((v, i) => v === post.images[i])) {
+    return post;
+  }
+  return { ...post, images: cleaned };
+}
 
 function normaliseTimestamp(ts) {
   const date = new Date(ts);
@@ -94,7 +123,9 @@ export async function persistPosts(posts, opts) {
   await fs.ensureDir(archiveDir);
   if (mediaDir) await fs.ensureDir(mediaDir);
 
-  const reduced = posts.map(({ timestampMs, ...rest }) => rest);
+  const reduced = posts
+    .map((post) => normalisePostImageUrls(post))
+    .map(({ timestampMs, ...rest }) => rest);
   const output = JSON.stringify(reduced, null, 2);
   const size = Buffer.byteLength(output, "utf8");
 
@@ -113,3 +144,7 @@ export async function persistPosts(posts, opts) {
 
   return { archived: true, archivePath, archiveName, keepCount };
 }
+
+// Test seam — exercise the URL normaliser without spinning up the full
+// persistence pipeline.
+export const __normalisePostImageUrls = normalisePostImageUrls;

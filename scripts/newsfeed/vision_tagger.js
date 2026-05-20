@@ -43,12 +43,33 @@ function detectMediaType(filename) {
   return null;
 }
 
+// Resolves a post's first image URL to the on-disk file under publicRoot.
+// Accepts either form:
+//   - absolute  `https://media.radon.run/<file>`   (current — written by media.js)
+//   - relative  `/media/<file>` or `media/<file>`  (legacy — kept for
+//                                                   posts written before
+//                                                   the absolute migration)
+// Always lands at `<publicRoot>/media/<file>` on disk regardless of input.
 function resolveImageAbsolutePath(post, publicRoot) {
   if (!Array.isArray(post.images) || post.images.length === 0) return null;
-  const rel = post.images[0];
-  if (typeof rel !== "string" || rel.length === 0) return null;
+  const src = post.images[0];
+  if (typeof src !== "string" || src.length === 0) return null;
+
+  let rel = src;
+  if (/^https?:\/\//i.test(rel)) {
+    // Pull the path component from any absolute URL — works for our own
+    // media host and for any other origin we might add later.
+    try {
+      rel = new URL(rel).pathname;
+    } catch {
+      return null;
+    }
+  }
   const trimmed = rel.replace(/^\//, "");
-  return path.join(publicRoot, trimmed);
+  // Bare filenames (no `media/` prefix) still land under `media/` because
+  // that's where the on-disk file actually sits.
+  const prefixed = trimmed.startsWith("media/") ? trimmed : `media/${trimmed}`;
+  return path.join(publicRoot, prefixed);
 }
 
 function buildUserPrompt(post) {

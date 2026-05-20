@@ -350,7 +350,10 @@ describe("createImageDownloader (auth-gated upstream)", () => {
       "https://themarketear.com/images/caee42fb8ae49ff83ccb1ad3500fdee5.png",
     ]);
 
-    expect(result).toEqual(["/media/cmjrk4n79d-01.png"]);
+    // Downloader emits absolute URLs (https://media.radon.run/<file>) so
+    // the dashboard never hits Next.js's /_next/image with a relative
+    // path that 400s on Hetzner. See scripts/newsfeed/media.js.
+    expect(result).toEqual(["https://media.radon.run/cmjrk4n79d-01.png"]);
     expect(requests).toHaveLength(1);
     expect(requests[0].cookie).toBe("P=session-token; U=user-token");
 
@@ -377,7 +380,7 @@ describe("createImageDownloader (auth-gated upstream)", () => {
 
     const result = await downloader.download("p1", ["https://themarketear.com/images/x.png"]);
 
-    expect(result).toEqual(["/media/p1-01.png"]);
+    expect(result).toEqual(["https://media.radon.run/p1-01.png"]);
     expect(requests[0].cookie).toBeUndefined();
   });
 

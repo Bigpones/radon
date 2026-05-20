@@ -5,6 +5,25 @@ import axios from "axios";
 
 const BASE_URL = new URL("https://themarketear.com");
 
+// Single source of truth for the public media host. Posts written to disk,
+// to Turso, and rendered by the dashboard ALL carry absolute URLs rooted
+// here. The Hetzner peer has no /media/<file> static route — only Caddy at
+// media.radon.run serves these — so a relative path produces a 400 from
+// Next.js's image optimiser on app.radon.run.
+export const MEDIA_ORIGIN = "https://media.radon.run";
+
+// Idempotent rewrite: filenames, relative `/media/<f>`, and already-absolute
+// `https://media.radon.run/<f>` all collapse to a single absolute form.
+// Foreign absolute URLs (e.g. third-party CDN images we haven't downloaded
+// yet) pass through unchanged so the contract stays additive.
+export function absolutizeMediaUrl(src) {
+  if (typeof src !== "string" || src.length === 0) return src;
+  if (src.startsWith(`${MEDIA_ORIGIN}/`)) return src;
+  if (src.startsWith("/media/")) return `${MEDIA_ORIGIN}/${src.slice("/media/".length)}`;
+  if (src.startsWith("https://") || src.startsWith("http://")) return src;
+  return src;
+}
+
 // Force IPv4 — themarketear.com's CDN advertises AAAA but those routes are
 // frequently unreachable from residential IPv6, causing EHOSTUNREACH timeouts
 // while curl-style IPv4 succeeds.
@@ -59,7 +78,9 @@ export function createImageDownloader({ mediaDir, client = defaultClient, getCoo
       const ext = maybeExt && maybeExt.length <= 6 ? maybeExt : ".png";
       const filename = `${slugify(postId)}-${String(index + 1).padStart(2, "0")}${ext}`;
       const destPath = path.join(mediaDir, filename);
-      const publicPath = `/media/${filename}`;
+      // Absolute URL — see MEDIA_ORIGIN above. The dashboard never gets a
+      // chance to optimise `/media/<f>` because that path 404s on Hetzner.
+      const publicPath = `${MEDIA_ORIGIN}/${filename}`;
 
       if (!(await fs.pathExists(destPath))) {
         try {
