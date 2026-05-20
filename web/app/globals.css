@@ -788,7 +788,7 @@ td.last-price-cell {
 
 @keyframes last-price-flash-up {
   0% {
-    background: rgba(34, 197, 94, 0.15);
+    background: color-mix(in srgb, var(--positive) 15%, transparent);
   }
   100% {
     background: transparent;
@@ -797,7 +797,7 @@ td.last-price-cell {
 
 @keyframes last-price-flash-down {
   0% {
-    background: rgba(239, 68, 68, 0.15);
+    background: color-mix(in srgb, var(--negative) 15%, transparent);
   }
   100% {
     background: transparent;
@@ -1140,7 +1140,7 @@ td.last-price-cell {
   justify-content: space-between;
   gap: 16px;
   background:
-    linear-gradient(180deg, rgba(5, 173, 152, 0.09) 0%, rgba(5, 173, 152, 0.02) 100%),
+    linear-gradient(180deg, color-mix(in srgb, var(--signal-core) 9%, transparent) 0%, color-mix(in srgb, var(--signal-core) 2%, transparent) 100%),
     var(--bg-panel);
 }
 
@@ -2233,7 +2233,7 @@ td.negative, .negative {
   transition: background 0.15s, color 0.15s;
 }
 .btn-sync:hover:not(:disabled) {
-  background: rgba(139, 92, 246, 0.1);
+  background: color-mix(in srgb, var(--extreme) 10%, transparent);
 }
 .btn-sync:disabled {
   opacity: 0.5;
@@ -2661,7 +2661,7 @@ tr.leg-row td {
 }
 
 .btn-modify:not(:disabled):hover {
-  background: rgba(139, 92, 246, 0.1);
+  background: color-mix(in srgb, var(--extreme) 10%, transparent);
 }
 
 .btn-cancel {
@@ -2670,7 +2670,7 @@ tr.leg-row td {
 }
 
 .btn-cancel:not(:disabled):hover {
-  background: rgba(239, 68, 68, 0.1);
+  background: color-mix(in srgb, var(--negative) 10%, transparent);
 }
 
 /* ── Cancel Dialog ── */
@@ -2712,7 +2712,7 @@ tr.leg-row td {
   color: var(--warning);
   padding: 10px 12px;
   border: 1px solid var(--warning);
-  background: rgba(245, 158, 11, 0.05);
+  background: color-mix(in srgb, var(--warning) 5%, transparent);
 }
 
 .cancel-actions {
@@ -3154,8 +3154,8 @@ tr.leg-row td {
     -45deg,
     transparent,
     transparent 8px,
-    rgba(239, 68, 68, 0.03) 8px,
-    rgba(239, 68, 68, 0.03) 16px
+    color-mix(in srgb, var(--negative) 3%, transparent) 8px,
+    color-mix(in srgb, var(--negative) 3%, transparent) 16px
   );
 }
 
@@ -3191,11 +3191,11 @@ tr.leg-row td {
 /* ── Cancelled Row in Executed Table ── */
 
 .row-cancelled {
-  background: rgba(239, 68, 68, 0.03);
+  background: color-mix(in srgb, var(--negative) 3%, transparent);
 }
 
 .row-cancelled:hover {
-  background: rgba(239, 68, 68, 0.06);
+  background: color-mix(in srgb, var(--negative) 6%, transparent);
 }
 
 .cancelled-icon {
@@ -3321,7 +3321,7 @@ tr.leg-row td {
   gap: 4px;
   padding: 8px 10px;
   border: 1px solid var(--negative);
-  background: rgba(239, 68, 68, 0.05);
+  background: color-mix(in srgb, var(--negative) 5%, transparent);
   color: var(--negative);
 }
 .order-error-summary {
@@ -3336,7 +3336,7 @@ tr.leg-row td {
   line-height: 1.45;
   color: var(--text-secondary);
 }
-.order-success { font-family: var(--font-mono); font-size: 11px; color: var(--positive); padding: 8px 10px; border: 1px solid var(--positive); background: rgba(34, 197, 94, 0.05); }
+.order-success { font-family: var(--font-mono); font-size: 11px; color: var(--positive); padding: 8px 10px; border: 1px solid var(--positive); background: color-mix(in srgb, var(--positive) 5%, transparent); }
 .order-submit { margin-top: 4px; }
 .order-confirm-row { display: flex; gap: 8px; }
 .order-confirm-row .btn-primary { flex: 1; font-size: 10px; }
@@ -3353,8 +3353,8 @@ tr.leg-row td {
 /* Combo leg pills */
 .combo-legs-pills { display: flex; flex-wrap: wrap; gap: 6px; }
 .combo-leg-pill { display: flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; font-family: var(--font-mono); font-size: 11px; }
-.combo-leg-long { background: rgba(34, 197, 94, 0.1); }
-.combo-leg-short { background: rgba(239, 68, 68, 0.1); }
+.combo-leg-long { background: color-mix(in srgb, var(--positive) 10%, transparent); }
+.combo-leg-short { background: color-mix(in srgb, var(--negative) 10%, transparent); }
 .combo-leg-dir { font-weight: 600; }
 .combo-leg-long .combo-leg-dir { color: var(--positive); }
 .combo-leg-short .combo-leg-dir { color: var(--negative); }
@@ -3390,8 +3390,8 @@ tr.leg-row td {
 .order-leg-pills-compact { display: flex; flex-wrap: wrap; gap: 4px; }
 .order-leg-pill { display: flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; font-family: var(--font-mono); font-size: 11px; }
 .order-leg-pills-compact .order-leg-pill { padding: 3px 8px; font-size: 10px; }
-.order-leg-pill-long { background: rgba(34, 197, 94, 0.1); }
-.order-leg-pill-short { background: rgba(239, 68, 68, 0.1); }
+.order-leg-pill-long { background: color-mix(in srgb, var(--positive) 10%, transparent); }
+.order-leg-pill-short { background: color-mix(in srgb, var(--negative) 10%, transparent); }
 .order-leg-dir { font-weight: 600; }
 .order-leg-pill-long .order-leg-dir { color: var(--positive); }
 .order-leg-pill-short .order-leg-dir { color: var(--negative); }
@@ -3419,7 +3419,7 @@ tr.leg-row td {
 
 /* OrderConfirmSummary — Confirmation panel */
 .order-confirm-summary { background: var(--bg-panel); border: 1px solid var(--line-grid); border-radius: 4px; padding: 10px 12px; margin-bottom: 12px; }
-.order-confirm-summary-info { background: rgba(5, 173, 152, 0.08); border-color: var(--signal-core); }
+.order-confirm-summary-info { background: color-mix(in srgb, var(--signal-core) 8%, transparent); border-color: var(--signal-core); }
 .order-confirm-description { font-family: var(--font-mono); font-size: 12px; color: var(--text-primary); margin-bottom: 6px; }
 .order-confirm-metrics { display: flex; flex-wrap: wrap; gap: 12px; font-family: var(--font-mono); font-size: 11px; }
 .order-confirm-metric { display: flex; gap: 4px; }
@@ -3428,8 +3428,8 @@ tr.leg-row td {
 .order-confirm-positive { color: var(--positive); }
 .order-confirm-negative { color: var(--negative); }
 .order-confirm-metric-value[data-unbounded="true"] { color: var(--fault); font-weight: 600; letter-spacing: 0.04em; }
-.order-confirm-summary[data-undefined-risk="true"] { border-color: var(--fault); background: rgba(232, 93, 108, 0.08); }
-.order-confirm-undefined-risk { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--fault); border-radius: 4px; background: rgba(232, 93, 108, 0.12); font-family: var(--font-mono); }
+.order-confirm-summary[data-undefined-risk="true"] { border-color: var(--fault); background: color-mix(in srgb, var(--fault) 8%, transparent); }
+.order-confirm-undefined-risk { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--fault); border-radius: 4px; background: color-mix(in srgb, var(--fault) 12%, transparent); font-family: var(--font-mono); }
 .order-confirm-undefined-risk-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--fault); font-weight: 600; }
 .order-confirm-undefined-risk-detail { font-size: 11px; color: var(--text-primary); }
 
@@ -3513,8 +3513,8 @@ tr.leg-row td {
     -45deg,
     transparent,
     transparent 8px,
-    rgba(139, 92, 246, 0.03) 8px,
-    rgba(139, 92, 246, 0.03) 16px
+    color-mix(in srgb, var(--extreme) 3%, transparent) 8px,
+    color-mix(in srgb, var(--extreme) 3%, transparent) 16px
   );
 }
 
@@ -3744,14 +3744,14 @@ tr {
 .seasonality-cell-winrate { font-family: var(--font-mono); font-size: 9px; color: var(--text-muted); }
 
 .seasonality-cell-badge { font-family: var(--font-mono); font-size: 8px; font-weight: 700; width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; border-radius: 2px; position: absolute; top: 6px; right: 6px; }
-.seasonality-cell-badge.seasonality-favorable { color: var(--positive); background: rgba(34, 197, 94, 0.1); }
-.seasonality-cell-badge.seasonality-unfavorable { color: var(--negative); background: rgba(239, 68, 68, 0.1); }
-.seasonality-cell-badge.seasonality-neutral { color: var(--text-muted); background: rgba(117, 117, 117, 0.1); }
+.seasonality-cell-badge.seasonality-favorable { color: var(--positive); background: color-mix(in srgb, var(--positive) 10%, transparent); }
+.seasonality-cell-badge.seasonality-unfavorable { color: var(--negative); background: color-mix(in srgb, var(--negative) 10%, transparent); }
+.seasonality-cell-badge.seasonality-neutral { color: var(--text-muted); background: color-mix(in srgb, var(--neutral) 10%, transparent); }
 
 /* Detail table */
 .seasonality-detail { display: flex; flex-direction: column; gap: 8px; }
 .seasonality-detail-title { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); }
-.seasonality-row-current { background: rgba(139, 92, 246, 0.05); }
+.seasonality-row-current { background: color-mix(in srgb, var(--extreme) 5%, transparent); }
 .seasonality-table-badge { font-family: var(--font-mono); font-size: 9px; font-weight: 500; padding: 2px 6px; letter-spacing: 0.03em; }
 .seasonality-table-badge.seasonality-favorable { color: var(--positive); }
 .seasonality-table-badge.seasonality-unfavorable { color: var(--negative); }
@@ -4863,17 +4863,17 @@ tr {
 
 .regime-relationship-marker-spread {
   fill: var(--signal-core);
-  stroke: rgba(5, 173, 152, 0.3);
+  stroke: color-mix(in srgb, var(--signal-core) 30%, transparent);
 }
 
 .regime-relationship-marker-rvol {
   fill: var(--warning);
-  stroke: rgba(245, 166, 35, 0.28);
+  stroke: color-mix(in srgb, var(--warning) 28%, transparent);
 }
 
 .regime-relationship-marker-cor1m {
   fill: var(--dislocation);
-  stroke: rgba(217, 70, 168, 0.28);
+  stroke: color-mix(in srgb, var(--dislocation) 28%, transparent);
 }
 
 .regime-relationship-axis-label,
@@ -5387,12 +5387,12 @@ tr {
 
 .cta-flag-short {
   color: var(--negative);
-  border-color: rgba(232,93,108,0.4);
+  border-color: color-mix(in srgb, var(--negative) 40%, transparent);
 }
 
 .cta-flag-long {
   color: var(--signal-core);
-  border-color: rgba(5,173,152,0.4);
+  border-color: color-mix(in srgb, var(--signal-core) 40%, transparent);
 }
 
 /* ─────────────────────────────────────────────────────── */
@@ -5585,8 +5585,8 @@ tr {
 .fills-side { font-weight: 600; }
 .fills-side-bot { color: var(--color-green); }
 .fills-side-sld { color: var(--color-red); }
-.fills-row-positive { background: rgba(34, 197, 94, 0.04); }
-.fills-row-negative { background: rgba(239, 68, 68, 0.04); }
+.fills-row-positive { background: color-mix(in srgb, var(--positive) 4%, transparent); }
+.fills-row-negative { background: color-mix(in srgb, var(--negative) 4%, transparent); }
 
 .fills-summary {
   padding: 12px 16px;
@@ -7001,7 +7001,7 @@ body[data-mobile="true"] .toast-container {
 }
 
 .mobile-chain__row--atm {
-  background: rgba(5, 173, 152, 0.06);
+  background: color-mix(in srgb, var(--signal-core) 6%, transparent);
 }
 
 .mobile-chain__row--atm .mobile-chain__strike {
@@ -7913,19 +7913,19 @@ body[data-mobile="true"] td.right {
   height: 14px;
   border-radius: 50%;
   background: var(--signal-core);
-  box-shadow: 0 0 0 0 rgba(5, 173, 152, 0.6);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--signal-core) 60%, transparent);
   animation: ticker-flow-pulse 1.4s ease-out infinite;
 }
 
 @keyframes ticker-flow-pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(5, 173, 152, 0.55);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--signal-core) 55%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 14px rgba(5, 173, 152, 0);
+    box-shadow: 0 0 0 14px color-mix(in srgb, var(--signal-core) 0%, transparent);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(5, 173, 152, 0);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--signal-core) 0%, transparent);
   }
 }
 

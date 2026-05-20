@@ -18,11 +18,11 @@ function posColor(v: number): string {
 }
 
 function pctileBg(v: number): string {
-  if (v <= 10) return "rgba(232,93,108,0.25)";
-  if (v <= 25) return "rgba(232,93,108,0.12)";
-  if (v <= 40) return "rgba(245,166,35,0.12)";
-  if (v >= 75) return "rgba(5,173,152,0.25)";
-  if (v >= 60) return "rgba(5,173,152,0.12)";
+  if (v <= 10) return "color-mix(in srgb, var(--fault) 25%, transparent)";
+  if (v <= 25) return "color-mix(in srgb, var(--fault) 12%, transparent)";
+  if (v <= 40) return "color-mix(in srgb, var(--warning) 12%, transparent)";
+  if (v >= 75) return "color-mix(in srgb, var(--signal-core) 25%, transparent)";
+  if (v >= 60) return "color-mix(in srgb, var(--signal-core) 12%, transparent)";
   return "transparent";
 }
 

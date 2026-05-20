@@ -33,6 +33,7 @@ import FlexTokenBanner from "@/components/FlexTokenBanner";
 import ServiceHealthBanner from "@/components/ServiceHealthBanner";
 import { useTickerDetail } from "@/lib/TickerDetailContext";
 import { assessMargin, rankOf, type MarginLevel } from "@/lib/marginWarning";
+import { useTheme } from "@/lib/ThemeContext";
 
 type WorkspaceShellProps = {
   section?: WorkspaceSection;
@@ -40,7 +41,7 @@ type WorkspaceShellProps = {
 };
 
 export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellProps) {
-  const [theme, setTheme] = useState<"dark" | "light" | null>(null);
+  const { theme: resolvedTheme, toggleTheme } = useTheme();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const pathname = usePathname();
   const { isMobile, hasMounted } = useViewport();
@@ -280,19 +281,6 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
   }, [addToast]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("theme");
-    if (saved === "light" || saved === "dark") {
-      setTheme(saved);
-      document.documentElement.setAttribute("data-theme", saved);
-    } else {
-      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      const systemTheme = prefersDark ? "dark" : "light";
-      setTheme(systemTheme);
-      document.documentElement.setAttribute("data-theme", systemTheme);
-    }
-  }, []);
-
-  useEffect(() => {
     const syncFullscreenState = () => {
       setIsFullscreen(Boolean(document.fullscreenElement));
     };
@@ -313,18 +301,9 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
     };
   }, []);
 
-  const resolvedTheme = theme ?? "dark";
-
   const actionTone = useMemo(() => {
     return resolvedTheme === "dark" ? "#e2e8f0" : "#0a0f14";
   }, [resolvedTheme]);
-
-  const toggleTheme = () => {
-    const next = resolvedTheme === "dark" ? "light" : "dark";
-    setTheme(next);
-    document.documentElement.setAttribute("data-theme", next);
-    localStorage.setItem("theme", next);
-  };
 
   const toggleFullscreen = useCallback(async () => {
     try {

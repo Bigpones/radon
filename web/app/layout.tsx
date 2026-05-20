@@ -1,8 +1,7 @@
 import type { Metadata, Viewport } from "next";
-import { ClerkProvider } from "@clerk/nextjs";
-import { dark } from "@clerk/themes";
 import Providers from "@/components/Providers";
 import PwaRegister from "@/components/PwaRegister";
+import ThemeBootstrap from "@/components/ThemeBootstrap";
 import "./globals.css";
 
 export const viewport: Viewport = {
@@ -10,7 +9,10 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   viewportFit: "cover",
-  themeColor: "#0a0f14",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0f14" },
+  ],
 };
 
 export const metadata: Metadata = {
@@ -52,13 +54,14 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <ClerkProvider appearance={{ baseTheme: dark }}>
-      <html lang="en" data-theme="dark">
-        <body className="app-root">
-          <Providers>{children}</Providers>
-          <PwaRegister />
-        </body>
-      </html>
-    </ClerkProvider>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <ThemeBootstrap />
+      </head>
+      <body className="app-root">
+        <Providers>{children}</Providers>
+        <PwaRegister />
+      </body>
+    </html>
   );
 }

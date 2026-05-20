@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { Moon, Sun } from "lucide-react";
 import {
   SignalSummary,
@@ -10,13 +9,10 @@ import {
   SemanticStates,
   DenseNumericTable,
 } from "@/components/kit";
+import { useTheme } from "@/lib/ThemeContext";
 
 export default function KitPage() {
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
-
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-  }, [theme]);
+  const { theme, toggleTheme } = useTheme();
 
   return (
     <div
@@ -40,7 +36,8 @@ export default function KitPage() {
           Radon Contributor Kit / Component Spec
         </p>
         <button
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          onClick={toggleTheme}
+          aria-label="Toggle theme"
           style={{
             width: 32,
             height: 32,

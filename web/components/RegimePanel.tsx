@@ -364,7 +364,7 @@ export default function RegimePanel({
             alignItems: "center",
             gap: "8px",
             padding: "6px 12px",
-            background: "rgba(245,166,35,0.12)",
+            background: "color-mix(in srgb, var(--warning) 12%, transparent)",
             color: "var(--warning, #F5A623)",
             fontSize: "11px",
             fontFamily: "var(--font-mono, monospace)",

@@ -41,11 +41,11 @@ function posColor(v: number): string {
 
 function pctileBg(v: number): string {
   const normalized = normalizeCtaPercentile(v) ?? v;
-  if (normalized <= 10) return "rgba(232,93,108,0.25)";
-  if (normalized <= 25) return "rgba(232,93,108,0.12)";
-  if (normalized <= 40) return "rgba(245,166,35,0.12)";
-  if (normalized >= 75) return "rgba(5,173,152,0.25)";
-  if (normalized >= 60) return "rgba(5,173,152,0.12)";
+  if (normalized <= 10) return "color-mix(in srgb, var(--fault) 25%, transparent)";
+  if (normalized <= 25) return "color-mix(in srgb, var(--fault) 12%, transparent)";
+  if (normalized <= 40) return "color-mix(in srgb, var(--warning) 12%, transparent)";
+  if (normalized >= 75) return "color-mix(in srgb, var(--signal-core) 25%, transparent)";
+  if (normalized >= 60) return "color-mix(in srgb, var(--signal-core) 12%, transparent)";
   return "transparent";
 }
 
@@ -184,7 +184,7 @@ export default function SortableCtaTable({ sectionKey, rows, callout }: Sortable
             marginLeft: "8px",
             fontSize: "9px",
             fontWeight: 400,
-            background: "rgba(226,232,240,0.06)",
+            background: "color-mix(in srgb, var(--text-primary) 6%, transparent)",
             padding: "1px 5px",
             letterSpacing: "0.04em",
           }}

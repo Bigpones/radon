@@ -57,8 +57,8 @@ export default function FlexTokenBanner() {
         gap: "10px",
         padding: "8px 14px",
         background: expired
-          ? "rgba(232,93,108,0.10)"
-          : "rgba(245,166,35,0.08)",
+          ? "color-mix(in srgb, var(--fault) 10%, transparent)"
+          : "color-mix(in srgb, var(--warning) 8%, transparent)",
         borderLeft: `3px solid ${urgencyColor}`,
         borderBottom: "1px solid var(--line-grid, #1e293b)",
         fontFamily: "var(--font-mono, 'IBM Plex Mono', monospace)",

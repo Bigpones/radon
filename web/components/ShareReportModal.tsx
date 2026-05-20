@@ -157,7 +157,7 @@ export default function ShareReportModal({
             padding: "7px 10px",
             border: "1px solid var(--negative)",
             borderRadius: "3px",
-            background: "rgba(232,93,108,0.06)",
+            background: "color-mix(in srgb, var(--negative) 6%, transparent)",
             fontFamily: "var(--font-mono, monospace)",
             fontSize: "10px",
             color: "var(--negative)",
