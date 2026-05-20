@@ -12,15 +12,28 @@ interface PriceChartProps {
   prices: Record<string, PriceData>;
   /** Override the price key used for charting (e.g. option contract key instead of underlying) */
   priceKey?: string;
+  /** Optional pre-resolved priceData that takes precedence over `prices[chartKey]`.
+   *  Set by the ticker page when the WS stream lacks a `last` for an option
+   *  position so the chart can plot IB's calculated mark instead of the
+   *  default-base mock walk. */
+  priceData?: PriceData | null;
   /** Theme forwarded from the shell — defaults to 'dark' to preserve existing behavior */
   theme?: "dark" | "light";
 }
 
-export default function PriceChart({ ticker, prices, priceKey, theme = "dark" }: PriceChartProps) {
+export default function PriceChart({ ticker, prices, priceKey, priceData: priceDataOverride, theme = "dark" }: PriceChartProps) {
   const chartKey = priceKey ?? ticker;
-  const { data, value, loading, isMid } = usePriceHistory(chartKey, prices);
+  // If the caller pre-resolved priceData (e.g. merged calculated mark in),
+  // expose it under `chartKey` so usePriceHistory sees the same value the
+  // panel does. Memoize to keep the hook's prices ref stable.
+  const effectivePrices = useMemo(() => {
+    if (!priceDataOverride) return prices;
+    return { ...prices, [chartKey]: priceDataOverride };
+  }, [prices, priceDataOverride, chartKey]);
 
-  const priceData = prices[chartKey];
+  const { data, value, loading, isMid, isCalculated } = usePriceHistory(chartKey, effectivePrices);
+
+  const priceData = priceDataOverride ?? prices[chartKey];
   const closePrice = priceData?.close ?? null;
   const positiveColor = useMemo(() => resolveChartSeriesColor("primary"), []);
   const negativeColor = useMemo(() => resolveChartSeriesColor("fault"), []);
@@ -45,7 +58,12 @@ export default function PriceChart({ ticker, prices, priceKey, theme = "dark" }:
       dataTestId="price-chart-panel"
     >
       <div className="price-chart-container">
-        {isMid && (
+        {isCalculated && (
+          <div className="price-chart-mid-badge" aria-label="Chart value is IB's calculated mark (no live trade)">
+            MARK
+          </div>
+        )}
+        {!isCalculated && isMid && (
           <div className="price-chart-mid-badge" aria-label="Chart values are mid price (bid+ask)/2">
             MIDPRICE
           </div>

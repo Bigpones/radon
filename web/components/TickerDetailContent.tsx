@@ -20,10 +20,51 @@ type TabId = "company" | "book" | "chain" | "position" | "order" | "news" | "rat
 /**
  * Resolve the best price data for the shared ticker quote telemetry wrapper.
  * - Stock positions → underlying ticker price
- * - Single-leg option → option contract price (bid/ask from WS)
+ * - Single-leg option → option contract price (bid/ask from WS), with
+ *   `last` falling back to IB's calculated mark (the position's
+ *   `market_price`) when the option is illiquid and the WS stream
+ *   delivers no last/bid (common for thin strikes — only ask reaches
+ *   the relay, so BID/MID/LAST would otherwise read `---`).
  * - Multi-leg → net spread price computed from per-leg WS bid/ask (falls back to underlying)
  * - No position → underlying ticker price
  */
+function mergeCalculatedMark(
+  priceData: PriceData | undefined,
+  position: PortfolioPosition,
+): PriceData | null {
+  const leg = position.legs[0];
+  // `market_price` on the leg is IB's model mark (sync writes it on every
+  // /portfolio/sync). `market_price_is_calculated=true` means it is NOT
+  // a live trade. Surface it as `last` only when the live stream has no
+  // last of its own; never overwrite a real last-trade tick.
+  const fallbackLast =
+    leg?.market_price != null && leg.market_price > 0 ? leg.market_price : null;
+
+  if (!priceData) {
+    if (fallbackLast == null) return null;
+    return {
+      symbol: position.ticker,
+      last: fallbackLast,
+      lastIsCalculated: true,
+      bid: null,
+      ask: null,
+      bidSize: null,
+      askSize: null,
+      volume: null,
+      high: null,
+      low: null,
+      open: null,
+      close: null,
+      timestamp: new Date().toISOString(),
+    } as PriceData;
+  }
+
+  if (priceData.last != null && priceData.last > 0) return priceData;
+  if (fallbackLast == null) return priceData;
+
+  return { ...priceData, last: fallbackLast, lastIsCalculated: true };
+}
+
 function resolveTickerQuoteTelemetry(
   ticker: string,
   position: PortfolioPosition | null,
@@ -33,18 +74,23 @@ function resolveTickerQuoteTelemetry(
     return { priceData: prices[ticker] ?? null };
   }
 
-  // Single-leg option: use option-level prices
+  // Single-leg option: use option-level prices, merged with the
+  // portfolio's calculated mark as a `last` fallback for illiquid
+  // contracts whose WS feed only delivers an ASK.
   if (position.legs.length === 1) {
     const leg = position.legs[0];
     const key = legPriceKey(ticker, position.expiry, leg);
-    if (key && prices[key]) {
-      const strike = leg.strike ? `$${leg.strike}` : "";
-      const type = leg.type === "Call" ? "C" : leg.type === "Put" ? "P" : "";
-      return {
-        priceData: prices[key],
-        priceKey: key,
-        label: `${ticker} ${position.expiry} ${strike} ${type}`,
-      };
+    if (key) {
+      const merged = mergeCalculatedMark(prices[key], position);
+      if (merged) {
+        const strike = leg.strike ? `$${leg.strike}` : "";
+        const type = leg.type === "Call" ? "C" : leg.type === "Put" ? "P" : "";
+        return {
+          priceData: merged,
+          priceKey: key,
+          label: `${ticker} ${position.expiry} ${strike} ${type}`,
+        };
+      }
     }
   }
 
@@ -131,7 +177,13 @@ export default function TickerDetailContent({
           <TickerQuoteTelemetry priceData={priceData} label={priceLabel} />
         </div>
         <div className="ticker-detail-hero-right">
-          <PriceChart ticker={ticker} prices={prices} priceKey={chartPriceKey} theme={theme} />
+          <PriceChart
+            ticker={ticker}
+            prices={prices}
+            priceKey={chartPriceKey}
+            priceData={priceData}
+            theme={theme}
+          />
         </div>
       </div>
 

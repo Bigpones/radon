@@ -13,23 +13,26 @@ import { generateMockHistory, getBasePrice, nextMockPrice } from "./mockPriceGen
  *   2. mid = (bid + ask) / 2 — when last is absent but both sides are quoted
  *   3. null — no usable price
  *
- * Returns `{ price, isMid }` so callers can surface a visual indicator when
- * falling back to mid.
+ * Returns `{ price, isMid, isCalculated }` so callers can surface a visual
+ * indicator when falling back to mid, and freeze the chart (no random-walk
+ * mock ticks) when the value is IB's model mark rather than a live trade.
  */
-export function resolveChartPrice(pd: PriceData | undefined): { price: number | null; isMid: boolean } {
-  if (!pd) return { price: null, isMid: false };
+export function resolveChartPrice(
+  pd: PriceData | undefined,
+): { price: number | null; isMid: boolean; isCalculated: boolean } {
+  if (!pd) return { price: null, isMid: false, isCalculated: false };
 
   // Last-trade price takes full priority
   if (pd.last != null && pd.last > 0) {
-    return { price: pd.last, isMid: false };
+    return { price: pd.last, isMid: false, isCalculated: pd.lastIsCalculated === true };
   }
 
   // Mid fallback — requires both sides of the quote
   if (pd.bid != null && pd.ask != null) {
-    return { price: (pd.bid + pd.ask) / 2, isMid: true };
+    return { price: (pd.bid + pd.ask) / 2, isMid: true, isCalculated: false };
   }
 
-  return { price: null, isMid: false };
+  return { price: null, isMid: false, isCalculated: false };
 }
 
 interface PriceHistoryResult {
@@ -38,13 +41,25 @@ interface PriceHistoryResult {
   loading: boolean;
   /** True when chart values are derived from mid price (no last-trade available). */
   isMid: boolean;
+  /** True when the displayed value is IB's calculated mark, not a live trade. */
+  isCalculated: boolean;
 }
 
 /**
  * Accumulates a LivelinePoint[] from real-time price updates.
- * Seeds with mock history on mount so the chart isn't empty.
- * Falls back to mock ticks when no real price arrives for >3s.
+ *
+ * - When a real WS tick is available (last or mid), seed a flat history at
+ *   that value and append real updates as they arrive.
+ * - When the value is IB's calculated mark (`lastIsCalculated=true`,
+ *   typical for illiquid options that only return ASK), seed a flat
+ *   history at that mark and DO NOT mock-walk — the value rarely changes
+ *   so animating it would lie to the user (the ~$99 random-walk-from-100
+ *   bug fixed 2026-05-20).
+ * - When no real or calculated price exists yet, leave the chart empty
+ *   (loading=true) rather than fabricate one.
  */
+const MOCK_WALK_FALLBACK = false; // intentionally off — mock walk masks real outages.
+
 export function usePriceHistory(
   ticker: string | null,
   prices: Record<string, PriceData>,
@@ -53,6 +68,7 @@ export function usePriceHistory(
   const [data, setData] = useState<LivelinePoint[]>([]);
   const [value, setValue] = useState(0);
   const [isMid, setIsMid] = useState(false);
+  const [isCalculated, setIsCalculated] = useState(false);
   const lastRealRef = useRef(0);
   const mockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPriceRef = useRef(0);
@@ -65,17 +81,38 @@ export function usePriceHistory(
       setData([]);
       setValue(0);
       setIsMid(false);
+      setIsCalculated(false);
       return;
     }
 
-    const { price: resolvedBase, isMid: baseMid } = resolveChartPrice(prices[ticker]);
-    const base = resolvedBase ?? getBasePrice(ticker);
-    const seed = generateMockHistory(base, 60, 1, hashStr(ticker));
+    const { price: resolvedBase, isMid: baseMid, isCalculated: baseCalc } = resolveChartPrice(prices[ticker]);
+
+    if (resolvedBase == null) {
+      // No real price — start empty. The mock-walk path is disabled to
+      // avoid surfacing fictitious traces (e.g. illiquid option keys
+      // landed on the default $100 base and walked from there).
+      setData([]);
+      setValue(0);
+      setIsMid(false);
+      setIsCalculated(false);
+      lastPriceRef.current = 0;
+      lastRealRef.current = 0;
+      return;
+    }
+
+    // Seed with a flat line at the resolved value rather than a random
+    // walk. We have a real anchor; jittering around it is misleading.
+    const now = Date.now() / 1000;
+    const seed: LivelinePoint[] = [];
+    for (let i = 59; i >= 0; i--) {
+      seed.push({ time: now - i, value: resolvedBase });
+    }
     setData(seed);
-    setValue(seed[seed.length - 1]?.value ?? base);
+    setValue(resolvedBase);
     setIsMid(baseMid);
-    lastPriceRef.current = seed[seed.length - 1]?.value ?? base;
-    lastRealRef.current = 0;
+    setIsCalculated(baseCalc);
+    lastPriceRef.current = resolvedBase;
+    lastRealRef.current = baseCalc ? 0 : now; // calculated marks don't count as "real" updates
 
     return () => {
       if (mockTimerRef.current) clearTimeout(mockTimerRef.current);
@@ -86,11 +123,12 @@ export function usePriceHistory(
   useEffect(() => {
     if (!ticker) return;
     const pd = prices[ticker];
-    const { price: resolved, isMid: mid } = resolveChartPrice(pd);
+    const { price: resolved, isMid: mid, isCalculated: calc } = resolveChartPrice(pd);
     if (resolved == null) return;
+    if (resolved === lastPriceRef.current) return; // no-op append
 
     const now = Date.now() / 1000;
-    lastRealRef.current = now;
+    if (!calc) lastRealRef.current = now;
     lastPriceRef.current = resolved;
 
     setData((prev) => {
@@ -99,41 +137,38 @@ export function usePriceHistory(
     });
     setValue(resolved);
     setIsMid(mid);
-  }, [ticker, prices[ticker ?? ""]?.last, prices[ticker ?? ""]?.bid, prices[ticker ?? ""]?.ask, maxPoints]); // eslint-disable-line react-hooks/exhaustive-deps
+    setIsCalculated(calc);
+  }, [ticker, prices[ticker ?? ""]?.last, prices[ticker ?? ""]?.bid, prices[ticker ?? ""]?.ask, prices[ticker ?? ""]?.lastIsCalculated, maxPoints]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Mock tick fallback when no real data arrives
+  // Optional mock-walk fallback. Disabled by default — a recurring class
+  // of bugs comes from chart consumers misreading mock data as real
+  // (most recently the USAX option page showing $99.41 derived from the
+  // default $100 base price for an unknown option key).
   useEffect(() => {
-    if (!ticker) return;
+    if (!MOCK_WALK_FALLBACK || !ticker) return;
 
     const tick = () => {
       if (tickerRef.current !== ticker) return;
-
       const now = Date.now() / 1000;
       const sinceReal = now - lastRealRef.current;
-
-      // Only generate mock ticks if no real update in 3s
       if (sinceReal > 3 || lastRealRef.current === 0) {
         const newPrice = nextMockPrice(lastPriceRef.current);
         lastPriceRef.current = newPrice;
-
         setData((prev) => {
           const next = [...prev, { time: now, value: newPrice }];
           return next.length > maxPoints ? next.slice(next.length - maxPoints) : next;
         });
         setValue(newPrice);
       }
-
       mockTimerRef.current = setTimeout(tick, 1000);
     };
-
     mockTimerRef.current = setTimeout(tick, 1000);
-
     return () => {
       if (mockTimerRef.current) clearTimeout(mockTimerRef.current);
     };
   }, [ticker, maxPoints]);
 
-  return { data, value, loading: data.length === 0, isMid };
+  return { data, value, loading: data.length === 0, isMid, isCalculated };
 }
 
 /** Simple string hash for deterministic seeding per ticker. */
