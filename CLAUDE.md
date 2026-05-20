@@ -99,12 +99,13 @@ All FastAPI routes JWT-protected; Next.js by `web/middleware.ts`; WebSocket via 
 
 Auto-recovery (docker mode): port + CLOSE_WAIT detection at startup (poll 45s); subprocess errors trigger health check first — only restart if port not listening or CLOSE_WAIT. Client ID collisions, VOL errors, transient timeouts do NOT trigger restart.
 
-**2FA-aware restart with exponential backoff + cross-process push lock.** After restart, IB Gateway sits at IBKR Mobile push prompt with API socket open — `port_listening:true` falsely reports success. Two gates govern restarts:
+**2FA-aware restart with exponential backoff + cross-process push lock.** After restart, IB Gateway sits at IBKR Mobile push prompt with API socket open — `port_listening:true` falsely reports success. Three gates govern restarts:
 
 1. **Cross-process 2FA push lock** (`scripts/utils/ib_2fa_lock.py`, default `/var/lib/radon/ib-2fa-push-lock.json`, 10-min TTL). Every restart path that fires an IBKR Mobile push — `scripts/api/ib_gateway.restart_ib_gateway`, `scripts/ib_watchdog.trigger_restart` — acquires the lock first. While another holder owns it, the request is REJECTED with `reason="2fa_push_in_flight"`. This is the structural defence against stacked-push rejection: IBKR's backend cannot reconcile multiple pending push tokens, so the user sees "unsuccessful" on every approval when pushes pile up.
 2. **In-memory backoff ladder** (per-process, `_restart_state`). `restart_ib_gateway()` runs `managedAccounts()` probe post-restart; non-empty resets backoff, empty advances (1m → 2m → 5m → 15m → 30m → 60m, capped). Refuses fresh restarts inside window.
+3. **Watchdog stuck-2FA self-heal (added 2026-05-20).** `scripts/ib_watchdog.is_stuck_awaiting_2fa()` classifier fires when `auth_state=awaiting_2fa` AND `push_lock_active=false` AND `next_attempt_in_secs<=0`. After 3 consecutive stuck cycles (≈3 min) the watchdog acquires the push lock and triggers a fresh `systemctl restart radon-ib-gateway.service`, which sends a new IBKR Mobile push. Eliminates the human-in-the-loop dependency where the system would sit stuck overnight waiting for an operator to click "Force 2FA Push" on /admin. The new `stuck_2fa_count` on `WatchdogState` freezes (does not reset) when a push is in flight or a backoff retry is scheduled — so the next cycle after lock-release acts promptly. Counter resets to 0 only on `auth_state=authenticated`.
 
-`/health` exposes `auth_state` (`authenticated | awaiting_2fa | unreachable | unknown | remote`) and `restart_backoff` (now including `push_lock: {holder, expires_at, remaining_secs, reason}`). **`POST /ib/reset-backoff`** is the operator escape hatch after manually approving 2FA — clears BOTH the in-memory backoff AND the cross-process push lock so the next legitimate restart proceeds immediately.
+`/health` exposes `auth_state` (`authenticated | awaiting_2fa | unreachable | unknown | remote`), `service_state` (`healthy | unhealthy | starting | unknown`), `upstream_dead`, and `restart_backoff` (including `push_lock: {holder, expires_at, remaining_secs, reason}`, `attempt_count`, `next_attempt_in_secs`). The Next.js footer reads these via `useIBStatusContext().displayStatus` (polls `/api/admin/health` every 15s) — added 2026-05-20 to fix the recurring "footer says CONNECTED while banner says degraded" contradiction; the prior WS-relay flag stayed "open" through half-open 2FA prompts (TCP alive, API mute). **`POST /ib/reset-backoff`** is the operator escape hatch after manually approving 2FA — clears BOTH the in-memory backoff AND the cross-process push lock so the next legitimate restart proceeds immediately.
 
 IBC-side relogin on 2FA timeout is **disabled** (`TWOFA_TIMEOUT_ACTION: exit`, `RELOGIN_AFTER_TWOFA_TIMEOUT: "no"` in `docker/ib-gateway/docker-compose.yml`). VPS counterpart at `/home/radon/radon-cloud/docker-compose.yml` does not set these vars — IBC default is `no`, so it's already safe. **Do not re-enable IBC-side relogin** anywhere; it bypasses the push lock.
 
@@ -118,16 +119,15 @@ See `scripts/api/ib_gateway.py:restart_ib_gateway`, `scripts/ib_watchdog.py:run_
 |---|---|
 | 0–9 | FastAPI IBPool (sync=3, orders=4, data=5) |
 | 10–19 | WS relay |
-| 20–49 | Subprocess scripts — **always `client_id="auto"`** |
+| 20–49 | Subprocess scripts AND monitor_daemon handlers — **always `client_id="auto"`** |
 | 50–69 | Scanners |
-| 70–89 | Daemons (fill=70, exit=71) |
 | 90–99 | CLI |
 
-**On-demand scripts MUST use `client_id="auto"`. Never hardcode in 20–49.**
+**On-demand scripts MUST use `client_id="auto"`. Never hardcode in 20–49.** As of 2026-05-20 monitor_daemon handlers (`fill_monitor`, `exit_orders`, `journal_sync`) also use `client_id="auto"` — the prior 70/71/72 hardcoded daemon range left them one CLOSE_WAIT socket away from a stuck "client id already in use" error on every transient gateway hiccup. The auto-allocator in `scripts/clients/ib_client.py:_connect_auto_allocate` rotates around in-use IDs.
 
 ### Two-Mode Deployment
 
-Both modes read/write the **same Turso DB** (`libsql://radon-joemccann.aws-us-west-2.turso.io`) via embedded replica at `data/replica.db`. JSON files in `data/` are written alongside as fallback.
+Both modes read/write the **same Turso DB** (`libsql://radon-joemccann.aws-us-west-2.turso.io`) **direct-to-cloud — no embedded replica anywhere as of 2026-05-20**. JSON files in `data/` are written alongside as fallback. The libsql embedded-replica architecture (`data/replica.db`) was retired after a same-day pair of incidents: first multi-writer-per-host WAL checkpoint contention (radon-cloud `741cfc6`), then single-writer WAL-frame conflicts between the replica owner and direct-cloud writers (radon-cloud `2c46232`). All Radon processes (`radon-{nextjs,api,relay,monitor,newsfeed}`) now run with `Environment=RADON_DB_NO_REPLICA=1`. Reads cost +30–60 ms cloud round-trip (absorbed by SWR caching); WAL contention is structurally impossible. See `feedback_libsql_replica_one_writer.md`.
 
 - `scripts/cloud.sh` → `RADON_MODE=hetzner`. Schedulers run as systemd on Hetzner (`radon-{api,monitor,relay,refresh,nextjs}`); laptop runs only Next.js + newsfeed. `app.radon.run` keeps serving when laptop is closed.
 - `scripts/local.sh` → `RADON_MODE=local`. Laptop launchd plists own all schedulers.
@@ -204,6 +204,11 @@ Covered routes: `menthorq/cta`, `journal`, `discover`, `flow-analysis`, `blotter
    - Impls: `computeNetOptionQuote()`, `ComboOrderForm.netPrices`, `resolveOrderPriceData()`.
 5. **Trace path before fixing:** chain builder → `/api/orders/place` → FastAPI bridge → `scripts/ib_place_order.py`. Identify whether bug is UI state, payload semantics, or IB combo behavior.
 6. **Required regressions:** unit (action/ratio/net-price), browser (displayed net + submitted payload).
+7. **Closing-trade detection (added 2026-05-20, commit e55b643).** `OrderRiskLeg.coveringLongContracts` tells the risk model how many contracts of the exact same option (same symbol/expiry/strike/right) are already held LONG. SELL with `coveringLongContracts >= effectiveContracts` short-circuits to `maxLoss: 0` (pure close). SELL with `coveringLongContracts < effectiveContracts` flags only the excess (M − N) contracts as naked. Wired in `OrderTab.NewOrderForm.orderSummary` whenever the user SELLs a held LONG single-leg option. Without this, every SELL-to-close of a long call triggered "GATE 1: UNDEFINED RISK — Uncovered short call" false-positive. Symmetric for puts. See `web/lib/orderRisk.ts:36-50` (field), `:187-219` (single-leg short-circuit), `:277-285` (multi-leg discount), `:311-315` (`effectiveNakedContracts` helper).
+
+### IB error message rendering
+
+IBKR rejection text embeds literal `<br>` tokens as soft line breaks ("Cannot have open orders on both sides...for a`<br>` contract..."). `web/lib/orderError.ts:formatOrderError` normalises every variant (`<br>`, `<br/>`, `<br />`, `<BR>`) to a real `\n` BEFORE the prefix-stripping branch. `.order-error-detail` in `globals.css` uses `white-space: pre-line` so the newlines render as line breaks. Never use `dangerouslySetInnerHTML` for IB text — the regex+pre-line path keeps `details: string[]` a plain string array that e2e selectors and logs can match against. Added 2026-05-20.
 
 ## Cancel / Modify Failure Propagation
 
@@ -238,6 +243,10 @@ Strict ordered fallback, MOST → LEAST specific:
 5. **today** ← brand-new positions land here so same-day P&L branch fires
 
 **Never use a per-ticker blotter fallback** — different contracts have different open dates. Regression test: `test_combo_entry_date.py`.
+
+### Position cache refresh (`reqPositions` before reading)
+
+`ib_insync.positions()` returns the library's in-memory cache. TWS push events update individual fields piecewise — `pos.position` (size) updates immediately when a fill clears but `pos.avgCost` lags by a tick or two while TWS recomputes the running VWAP server-side. `IBClient.get_positions()` therefore calls `self._ib.reqPositions()` + `sleep(1)` BEFORE reading the cache, draining pending updates so size and avgCost are consistent in the returned snapshot. Without this, every portfolio sync that ran in the seconds after a new fill wrote a mismatched `(size_new, avg_old)` pair into `portfolio.json` and Turso — manifested as "I added 25 contracts but my AVG ENTRY didn't change". Opt out via `get_positions(refresh=False)` for tight read loops where a parent call already drained. `try/except` around the refresh so a gateway hiccup falls back to the cache rather than crashing the sync. Tests: `test_ib_client.py::TestPortfolioOperations::test_get_positions_forces_refresh_before_reading_cache` + two siblings. Added 2026-05-20 (commit 5d10def).
 
 ### Per-Leg P&L
 `Leg P&L = sign × (|MV| − |EC|)`. Sum = position P&L. Impl: `LegRow` in `PositionTable.tsx`.
@@ -353,6 +362,19 @@ Module split under `scripts/newsfeed/` (`paths`, `browser`, `auth`, `cdp`, `extr
 
 ---
 
+## Theme System
+
+- **Single source of truth:** `web/lib/ThemeContext.tsx` (`useTheme()`). Never duplicate theme state in a component.
+- **Pre-paint bootstrap:** `web/components/ThemeBootstrap.tsx` mounts in `<head>` and synchronously sets `data-theme` on `<html>` from `localStorage.theme` or `prefers-color-scheme` BEFORE React hydrates. Eliminates the flash-of-wrong-theme that the `useEffect`-based init suffered. Also frees `/kit`, `app/error.tsx`, `app/global-error.tsx`, and `app/[ticker]/not-found.tsx` from being locked to whatever the SSR root layout hardcoded.
+- **SSR theme is pinned to `"dark"`** in `ThemeContext.tsx:SSR_THEME`. The provider's initial `useState` MUST return this constant — never read localStorage/matchMedia/`data-theme` during first render, or React #418 hydration mismatch fires for every light-theme user (descendants like `ClerkThemeBridge`, `WorkspaceShell`'s `actionTone`, `kit/page`'s Sun/Moon icon all branch on `theme`). A post-mount `useEffect` reconciles the real value via `readClientTheme()`. See commit 68c6e57 + `tests/theme-provider-hydration.test.tsx`.
+- **Brand tokens via `color-mix(in srgb, var(--token) X%, transparent)`** — never bake brand colors as raw `rgba(R,G,B,α)` literals. Raw rgba doesn't shift between light/dark CSS variables; `color-mix` does. Tailwind colors (`green-500 #22C55E`, `red-500 #EF4444`) are NOT brand and must be replaced with `var(--positive)` / `var(--negative)`. See `feedback_theme_tokens_and_pre_hydration.md`.
+- **`<meta name="theme-color">` is owned by Next.js viewport metadata** — declare both light/dark variants via `viewport.themeColor: [{ media, color }, ...]`. Do NOT mutate the meta tag from client code (an earlier ThemeBootstrap attempt did this and broke hydration).
+- **`<head>` and `data-theme` on `<html>`** — root layout sets `suppressHydrationWarning` on `<html>` and lets `ThemeBootstrap` paint the attribute. Do not hardcode `data-theme="dark"` in JSX.
+- **IB Gateway status display** — `IBStatusContext` exposes a single `displayStatus: "connected" | "awaiting_2fa" | "unhealthy" | "unreachable" | "ib_offline" | "relay_offline"` derived from BOTH the WS-relay edge AND `/api/admin/health` (polled every 15s). Sidebar footer and MobileAppBar chip both read this — they can no longer disagree. `.status-dot-warn` / `.mobile-app-bar__status--warn` amber states for `awaiting_2fa`.
+- **ETF Company tab filter** — `CompanyTab.tsx` hides equity-only stats (Market Cap when missing, P/E, EPS, Next Earnings) when `uw_info.issue_type` matches `ETF|ETN|FUND|MUTUAL|REIT`. Drops Div Yield too for `INDEX|IDX`. Avoids the "bunch of empty `---` rows" UX on tickers like USAX.
+
+---
+
 ## High-Throughput Architecture
 
 500+ symbols, <500ms signal-to-order.
@@ -445,10 +467,11 @@ Reference: `reports/goog-evaluation-2026-03-04.html`. Trade Spec sections: Heade
 | `data/portfolio.json` | Open positions, bankroll, exposure |
 | `data/trade_log.json` | **Append-only** trade journal |
 | `data/watchlist.json` | Surveillance tickers |
-| `data/replica.db` | Turso embedded replica (gitignored) |
 | `data/tag_taxonomy.json` | Auto-growing UPPERCASE tag list (force-tracked) |
 | `data/{vcg,gex}.json` | Scan caches |
 | `data/price_history_cache/` | Auto-pruned at 500 |
+
+`data/replica.db` (the libsql embedded replica) was decommissioned 2026-05-20. The file must NOT exist on any host that runs Radon — see `feedback_libsql_replica_one_writer.md` and the "Two-Mode Deployment" section above. If the file appears in `data/` (a stray from older versions or a manual sync attempt) it is safe to delete; nothing reads from it.
 
 ---
 

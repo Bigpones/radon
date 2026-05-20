@@ -82,7 +82,7 @@ Open `http://localhost:3000`. Clerk auto-bypasses on localhost in non-production
 
 **Storage**
 
-- Turso libSQL cloud DB (canonical) with a 60s embedded replica per host
+- Turso libSQL cloud DB (canonical). Every Radon process talks directly to cloud — no embedded replica anywhere (retired 2026-05-20; see [`docs/cloud-services.md`](docs/cloud-services.md))
 - JSON files in `data/` as fallback / DR archive
 - Hetzner-hosted `media.radon.run` for newsfeed images
 
@@ -92,16 +92,20 @@ Full architecture and the Phase 0-6 migration history live in [`docs/cloud-servi
 
 Things that shipped in the last few weeks and are worth knowing about:
 
+- **No-replica DB architecture (2026-05-20).** Every Radon process now goes direct-to-cloud (`RADON_DB_NO_REPLICA=1` on every systemd unit). The libsql embedded-replica model (`data/replica.db`) was retired after two same-day incidents: multi-writer WAL contention then single-writer frame conflicts. Reads cost +30–60 ms cloud round-trip, absorbed by SWR caching.
+- **Stuck-awaiting-2FA self-heal (2026-05-20).** `ib_watchdog.is_stuck_awaiting_2fa()` fires a fresh IBKR Mobile push after 3 cycles of `auth_state=awaiting_2fa` with no push lock holder. Eliminates the human-in-the-loop dependency where the system used to sit stuck overnight.
+- **Authoritative footer IB status (2026-05-20).** Sidebar + MobileAppBar derive a single `displayStatus` (`CONNECTED` / `AWAITING 2FA` / `DEGRADED` / `UNREACHABLE` / `OFFLINE` / `RELAY OFFLINE`) from FastAPI `/health` rather than the WS-relay's stale `ib_connected` flag. Footer and banner can no longer contradict each other.
+- **monitor_daemon handlers on `client_id="auto"` (2026-05-20).** `fill_monitor`, `exit_orders`, `journal_sync` rotate across `SUBPROCESS_ID_RANGE` instead of hardcoded 70/71/72 — eliminates the half-open-socket "client id already in use" failure mode.
+- **Closing-trade exception in risk model (2026-05-20).** `OrderRiskLeg.coveringLongContracts` lets the risk panel recognise a SELL of a held LONG as a close (or partial close) instead of flagging it UNBOUNDED. Symmetric for puts. SELL beyond held quantity flags only the excess.
 - **Autonomous Hetzner timers** for `vcg-scan`, `portfolio-sync`, and `cta-sync` replaced the previous browser-driven refresh model. Data stays fresh even when no tab is open.
 - **Service-health watchdog** with four buckets (`intraday`, `continuous`, `daily`, `error`), Pushover routing (P1 only), cooldown, hysteresis, and `python -m scripts.watchdog ack <service>` to silence noise.
-- **Replica watchdog** auto-heals libsql `WalConflict` errors on the Next.js embedded replica. Long-running writers must set `RADON_DB_NO_REPLICA=1`.
 - **Banner categories.** `scheduled` services flip red on stale; `on-demand` services show an amber dormant chip and are excluded from alerting.
 - **`/usr/local/bin/radon`** operator CLI auto-enumerates every loaded `radon-*` unit, so new timers don't require script edits. Installed durably by `setup-vps.sh`.
 - **Cash flow throttle backoff.** IBKR Flex codes 1001 / 1018 / 1019 trip an exponential circuit breaker (24h to 168h cap) so the script doesn't perpetuate a sliding-window throttle.
 - **CRI history zoom.** The CRI spread chart now carries ~251 trading days of history with a brush-driven zoom UI and preset range chips.
 - **Banner humanization.** `service_health.last_error` JSON is rewritten into operator-friendly copy before render.
 - **`parseScanTime`** normalises naive Python ISO timestamps on the JS side so date-day drift can't surface in the UI.
-- **2FA-aware IB Gateway restart** with exponential backoff and `auth_state` reporting (`authenticated`, `awaiting_2fa`, `unreachable`). `POST /ib/reset-backoff` is the operator escape hatch.
+- **2FA-aware IB Gateway restart** with exponential backoff, cross-process push lock, and `auth_state` reporting. `POST /ib/reset-backoff` is the operator escape hatch.
 
 ## What's where
 

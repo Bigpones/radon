@@ -96,8 +96,45 @@ if health.ib_gateway.port_listening and health.ib_gateway.upstream_dead:
 write_state('ib_watchdog_degraded_count', 0)
 ```
 
-State persists in Turso (via existing `service_health.extra` or a new
-small `daemon_state` table — pick whichever feels lower-overhead).
+### Update 2026-05-20: stuck-awaiting-2FA branch added
+
+The "let the existing 2FA-aware restart logic handle it" assumption above
+turned out to be wrong. The FastAPI `restart_ib_gateway()` backoff is only
+consulted when **something else** triggers a restart — there's no proactive
+heartbeat that advances it. On a fresh FastAPI start (`attempt_count=0`,
+`push_lock=null`), the system would sit at `awaiting_2fa` forever waiting
+for an operator to click "Force 2FA Push" on `/admin`. The user
+documented this as "the IB-connected-but-banner-degraded contradiction
+keeps happening".
+
+So `ib_watchdog` now handles BOTH failure modes (commit 68c6e57):
+
+1. **`is_api_hang()`** — original `upstream_dead && port_listening` signature.
+   Unchanged threshold of 3 cycles, restarts via `systemctl restart`.
+2. **`is_stuck_awaiting_2fa()`** — new. Fires when ALL of:
+   - `auth_state == "awaiting_2fa"`
+   - `restart_backoff.push_lock` is null (nothing in flight)
+   - `restart_backoff.next_attempt_in_secs <= 0` (no scheduled retry)
+
+   Threshold = 3 cycles (`DEFAULT_STUCK_2FA_THRESHOLD`). On the third
+   cycle the watchdog acquires the cross-process 2FA push lock and
+   triggers `systemctl restart radon-ib-gateway.service` — which sends
+   a fresh IBKR Mobile push. Counter freezes (does NOT reset) when a
+   push lock holder appears or a backoff retry gets scheduled — that
+   way the next cycle after the lock clears acts immediately rather
+   than warming up from zero again. Counter only resets on
+   `auth_state=authenticated`.
+
+The push lock is the structural defence against stacked-push rejection
+(IBKR rejects every approval when multiple pushes are pending). See
+`feedback_2fa_push_stacking.md`. New `stuck_2fa_count` field on
+`WatchdogState`; tests in `test_ib_watchdog_2fa_lock.py` cover (a)
+push-lock-held case, (b) backoff-scheduled case, (c) threshold-fire
+case, plus the existing api-hang regressions.
+
+State persists in `/var/lib/radon/ib-watchdog-state.json` (the
+implementation chose a file over Turso for v1 — zero migration, survives
+Turso outages). Per-process state, not Turso row.
 
 ### Why 3 cycles × 60s
 
@@ -133,13 +170,14 @@ small `daemon_state` table — pick whichever feels lower-overhead).
    we've seen the degradation, that seems strictly better than a 13+
    minute hang — but worth confirming.
 2. **Should the daily auto-logoff at 23:45 UTC also be addressed
-   here?** The right fix is in IBKR account settings (Pre-set Logoff
-   Time). If you'd rather just absorb it via this watchdog: yes, it'll
-   handle the daily case too — the post-logoff `awaiting_2fa` loop
-   isn't `upstream_dead`, so the watchdog will skip it (good, because
-   pinging IBKR's auth servers harder won't help). But the watchdog
-   could be extended to send a Pushover alert when `auth_state ==
-   'awaiting_2fa'` for >5 min.
+   here?** Resolved 2026-05-20: yes. The new `is_stuck_awaiting_2fa()`
+   classifier above now fires a fresh IBKR Mobile push after 3 cycles
+   of stuck-without-recovery. The user only has to tap Approve once
+   per cycle instead of remembering to click "Force 2FA Push" on the
+   admin panel. A Pushover alert on entering stuck-2FA could be a
+   future enhancement, but the structural fix obsoletes the need to
+   wake the operator up — they'll get the push notification on their
+   phone via IBKR Mobile directly.
 3. **Where should the state live?** Turso `service_health.extra` is
    convenient (already plumbed) but conflates worker state with
    health metadata. A small `daemon_state` table is cleaner. Lean

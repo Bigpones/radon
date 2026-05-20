@@ -9,7 +9,7 @@ This document covers Radon's two-mode architecture introduced in Phase 0–6 of 
                        radon-joemccann.aws-us-west-2
                                   ▲
                 ┌─────────────────┴─────────────────┐
-                │   embedded replica.db sync ~60s   │
+                │   direct-to-cloud, no replica     │
                 ▼                                   ▼
          LAPTOP dev process                 HETZNER production (5.78.148.38)
          localhost:3000 (Next.js)           app.radon.run (Caddy → radon-nextjs)
@@ -20,7 +20,7 @@ This document covers Radon's two-mode architecture introduced in Phase 0–6 of 
                                             media.radon.run (Caddy static)
 ```
 
-- **Database**: Turso (libSQL) — every Next.js / FastAPI / scheduler process holds a SQLite-fast embedded replica, writes go to cloud and stream back.
+- **Database**: Turso (libSQL) — every Radon process talks **directly** to the cloud DB for both reads and writes. `RADON_DB_NO_REPLICA=1` is set on every systemd unit (radon-nextjs, radon-api, radon-relay, radon-monitor, radon-newsfeed). The embedded-replica architecture (`data/replica.db`) was retired 2026-05-20 after two same-day incidents: multi-writer WAL checkpoint contention (radon-cloud `741cfc6`) followed by single-writer frame conflicts between the replica owner and direct-cloud writers (radon-cloud `2c46232`). The libsql embedded-replica model only works when ONE host has exactly ONE writer; Radon's split between Node and Python writers can't satisfy that constraint. Reads cost +30–60 ms cloud round-trip, absorbed by SWR caching. See `feedback_libsql_replica_one_writer.md` for the full failure-mode catalog.
 - **Media**: Hetzner-hosted Caddy serves `https://media.radon.run`; the laptop's newsfeed scraper rsyncs new images over Tailscale.
 - **Schedulers**: laptop launchd plists (local mode) OR Hetzner host systemd services (cloud mode). The `docker/services/` directory in this repo is a containerized alternative we designed but did not deploy — production currently uses host-installed services at `/home/radon/radon-cloud/services/*.service`.
 - **Self-contained**: themarketear.com newsfeed scraper is now a headless Playwright flow that runs on either the laptop or Hetzner. No magic-link or Chrome Debug.app dependency.
@@ -100,16 +100,18 @@ The same SSH public key is authorized on both routes — `~/.ssh/authorized_keys
 /home/radon/
 ├─ radon/                    (git checkout — main branch, fast-forwarded by CI)
 │  ├─ web/.next              (Next.js compile-mode build, regenerated each deploy)
-│  ├─ scripts/               (Python schedulers, dual-write to Turso)
-│  └─ data/replica.db        (libSQL embedded replica)
+│  └─ scripts/               (Python schedulers, direct-to-cloud writes via libsql client)
 └─ radon-cloud/
    ├─ .env                   (TURSO_DB_URL, TURSO_AUTH_TOKEN, RADON_MODE=hetzner, …)
    ├─ caddy/Caddyfile        (app.radon.run + media.radon.run)
    ├─ media/                 (rsync target for newsfeed images)
    ├─ scripts/deploy.sh      (health-gated CI deploy)
-   ├─ services/*.service     (radon-{nextjs,api,relay,monitor,refresh,ib-gateway})
+   ├─ services/*.service     (radon-{nextjs,api,relay,monitor,refresh,ib-gateway},
+   │                          every unit has Environment=RADON_DB_NO_REPLICA=1)
    └─ docker-compose.yml     (ib-gateway container)
 ```
+
+`data/replica.db` is intentionally absent — the embedded-replica architecture was retired 2026-05-20. If the file appears on disk (stray from a pre-migration host), it is safe to `rm` — nothing reads from it.
 
 Every `radon-*.service` uses `EnvironmentFile=/home/radon/radon-cloud/.env` so a single edit propagates to all schedulers. Restart with `sudo systemctl restart radon-{nextjs,api,relay,monitor}`.
 
@@ -181,10 +183,10 @@ marked deprecated. Don't extend them.
 
 | Scenario | Recovery |
 |----------|----------|
-| Cold-start a new laptop | Clone repo, `bun install`, set `TURSO_DB_URL` + `TURSO_AUTH_TOKEN`, run `bun run db:migrate`, then `scripts/cloud.sh`. The replica file rebuilds on first read. |
-| Cold-start a new VPS | `docker compose up -d` against `docker/ib-gateway/docker-compose.yml`, `docker/services/docker-compose.yml`. Laptop's `scripts/cloud.sh` flips IB host to the new VPS. |
-| Replica corruption | `rm data/replica.db data/replica.db-info` then restart Next.js / FastAPI — first read re-syncs from cloud (~5s). |
-| Turso outage | Read paths fall through to JSON files (dual-write retains them). Writes queue locally and replay when cloud returns. |
+| Cold-start a new laptop | Clone repo, `bun install`, set `TURSO_DB_URL` + `TURSO_AUTH_TOKEN`, run `bun run db:migrate`, then `scripts/cloud.sh`. No replica file to seed — every process talks directly to the cloud DB. |
+| Cold-start a new VPS | `docker compose up -d` against `docker/ib-gateway/docker-compose.yml`. `setup-vps.sh` installs every `radon-*.service` from `radon-cloud/services/` (which all set `Environment=RADON_DB_NO_REPLICA=1`). Laptop's `scripts/cloud.sh` flips IB host to the new VPS. |
+| Stale `data/replica.db` from a pre-2026-05-20 host | `rm data/replica.db*` — nothing reads from it anymore. The libsql client opens cloud connections regardless of whether the file exists. |
+| Turso outage | Read paths fall through to JSON files (dual-write retains them). Writes queue in the libsql client and replay when cloud returns. |
 | Hetzner outage | Switch to `scripts/local.sh`. Laptop becomes self-sufficient against local Docker IB Gateway. |
 
 ## Health & observability
@@ -192,12 +194,14 @@ marked deprecated. Don't extend them.
 ```bash
 # Laptop
 curl http://localhost:8321/health | jq          # FastAPI + IB Gateway
-sqlite3 data/replica.db 'SELECT service, state, updated_at FROM service_health'
+
+# Query Turso directly (no replica — all reads round-trip)
+PYTHONPATH=scripts python3.13 -c "from db.client import get_db; \
+    print(get_db().execute('SELECT service, state, updated_at FROM service_health').rows)"
 
 # Hetzner
-ssh radon@ib-gateway 'docker compose -f /home/radon/radon-cloud/services/docker-compose.yml logs --tail 50'
-ssh radon@ib-gateway 'docker exec radon-services systemctl list-timers --all'
-ssh radon@ib-gateway 'docker exec radon-services journalctl -u radon-cri-scan --since "1 hour ago"'
+ssh radon@ib-gateway 'systemctl list-units "radon-*"'
+ssh radon@ib-gateway 'journalctl -u radon-api --since "1 hour ago"'
 ```
 
 Service health for every dual-writing scheduler lands in the `service_health` table; the dashboard's status strip can render this without scraping logs.
@@ -211,16 +215,6 @@ The migration was implemented as dual-write at every step — every prior JSON r
 3. Restart Next.js + FastAPI.
 
 The `data/*.json` files keep advancing on every cycle, so reverting is a no-data-loss change.
-
-## Replica path & disk pressure
-
-`data/replica.db` grows with every write. Plan a periodic vacuum + retention policy when the file exceeds ~100 MB:
-
-```bash
-sqlite3 data/replica.db 'VACUUM; PRAGMA wal_checkpoint(TRUNCATE);'
-```
-
-A nightly retention sweep (drop snapshots > 90 days from `cri_snapshots`, `gex_snapshots`, etc.) is a follow-up not yet wired.
 
 ## MenthorQ Playwright session refresh
 

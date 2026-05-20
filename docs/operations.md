@@ -60,7 +60,7 @@ Three deployment modes selected by `IB_GATEWAY_MODE`:
 | `cloud` (laptop dev) | Gateway on the Hetzner VM at `ib-gateway:4001` over Tailscale MagicDNS. Health check is a TCP port probe; local restart returns 503. |
 | `launchd` (legacy) | IBC under macOS launchd. |
 
-**2FA-aware restart.** After every restart, IB Gateway sits at the IBKR Mobile push prompt with the API socket already open, so port probes alone falsely report success. `restart_ib_gateway()` now runs an explicit `managedAccounts()` probe; non-empty resets backoff, empty advances it (1m → 2m → 5m → 15m → 30m → 60m capped). `/health` exposes `auth_state` (`authenticated | awaiting_2fa | unreachable | unknown | remote`) and `restart_backoff` (attempt count, next attempt in seconds, last outcome). `POST /ib/reset-backoff` is the operator escape hatch after manually approving 2FA.
+**2FA-aware restart.** After every restart, IB Gateway sits at the IBKR Mobile push prompt with the API socket already open, so port probes alone falsely report success. `restart_ib_gateway()` runs an explicit `managedAccounts()` probe; non-empty resets backoff, empty advances it (1m → 2m → 5m → 15m → 30m → 60m capped). `/health` exposes `auth_state` (`authenticated | awaiting_2fa | unreachable | unknown | remote`), `service_state` (`healthy | unhealthy | starting | unknown`), `upstream_dead`, and `restart_backoff` (attempt count, next attempt in seconds, push lock holder/TTL, last outcome). `POST /ib/reset-backoff` is the operator escape hatch after manually approving 2FA. **Watchdog stuck-2FA self-heal (2026-05-20):** `ib_watchdog.is_stuck_awaiting_2fa()` fires `systemctl restart radon-ib-gateway.service` after 3 consecutive cycles of `auth_state=awaiting_2fa` with no push lock holder and no scheduled retry — so the system no longer sits stuck overnight waiting for an operator to notice. Respects the cross-process push lock to avoid stacked pushes (IBKR rejects every approval when multiple pushes are pending).
 
 **Hetzner gotcha.** On Hetzner, `radon-ib-gateway.service` launches the container from `/home/radon/radon-cloud/`, not the in-tree `docker/ib-gateway/`. `IB_GATEWAY_COMPOSE_DIR=/home/radon/radon-cloud` is required to point FastAPI's `_check_docker()` at the right compose project. Without it, `container_state` reports `not_found` while the container is actually running.
 
@@ -72,10 +72,11 @@ Three deployment modes selected by `IB_GATEWAY_MODE`:
 |-------|-------|
 | 0–9 | FastAPI IBPool (sync=3, orders=4, data=5) |
 | 10–19 | WS relay |
-| 20–49 | Subprocess scripts — always `client_id="auto"` |
+| 20–49 | Subprocess scripts AND monitor_daemon handlers — always `client_id="auto"` |
 | 50–69 | Scanners |
-| 70–89 | Daemons (fill=70, exit=71) |
 | 90–99 | CLI |
+
+As of 2026-05-20 monitor_daemon handlers (`fill_monitor`, `exit_orders`, `journal_sync`) use `client_id="auto"` too — the prior 70/71/72 hardcoded daemon range left them one CLOSE_WAIT socket away from "client id already in use" on every transient gateway hiccup. The auto-allocator rotates around in-use IDs.
 
 **Troubleshooting.**
 
@@ -152,7 +153,7 @@ Staleness windows live in `web/lib/serviceHealthWindows.ts`. Cycle-driven writer
 
 **Banner humanization.** `service_health.last_error` JSON payloads are rewritten into operator-friendly copy before render (see `web/lib/serviceHealthBanner.ts`).
 
-**Replica watchdog** (`monitor_daemon`) self-heals libsql `WalConflict` errors on the Next.js embedded replica. Long-running write-only services must set `RADON_DB_NO_REPLICA=1` so they write directly to the cloud DB. Only one process per host can hold `data/replica.db` open as a writer.
+**Database access pattern (post-2026-05-20):** every Radon process now goes direct-to-cloud — `Environment=RADON_DB_NO_REPLICA=1` on every `radon-*.service`. The libsql embedded-replica architecture (`data/replica.db`) was retired after multi-writer WAL contention and then single-writer frame conflicts between the replica owner and direct-cloud writers. Reads cost +30–60 ms per cloud round-trip, absorbed by SWR caching. The `replica_watchdog` handler still exists in `monitor_daemon` as a vestigial safety net (it sits idle in the no-replica world), but `data/replica.db` itself should not exist on any host. See `feedback_libsql_replica_one_writer.md`.
 
 **Market-hours gate.** Handlers tagged `requires_market_hours=True` (`fill_monitor`, `exit_orders`, `journal_sync`) only run during 09:30-16:00 ET. The daemon converts UTC to ET via `zoneinfo.ZoneInfo("America/New_York")` so DST is handled automatically; a fail-open UTC-5 fallback fires only if the host is missing `tzdata`. Never hardcode a fixed offset for ET — it silently shifts the window 1h every DST season.
 
