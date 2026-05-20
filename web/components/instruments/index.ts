@@ -35,6 +35,25 @@ export { DenseNumericTable } from "@/components/kit/DenseNumericTable";
 export { MarkovStateGraph } from "@/components/instruments/MarkovStateGraph";
 export type { MarkovStateGraphProps } from "@/components/instruments/MarkovStateGraph";
 
+// Instrument-panel primitive — every hero / signal-summary card extends it.
+export { InstrumentPanel } from "@/components/instruments/InstrumentPanel";
+export type {
+  InstrumentPanelProps,
+  InstrumentPanelMetaRow,
+  PanelTone,
+} from "@/components/instruments/InstrumentPanel";
+
+// Flow projection — SVG primary + optional overlay over projection geometry.
+export { FlowProjectionTrace } from "@/components/instruments/FlowProjectionTrace";
+export type {
+  FlowProjectionSeries,
+  FlowProjectionTraceProps,
+} from "@/components/instruments/FlowProjectionTrace";
+
+// Spectral bars — static-value bar set in spectral decomposition grammar.
+export { SpectralBars } from "@/components/instruments/SpectralBars";
+export type { SpectralBar, SpectralBarsProps } from "@/components/instruments/SpectralBars";
+
 // Already brand-true production primitives.
 export { default as SpectralLoader } from "@/components/SpectralLoader";
 export { default as FooterTelemetryStrip } from "@/components/FooterTelemetryStrip";

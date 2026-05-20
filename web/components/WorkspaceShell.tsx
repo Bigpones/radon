@@ -18,10 +18,10 @@ import { usePreviousClose } from "@/lib/usePreviousClose";
 import { type OptionContract, type IndexContract, optionKey, portfolioLegToContract, uniqueOptionContracts } from "@/lib/pricesProtocol";
 import Sidebar from "@/components/Sidebar";
 import Header from "@/components/Header";
-import ChatPanel from "@/components/ChatPanel";
 import MetricCards from "@/components/MetricCards";
 import ToastContainer from "@/components/Toast";
-import DashboardNewsFeed from "@/components/DashboardNewsFeed";
+import DashboardSurface from "@/components/dashboard/DashboardSurface";
+import ChatLauncher from "@/components/ChatLauncher";
 import MobileShell from "@/components/mobile/MobileShell";
 import { useViewport } from "@/lib/useViewport";
 
@@ -356,10 +356,11 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
 
         <div className="content">
           {activeSection === "dashboard" ? (
-            <div className="dashboard-grid">
-              <DashboardNewsFeed />
-              <ChatPanel activeSection={activeSection} />
-            </div>
+            <DashboardSurface
+              portfolio={portfolio}
+              prices={prices}
+              marketState={marketState}
+            />
           ) : null}
 
           {activeSection !== "dashboard" && activeSection !== "ticker-detail" && activeSection !== "admin" ? <MetricCards portfolio={portfolio} prices={prices} realizedPnl={todayRealizedPnl} executedOrders={executedOrders} section={activeSection} /> : null}
@@ -382,6 +383,7 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
       </main>
 
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
+      <ChatLauncher activeSection={activeSection} />
     </div>
   );
 }

@@ -495,6 +495,252 @@ body {
 }
 
 /* ───────────────────────────────────────────────────────────
+   Dashboard surface — MOVE 5. Two-column layout: instrument grid +
+   newsfeed rail. Chat lives behind ⌘J via <ChatLauncher>.
+   ─────────────────────────────────────────────────────────── */
+.dashboard-surface {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 20px;
+  align-items: start;
+}
+
+.dashboard-surface__main {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.dashboard-surface__rail {
+  position: sticky;
+  top: 20px;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  background: var(--bg-panel);
+  border: 1px solid var(--line-grid);
+  border-radius: 4px;
+  padding: 16px;
+}
+
+.dashboard-hero {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.dashboard-flow .dashboard-flow__panel {
+  padding: 18px 22px 22px;
+}
+
+.dashboard-flow__awaiting {
+  padding: 48px 0;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.dashboard-engines {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 1280px) {
+  .dashboard-surface { grid-template-columns: 1fr; }
+  .dashboard-surface__rail { position: static; max-height: none; }
+  .dashboard-hero { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-engines { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 720px) {
+  .dashboard-hero { grid-template-columns: 1fr; }
+}
+
+/* ───────────────────────────────────────────────────────────
+   FlowProjectionTrace
+   ─────────────────────────────────────────────────────────── */
+.flow-projection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.flow-projection__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.flow-projection__legend {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  color: var(--text-secondary);
+}
+
+.flow-projection__legend-item { display: inline-flex; align-items: center; gap: 8px; }
+.flow-projection__legend-item--awaiting { color: var(--text-muted); }
+
+.flow-projection__swatch {
+  display: inline-block;
+  width: 16px;
+  height: 2px;
+}
+
+.flow-projection__swatch--primary { background: var(--signal-core); }
+.flow-projection__swatch--overlay { background: var(--extreme); }
+
+.flow-projection__readout {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ───────────────────────────────────────────────────────────
+   SpectralBars — real-data spectrum readout (vs SpectralLoader, which
+   is the animated awaiting state for skeletons).
+   ─────────────────────────────────────────────────────────── */
+.spectral-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.spectral-bars__bars {
+  display: flex;
+  align-items: end;
+  gap: 3px;
+}
+
+.spectral-bars__bar {
+  flex: 1;
+  min-width: 4px;
+  border-radius: 1px 1px 0 0;
+}
+
+.spectral-bars__bar--pos {
+  background: linear-gradient(180deg, var(--signal-strong), var(--signal-deep));
+}
+
+.spectral-bars__bar--neg {
+  background: linear-gradient(180deg, var(--extreme), color-mix(in srgb, var(--extreme) 55%, var(--bg-panel)));
+}
+
+.spectral-bars__axis {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.spectral-bars__label { flex: 1; text-align: center; }
+
+.spectral-bars__caption {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.spectral-bars--awaiting {
+  position: relative;
+  min-height: 110px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spectral-bars__awaiting-hatch {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent 0 6px,
+    color-mix(in srgb, var(--line-grid) 60%, transparent) 6px 7px
+  );
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.spectral-bars__awaiting-label {
+  position: relative;
+  z-index: 1;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--bg-panel);
+  padding: 6px 12px;
+}
+
+/* ───────────────────────────────────────────────────────────
+   ChatLauncher — ⌘J overlay
+   ─────────────────────────────────────────────────────────── */
+.chat-launcher {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 48px 24px 80px;
+}
+
+.chat-launcher__scrim {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--bg-canvas) 78%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 0;
+  cursor: pointer;
+}
+
+.chat-launcher__panel {
+  position: relative;
+  z-index: 1;
+  width: min(820px, 100%);
+  max-height: 100%;
+  background: var(--bg-panel);
+  border: 1px solid var(--line-grid);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-launcher__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line-grid);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.chat-launcher__kicker { color: var(--signal-core); }
+.chat-launcher__hint   { color: var(--text-muted); }
+
+/* ───────────────────────────────────────────────────────────
    Footer telemetry strip — collapses the three legacy banners
    (ConnectionBanner / FlexTokenBanner / ServiceHealthBanner) into one
    instrument-readout strip pinned to the bottom of .main. See MOVE 11
@@ -863,6 +1109,127 @@ body {
 
 .panel-meta-rail-item .v {
   color: var(--text-secondary);
+}
+
+/* ───────────────────────────────────────────────────────────
+   InstrumentPanel — the production primitive for hero cards.
+   Composes .panel-eyebrow / .panel-title / .panel-edge-trace +
+   a big metric block + a meta-rail. See
+   web/components/instruments/InstrumentPanel.tsx.
+   ─────────────────────────────────────────────────────────── */
+.instrument-panel {
+  position: relative;
+  background: var(--bg-panel);
+  border: 1px solid var(--line-grid);
+  border-radius: 4px;
+  padding: 20px 22px 18px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 200px;
+}
+
+.instrument-panel:hover {
+  background: var(--bg-panel-raised);
+}
+
+.instrument-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 22px;
+  min-height: 38px;
+}
+
+.instrument-panel__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.instrument-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: 1px solid var(--line-grid);
+  color: var(--text-secondary);
+  background: transparent;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.instrument-badge-core        { color: var(--signal-core);  background: color-mix(in srgb, var(--signal-core) 8%, transparent);  border-color: color-mix(in srgb, var(--signal-core) 35%, var(--line-grid)); }
+.instrument-badge-warn        { color: var(--warn);         background: color-mix(in srgb, var(--warn) 10%, transparent);         border-color: color-mix(in srgb, var(--warn) 35%, var(--line-grid)); }
+.instrument-badge-fault       { color: var(--fault);        background: color-mix(in srgb, var(--fault) 10%, transparent);        border-color: color-mix(in srgb, var(--fault) 35%, var(--line-grid)); }
+.instrument-badge-dislocation { color: var(--dislocation);  background: color-mix(in srgb, var(--dislocation) 10%, transparent);  border-color: color-mix(in srgb, var(--dislocation) 35%, var(--line-grid)); }
+.instrument-badge-extreme     { color: var(--extreme);      background: color-mix(in srgb, var(--extreme) 10%, transparent);      border-color: color-mix(in srgb, var(--extreme) 35%, var(--line-grid)); }
+.instrument-badge-neutral     { color: var(--text-secondary); }
+
+.instrument-panel__metric {
+  margin-bottom: 18px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.instrument-panel__metric-value {
+  font-family: var(--font-sans);
+  font-size: 30px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.05;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.instrument-panel__metric--awaiting .instrument-panel__metric-value {
+  color: var(--text-muted);
+}
+
+.instrument-panel__metric-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.instrument-panel__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-grid);
+}
+
+.instrument-panel__meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.instrument-panel__meta-row dt {
+  color: var(--text-muted);
+  text-transform: lowercase;
+}
+
+.instrument-panel__meta-row dd {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .chart-panel {
