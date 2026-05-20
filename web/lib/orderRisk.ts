@@ -32,6 +32,22 @@ export interface OrderRiskLeg {
   expiry: string;
   /** Per-combo ratio. Combined with `quantity` to derive contract count. */
   quantity: number;
+  /**
+   * Total contracts already held LONG of this exact option (same symbol /
+   * expiry / strike / right). Used to recognise SELL-to-close as a bounded
+   * trade — selling against an existing long is not a naked short.
+   *
+   * - SELL with `coveringLongContracts >= effectiveContracts` → pure close,
+   *   no new exposure. Loss/gain attribution = 0 (the order itself adds no
+   *   structural risk; the cash flow is surfaced via `totalCost` upstream).
+   * - SELL with `coveringLongContracts < effectiveContracts` → only the
+   *   uncovered excess (`effectiveContracts - coveringLongContracts`) is
+   *   modelled as naked. The covered portion drops out.
+   *
+   * Omit (or set to 0) for opening trades and naked-short scenarios — the
+   * model then behaves exactly as before.
+   */
+  coveringLongContracts?: number;
 }
 
 export interface OrderRisk {
@@ -174,7 +190,22 @@ export function computeOrderRisk(
     const leg = legs[0];
     const contracts = comboQuantity * leg.quantity;
     const perContractPremium = Math.abs(netPremium);
-    const r = legRisk(leg, perContractPremium, contracts);
+
+    // Closing-trade coverage: SELL of N contracts against M held longs is a
+    // close on the min(N, M) side. Only the (N - M) excess is naked.
+    const nakedContracts = effectiveNakedContracts(leg, contracts);
+    if (leg.action === "SELL" && nakedContracts === 0) {
+      return {
+        maxLoss: 0,
+        maxGain: 0,
+        maxLossUnbounded: false,
+        maxGainUnbounded: false,
+        hasUndefinedRisk: false,
+        undefinedRiskReason: null,
+      };
+    }
+    const exposureContracts = leg.action === "SELL" ? nakedContracts : contracts;
+    const r = legRisk(leg, perContractPremium, exposureContracts);
     const undefinedReason = describeUndefinedLeg(leg, r.unboundedLoss);
     return {
       maxLoss: r.maxLoss,
@@ -268,9 +299,14 @@ function legsAreBounded(sameRightLegs: OrderRiskLeg[]): {
 } {
   if (sameRightLegs.length === 0) return { bounded: true, reason: null };
   const right = sameRightLegs[0].right;
+  // SELL legs that have covering long holdings of the SAME option are not
+  // contributing naked exposure — discount them by the covering count.
   const shortRatio = sameRightLegs
     .filter((l) => l.action === "SELL")
-    .reduce((sum, l) => sum + l.quantity, 0);
+    .reduce((sum, l) => {
+      const covering = Math.max(0, l.coveringLongContracts ?? 0);
+      return sum + Math.max(0, l.quantity - covering);
+    }, 0);
   const longRatio = sameRightLegs
     .filter((l) => l.action === "BUY")
     .reduce((sum, l) => sum + l.quantity, 0);
@@ -292,6 +328,20 @@ function describeUndefinedLeg(
   if (unboundedLoss) return "Uncovered short call";
   if (leg.action === "SELL" && leg.right === "P") return "Naked short put";
   return null;
+}
+
+/**
+ * For a SELL leg, return the number of contracts that are GENUINELY naked
+ * after subtracting any covering LONG holdings of the same option. For BUY
+ * legs and SELL legs without a `coveringLongContracts` hint this returns
+ * the original contract count so behavior is unchanged for opening trades.
+ *
+ * Example: held 65 long $45 calls, selling 66 → naked excess = 1 contract.
+ */
+function effectiveNakedContracts(leg: OrderRiskLeg, contracts: number): number {
+  if (leg.action !== "SELL") return contracts;
+  const covering = Math.max(0, leg.coveringLongContracts ?? 0);
+  return Math.max(0, contracts - covering);
 }
 
 /**

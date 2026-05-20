@@ -244,3 +244,112 @@ describe("computeOrderRisk — empty / edge inputs", () => {
     expect(risk.maxLoss).toBeNull();
   });
 });
+
+/* ---------------------------------------------------------------------------
+ * Closing-trade coverage (SELL of a held LONG option is NOT a naked short).
+ *
+ * The 2026-05-20 P0 bug: a SELL of 65 long-call contracts when the user holds
+ * exactly 65 contracts of that call was flagged "UNBOUNDED" by the order
+ * ticket because the risk model had no signal that the trade was a close.
+ *
+ * Rule
+ * ----
+ *   SELL of N options where the held LONG of the same option is M:
+ *     - If M >= N → pure close → bounded, maxLoss = 0 (no new exposure).
+ *     - If M < N → only the (N - M) excess is naked; the M covered portion
+ *       contributes zero structural risk. For a call this means the excess
+ *       drives UNBOUNDED; for a put it drives the assignment-at-zero bound
+ *       on (N - M) contracts.
+ * -------------------------------------------------------------------------*/
+
+describe("computeOrderRisk — closing-trade coverage", () => {
+  it("SELL N long calls when holding exactly N → pure close, NOT unbounded", () => {
+    // USAX bug repro: held 65 LONG $45 calls, selling 65 to close at $5.00.
+    const closingLeg: OrderRiskLeg = {
+      action: "SELL",
+      right: "C",
+      strike: 45,
+      expiry: "20260620",
+      quantity: 1,
+      coveringLongContracts: 65,
+    };
+    const risk = computeOrderRisk([closingLeg], 5.0, 65);
+    expect(risk.maxLossUnbounded).toBe(false);
+    expect(risk.hasUndefinedRisk).toBe(false);
+    expect(risk.undefinedRiskReason).toBeNull();
+    expect(risk.maxLoss).toBe(0);
+  });
+
+  it("SELL M < N long calls (partial close) → still bounded, no naked excess", () => {
+    // Holding 65 long, selling 64 → all 64 covered → bounded.
+    const closingLeg: OrderRiskLeg = {
+      action: "SELL",
+      right: "C",
+      strike: 45,
+      expiry: "20260620",
+      quantity: 1,
+      coveringLongContracts: 65,
+    };
+    const risk = computeOrderRisk([closingLeg], 5.0, 64);
+    expect(risk.maxLossUnbounded).toBe(false);
+    expect(risk.hasUndefinedRisk).toBe(false);
+  });
+
+  it("SELL M > N long calls (oversell) → only the (M - N) excess is naked → UNBOUNDED", () => {
+    // Holding 65 long, selling 66 → 1 contract is genuinely naked.
+    const closingLeg: OrderRiskLeg = {
+      action: "SELL",
+      right: "C",
+      strike: 45,
+      expiry: "20260620",
+      quantity: 1,
+      coveringLongContracts: 65,
+    };
+    const risk = computeOrderRisk([closingLeg], 5.0, 66);
+    expect(risk.maxLossUnbounded).toBe(true);
+    expect(risk.hasUndefinedRisk).toBe(true);
+    expect(risk.undefinedRiskReason).toMatch(/short call/i);
+  });
+
+  it("SELL N long puts when holding exactly N → pure close, NOT undefined risk", () => {
+    // Held 30 LONG $100 puts → selling 30 to close at $2.50.
+    const closingLeg: OrderRiskLeg = {
+      action: "SELL",
+      right: "P",
+      strike: 100,
+      expiry: "20260620",
+      quantity: 1,
+      coveringLongContracts: 30,
+    };
+    const risk = computeOrderRisk([closingLeg], 2.5, 30);
+    expect(risk.hasUndefinedRisk).toBe(false);
+    expect(risk.undefinedRiskReason).toBeNull();
+    expect(risk.maxLoss).toBe(0);
+  });
+
+  it("SELL M > N long puts (oversell) → only (M - N) excess is a naked short put", () => {
+    const closingLeg: OrderRiskLeg = {
+      action: "SELL",
+      right: "P",
+      strike: 100,
+      expiry: "20260620",
+      quantity: 1,
+      coveringLongContracts: 30,
+    };
+    // Sell 32 puts; 2 are naked → naked short put bound at strike-to-zero on 2 contracts.
+    const risk = computeOrderRisk([closingLeg], 2.5, 32);
+    expect(risk.maxLossUnbounded).toBe(false);
+    expect(risk.hasUndefinedRisk).toBe(true);
+    expect(risk.undefinedRiskReason).toMatch(/short put/i);
+    // 2 naked × $100 strike × 100 multiplier - 2 × $2.50 × 100 premium = 20_000 - 500 = 19_500
+    expect(risk.maxLoss).toBeCloseTo(19_500, 5);
+  });
+
+  it("no coverage signal → SELL of an option remains a naked short (backwards compat)", () => {
+    // Same shape as the original "naked short call alone" test — without the
+    // coverage field, behavior must not change.
+    const risk = computeOrderRisk([leg("SELL", "C", 100)], 2, 1);
+    expect(risk.maxLossUnbounded).toBe(true);
+    expect(risk.hasUndefinedRisk).toBe(true);
+  });
+});

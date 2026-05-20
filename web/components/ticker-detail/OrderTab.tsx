@@ -315,19 +315,22 @@ function NewOrderForm({
     const onlyLeg = position.legs[0];
     const right: "C" | "P" = onlyLeg.type === "Call" ? "C" : "P";
     // Translate the form action into the leg's effective direction for the
-    // bought/sold contract. (For a held LONG option, action=SELL closes it
-    // and has no naked-short exposure — but we still route through the
-    // model with quantity=parsedQty; sideMaxLoss returns 0 for the closing
-    // case via the SELL path. We keep the close-debit semantics intact via
-    // the totalCost sign below.)
+    // bought/sold contract. SELL against a held LONG closes the position;
+    // we pass `coveringLongContracts` so the risk model recognises the
+    // close (or partial close) instead of flagging it as a naked short.
     const legAction: "BUY" | "SELL" =
       action === "BUY" ? "BUY" : (onlyLeg.direction === "LONG" ? "SELL" : "BUY");
+    const coveringLongContracts =
+      legAction === "SELL" && onlyLeg.direction === "LONG"
+        ? onlyLeg.contracts
+        : 0;
     const riskLegs = [{
       action: legAction,
       right,
       strike: onlyLeg.strike as number,
       expiry: position.expiry,
       quantity: 1,
+      coveringLongContracts,
     }];
     const risk = computeOrderRisk(riskLegs, parsedPrice, parsedQty);
 
