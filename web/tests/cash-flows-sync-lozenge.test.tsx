@@ -201,4 +201,136 @@ describe("CashFlowsSection sync lozenge", () => {
     const lozenge = screen.getByTestId("cash-flows-sync-lozenge");
     expect(lozenge.textContent).toMatch(/2d ago/);
   });
+
+  it("surfaces Flex throttle state with warn tone + retry hint", () => {
+    const synced = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    const nextAttempt = new Date(Date.now() + 22 * 3600 * 1000).toISOString();
+    useCashFlowsMock.mockReturnValue({
+      data: {
+        rows: [
+          {
+            id: "x",
+            date: "2026-05-08",
+            type: "Withdrawal",
+            amount: -72_000,
+            currency: "USD",
+            description: null,
+            raw_type: null,
+            synced_at: synced,
+          },
+        ],
+        count: 1,
+        from_date: "2026-02-20",
+        summary: { deposits: 0, withdrawals: -72_000, dividends: 0, net: -72_000 },
+        last_synced_at: synced,
+        sync_status: {
+          state: "error",
+          last_attempt_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+          next_attempt_at: nextAttempt,
+          error_summary: "Flex throttled by IBKR",
+          is_throttled: true,
+        },
+      },
+      loading: false,
+      error: null,
+      refresh: () => {},
+    });
+
+    render(<CashFlowsSection />);
+    const lozenge = screen.getByTestId("cash-flows-sync-lozenge");
+    expect(lozenge.textContent).toMatch(/Flex throttled/i);
+    expect(lozenge.textContent).toMatch(/retry/i);
+    // Wall-clock ET retry hint when more than 6h out.
+    expect(lozenge.textContent).toMatch(/ET/);
+    // Warn-tone classname so the operator's eye gets pulled to it.
+    expect(lozenge.getAttribute("data-state")).toBe("warn");
+    expect(lozenge.className).toContain("cash-flows-sync-lozenge--warn");
+    // Tooltip explains the throttle pattern, not the generic T+1 lag.
+    const title = lozenge.getAttribute("title") ?? "";
+    expect(title.toLowerCase()).toMatch(/throttle/);
+    // No em dashes in the user-visible copy (CLAUDE.md rule 6).
+    expect(lozenge.textContent?.includes("—")).toBe(false);
+    expect(title.includes("—")).toBe(false);
+  });
+
+  it("renders fault tone for non-throttle errors without the throttle copy", () => {
+    const synced = new Date(Date.now() - 4 * 3600 * 1000).toISOString();
+    useCashFlowsMock.mockReturnValue({
+      data: {
+        rows: [
+          {
+            id: "x",
+            date: "2026-05-08",
+            type: "Withdrawal",
+            amount: -1,
+            currency: "USD",
+            description: null,
+            raw_type: null,
+            synced_at: synced,
+          },
+        ],
+        count: 1,
+        from_date: "2026-02-20",
+        summary: { deposits: 0, withdrawals: -1, dividends: 0, net: -1 },
+        last_synced_at: synced,
+        sync_status: {
+          state: "error",
+          last_attempt_at: new Date(Date.now() - 60_000).toISOString(),
+          next_attempt_at: new Date(Date.now() + 4 * 60_000).toISOString(),
+          error_summary: "cash_flow_sync timed out after 180s",
+          is_throttled: false,
+        },
+      },
+      loading: false,
+      error: null,
+      refresh: () => {},
+    });
+
+    render(<CashFlowsSection />);
+    const lozenge = screen.getByTestId("cash-flows-sync-lozenge");
+    expect(lozenge.textContent).toMatch(/timed out/i);
+    expect(lozenge.textContent).not.toMatch(/throttled/i);
+    expect(lozenge.getAttribute("data-state")).toBe("fault");
+    expect(lozenge.className).toContain("cash-flows-sync-lozenge--fault");
+  });
+
+  it("falls back to the calm ok tone when sync_status reports ok", () => {
+    const synced = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    useCashFlowsMock.mockReturnValue({
+      data: {
+        rows: [
+          {
+            id: "x",
+            date: "2026-05-20",
+            type: "Dividend",
+            amount: 1,
+            currency: "USD",
+            description: null,
+            raw_type: null,
+            synced_at: synced,
+          },
+        ],
+        count: 1,
+        from_date: "2026-02-20",
+        summary: { deposits: 0, withdrawals: 0, dividends: 1, net: 1 },
+        last_synced_at: synced,
+        sync_status: {
+          state: "ok",
+          last_attempt_at: synced,
+          next_attempt_at: null,
+          error_summary: null,
+          is_throttled: false,
+        },
+      },
+      loading: false,
+      error: null,
+      refresh: () => {},
+    });
+
+    render(<CashFlowsSection />);
+    const lozenge = screen.getByTestId("cash-flows-sync-lozenge");
+    expect(lozenge.textContent).toMatch(/30m ago/);
+    expect(lozenge.textContent).not.toMatch(/throttled|failed|retry/i);
+    expect(lozenge.getAttribute("data-state")).toBe("ok");
+  });
 });

@@ -29,6 +29,22 @@ export interface CashFlowSummary {
   net: number;
 }
 
+// Surface of the cash_flow_sync daemon's most recent attempt — used by
+// the lozenge to explain WHY a synced-Xh-ago reading is stale. Most
+// common cause: IBKR Flex throttle code 1001 ("Statement could not be
+// generated"). See feedback_flex_cash_transaction_lag.md.
+export interface CashFlowSyncStatus {
+  state: "ok" | "error" | "stale" | "unknown";
+  /** Daemon's last try, success OR failure (vs last_synced_at = last success). */
+  last_attempt_at?: string | null;
+  /** When the daemon will retry — populated when in throttle / soft-fail embargo. */
+  next_attempt_at?: string | null;
+  /** Short human-readable failure tag — e.g. "Flex throttled by IBKR". */
+  error_summary?: string | null;
+  /** True when the failure matches a Flex throttle code (1001/1018/1019). */
+  is_throttled?: boolean;
+}
+
 export interface CashFlowResponse {
   rows: CashFlowRow[];
   count: number;
@@ -38,6 +54,7 @@ export interface CashFlowResponse {
   // uses this to render a "Synced Xh ago" lozenge that explains the
   // IBKR Flex T+1 publication cadence. Null when no rows are present.
   last_synced_at?: string | null;
+  sync_status?: CashFlowSyncStatus | null;
   db_error?: string | null;
 }
 

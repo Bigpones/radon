@@ -41,6 +41,9 @@ function fmtDate(iso: string): string {
 const SYNC_LOZENGE_EXPLANATION =
   "IBKR Flex publishes cash transactions once per day with a ~1-day settlement lag. A withdrawal initiated today appears here after tomorrow morning's sync (T+1).";
 
+const THROTTLE_LOZENGE_EXPLANATION =
+  "IBKR Flex returned a throttle code (1001/1018/1019) on the last sync attempt. The daemon embargoes itself for 24h so retries don't extend the throttle window. New cash flows land on the next successful pull.";
+
 function relativeFromNow(isoTimestamp: string, now: number = Date.now()): string | null {
   const parsed = Date.parse(isoTimestamp);
   if (Number.isNaN(parsed)) return null;
@@ -52,6 +55,38 @@ function relativeFromNow(isoTimestamp: string, now: number = Date.now()): string
   if (ageHours < 24) return `${ageHours}h ago`;
   const ageDays = Math.floor(ageHours / 24);
   return `${ageDays}d ago`;
+}
+
+/** Format a future ISO timestamp as a short retry hint:
+ *    in 12m / in 4h / 17:00 ET tomorrow / 17:00 ET Mon
+ *  Null when the timestamp is in the past or unparseable. */
+function formatNextAttempt(isoTimestamp: string, now: number = Date.now()): string | null {
+  const parsed = Date.parse(isoTimestamp);
+  if (Number.isNaN(parsed)) return null;
+  const deltaSeconds = Math.floor((parsed - now) / 1000);
+  if (deltaSeconds <= 0) return "due now";
+  if (deltaSeconds < 60 * 60) return `in ${Math.max(1, Math.floor(deltaSeconds / 60))}m`;
+  if (deltaSeconds < 6 * 60 * 60) return `in ${Math.floor(deltaSeconds / 3600)}h`;
+  // More than 6 hours out — show wall-clock ET time so the operator can
+  // map it to their day rather than counting hours.
+  const target = new Date(parsed);
+  const sameEtDate =
+    new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(target) ===
+    new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(now));
+  const time = new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "America/New_York",
+  }).format(target);
+  if (sameEtDate) return `${time} ET today`;
+  const ageDays = Math.floor(deltaSeconds / 86400);
+  if (ageDays <= 1) return `${time} ET tomorrow`;
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    timeZone: "America/New_York",
+  }).format(target);
+  return `${time} ET ${weekday}`;
 }
 
 const PAGE_SIZE = 15;
@@ -70,6 +105,34 @@ export default function CashFlowsSection() {
 
   const summary = data?.summary ?? null;
   const lastSyncedRelative = data?.last_synced_at ? relativeFromNow(data.last_synced_at) : null;
+  const syncStatus = data?.sync_status ?? null;
+  // Throttle dominates the failure modes for cash-flow-sync; treat any
+  // is_throttled flag as the canonical "Flex throttled" state. Other
+  // error states fall through to a generic warn treatment.
+  const isThrottled = syncStatus?.state === "error" && Boolean(syncStatus?.is_throttled);
+  const isErrored = syncStatus?.state === "error" && !isThrottled;
+  const retryHint = syncStatus?.next_attempt_at ? formatNextAttempt(syncStatus.next_attempt_at) : null;
+  const lozengeTone: "ok" | "warn" | "fault" = isThrottled ? "warn" : isErrored ? "fault" : "ok";
+  const lozengeLabel = (() => {
+    if (!lastSyncedRelative) return null;
+    if (isThrottled) {
+      return retryHint
+        ? `Synced ${lastSyncedRelative} · Flex throttled, retry ${retryHint}`
+        : `Synced ${lastSyncedRelative} · Flex throttled`;
+    }
+    if (isErrored) {
+      const tag = syncStatus?.error_summary ?? "sync failed";
+      return retryHint
+        ? `Synced ${lastSyncedRelative} · ${tag}, retry ${retryHint}`
+        : `Synced ${lastSyncedRelative} · ${tag}`;
+    }
+    return `Synced ${lastSyncedRelative}`;
+  })();
+  const lozengeTooltip = isThrottled
+    ? THROTTLE_LOZENGE_EXPLANATION
+    : isErrored
+      ? syncStatus?.error_summary ?? SYNC_LOZENGE_EXPLANATION
+      : SYNC_LOZENGE_EXPLANATION;
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const pageStart = page * PAGE_SIZE;
   const pageRows = rows.slice(pageStart, pageStart + PAGE_SIZE);
@@ -124,15 +187,16 @@ export default function CashFlowsSection() {
               </span>
             </>
           )}
-          {lastSyncedRelative && (
+          {lozengeLabel && (
             <span
-              className="cash-flows-sync-lozenge"
+              className={`cash-flows-sync-lozenge cash-flows-sync-lozenge--${lozengeTone}`}
               data-testid="cash-flows-sync-lozenge"
-              title={SYNC_LOZENGE_EXPLANATION}
+              data-state={lozengeTone}
+              title={lozengeTooltip}
               onClick={stopToggle}
               onKeyDown={stopToggle}
             >
-              Synced {lastSyncedRelative}
+              {lozengeLabel}
             </span>
           )}
           <select

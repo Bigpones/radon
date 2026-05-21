@@ -149,3 +149,122 @@ class TestLastSyncedAt:
         assert body["summary"]["deposits"] == 0
         assert body["summary"]["net"] == -107_000
         assert "from_date" in body
+
+
+def _insert_service_health(
+    conn: sqlite3.Connection,
+    *,
+    state: str,
+    last_attempt_finished_at: str,
+    last_error: str | None = None,
+) -> None:
+    """Seed a service_health row for the cash-flow-sync daemon."""
+    conn.execute(
+        """
+        INSERT INTO service_health
+            (service, state, last_attempt_finished_at, last_error, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(service) DO UPDATE SET
+            state = excluded.state,
+            last_attempt_finished_at = excluded.last_attempt_finished_at,
+            last_error = excluded.last_error,
+            updated_at = excluded.updated_at
+        """,
+        ("cash-flow-sync", state, last_attempt_finished_at, last_error, last_attempt_finished_at),
+    )
+    conn.commit()
+
+
+class TestSyncStatus:
+    """The `sync_status` payload surfaces the daemon's most recent attempt
+    state on the response so the lozenge can explain WHY a synced-Xh-ago
+    reading is stale — most commonly an IBKR Flex throttle.
+    """
+
+    def test_surfaces_throttle_state_with_next_attempt_at(self, app_with_inmem_db):
+        client, conn = app_with_inmem_db
+        _insert(conn, txn_id="w1", date="2026-05-08", type_="Withdrawal", amount=-72_000,
+                synced_at="2026-05-20T21:02:34Z")
+        _insert_service_health(
+            conn,
+            state="error",
+            last_attempt_finished_at="2026-05-21T21:00:35Z",
+            last_error=(
+                '{"message": "ERR: cash flow fetch failed: Flex throttle (code 1001): '
+                'Statement could not be generated at this time. Please try again shortly.", '
+                '"next_attempt_at": "2026-05-22T21:00:35.990665+00:00"}'
+            ),
+        )
+
+        resp = client.get("/cash-flows?days=90")
+        body = resp.json()
+        sync_status = body.get("sync_status")
+        assert sync_status is not None, body
+        assert sync_status["state"] == "error"
+        assert sync_status["is_throttled"] is True
+        assert sync_status["next_attempt_at"] == "2026-05-22T21:00:35.990665+00:00"
+        # Concise, user-facing — not the raw IBKR sentence.
+        assert sync_status["error_summary"] == "Flex throttled by IBKR"
+        # last_attempt_at is the daemon's last try, distinct from
+        # last_synced_at (which is the freshest row's synced_at).
+        assert sync_status["last_attempt_at"] == "2026-05-21T21:00:35Z"
+        assert body["last_synced_at"] == "2026-05-20T21:02:34Z"
+
+    def test_ok_state_does_not_flag_throttle(self, app_with_inmem_db):
+        client, conn = app_with_inmem_db
+        _insert(conn, txn_id="w1", date="2026-05-08", type_="Withdrawal", amount=-72_000,
+                synced_at="2026-05-20T21:02:34Z")
+        _insert_service_health(
+            conn,
+            state="ok",
+            last_attempt_finished_at="2026-05-21T21:02:34Z",
+            last_error=None,
+        )
+
+        resp = client.get("/cash-flows?days=90")
+        body = resp.json()
+        sync_status = body["sync_status"]
+        assert sync_status["state"] == "ok"
+        assert sync_status["is_throttled"] is False
+        assert sync_status["error_summary"] is None
+        assert sync_status["next_attempt_at"] is None
+
+    def test_generic_error_is_surfaced_but_not_flagged_as_throttle(self, app_with_inmem_db):
+        """Non-Flex-throttle errors (timeouts, network blips, etc.) still
+        surface on the lozenge but should NOT carry the throttle tag —
+        the operator needs to distinguish "IBKR is throttling us" from
+        "something else broke" because the resolution paths differ.
+        """
+        client, conn = app_with_inmem_db
+        _insert(conn, txn_id="w1", date="2026-05-08", type_="Withdrawal", amount=-72_000,
+                synced_at="2026-05-20T21:02:34Z")
+        _insert_service_health(
+            conn,
+            state="error",
+            last_attempt_finished_at="2026-05-21T21:00:35Z",
+            last_error=(
+                '{"message": "cash_flow_sync timed out after 180s", '
+                '"next_attempt_at": "2026-05-21T21:05:35Z"}'
+            ),
+        )
+
+        resp = client.get("/cash-flows?days=90")
+        body = resp.json()
+        sync_status = body["sync_status"]
+        assert sync_status["state"] == "error"
+        assert sync_status["is_throttled"] is False
+        assert sync_status["error_summary"] == "cash_flow_sync timed out after 180s"
+        assert sync_status["next_attempt_at"] == "2026-05-21T21:05:35Z"
+
+    def test_no_service_health_row_returns_unknown_state(self, app_with_inmem_db):
+        client, conn = app_with_inmem_db
+        _insert(conn, txn_id="w1", date="2026-05-08", type_="Withdrawal", amount=-72_000,
+                synced_at="2026-05-20T21:02:34Z")
+        # No service_health insert.
+
+        resp = client.get("/cash-flows?days=90")
+        body = resp.json()
+        sync_status = body["sync_status"]
+        assert sync_status["state"] == "unknown"
+        assert sync_status["is_throttled"] is False
+        assert sync_status["error_summary"] is None

@@ -1916,14 +1916,111 @@ async def cash_flows(
     synced_values = [r["synced_at"] for r in rows if r.get("synced_at")]
     last_synced_at = max(synced_values) if synced_values else None
 
+    # service_health row for cash-flow-sync — surfaces the daemon's most
+    # recent attempt state so the lozenge can explain WHY a synced-Xh-ago
+    # reading is stale. Most common cause: IBKR Flex throttle code 1001
+    # ("Statement could not be generated"). When throttle is active we
+    # surface the next_attempt_at so the operator knows when fresh data
+    # will land instead of guessing.
+    sync_status = _load_cash_flow_sync_status()
+
     return {
         "rows": rows,
         "count": len(rows),
         "from_date": cutoff_iso,
         "summary": summary,
         "last_synced_at": last_synced_at,
+        "sync_status": sync_status,
         "db_error": db_error,  # null on success; non-null when DB read failed and we fell back
     }
+
+
+def _load_cash_flow_sync_status() -> dict[str, Any]:
+    """Read service_health[cash-flow-sync] and surface throttle/error context.
+
+    Returns a payload safe for the public route to expose:
+
+        {
+          "state": "ok" | "error" | "stale" | "unknown",
+          "last_attempt_at": ISO str or None,
+          "next_attempt_at": ISO str or None,
+          "error_summary": short human-readable message or None,
+          "is_throttled": bool,
+        }
+
+    `last_attempt_at` is intentionally distinct from `last_synced_at` —
+    `last_synced_at` is the freshest row's sync timestamp (the last
+    SUCCESS), `last_attempt_at` is the daemon's last try (success or
+    failure). When `last_attempt_at > last_synced_at`, the daemon
+    attempted but didn't write new rows — usually a throttle.
+
+    All exceptions are swallowed; the route shouldn't 500 because we
+    couldn't read service_health.
+    """
+    payload: dict[str, Any] = {
+        "state": "unknown",
+        "last_attempt_at": None,
+        "next_attempt_at": None,
+        "error_summary": None,
+        "is_throttled": False,
+    }
+    try:
+        from db.client import get_db
+        db = get_db()
+        cursor = db.execute(
+            """
+            SELECT state, last_attempt_finished_at, last_error
+            FROM service_health
+            WHERE service = ?
+            """,
+            ("cash-flow-sync",),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return payload
+        state = row[0] or "unknown"
+        last_attempt_at = row[1]
+        last_error_raw = row[2]
+
+        payload["state"] = state
+        payload["last_attempt_at"] = last_attempt_at
+
+        if last_error_raw:
+            try:
+                parsed = json.loads(last_error_raw)
+                message = parsed.get("message") if isinstance(parsed, dict) else None
+                next_attempt = parsed.get("next_attempt_at") if isinstance(parsed, dict) else None
+            except Exception:
+                message = str(last_error_raw)
+                next_attempt = None
+
+            if message:
+                # Flex throttle is the dominant cash-flow-sync failure mode.
+                # Surface a concise tag so the UI doesn't have to substring-
+                # match the raw IBKR error text.
+                lower = message.lower()
+                payload["is_throttled"] = (
+                    "throttle" in lower
+                    or "code 1001" in lower
+                    or "code 1018" in lower
+                    or "code 1019" in lower
+                )
+                # Pull out the user-facing slice. The full message looks
+                # like "ERR: cash flow fetch failed: Flex throttle (code
+                # 1001): Statement could not be generated at this time."
+                # — surface only the post-colon Flex sentence.
+                if "Flex throttle" in message:
+                    payload["error_summary"] = "Flex throttled by IBKR"
+                elif ":" in message:
+                    payload["error_summary"] = message.split(":")[-1].strip()
+                else:
+                    payload["error_summary"] = message
+
+            payload["next_attempt_at"] = next_attempt
+    except Exception:
+        # Never let a service_health read fail the cash-flows response.
+        pass
+    return payload
 
 
 # ---------------------------------------------------------------------------

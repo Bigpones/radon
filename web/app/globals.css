@@ -1931,6 +1931,32 @@ td.last-price-cell {
   color: var(--text-primary);
 }
 
+/* Tone variants surface the daemon's current state. The warn variant
+   fires when IBKR Flex returns a throttle code (1001/1018/1019) — the
+   most common cash-flow-sync failure mode. The fault variant covers
+   any other error class. Brand-token color-mix only, no raw hex. */
+.cash-flows-sync-lozenge--warn {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--line-grid));
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
+
+.cash-flows-sync-lozenge--warn:hover {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.cash-flows-sync-lozenge--fault {
+  color: var(--fault);
+  border-color: color-mix(in srgb, var(--fault) 45%, var(--line-grid));
+  background: color-mix(in srgb, var(--fault) 10%, transparent);
+}
+
+.cash-flows-sync-lozenge--fault:hover {
+  border-color: var(--fault);
+  color: var(--fault);
+}
+
 .filter-select {
   font-family: var(--font-mono);
   font-size: 10px;
