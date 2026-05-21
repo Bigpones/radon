@@ -8,12 +8,27 @@
  *   - image + title + body all surface together when focus is set
  *   - Escape and scrim click both fire onDismiss
  *   - brand-token contract holds (no raw hex / rgba())
+ *
+ * Note: as of the focused-backdrop redesign the lightbox portals to
+ * document.body so it can escape the right-rail's stacking context. The
+ * RTL `getBy*` helpers query the whole document, so the existing assertions
+ * continue to find the portal-rendered content. The only adjustment is the
+ * `renders nothing` case: we look at document.body instead of the testing
+ * container, since the portal target is body itself.
  */
+import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import NewsfeedLightbox, {
   type NewsfeedLightboxFocus,
 } from "@/components/NewsfeedLightbox";
+
+// next/image rejects unconfigured hostnames in jsdom — stub it to a plain
+// <img> so the render doesn't crash on the synthetic media.radon.run URL.
+vi.mock("next/image", () => ({
+  default: ({ src, alt }: { src: string; alt: string }) =>
+    React.createElement("img", { src, alt }),
+}));
 
 const POST: NewsfeedLightboxFocus["post"] = {
   id: "x1",
@@ -45,10 +60,10 @@ describe("NewsfeedLightbox", () => {
 
   it("renders nothing when focus is null", () => {
     const onDismiss = vi.fn();
-    const { container } = render(
-      <NewsfeedLightbox focus={null} onDismiss={onDismiss} />,
-    );
-    expect(container.querySelector(".newsfeed-lightbox")).toBeNull();
+    render(<NewsfeedLightbox focus={null} onDismiss={onDismiss} />);
+    // Lightbox portals to body — query document.body instead of the RTL
+    // test container, since the portal target is body itself.
+    expect(document.body.querySelector(".newsfeed-lightbox")).toBeNull();
   });
 
   it("renders title, body, and tags when focus is set", () => {

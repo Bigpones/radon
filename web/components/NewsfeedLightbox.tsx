@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import { Link as LinkIcon, X } from "lucide-react";
 import type { MarketEarPost } from "@/components/DashboardNewsFeed";
@@ -24,6 +25,14 @@ type NewsfeedLightboxProps = {
  * the close button, Escape, or clicking the scrim.
  */
 export default function NewsfeedLightbox({ focus, onDismiss }: NewsfeedLightboxProps) {
+  // Portal mount target. Defer to first client effect so SSR doesn't reach
+  // for `document`, and so jsdom in vitest gets a real Element handle.
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setPortalTarget(document.body);
+  }, []);
+
   useEffect(() => {
     if (!focus) return;
     function onKey(event: KeyboardEvent) {
@@ -41,7 +50,7 @@ export default function NewsfeedLightbox({ focus, onDismiss }: NewsfeedLightboxP
     };
   }, [focus, onDismiss]);
 
-  if (!focus) return null;
+  if (!focus || !portalTarget) return null;
 
   const { post, imageUrl } = focus;
   const tags = Array.isArray(post.tags) ? post.tags : [];
@@ -49,7 +58,10 @@ export default function NewsfeedLightbox({ focus, onDismiss }: NewsfeedLightboxP
   const time = formatTime(post.isoTimestamp);
   const absolute = formatAbsolute(post.isoTimestamp);
 
-  return (
+  // Portal to body so the lightbox escapes the right-rail's stacking context
+  // cleanly. Without this the dashboard's grid layers + scroll containers
+  // can clip the scrim and let chrome bleed through at the edges.
+  return createPortal(
     <div
       className="newsfeed-lightbox"
       role="dialog"
@@ -125,6 +137,7 @@ export default function NewsfeedLightbox({ focus, onDismiss }: NewsfeedLightboxP
           </footer>
         </article>
       </div>
-    </div>
+    </div>,
+    portalTarget,
   );
 }
