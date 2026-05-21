@@ -1012,7 +1012,11 @@ body {
   border: 1px solid var(--border-dim);
   margin-bottom: 20px;
   position: relative;
-  overflow: hidden;
+  /* Note: deliberately NOT `overflow: hidden`. The panel-edge-trace is
+     position:absolute with top:0 / bottom:0, so it's already bounded by
+     the section's own height — clipping is unnecessary for that motif
+     and breaks any popover that extends past the section bottom (e.g.
+     the columns-toggle menu on short tables). */
 }
 
 .section-header {
@@ -4515,6 +4519,11 @@ tr.leg-row td {
   right: 0;
   z-index: 20;
   min-width: 200px;
+  /* Cap height to the viewport so the menu always fits on screen even
+     when there are many columns. Scroll within the popover instead. */
+  max-height: min(60vh, 480px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--bg-panel-raised);
   border: 1px solid var(--border-dim);
   border-radius: 4px;
