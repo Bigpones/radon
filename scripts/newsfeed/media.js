@@ -106,9 +106,25 @@ export function createImageDownloader({ mediaDir, client = defaultClient, getCoo
 export async function hydrateLocalImages(posts, downloader) {
   let updated = false;
   for (const post of posts) {
-    if (!Array.isArray(post.rawImages) || post.rawImages.length === 0) continue;
-    const localImages = await downloader.download(post.id, post.rawImages);
-    if (localImages.length > 0 && JSON.stringify(localImages) !== JSON.stringify(post.images || [])) {
+    const rawImages = Array.isArray(post.rawImages) ? post.rawImages : [];
+
+    // Scraped state is the source of truth. If a post previously had an
+    // image but the latest scrape returns no <img>, the persisted `images`
+    // array MUST drop the stale entry — never preserve it from a prior
+    // cycle. The earlier short-circuit (skip when rawImages is empty) left
+    // stale attributions in place forever, which is how four text-only
+    // themarketear posts ended up sharing the same EMB chart on 2026-05-21.
+    if (rawImages.length === 0) {
+      const existing = Array.isArray(post.images) ? post.images : [];
+      if (existing.length > 0) {
+        post.images = [];
+        updated = true;
+      }
+      continue;
+    }
+
+    const localImages = await downloader.download(post.id, rawImages);
+    if (JSON.stringify(localImages) !== JSON.stringify(post.images || [])) {
       post.images = localImages;
       updated = true;
     }

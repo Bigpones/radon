@@ -49,14 +49,15 @@ export function buildExtractionExpression() {
         const contentText = contentNodes.map((node) => (node.textContent || '').trim()).filter(Boolean).join('\\n');
         const timestamp = schema?.datePublished || schema?.dateModified || article.querySelector('time')?.getAttribute('datetime') || '';
 
+        // Source of truth for images is the article's own DOM subtree —
+        // <img> tags only. JSON-LD schema.image is unreliable: themarketear
+        // emits assets/images/generic.png (a placeholder) into schema.image
+        // for image-less posts. Honouring that fallback caused every text-only
+        // post to inherit whatever bytes lived behind that placeholder, and
+        // the downloader cache pinned them all to the same local filename
+        // (e.g. the EMB candlestick chart on four unrelated posts on 2026-05-21).
+        // If the article DOM has no <img>, the post has no image. Period.
         const imageCandidates = [];
-        if (schema?.image) {
-          const schemaImages = Array.isArray(schema.image) ? schema.image : [schema.image];
-          for (const img of schemaImages) {
-            if (typeof img === 'string') imageCandidates.push(img);
-            else if (img && typeof img.url === 'string') imageCandidates.push(img.url);
-          }
-        }
         article.querySelectorAll('img').forEach((img) => {
           const src = img.getAttribute('src') || img.getAttribute('data-src');
           if (src) imageCandidates.push(src);

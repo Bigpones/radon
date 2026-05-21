@@ -416,6 +416,61 @@ describe("createImageDownloader (auth-gated upstream)", () => {
   });
 });
 
+describe("hydrateLocalImages", () => {
+  it("clears post.images when rawImages goes empty on re-scrape", async () => {
+    // If a post previously had an image but the latest scrape returns no
+    // <img>, the persisted `images` array must drop the stale entry — never
+    // preserve it from the prior cycle. Scraped state is the source of truth.
+    const root = await createTempRoot();
+    const mediaDir = path.join(root, "media");
+    await mkdir(mediaDir, { recursive: true });
+
+    const { createImageDownloader, hydrateLocalImages } = await import(
+      "../../scripts/newsfeed/media.js"
+    );
+
+    const downloader = createImageDownloader({
+      mediaDir,
+      client: { get: async () => ({ status: 200, data: Buffer.from("ok") }) },
+    });
+
+    const posts = [
+      {
+        id: "p1",
+        title: "post 1",
+        rawImages: [],
+        images: ["https://media.radon.run/p1-01.png"],
+      },
+    ];
+
+    const updated = await hydrateLocalImages(posts, downloader);
+
+    expect(updated).toBe(true);
+    expect(posts[0].images).toEqual([]);
+  });
+
+  it("leaves post.images empty when rawImages is empty (no prior images)", async () => {
+    const root = await createTempRoot();
+    const mediaDir = path.join(root, "media");
+    await mkdir(mediaDir, { recursive: true });
+
+    const { createImageDownloader, hydrateLocalImages } = await import(
+      "../../scripts/newsfeed/media.js"
+    );
+
+    const downloader = createImageDownloader({
+      mediaDir,
+      client: { get: async () => ({ status: 200, data: Buffer.from("ok") }) },
+    });
+
+    const posts = [{ id: "p1", title: "post 1", rawImages: [], images: [] }];
+    const updated = await hydrateLocalImages(posts, downloader);
+
+    expect(updated).toBe(false);
+    expect(posts[0].images).toEqual([]);
+  });
+});
+
 describe("buildExtractionExpression (DOM)", () => {
   it("extracts well-formed ld+json article AND falls back to DOM when ld+json is malformed", async () => {
     const { buildExtractionExpression, parsePayload } = await import(
@@ -459,7 +514,9 @@ describe("buildExtractionExpression (DOM)", () => {
     expect(wellFormed).toBeDefined();
     expect(wellFormed.title).toBe("Tesla rallies on demand surge");
     expect(wellFormed.timestamp).toBe("2025-01-15T10:00:00Z");
-    expect(wellFormed.images).toContain("https://themarketear.com/uploads/tsla.jpg");
+    // schema.image is NOT honoured — only <img> tags inside the article
+    // subtree count. This article has no <img>, so images stays empty.
+    expect(wellFormed.images).toEqual([]);
 
     const fallback = parsed.items.find((it: any) => it.id === "article-67890");
     expect(fallback).toBeDefined();
@@ -503,6 +560,104 @@ describe("buildExtractionExpression (DOM)", () => {
     expect(item).toBeDefined();
     expect(item.title).toBe("European Utilities' re-rating");
     expect(item.content).toBe('AT&T & peers — "quality" growth');
+  });
+
+  it("returns images: [] when article has no <img> tag, even if JSON-LD schema.image is set", async () => {
+    // themarketear.com puts `assets/images/generic.png` (a placeholder) into
+    // JSON-LD `schema.image` for image-less posts. The DOM `<article>` itself
+    // contains no `<img>` tag in those cases. The scraper MUST trust the DOM
+    // and ignore the schema fallback — otherwise every image-less post inherits
+    // whatever bytes happen to live behind that placeholder URL, and the
+    // downloader cache pins them all to the same local filename.
+    const { buildExtractionExpression, parsePayload } = await import(
+      "../../scripts/newsfeed/extract.js"
+    );
+
+    const fixture = `
+      <article class="post" id="no-image-post">
+        <script type="application/ld+json">
+          {"@type":"Article","headline":"The Fed volatility trade","datePublished":"2026-05-21T20:00:00Z","image":["https://themarketear.com/assets/images/generic.png"]}
+        </script>
+        <h2 class="title">The Fed volatility trade</h2>
+        <div class="body"><div class="content">Pure text post, no chart.</div></div>
+        <time datetime="2026-05-21T20:00:00Z">today</time>
+      </article>
+      <article class="post" id="real-image-post">
+        <script type="application/ld+json">
+          {"@type":"Article","headline":"Asia stimulus","datePublished":"2026-05-21T19:00:00Z","image":["https://themarketear.com/assets/images/generic.png"]}
+        </script>
+        <h2 class="title">Asia stimulus</h2>
+        <div class="body"><div class="content">With chart.</div></div>
+        <time datetime="2026-05-21T19:00:00Z">today</time>
+        <img src="https://themarketear.com/images/asia-chart.png" />
+      </article>
+    `;
+
+    const dom = new JSDOM(`<!DOCTYPE html><html><body>${fixture}</body></html>`);
+    const ctx: Record<string, unknown> = {
+      document: dom.window.document,
+      URL: globalThis.URL,
+    };
+    vm.createContext(ctx);
+    const raw = vm.runInContext(buildExtractionExpression(), ctx) as string;
+    const parsed = parsePayload(raw);
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) throw new Error("expected ok payload");
+
+    const noImage = parsed.items.find((it: any) => it.id === "no-image-post");
+    expect(noImage).toBeDefined();
+    expect(noImage.images).toEqual([]);
+
+    const withImage = parsed.items.find((it: any) => it.id === "real-image-post");
+    expect(withImage).toBeDefined();
+    expect(withImage.images).toEqual(["https://themarketear.com/images/asia-chart.png"]);
+  });
+
+  it("does not bleed images across sibling articles in the DOM", async () => {
+    // Defensive regression for the EMB-chart-on-every-post bug. Each post's
+    // images must come from that post's own <article> subtree, never from
+    // a sibling article elsewhere on the page.
+    const { buildExtractionExpression, parsePayload } = await import(
+      "../../scripts/newsfeed/extract.js"
+    );
+
+    const fixture = `
+      <article class="post" id="with-chart">
+        <h2 class="title">Has a chart</h2>
+        <div class="body"><div class="content">x</div></div>
+        <time datetime="2026-05-21T20:00:00Z"></time>
+        <img src="https://themarketear.com/images/emb-chart.png" />
+      </article>
+      <article class="post" id="no-chart-1">
+        <h2 class="title">No chart 1</h2>
+        <div class="body"><div class="content">y</div></div>
+        <time datetime="2026-05-21T19:30:00Z"></time>
+      </article>
+      <article class="post" id="no-chart-2">
+        <h2 class="title">No chart 2</h2>
+        <div class="body"><div class="content">z</div></div>
+        <time datetime="2026-05-21T19:00:00Z"></time>
+      </article>
+    `;
+
+    const dom = new JSDOM(`<!DOCTYPE html><html><body>${fixture}</body></html>`);
+    const ctx: Record<string, unknown> = {
+      document: dom.window.document,
+      URL: globalThis.URL,
+    };
+    vm.createContext(ctx);
+    const raw = vm.runInContext(buildExtractionExpression(), ctx) as string;
+    const parsed = parsePayload(raw);
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) throw new Error("expected ok payload");
+
+    expect(parsed.items.find((it: any) => it.id === "with-chart").images).toEqual([
+      "https://themarketear.com/images/emb-chart.png",
+    ]);
+    expect(parsed.items.find((it: any) => it.id === "no-chart-1").images).toEqual([]);
+    expect(parsed.items.find((it: any) => it.id === "no-chart-2").images).toEqual([]);
   });
 
   it("filters out articles missing id/title/timestamp", async () => {
