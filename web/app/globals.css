@@ -518,6 +518,27 @@ body {
   border: 1px solid var(--line-grid);
   border-radius: 4px;
   padding: 16px;
+  /* Pin the rail to the top of the dashboard's scroll viewport and let
+     its newsfeed scroll inside instead of dragging the entire page down.
+     The 120px allowance covers the workspace header (48px), footer
+     telemetry strip (~26px), and the content area's vertical padding
+     (40px). Adjust if any of those change. */
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Tighter scrollbar that matches the brand instead of the OS default. */
+.dashboard-surface__rail::-webkit-scrollbar { width: 6px; }
+.dashboard-surface__rail::-webkit-scrollbar-track { background: transparent; }
+.dashboard-surface__rail::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--line-grid) 80%, transparent);
+  border-radius: 999px;
+}
+.dashboard-surface__rail::-webkit-scrollbar-thumb:hover {
+  background: var(--line-grid);
 }
 
 /* ───────────────────────────────────────────────────────────
@@ -805,6 +826,13 @@ body {
 @media (max-width: 1280px) {
   .dashboard-surface { grid-template-columns: 1fr; }
   .snapshot-card__split { grid-template-columns: 1fr; }
+  /* Below the dual-column breakpoint, drop the sticky/clamp behaviour —
+     the rail stacks beneath the main column and should grow naturally. */
+  .dashboard-surface__rail {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+  }
 }
 
 @media (max-width: 720px) {
