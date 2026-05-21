@@ -423,6 +423,30 @@ export type ScannerData = {
   top_signals: ScannerSignal[];
 };
 
+// LEAP IV-mispricing scanner — surfaced via /api/leap, written by
+// scripts/leap_scanner_uw.py --json. The script ranks tickers where
+// long-dated IV diverges from realized vol; `best_gap` is the headline
+// signal (HV − IV in vol points). `is_mispriced` is the script's own
+// boolean classification.
+export type LeapResult = {
+  ticker: string;
+  price: number | null;
+  hv_20: number | null;
+  hv_60: number | null;
+  hv_252: number | null;
+  current_iv: number | null;
+  iv_rank: number | null;
+  leap_count: number;
+  best_gap: number;
+  is_mispriced: boolean;
+};
+
+export type LeapData = {
+  scan_time: string;
+  min_gap: number | null;
+  results: LeapResult[];
+};
+
 // Flow Analysis types
 export type FlowAnalysisPosition = {
   ticker: string;

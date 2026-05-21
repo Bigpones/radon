@@ -4,29 +4,33 @@ import { useState } from "react";
 import Link from "next/link";
 import { useScanner } from "@/lib/useScanner";
 import { useDiscover } from "@/lib/useDiscover";
+import { useLeap } from "@/lib/useLeap";
 
-type Tab = "scanner" | "discover";
+type Tab = "scanner" | "discover" | "leap";
 
 /**
- * OpportunitiesCard — surfaces trading candidates from the scanner and
- * discover engines. Single card with a tab toggle so the dashboard doesn't
- * burn vertical space on two parallel lists. Top 5 candidates each.
- *
- * LEAP scan output is not yet exposed via an API route — currently a CLI
- * only (scripts/leap_iv_scanner.py). Add a third tab once the /api/leap
- * endpoint lands.
+ * OpportunitiesCard — surfaces trading candidates from the scanner, the
+ * discover (dark-pool) engine, and the LEAP IV-mispricing scan. Single
+ * card with a tab toggle so the dashboard doesn't burn vertical space on
+ * three parallel lists. Top 5 candidates each.
  */
 export function OpportunitiesCard() {
   const [tab, setTab] = useState<Tab>("scanner");
   const scanner = useScanner(tab === "scanner");
   const discover = useDiscover(tab === "discover");
+  const leap = useLeap(tab === "leap");
 
   const scannerRows = (scanner.data?.top_signals ?? []).slice(0, 5);
   const discoverRows = (discover.data?.candidates ?? []).slice(0, 5);
+  // LEAP results are pre-sorted by best_gap desc inside the script.
+  const leapRows = (leap.data?.results ?? []).slice(0, 5);
 
-  const loading = tab === "scanner" ? scanner.loading : discover.loading;
-  const error = tab === "scanner" ? scanner.error : discover.error;
-  const lastSync = tab === "scanner" ? scanner.lastSync : discover.lastSync;
+  const loading =
+    tab === "scanner" ? scanner.loading : tab === "discover" ? discover.loading : leap.loading;
+  const error =
+    tab === "scanner" ? scanner.error : tab === "discover" ? discover.error : leap.error;
+  const lastSync =
+    tab === "scanner" ? scanner.lastSync : tab === "discover" ? discover.lastSync : leap.lastSync;
 
   return (
     <section className="snapshot-card">
@@ -36,9 +40,13 @@ export function OpportunitiesCard() {
         <h3 className="panel-title">Trading Candidates</h3>
         <Link
           className="snapshot-card__see-all"
-          href={tab === "scanner" ? "/scanner" : "/discover"}
+          href={tab === "scanner" ? "/scanner" : tab === "discover" ? "/discover" : "/scanner"}
         >
-          {tab === "scanner" ? "All scanner →" : "All discover →"}
+          {tab === "scanner"
+            ? "All scanner →"
+            : tab === "discover"
+              ? "All discover →"
+              : "Run latest →"}
         </Link>
       </header>
 
@@ -62,6 +70,16 @@ export function OpportunitiesCard() {
         >
           Discover
           {discover.data ? <span className="snapshot-tab__count">{discover.data.candidates_found}</span> : null}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "leap"}
+          className={`snapshot-tab${tab === "leap" ? " snapshot-tab--active" : ""}`}
+          onClick={() => setTab("leap")}
+        >
+          LEAP
+          {leap.data ? <span className="snapshot-tab__count">{leap.data.results.length}</span> : null}
         </button>
         <span className="snapshot-tabs__meta">
           {lastSync ? `Last sample ${new Date(lastSync).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}` : "—"}
@@ -91,22 +109,51 @@ export function OpportunitiesCard() {
             ))}
           </ul>
         )
-      ) : discoverRows.length === 0 ? (
-        <div className="snapshot-card__empty">No discover candidates captured yet.</div>
+      ) : tab === "discover" ? (
+        discoverRows.length === 0 ? (
+          <div className="snapshot-card__empty">No discover candidates captured yet.</div>
+        ) : (
+          <ul className="snapshot-rows">
+            {discoverRows.map((c) => (
+              <li key={`d-${c.ticker}`} className="snapshot-row">
+                <Link href={`/${encodeURIComponent(c.ticker)}`} className="snapshot-row__ticker">
+                  {c.ticker}
+                </Link>
+                <span className="snapshot-row__signal">
+                  {c.options_bias?.toUpperCase() ?? "—"} · {c.dp_direction || "DP"} {c.dp_strength?.toFixed(1) ?? ""}
+                </span>
+                <span className={`snapshot-row__direction snapshot-row__direction--${(c.dp_direction || "").toLowerCase()}`}>
+                  {c.alerts ?? 0} alerts
+                </span>
+                <span className="snapshot-row__score">{c.score?.toFixed(1) ?? "—"}</span>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : leapRows.length === 0 ? (
+        <div className="snapshot-card__empty">
+          No LEAP scans on file. Run <code>python3 scripts/leap_scanner_uw.py --preset megacap --json</code> to populate.
+        </div>
       ) : (
         <ul className="snapshot-rows">
-          {discoverRows.map((c) => (
-            <li key={`d-${c.ticker}`} className="snapshot-row">
-              <Link href={`/${encodeURIComponent(c.ticker)}`} className="snapshot-row__ticker">
-                {c.ticker}
+          {leapRows.map((r) => (
+            <li key={`l-${r.ticker}`} className="snapshot-row">
+              <Link href={`/${encodeURIComponent(r.ticker)}`} className="snapshot-row__ticker">
+                {r.ticker}
               </Link>
               <span className="snapshot-row__signal">
-                {c.options_bias?.toUpperCase() ?? "—"} · {c.dp_direction || "DP"} {c.dp_strength?.toFixed(1) ?? ""}
+                {r.current_iv != null ? `IV ${r.current_iv.toFixed(1)}` : "IV —"}
+                {" · "}
+                {r.hv_20 != null ? `HV20 ${r.hv_20.toFixed(1)}` : "HV20 —"}
               </span>
-              <span className={`snapshot-row__direction snapshot-row__direction--${(c.dp_direction || "").toLowerCase()}`}>
-                {c.alerts ?? 0} alerts
+              <span
+                className={`snapshot-row__direction snapshot-row__direction--${r.is_mispriced ? "bull" : "neutral"}`}
+              >
+                {r.is_mispriced ? "Mispriced" : "—"}
               </span>
-              <span className="snapshot-row__score">{c.score?.toFixed(1) ?? "—"}</span>
+              <span className="snapshot-row__score">
+                {r.best_gap >= 0 ? `+${r.best_gap.toFixed(1)}` : r.best_gap.toFixed(1)}
+              </span>
             </li>
           ))}
         </ul>

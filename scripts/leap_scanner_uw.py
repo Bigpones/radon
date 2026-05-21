@@ -752,6 +752,15 @@ def main():
             json_path.write_text(json.dumps(json_data, indent=2))
             print(f"✓ JSON saved to {json_path}")
 
+            # Also mirror to data/leap.json so the dashboard
+            # Opportunities → LEAP tab can read the latest scan via the
+            # /api/leap route. Other scans (scanner, discover) follow the
+            # same data/<scan>.json convention.
+            cache_path = Path(__file__).resolve().parent.parent / "data" / "leap.json"
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            cache_path.write_text(json.dumps(json_data, indent=2))
+            print(f"✓ Dashboard cache saved to {cache_path}")
+
 
 if __name__ == "__main__":
     main()
