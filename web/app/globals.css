@@ -500,31 +500,317 @@ body {
    ─────────────────────────────────────────────────────────── */
 .dashboard-surface {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 400px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
   align-items: start;
-}
-
-@media (min-width: 1600px) {
-  .dashboard-surface { grid-template-columns: minmax(0, 1fr) 480px; }
 }
 
 .dashboard-surface__main {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
   min-width: 0;
 }
 
 .dashboard-surface__rail {
-  position: sticky;
-  top: 20px;
-  max-height: calc(100vh - 80px);
-  overflow-y: auto;
+  min-width: 0;
   background: var(--bg-panel);
   border: 1px solid var(--line-grid);
   border-radius: 4px;
   padding: 16px;
+}
+
+/* ───────────────────────────────────────────────────────────
+   Snapshot cards — Portfolio / Orders / Opportunities. These
+   render the actionable surfaces in the left column. Brand-
+   matched to .instrument-panel but with their own internal
+   structure (split rails, tabs, tighter rhythm).
+   ─────────────────────────────────────────────────────────── */
+.snapshot-card {
+  position: relative;
+  background: var(--bg-panel);
+  border: 1px solid var(--line-grid);
+  border-radius: 4px;
+  padding: 18px 20px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.snapshot-card__header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.snapshot-card__header .panel-eyebrow { margin: 0; flex-shrink: 0; }
+.snapshot-card__header .panel-title { flex: 1; }
+
+.snapshot-card__see-all {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--signal-core);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.snapshot-card__see-all:hover { text-decoration: underline; }
+
+.snapshot-card__empty,
+.snapshot-card__error {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 14px 0;
+}
+
+.snapshot-card__error { color: var(--fault); }
+
+.snapshot-grid--portfolio {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.snapshot-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line-grid);
+}
+
+.snapshot-cell:nth-child(-n+2) { border-top: 0; padding-top: 0; }
+
+.snapshot-cell__label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.snapshot-cell__value {
+  font-family: var(--font-sans);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.snapshot-cell__value--core    { color: var(--signal-core); }
+.snapshot-cell__value--fault   { color: var(--fault); }
+.snapshot-cell__value--neutral { color: var(--text-primary); }
+
+/* Orders + Fills two-column split */
+.snapshot-card__split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.snapshot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.snapshot-list__kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.snapshot-list__count {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--signal-core) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--signal-core) 30%, var(--line-grid));
+  color: var(--signal-core);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+
+.snapshot-list__empty {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 6px 0;
+}
+
+.snapshot-list__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.snapshot-list__row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line-grid);
+}
+
+.snapshot-list__row:first-child { border-top: 0; padding-top: 0; }
+
+.snapshot-list__row-desc {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.snapshot-list__row-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Opportunities tabs + rows */
+.snapshot-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid var(--line-grid);
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+}
+
+.snapshot-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.snapshot-tab:hover { color: var(--text-primary); }
+
+.snapshot-tab--active {
+  color: var(--signal-core);
+  background: color-mix(in srgb, var(--signal-core) 6%, transparent);
+  border-color: color-mix(in srgb, var(--signal-core) 30%, var(--line-grid));
+}
+
+.snapshot-tab__count {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.snapshot-tab--active .snapshot-tab__count { color: var(--signal-core); }
+
+.snapshot-tabs__meta {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.snapshot-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.snapshot-row {
+  display: grid;
+  grid-template-columns: 64px 1fr auto auto;
+  gap: 12px;
+  align-items: baseline;
+  padding: 8px 0;
+  border-top: 1px solid var(--line-grid);
+}
+
+.snapshot-row:first-child { border-top: 0; }
+
+.snapshot-row__ticker {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--signal-core);
+  text-decoration: none;
+}
+
+.snapshot-row__ticker:hover { text-decoration: underline; }
+
+.snapshot-row__signal {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.snapshot-row__direction {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.snapshot-row__direction--bull,
+.snapshot-row__direction--bullish,
+.snapshot-row__direction--accumulation { color: var(--signal-core); }
+
+.snapshot-row__direction--bear,
+.snapshot-row__direction--bearish,
+.snapshot-row__direction--distribution { color: var(--fault); }
+
+.snapshot-row__score {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1280px) {
+  .dashboard-surface { grid-template-columns: 1fr; }
+  .snapshot-card__split { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 720px) {
+  .snapshot-grid--portfolio { grid-template-columns: 1fr; }
+  .snapshot-row { grid-template-columns: 60px 1fr; }
+  .snapshot-row__direction, .snapshot-row__score { display: none; }
 }
 
 .dashboard-hero {
