@@ -334,6 +334,31 @@ function NewOrderForm({
     }];
     const risk = computeOrderRisk(riskLegs, parsedPrice, parsedQty);
 
+    // Pure close: SELL on a held LONG single-leg where the position
+    // covers the order fully (partial closes still qualify — the
+    // remaining LONG contracts stay open at unchanged risk). For these
+    // the operator-facing answer is *not* max-gain/max-loss (those are
+    // both zero by construction; the existing risk model is correct
+    // but uninformative) — it's "what cash do I receive and what's my
+    // realized P&L vs. the entry?" Mirrors the combo-close treatment
+    // already in place below (line ~692).
+    const isClosingLong =
+      legAction === "SELL" &&
+      onlyLeg.direction === "LONG" &&
+      coveringLongContracts >= parsedQty;
+
+    if (isClosingLong) {
+      const proceeds = parsedQty * parsedPrice * multiplier;
+      const costBasis = parsedQty * onlyLeg.avg_cost * multiplier;
+      return {
+        description,
+        totalCost: proceeds,
+        totalLabel: "Proceeds:",
+        estimatedPnl: proceeds - costBasis,
+        estimatedPnlLabel: "Est. Realized P&L:",
+      };
+    }
+
     return {
       description,
       totalCost: action === "SELL" ? -totalCost : totalCost,

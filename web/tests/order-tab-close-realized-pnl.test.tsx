@@ -1,0 +1,181 @@
+/**
+ * @vitest-environment jsdom
+ *
+ * Regression: when a user opens the Order tab on a held LONG single-leg
+ * option and submits a SELL-to-close limit, the confirmation summary
+ * must report the cash flow as Proceeds (positive credit, not a
+ * negative "Total") and surface the Est. Realized P&L vs. the entry
+ * cost basis — NOT the open-position Max Gain / Max Loss (both zero by
+ * construction for a covered close, but uninformative to the operator).
+ *
+ * Originally observed on a LONG 65× USAX Call $45 position where the
+ * summary read "Total: -$26,000 · Max Gain: $0 · Max Loss: $0".
+ */
+
+import React from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render } from "@testing-library/react";
+import OrderTab from "../components/ticker-detail/OrderTab";
+import type { PortfolioData, PortfolioPosition } from "@/lib/types";
+import type { PriceData } from "@/lib/pricesProtocol";
+
+vi.mock("@/lib/OrderActionsContext", () => ({
+  useOrderActions: () => ({
+    pendingCancels: new Map(),
+    pendingModifies: new Map(),
+    cancelledOrders: [],
+    requestCancel: vi.fn(),
+    requestModify: vi.fn(),
+    drainNotifications: vi.fn(() => []),
+    setOrdersUpdater: vi.fn(),
+  }),
+}));
+
+vi.mock("@/components/ModifyOrderModal", () => ({
+  default: () => null,
+}));
+
+/** LONG 65× USAX Call $45.0 at avg_cost $1.50/contract.
+ *  entry_cost = 65 × 1.50 × 100 = $9,750. */
+const LONG_USAX_CALL: PortfolioPosition = {
+  id: 11,
+  ticker: "USAX",
+  structure: "Long Call $45.0",
+  structure_type: "Long Call",
+  risk_profile: "defined",
+  expiry: "2027-01-15",
+  contracts: 65,
+  direction: "LONG",
+  entry_cost: 9750,
+  max_risk: 9750,
+  market_value: 26000,
+  kelly_optimal: null,
+  target: null,
+  stop: null,
+  entry_date: "2026-03-01",
+  legs: [
+    {
+      direction: "LONG",
+      contracts: 65,
+      type: "Call",
+      strike: 45,
+      entry_cost: 9750,
+      avg_cost: 1.5,
+      market_price: 4.0,
+      market_value: 26000,
+      market_price_is_calculated: false,
+    },
+  ],
+};
+
+const PORTFOLIO: PortfolioData = {
+  bankroll: 250_000,
+  peak_value: 250_000,
+  last_sync: new Date().toISOString(),
+  total_deployed_pct: 4,
+  total_deployed_dollars: 9_750,
+  remaining_capacity_pct: 96,
+  position_count: 1,
+  defined_risk_count: 1,
+  undefined_risk_count: 0,
+  avg_kelly_optimal: null,
+  positions: [LONG_USAX_CALL],
+  account_summary: {
+    net_liquidation: 250_000,
+    daily_pnl: 0,
+    unrealized_pnl: 16_250,
+    realized_pnl: 0,
+    settled_cash: 240_250,
+    maintenance_margin: 0,
+    excess_liquidity: 240_250,
+    buying_power: 480_500,
+    dividends: 0,
+  },
+};
+
+function makePrice(symbol: string): PriceData {
+  return {
+    symbol,
+    last: 4.0,
+    lastIsCalculated: false,
+    bid: 3.8,
+    ask: 4.1,
+    bidSize: 1,
+    askSize: 1,
+    volume: 100,
+    high: null,
+    low: null,
+    open: null,
+    close: 3.9,
+    week52High: null,
+    week52Low: null,
+    avgVolume: null,
+    delta: null,
+    gamma: null,
+    theta: null,
+    vega: null,
+    impliedVol: null,
+    undPrice: null,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+const PRICES: Record<string, PriceData> = {
+  USAX_20270115_45_C: makePrice("USAX_20270115_45_C"),
+  USAX: makePrice("USAX"),
+};
+
+function readSummaryMetrics(container: HTMLElement): Record<string, string> {
+  const metrics: Record<string, string> = {};
+  container.querySelectorAll(".order-confirm-metric").forEach((row) => {
+    const label = row.querySelector(".order-confirm-metric-label")?.textContent?.trim() ?? "";
+    const value = row.querySelector(".order-confirm-metric-value")?.textContent?.trim() ?? "";
+    if (label) metrics[label.replace(/:$/, "")] = value;
+  });
+  return metrics;
+}
+
+describe("OrderTab — SELL-to-close on LONG single-leg surfaces realized P&L", () => {
+  afterEach(cleanup);
+
+  it("reports Proceeds (positive) + Est. Realized P&L instead of Total / Max Gain / Max Loss", () => {
+    const { container, getByText } = render(
+      React.createElement(OrderTab, {
+        ticker: "USAX",
+        position: LONG_USAX_CALL,
+        portfolio: PORTFOLIO,
+        prices: PRICES,
+        openOrders: [],
+      }),
+    );
+
+    // Form defaults action="SELL" because position != null (close path).
+    const qtyInput = container.querySelector<HTMLInputElement>(".order-input");
+    expect(qtyInput).not.toBeNull();
+    fireEvent.change(qtyInput!, { target: { value: "65" } });
+
+    const limitInput = container.querySelector<HTMLInputElement>(".modify-price-input");
+    expect(limitInput).not.toBeNull();
+    fireEvent.change(limitInput!, { target: { value: "4.00" } });
+
+    // Advance to confirm step so OrderConfirmSummary renders.
+    fireEvent.click(getByText("Place Order"));
+
+    const metrics = readSummaryMetrics(container);
+
+    // Bug repro: the summary previously read "Total: -$26,000" + "Max
+    // Gain / Max Loss" — both zero. Pin the fix.
+    expect(metrics).toHaveProperty("Proceeds");
+    expect(metrics.Proceeds).toMatch(/\$26,000/);
+    expect(metrics).not.toHaveProperty("Total");
+
+    expect(metrics).toHaveProperty("Est. Realized P&L");
+    // Realized P&L = 65 × (4.00 − 1.50) × 100 = $16,250.
+    expect(metrics["Est. Realized P&L"]).toMatch(/\$16,250/);
+
+    // Max Gain / Max Loss are forward-risk metrics for OPEN trades;
+    // they're meaningless on a pure close and must not render.
+    expect(metrics).not.toHaveProperty("Max Gain");
+    expect(metrics).not.toHaveProperty("Max Loss");
+  });
+});
