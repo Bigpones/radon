@@ -1906,6 +1906,31 @@ td.last-price-cell {
   font-variant-numeric: tabular-nums;
 }
 
+/* "Synced Xh ago" lozenge — explains the IBKR Flex T+1 publication
+ * cadence on hover so the operator doesn't think the panel is stale
+ * when a fresh withdrawal hasn't landed yet.
+ * See feedback_flex_cash_transaction_lag.md. */
+.cash-flows-sync-lozenge {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border: 1px solid var(--border-dim);
+  border-radius: 2px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-muted) 6%, transparent);
+  cursor: help;
+  user-select: none;
+}
+
+.cash-flows-sync-lozenge:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
 .filter-select {
   font-family: var(--font-mono);
   font-size: 10px;

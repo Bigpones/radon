@@ -34,6 +34,10 @@ export interface CashFlowResponse {
   count: number;
   from_date: string;
   summary: CashFlowSummary | null;
+  // Most-recent `synced_at` across the rows returned by FastAPI. The UI
+  // uses this to render a "Synced Xh ago" lozenge that explains the
+  // IBKR Flex T+1 publication cadence. Null when no rows are present.
+  last_synced_at?: string | null;
   db_error?: string | null;
 }
 

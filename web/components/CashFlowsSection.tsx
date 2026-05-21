@@ -32,6 +32,28 @@ function fmtDate(iso: string): string {
   return `${m}/${d}/${y.slice(2)}`;
 }
 
+// IBKR Flex publishes the CashTransaction section once per day with a
+// ~1-day settlement lag — a withdrawal initiated on day N appears in
+// Flex on the morning of day N+1, and the radon daemon syncs once per
+// ET trading day at 17:00 ET. The lozenge surfaces the last successful
+// sync so an operator who initiated a withdrawal today understands why
+// it hasn't appeared yet. See feedback_flex_cash_transaction_lag.md.
+const SYNC_LOZENGE_EXPLANATION =
+  "IBKR Flex publishes cash transactions once per day with a ~1-day settlement lag. A withdrawal initiated today appears here after tomorrow morning's sync (T+1).";
+
+function relativeFromNow(isoTimestamp: string, now: number = Date.now()): string | null {
+  const parsed = Date.parse(isoTimestamp);
+  if (Number.isNaN(parsed)) return null;
+  const ageSeconds = Math.max(0, Math.floor((now - parsed) / 1000));
+  if (ageSeconds < 60) return "Just now";
+  const ageMinutes = Math.floor(ageSeconds / 60);
+  if (ageMinutes < 60) return `${ageMinutes}m ago`;
+  const ageHours = Math.floor(ageMinutes / 60);
+  if (ageHours < 24) return `${ageHours}h ago`;
+  const ageDays = Math.floor(ageHours / 24);
+  return `${ageDays}d ago`;
+}
+
 const PAGE_SIZE = 15;
 
 export default function CashFlowsSection() {
@@ -47,6 +69,7 @@ export default function CashFlowsSection() {
   }, [data?.rows, filter]);
 
   const summary = data?.summary ?? null;
+  const lastSyncedRelative = data?.last_synced_at ? relativeFromNow(data.last_synced_at) : null;
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const pageStart = page * PAGE_SIZE;
   const pageRows = rows.slice(pageStart, pageStart + PAGE_SIZE);
@@ -100,6 +123,17 @@ export default function CashFlowsSection() {
                 </span>
               </span>
             </>
+          )}
+          {lastSyncedRelative && (
+            <span
+              className="cash-flows-sync-lozenge"
+              data-testid="cash-flows-sync-lozenge"
+              title={SYNC_LOZENGE_EXPLANATION}
+              onClick={stopToggle}
+              onKeyDown={stopToggle}
+            >
+              Synced {lastSyncedRelative}
+            </span>
           )}
           <select
             className="filter-select"

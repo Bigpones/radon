@@ -84,6 +84,37 @@ describe("/api/cash-flows route", () => {
       "/cash-flows?days=30&types=Withdrawal",
     );
   });
+
+  it("passes the last_synced_at field straight through", async () => {
+    // Regression for the IBKR Flex T+1 settlement-lag visibility gap.
+    // The UI uses `last_synced_at` to render a "synced Xh ago — Flex
+    // publishes daily (T+1)" lozenge so operators who just initiated a
+    // withdrawal understand WHY it isn't showing yet. The route is a
+    // pass-through; we only assert the field survives serialization.
+    radonFetchMock.mockResolvedValueOnce({
+      rows: [
+        {
+          id: "39803040384",
+          date: "2026-05-08",
+          type: "Withdrawal",
+          amount: -72_000,
+          currency: "USD",
+          description: "DISBURSEMENT INITIATED BY operator",
+          raw_type: "Deposits/Withdrawals",
+          synced_at: "2026-05-20T21:02:34Z",
+        },
+      ],
+      count: 1,
+      from_date: "2026-02-20",
+      summary: { deposits: 0, withdrawals: -72_000, dividends: 0, net: -72_000 },
+      last_synced_at: "2026-05-20T21:02:34Z",
+    });
+
+    const { GET } = await import("@/app/api/cash-flows/route");
+    const res = await GET(new Request("http://localhost/api/cash-flows?days=90") as never);
+    const body = await res.json();
+    expect(body.last_synced_at).toBe("2026-05-20T21:02:34Z");
+  });
 });
 
 describe("useCashFlows hook fetch options", () => {

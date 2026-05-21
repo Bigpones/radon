@@ -1905,11 +1905,23 @@ async def cash_flows(
         "net": sum(r["amount"] for r in rows),
     }
 
+    # Most-recent successful sync touch among the rows that survived the
+    # date cutoff + type filter. The UI uses this to render a small
+    # "synced Xh ago — Flex publishes daily (T+1)" lozenge so operators
+    # who just initiated a withdrawal understand WHY the panel hasn't
+    # picked it up yet. See feedback_flex_cash_transaction_lag.md —
+    # CashTransaction publishes once per day with a ~1-day settlement
+    # lag, so a withdrawal initiated after the 17:00 ET daemon fire
+    # won't appear until the next morning's pull.
+    synced_values = [r["synced_at"] for r in rows if r.get("synced_at")]
+    last_synced_at = max(synced_values) if synced_values else None
+
     return {
         "rows": rows,
         "count": len(rows),
         "from_date": cutoff_iso,
         "summary": summary,
+        "last_synced_at": last_synced_at,
         "db_error": db_error,  # null on success; non-null when DB read failed and we fell back
     }
 
