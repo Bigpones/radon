@@ -4,8 +4,13 @@ import { optionKey } from "@/lib/pricesProtocol";
 
 /* ─── Formatters ──────────────────────────────────────────── */
 
-export const fmtUsd = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-export const fmtPrice = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function normalizeRoundedZero(n: number, fractionDigits: number): number {
+  const threshold = 0.5 / (10 ** fractionDigits);
+  return Math.abs(n) < threshold ? 0 : n;
+}
+
+export const fmtUsd = (n: number) => `$${normalizeRoundedZero(n, 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+export const fmtPrice = (n: number) => `$${normalizeRoundedZero(n, 2).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 export const fmtPriceOrCalculated = (n: number, isCalculated: boolean) => isCalculated ? `C${fmtPrice(n)}` : fmtPrice(n);
 
 type ResolvedRealtimePrice = {

@@ -58,11 +58,59 @@ const POSITIONS: PortfolioPosition[] = [
   },
 ];
 
+const AAOI_NEAR_ZERO_ENTRY: PortfolioPosition = {
+  id: 21,
+  ticker: "AAOI",
+  structure: "Risk Reversal (P$150.0/C$200.0)",
+  structure_type: "Risk Reversal",
+  risk_profile: "undefined",
+  expiry: "2026-07-17",
+  contracts: 25,
+  direction: "COMBO",
+  entry_cost: -1.31,
+  max_risk: null,
+  market_value: 71_500,
+  kelly_optimal: null,
+  target: null,
+  stop: null,
+  entry_date: "2026-05-19",
+  legs: [
+    {
+      direction: "LONG",
+      contracts: 25,
+      type: "Call",
+      strike: 200,
+      entry_cost: 59_519.23,
+      avg_cost: 2380.7692,
+      market_price: 52.0,
+      market_value: 130_000,
+    },
+    {
+      direction: "SHORT",
+      contracts: 25,
+      type: "Put",
+      strike: 150,
+      entry_cost: 59_520.54,
+      avg_cost: 2380.8216,
+      market_price: 23.4,
+      market_value: 58_500,
+    },
+  ],
+};
+
 describe("PositionTable ratio risk reversal labels", () => {
   it("renders raw long-short contract counts instead of a reduced ratio", () => {
     render(<PositionTable positions={POSITIONS} prices={{}} />);
 
     expect(screen.getByText("Ratio Risk Reversal 75x10 (P$400.0/C$410.0)")).toBeTruthy();
     expect(screen.queryByText(/Ratio Risk Reversal 2x15/)).toBeNull();
+  });
+
+  it("renders a near-zero avg entry for the AAOI remaining risk reversal instead of the stale $1.34 drift", () => {
+    render(<PositionTable positions={[AAOI_NEAR_ZERO_ENTRY]} prices={{}} />);
+
+    const row = screen.getByText("AAOI").closest("tr");
+    expect(row?.textContent ?? "").toContain("$0.00");
+    expect(row?.textContent ?? "").not.toContain("$1.34");
   });
 });

@@ -1,5 +1,39 @@
 # TODO
 
+## Session: Fix IB Sync Entry Cost With Journal Lot-Matched Basis (2026-05-21)
+
+### Goal
+Use raw journal fills to derive open leg basis for live positions so partial closes do not inherit IB's recomputed `avgCost` drift. The immediate AAOI risk-reversal repro should return the remaining 25x call / 25x short put to an approximately zero net entry cost instead of `$1.34`.
+
+### Dependency Graph
+- T1 (Inspect the existing `ib_sync` / journal / DB seams and pin the exact regression coverage for lot-matched open basis) depends_on: []
+- T2 (Add red regression tests for journal lot-matched basis and the AAOI net combo entry-cost expectation) depends_on: [T1]
+- T3 (Implement `scripts/clients/journal_basis.py` and wire the lookup through `ib_sync.py` with IB fallback plus diagnostic `ib_avg_cost`) depends_on: [T2]
+- T4 (Run required verification: full pytest suite, Vitest baseline check, and `bun run build` from `web/`) depends_on: [T3]
+- T5 (Document review results, create the atomic commit, push `main`, verify `deploy.yml`, and spot-check live AAOI output) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inspect the existing `ib_sync` / journal / DB seams and pin the exact regression coverage for lot-matched open basis
+- [x] T2 Add red regression tests for journal lot-matched basis and the AAOI net combo entry-cost expectation
+- [x] T3 Implement `scripts/clients/journal_basis.py` and wire the lookup through `ib_sync.py` with IB fallback plus diagnostic `ib_avg_cost`
+- [x] T4 Run required verification: full pytest suite, Vitest baseline check, and `bun run build` from `web/`
+- [ ] T5 Document review results, create the atomic commit, push `main`, verify `deploy.yml`, and spot-check live AAOI output
+
+### Review
+- Fix:
+  - Added `scripts/clients/journal_basis.py`, a pure journal-row lot matcher that buckets option fills by `ticker|expiry|right|strike`, infers open-side from net quantity, and returns live open basis per remaining contract bucket.
+  - Wired `scripts/ib_sync.py` to prefetch per-ticker journal basis, override leg `entry_cost` and `avgCost` from the journal when available, and preserve the raw IB value as `ibAvgCost` / `ib_avg_cost` for diagnostics.
+  - Added Python regression coverage for the AAOI May 19-21 fill sequence and a TS render regression that locks the near-zero average-entry display on the AAOI remaining risk reversal.
+  - Normalized near-zero signed display values in `web/lib/positionUtils.ts` so corrected negative dust does not render as `$-0.00`.
+- Verification:
+  - Focused Python: `python3.13 -m pytest scripts/tests/test_journal_basis.py scripts/tests/test_combo_entry_date.py -q` → `8 passed`.
+  - Focused Vitest: `npx vitest run web/tests/position-table-ratio-risk-reversal.test.tsx` → `2 passed`.
+  - Full pytest: `env RADON_DB_NO_REPLICA=1 python3.13 -m pytest scripts/tests -q` → baseline not clean on this checkout: `1908 passed, 26 failed, 95 errors, 15 skipped`. The dominant error cluster is existing MenthorQ/Playwright integration coverage plus unrelated repo failures.
+  - Full Vitest: `npx vitest run --config vitest.config.ts` → baseline not clean on this checkout; broad pre-existing failures reproduced across unrelated websocket/regime/newsfeed/test-runtime surfaces.
+  - Build: `cd web && bun run build` failed in the sandbox because `next/font` could not fetch Google fonts (`IBM Plex Mono`, `IBM Plex Sans`) with network access restricted. Non-font warning in `web/lib/tools/runner.ts` is pre-existing and unrelated to this fix.
+- Ship blocker:
+  - Commit/push/deploy verification could not be completed from this sandbox because writes inside `.git/` are blocked (`touch .git/codex-write-test` and `git commit` both fail with `Operation not permitted` on `.git/index.lock` creation).
+
 ## Session: Add Affected-File Pytest Runner (2026-03-24)
 
 ### Goal

@@ -47,6 +47,8 @@ except ImportError:
     sys.exit(1)
 
 from clients.ib_client import IBClient, CLIENT_IDS, DEFAULT_HOST, DEFAULT_GATEWAY_PORT
+from clients.journal_basis import compute_open_basis_for_ticker
+from db.client import get_db
 
 # Default connection settings
 DEFAULT_PORT = DEFAULT_GATEWAY_PORT
@@ -510,6 +512,7 @@ def collapse_positions(positions: list) -> list:
                 "strike": leg.get('strike'),
                 "entry_cost": leg['entry_cost'],
                 "avg_cost": leg['avgCost'],
+                "ib_avg_cost": leg.get('ibAvgCost'),
                 "market_price": leg.get('marketPrice'),
                 "market_value": leg.get('marketValue'),
                 "market_price_is_calculated": bool(leg.get('marketPriceIsCalculated'))
@@ -584,9 +587,67 @@ def _resolve_market_price(market_price: Optional[float], bid: Optional[float], a
     return None, False
 
 
-def fetch_positions(client: IBClient) -> list:
+def _journal_basis_key(symbol: str, expiry, right, strike) -> Optional[str]:
+    digits = "".join(ch for ch in str(expiry or "") if ch.isdigit())
+    if len(digits) == 6:
+        digits = f"20{digits}"
+    if len(digits) != 8:
+        return None
+
+    right_value = str(right or "").strip().upper()[:1]
+    if right_value not in {"C", "P"}:
+        return None
+
+    try:
+        strike_value = float(strike)
+    except (TypeError, ValueError):
+        return None
+
+    symbol_value = str(symbol or "").strip().upper()
+    if not symbol_value:
+        return None
+
+    return f"{symbol_value}|{digits}|{right_value}|{strike_value}"
+
+
+def build_journal_basis_lookup(client: IBClient) -> dict[str, float]:
+    """Build a per-contract open-basis lookup from raw journal rows."""
+    try:
+        raw_positions = client.get_positions()
+    except Exception as exc:
+        print(f"  Warning: journal basis prefetch skipped, positions unavailable: {exc}")
+        return {}
+
+    tickers = sorted(
+        {
+            str(pos.contract.symbol).strip().upper()
+            for pos in raw_positions
+            if getattr(getattr(pos, "contract", None), "secType", None) == "OPT"
+            and getattr(getattr(pos, "contract", None), "symbol", None)
+        }
+    )
+    if not tickers:
+        return {}
+
+    try:
+        db = get_db()
+    except Exception as exc:
+        print(f"  Warning: journal basis unavailable, falling back to IB avgCost: {exc}")
+        return {}
+
+    lookup: dict[str, float] = {}
+    for ticker in tickers:
+        try:
+            lookup.update(compute_open_basis_for_ticker(db, ticker))
+        except Exception as exc:
+            print(f"  Warning: journal basis lookup failed for {ticker}: {exc}")
+    return lookup
+
+
+def fetch_positions(client: IBClient, journal_basis_lookup: Optional[dict[str, float]] = None) -> list:
     """Fetch all positions from IB"""
     positions = client.get_positions()
+    journal_basis_lookup = journal_basis_lookup or {}
     
     formatted = []
     for pos in positions:
@@ -594,6 +655,7 @@ def fetch_positions(client: IBClient) -> list:
         
         # Calculate position value
         avg_cost = pos.avgCost
+        ib_avg_cost = pos.avgCost
         position_size = pos.position
         
         # For options, avgCost is per share, multiply by 100 for per contract
@@ -601,12 +663,23 @@ def fetch_positions(client: IBClient) -> list:
             entry_cost = abs(avg_cost * position_size)  # Already multiplied by multiplier internally
         else:
             entry_cost = abs(avg_cost * position_size)
+
+        journal_key = _journal_basis_key(
+            contract.symbol,
+            getattr(contract, 'lastTradeDateOrContractMonth', None),
+            getattr(contract, 'right', None),
+            getattr(contract, 'strike', None),
+        )
+        if journal_key and journal_key in journal_basis_lookup and position_size != 0:
+            entry_cost = abs(float(journal_basis_lookup[journal_key]))
+            avg_cost = entry_cost / abs(position_size)
         
         formatted.append({
             "symbol": contract.symbol,
             "secType": contract.secType,
             "position": position_size,
             "avgCost": avg_cost,
+            "ibAvgCost": ib_avg_cost,
             "entry_cost": round(entry_cost, 2),
             "expiry": parse_expiry(contract),
             "strike": getattr(contract, 'strike', None),
@@ -1188,7 +1261,8 @@ def main():
         pnl_obj = client.ib.reqPnL(ib_account) if ib_account else None
 
         # Fetch positions while PnL streams
-        positions = fetch_positions(client)
+        journal_basis_lookup = build_journal_basis_lookup(client)
+        positions = fetch_positions(client, journal_basis_lookup=journal_basis_lookup)
 
         if not args.no_prices and positions:
             # ── Phase 3: Set exchange + request ALL data at once ──
