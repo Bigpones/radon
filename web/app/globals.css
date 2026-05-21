@@ -500,9 +500,13 @@ body {
    ─────────────────────────────────────────────────────────── */
 .dashboard-surface {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 400px;
   gap: 20px;
   align-items: start;
+}
+
+@media (min-width: 1600px) {
+  .dashboard-surface { grid-template-columns: minmax(0, 1fr) 480px; }
 }
 
 .dashboard-surface__main {
@@ -2204,12 +2208,241 @@ td.last-price-cell {
   border-radius: 4px;
   overflow: hidden;
   background: var(--bg-base);
+  position: relative;
+}
+
+/* Make the image wrapper feel clickable when it's a button. The hover
+   state reveals an expand glyph in the corner so the affordance reads
+   without competing with the post copy underneath. */
+.news-feed-image-wrapper--button {
+  display: block;
+  padding: 0;
+  cursor: zoom-in;
+  transition: border-color 150ms ease;
+}
+
+.news-feed-image-wrapper--button:hover {
+  border-color: var(--signal-core);
+}
+
+.news-feed-image-zoom {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  background: color-mix(in srgb, var(--bg-canvas) 80%, transparent);
+  color: var(--text-primary);
+  border: 1px solid var(--line-grid);
+  border-radius: 4px;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 150ms ease, transform 150ms ease;
+  pointer-events: none;
+}
+
+.news-feed-image-wrapper--button:hover .news-feed-image-zoom,
+.news-feed-image-wrapper--button:focus-visible .news-feed-image-zoom {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .news-feed-image {
   display: block;
   width: 100%;
   height: auto;
+}
+
+/* ───────────────────────────────────────────────────────────
+   NewsfeedLightbox — modal opened when a user clicks any image
+   in the dashboard rail. Image on the left, article copy on the
+   right. Dismissed by close button, Escape, or scrim click.
+   ─────────────────────────────────────────────────────────── */
+.newsfeed-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}
+
+.newsfeed-lightbox__scrim {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--bg-canvas) 86%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 0;
+  cursor: zoom-out;
+}
+
+.newsfeed-lightbox__panel {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--line-grid);
+  border-radius: 4px;
+  max-width: min(1280px, 100%);
+  max-height: min(820px, 100%);
+  width: 100%;
+  overflow: hidden;
+  box-shadow: 0 24px 48px color-mix(in srgb, var(--bg-canvas) 60%, transparent);
+}
+
+.newsfeed-lightbox__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  width: 32px;
+  height: 32px;
+  background: color-mix(in srgb, var(--bg-canvas) 70%, transparent);
+  border: 1px solid var(--line-grid);
+  border-radius: 4px;
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 150ms ease;
+}
+
+.newsfeed-lightbox__close:hover {
+  border-color: var(--signal-core);
+}
+
+.newsfeed-lightbox__media {
+  background: var(--bg-canvas);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.newsfeed-lightbox__image {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.newsfeed-lightbox__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 32px 36px;
+  overflow-y: auto;
+  border-left: 1px solid var(--line-grid);
+}
+
+.newsfeed-lightbox__head { display: flex; flex-direction: column; gap: 8px; }
+
+.newsfeed-lightbox__kicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.newsfeed-lightbox__title {
+  font-family: var(--font-sans);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+
+.newsfeed-lightbox__body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
+.newsfeed-lightbox__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.newsfeed-lightbox__tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--signal-core);
+  background: color-mix(in srgb, var(--signal-core) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--signal-core) 30%, var(--line-grid));
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+.newsfeed-lightbox__footer {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-grid);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.newsfeed-lightbox__source {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--signal-core);
+  text-decoration: none;
+  border: 1px solid color-mix(in srgb, var(--signal-core) 35%, var(--line-grid));
+  padding: 6px 10px;
+  border-radius: 4px;
+  transition: background 150ms ease;
+}
+
+.newsfeed-lightbox__source:hover {
+  background: color-mix(in srgb, var(--signal-core) 10%, transparent);
+}
+
+.newsfeed-lightbox__timestamp {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+@media (max-width: 900px) {
+  .newsfeed-lightbox { padding: 16px; }
+  .newsfeed-lightbox__panel {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    max-height: 100%;
+  }
+  .newsfeed-lightbox__copy {
+    border-left: 0;
+    border-top: 1px solid var(--line-grid);
+    padding: 20px 22px;
+  }
+  .newsfeed-lightbox__title { font-size: 18px; }
 }
 
 .news-feed-footer {

@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight, Link as LinkIcon, RefreshCw, Radio } from "l
 import { formatAbsolute, formatRelative, formatTime } from "../lib/newsfeedTime";
 import { useNewsfeedTagFilter } from "../lib/useNewsfeedTagFilter";
 import NewsfeedTagBar from "./NewsfeedTagBar";
+import NewsfeedLightbox, { type NewsfeedLightboxFocus } from "./NewsfeedLightbox";
 
 const POSTS_ENDPOINT = "/api/newsfeed/posts";
 const POSTS_FALLBACK_ENDPOINT = "/data/posts.json";
@@ -103,6 +104,7 @@ export default function DashboardNewsFeed() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [lightboxFocus, setLightboxFocus] = useState<NewsfeedLightboxFocus | null>(null);
   const sectionRef = useRef<HTMLDivElement>(null);
 
   const scrollToTop = useCallback(() => {
@@ -317,7 +319,14 @@ export default function DashboardNewsFeed() {
                   </a>
                   {post.content ? <p className="news-feed-summary">{post.content}</p> : null}
                   {firstImage ? (
-                    <div className="news-feed-image-wrapper">
+                    <button
+                      type="button"
+                      className="news-feed-image-wrapper news-feed-image-wrapper--button"
+                      onClick={() =>
+                        setLightboxFocus({ post, imageUrl: firstImage })
+                      }
+                      aria-label={`Open lightbox for: ${post.title}`}
+                    >
                       <Image
                         src={firstImage}
                         alt={post.title}
@@ -327,7 +336,10 @@ export default function DashboardNewsFeed() {
                         className="news-feed-image"
                         priority={false}
                       />
-                    </div>
+                      <span className="news-feed-image-zoom" aria-hidden>
+                        ⤢
+                      </span>
+                    </button>
                   ) : null}
                   {postTags.length > 0 ? (
                     <div className="news-feed-tags">
@@ -370,6 +382,7 @@ export default function DashboardNewsFeed() {
           </>
         )}
       </div>
+      <NewsfeedLightbox focus={lightboxFocus} onDismiss={() => setLightboxFocus(null)} />
     </div>
   );
 }
