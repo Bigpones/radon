@@ -16,6 +16,7 @@ import { usePrices } from "@/lib/usePrices";
 import { computeRealizedPnlFromFills } from "@/lib/realized-pnl";
 import { usePreviousClose } from "@/lib/usePreviousClose";
 import { type OptionContract, type IndexContract, optionKey, portfolioLegToContract, uniqueOptionContracts } from "@/lib/pricesProtocol";
+import { isIndexSymbol, indexExchangeFor } from "@/lib/indexSymbols";
 import Sidebar from "@/components/Sidebar";
 import Header from "@/components/Header";
 import MetricCards from "@/components/MetricCards";
@@ -134,10 +135,21 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
     [activeSection],
   );
 
+  // Indices (VIX/SPX/NDX/…) must route through the `indexes` channel
+  // not `symbols`: subscribing to "VIX" as a Stock returns no data
+  // because IBKR exposes it via secType=IND. Splitting the tickerParam
+  // here keeps the `/[ticker]` page working for both stocks and indices
+  // without forking the page or shell.
   const tickerSymbols = useMemo(
-    () => tickerParam ? [tickerParam] : [],
+    () => (tickerParam && !isIndexSymbol(tickerParam) ? [tickerParam] : []),
     [tickerParam],
   );
+
+  const tickerIndexes = useMemo<IndexContract[]>(() => {
+    if (!tickerParam) return [];
+    const exchange = indexExchangeFor(tickerParam);
+    return exchange ? [{ symbol: tickerParam.toUpperCase(), exchange }] : [];
+  }, [tickerParam]);
 
   const allSymbols = useMemo(
     () => [...new Set([...portfolioSymbols, ...orderSymbols, ...regimeStocks, ...tickerSymbols])],
@@ -162,6 +174,21 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
     [activeSection],
   );
 
+  const allIndexes = useMemo<IndexContract[]>(() => {
+    // De-dup by `symbol@exchange` so a regime-tab + /VIX-page combo
+    // doesn't double-subscribe.
+    const seen = new Set<string>();
+    const out: IndexContract[] = [];
+    for (const idx of [...regimeIndexes, ...tickerIndexes]) {
+      const key = `${idx.symbol}@${idx.exchange}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(idx);
+      }
+    }
+    return out;
+  }, [regimeIndexes, tickerIndexes]);
+
   const {
     prices: rawPrices,
     fundamentals,
@@ -172,7 +199,7 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
   } = usePrices({
     symbols: allSymbols,
     contracts: allContracts,
-    indexes: regimeIndexes,
+    indexes: allIndexes,
   });
 
   // Debounce ibConnected: disconnections must persist >2s before surfacing to UI.

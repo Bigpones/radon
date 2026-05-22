@@ -16,6 +16,7 @@ import { checkNakedShortRisk, type NakedShortPortfolio, type OrderPayload } from
 import { OrderConfirmSummary, type OrderSummary } from "@/lib/order";
 import { computeOrderRisk } from "@/lib/orderRisk";
 import { fmtSignedPrice, toneClass } from "@/lib/format";
+import { isIndexSymbol } from "@/lib/indexSymbols";
 
 type OrderTabProps = {
   ticker: string;
@@ -913,6 +914,7 @@ function ComboOrderForm({
 
 export default function OrderTab({ ticker, position, portfolio, prices, openOrders = [], tickerPriceData }: OrderTabProps) {
   const isCombo = position != null && position.legs.length > 1 && position.structure_type !== "Stock";
+  const isIndex = isIndexSymbol(ticker);
 
   const { requestModify } = useOrderActions();
   const [modifyTarget, setModifyTarget] = useState<OpenOrder | null>(null);
@@ -939,20 +941,64 @@ export default function OrderTab({ ticker, position, portfolio, prices, openOrde
 
       <div className="order-tab">
         {/* NEW ORDER FORM FIRST — always visible above the fold */}
-        {/* Combo order form for multi-leg positions */}
-        {isCombo && (
+        {/* Indices are not directly tradeable — show a notice and gate
+           the form. Phase 2 will add a futures order form for the
+           tradeable VIX-future / SPX-future paths. */}
+        {isIndex ? (
           <div className="new-order-section-top">
-            <div className="existing-orders-title">Close Position</div>
-            <ComboOrderForm ticker={ticker} position={position!} portfolio={portfolio} prices={prices} />
+            <div className="existing-orders-title">New Order</div>
+            <div
+              className="index-notice"
+              style={{
+                padding: "16px",
+                border: "1px solid var(--line-grid)",
+                borderRadius: "4px",
+                background: "color-mix(in srgb, var(--bg-panel-raised) 60%, transparent)",
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "10px",
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: "var(--signal-core)",
+                  marginBottom: "8px",
+                }}
+              >
+                Index Instrument
+              </div>
+              <div
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "13px",
+                  color: "var(--text-secondary)",
+                  lineHeight: 1.5,
+                }}
+              >
+                {ticker} is an index, not a tradeable security. To take exposure use {ticker} futures
+                (CFE) or {ticker} options (CBOE). Futures and options trading paths land in Phase 2 / 3.
+              </div>
+            </div>
           </div>
-        )}
+        ) : (
+          <>
+            {/* Combo order form for multi-leg positions */}
+            {isCombo && (
+              <div className="new-order-section-top">
+                <div className="existing-orders-title">Close Position</div>
+                <ComboOrderForm ticker={ticker} position={position!} portfolio={portfolio} prices={prices} />
+              </div>
+            )}
 
-        {/* Stock / single-leg order form */}
-        {!isCombo && (
-          <div className="new-order-section-top">
-            <div className="existing-orders-title">{position ? "Close Position" : "New Order"}</div>
-            <NewOrderForm ticker={ticker} position={position} portfolio={portfolio} tickerPriceData={tickerPriceData} />
-          </div>
+            {/* Stock / single-leg order form */}
+            {!isCombo && (
+              <div className="new-order-section-top">
+                <div className="existing-orders-title">{position ? "Close Position" : "New Order"}</div>
+                <NewOrderForm ticker={ticker} position={position} portfolio={portfolio} tickerPriceData={tickerPriceData} />
+              </div>
+            )}
+          </>
         )}
 
         {/* Existing open orders for this ticker — below the form */}

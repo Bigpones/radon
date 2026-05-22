@@ -6,6 +6,7 @@ import type { PriceData } from "@/lib/pricesProtocol";
 import { fmtPrice } from "@/lib/positionUtils";
 import OrderErrorBanner from "@/components/OrderErrorBanner";
 import { OrderConfirmSummary, type OrderSummary } from "@/lib/order";
+import { isIndexSymbol } from "@/lib/indexSymbols";
 
 /* ─── Types ─── */
 
@@ -563,6 +564,7 @@ export default function BookTab({
   const spread = bid != null && ask != null ? ask - bid : null;
   const last = priceData?.last ?? null;
   const lastLabel = priceData?.lastIsCalculated ? "MARK" : "LAST";
+  const isIndex = isIndexSymbol(ticker);
 
   return (
     <div className="book-tab" style={{ padding: "16px 0" }}>
@@ -578,15 +580,64 @@ export default function BookTab({
 
       {position && <PositionSummary position={position} />}
 
-      <StockOrderForm
-        ticker={ticker}
-        position={position}
-        bid={bid}
-        ask={ask}
-        mid={mid}
-      />
+      {isIndex ? (
+        <IndexNotTradeableNotice ticker={ticker} />
+      ) : (
+        <StockOrderForm
+          ticker={ticker}
+          position={position}
+          bid={bid}
+          ask={ask}
+          mid={mid}
+        />
+      )}
 
       {openOrders.length > 0 && <OpenOrdersList orders={openOrders} />}
+    </div>
+  );
+}
+
+/**
+ * Inline notice replacing the stock order form for index tickers
+ * (VIX/SPX/NDX/...). Indices are not directly tradeable on IBKR; only
+ * futures and options on the index are. Phase 2 wires the futures
+ * trading path; Phase 3 wires the options path.
+ */
+function IndexNotTradeableNotice({ ticker }: { ticker: string }) {
+  return (
+    <div
+      className="index-notice"
+      style={{
+        marginTop: "24px",
+        padding: "16px",
+        border: "1px solid var(--line-grid)",
+        borderRadius: "4px",
+        background: "color-mix(in srgb, var(--bg-panel-raised) 60%, transparent)",
+      }}
+    >
+      <div
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: "10px",
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+          color: "var(--signal-core)",
+          marginBottom: "8px",
+        }}
+      >
+        Index Instrument
+      </div>
+      <div
+        style={{
+          fontFamily: "var(--font-sans)",
+          fontSize: "13px",
+          color: "var(--text-secondary)",
+          lineHeight: 1.5,
+        }}
+      >
+        {ticker} is an index, not a tradeable security. To take exposure, use {ticker} futures
+        (CFE) or {ticker} options (CBOE). Futures and options trading paths land in Phase 2 / 3.
+      </div>
     </div>
   );
 }
