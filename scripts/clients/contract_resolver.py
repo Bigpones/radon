@@ -87,3 +87,70 @@ def resolve_future_contract(symbol: str, expiry: str = ""):
     if meta.get("multiplier"):
         contract.multiplier = meta["multiplier"]
     return contract
+
+
+# ── Options ────────────────────────────────────────────────────────────
+
+# Indices that have CBOE-traded options. Each entry pins the exchange
+# + tradingClass IB needs to disambiguate from weeklies (e.g. VIXW)
+# and other related products. Multiplier is informational; IB sets it.
+INDEX_OPTION_ROOTS: dict[str, dict[str, str]] = {
+    "VIX": {"tradingClass": "VIX", "exchange": "CBOE", "multiplier": "100"},
+    "SPX": {"tradingClass": "SPX", "exchange": "CBOE", "multiplier": "100"},
+    "NDX": {"tradingClass": "NDX", "exchange": "CBOE", "multiplier": "100"},
+    "RUT": {"tradingClass": "RUT", "exchange": "CBOE", "multiplier": "100"},
+    "XSP": {"tradingClass": "XSP", "exchange": "CBOE", "multiplier": "100"},
+}
+
+
+def supports_index_options(symbol: str) -> bool:
+    """True iff Radon knows how to resolve index options for this symbol."""
+    return symbol.upper() in INDEX_OPTION_ROOTS
+
+
+def resolve_option_contract(
+    symbol: str,
+    expiry: str = "",
+    strike: float | None = None,
+    right: str = "",
+):
+    """Return ib_insync Option contract for `symbol`.
+
+    Indices (VIX/SPX/NDX/RUT/XSP) route to CBOE with explicit
+    tradingClass so IB doesn't pick a weekly (VIXW) or related root.
+    Equities use exchange=SMART (legacy behaviour).
+
+    Pass blank `expiry` / `strike` / `right` to get a partial contract
+    suitable for `reqContractDetails` (chain enumeration).
+    """
+    if not symbol or not symbol.strip():
+        raise ValueError("symbol is required")
+
+    from ib_insync import Option
+
+    upper = symbol.strip().upper()
+
+    if upper in INDEX_OPTION_ROOTS:
+        meta = INDEX_OPTION_ROOTS[upper]
+        contract = Option(
+            symbol=upper,
+            lastTradeDateOrContractMonth=expiry,
+            strike=float(strike) if strike is not None else 0.0,
+            right=right,
+            exchange=meta["exchange"],
+            currency="USD",
+        )
+        contract.tradingClass = meta["tradingClass"]
+        if meta.get("multiplier"):
+            contract.multiplier = meta["multiplier"]
+        return contract
+
+    # Equity option — legacy SMART routing
+    return Option(
+        symbol=upper,
+        lastTradeDateOrContractMonth=expiry,
+        strike=float(strike) if strike is not None else 0.0,
+        right=right,
+        exchange="SMART",
+        currency="USD",
+    )

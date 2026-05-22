@@ -16,8 +16,9 @@ import { checkNakedShortRisk, type NakedShortPortfolio, type OrderPayload } from
 import { OrderConfirmSummary, type OrderSummary } from "@/lib/order";
 import { computeOrderRisk } from "@/lib/orderRisk";
 import { fmtSignedPrice, toneClass } from "@/lib/format";
-import { isIndexSymbol, hasFuturesSupport } from "@/lib/indexSymbols";
+import { isIndexSymbol, hasFuturesSupport, hasIndexOptionsSupport } from "@/lib/indexSymbols";
 import { FuturesOrderForm } from "@/components/ticker-detail/FuturesOrderForm";
+import { IndexOptionOrderForm } from "@/components/ticker-detail/IndexOptionOrderForm";
 
 type OrderTabProps = {
   ticker: string;
@@ -948,9 +949,13 @@ export default function OrderTab({ ticker, position, portfolio, prices, openOrde
         {isIndex ? (
           <div className="new-order-section-top">
             <div className="existing-orders-title">New Order</div>
-            {hasFuturesSupport(ticker) ? (
-              <FuturesOrderForm ticker={ticker} />
-            ) : (
+            {hasFuturesSupport(ticker) && <FuturesOrderForm ticker={ticker} />}
+            {hasIndexOptionsSupport(ticker) && (
+              <div style={{ marginTop: hasFuturesSupport(ticker) ? "24px" : "0" }}>
+                <IndexOptionOrderForm ticker={ticker} />
+              </div>
+            )}
+            {!hasFuturesSupport(ticker) && !hasIndexOptionsSupport(ticker) && (
               <div
                 className="index-notice"
                 style={{
@@ -980,8 +985,8 @@ export default function OrderTab({ ticker, position, portfolio, prices, openOrde
                     lineHeight: 1.5,
                   }}
                 >
-                  {ticker} is an index, not a tradeable security. To take exposure use {ticker} options
-                  (CBOE) — Phase 3 will wire the order form.
+                  {ticker} is an index, not directly tradeable. Futures and options trading paths
+                  for {ticker} are not yet wired.
                 </div>
               </div>
             )}

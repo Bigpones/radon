@@ -6,8 +6,9 @@ import type { PriceData } from "@/lib/pricesProtocol";
 import { fmtPrice } from "@/lib/positionUtils";
 import OrderErrorBanner from "@/components/OrderErrorBanner";
 import { OrderConfirmSummary, type OrderSummary } from "@/lib/order";
-import { isIndexSymbol, hasFuturesSupport } from "@/lib/indexSymbols";
+import { isIndexSymbol, hasFuturesSupport, hasIndexOptionsSupport } from "@/lib/indexSymbols";
 import { FuturesOrderForm } from "@/components/ticker-detail/FuturesOrderForm";
+import { IndexOptionOrderForm } from "@/components/ticker-detail/IndexOptionOrderForm";
 
 /* ─── Types ─── */
 
@@ -582,11 +583,17 @@ export default function BookTab({
       {position && <PositionSummary position={position} />}
 
       {isIndex ? (
-        hasFuturesSupport(ticker) ? (
-          <FuturesOrderForm ticker={ticker} />
-        ) : (
-          <IndexNotTradeableNotice ticker={ticker} />
-        )
+        <>
+          {hasFuturesSupport(ticker) && <FuturesOrderForm ticker={ticker} />}
+          {hasIndexOptionsSupport(ticker) && (
+            <div style={{ marginTop: hasFuturesSupport(ticker) ? "24px" : "0" }}>
+              <IndexOptionOrderForm ticker={ticker} />
+            </div>
+          )}
+          {!hasFuturesSupport(ticker) && !hasIndexOptionsSupport(ticker) && (
+            <IndexNotTradeableNotice ticker={ticker} />
+          )}
+        </>
       ) : (
         <StockOrderForm
           ticker={ticker}

@@ -194,7 +194,18 @@ export async function POST(request: Request): Promise<Response> {
       quantity: body.quantity,
       limitPrice: body.limitPrice,
       tif: body.tif || "DAY",
-      ...(body.type === "option" ? { expiry: body.expiry, strike: body.strike, right: body.right } : {}),
+      ...(body.type === "option"
+        ? {
+            expiry: body.expiry,
+            strike: body.strike,
+            right: body.right,
+            // Index options need conId + exchange="CBOE" to disambiguate
+            // from weeklies (VIXW) and related roots. The chain endpoint
+            // hands these back.
+            ...(body.conId != null ? { conId: body.conId } : {}),
+            ...(body.exchange ? { exchange: body.exchange } : {}),
+          }
+        : {}),
       ...(body.type === "future"
         ? {
             // Futures: prefer conId (unambiguous, from /futures/chain).

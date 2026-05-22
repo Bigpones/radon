@@ -63,3 +63,15 @@ export function hasFuturesSupport(symbol: string | null | undefined): boolean {
   if (!symbol) return false;
   return FUTURES_SUPPORTED_SYMBOLS.has(symbol.toUpperCase());
 }
+
+/**
+ * Symbols where Radon supports trading options on the underlying index.
+ * Keep in sync with scripts/clients/contract_resolver.py
+ * INDEX_OPTION_ROOTS.
+ */
+const INDEX_OPTIONS_SUPPORTED_SYMBOLS = new Set(["VIX", "SPX", "NDX", "RUT", "XSP"]);
+
+export function hasIndexOptionsSupport(symbol: string | null | undefined): boolean {
+  if (!symbol) return false;
+  return INDEX_OPTIONS_SUPPORTED_SYMBOLS.has(symbol.toUpperCase());
+}

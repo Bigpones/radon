@@ -1473,6 +1473,91 @@ async def leap_scan(preset: str = "mag7", min_gap: float = 10.0):
         return cached or {"scan_time": "", "min_gap": min_gap, "results": []}
 
 
+# ── Index options chain (Phase 3 — VIX et al.) ──────────────────────
+
+_INDEX_OPTIONS_CHAIN_TIMEOUT_S = 20.0  # patched in tests
+
+
+@app.get("/index-options/chain")
+async def index_options_chain(symbol: str, expiry: str = ""):
+    """List CBOE-listed index option contracts for `symbol`.
+
+    Indices (VIX/SPX/NDX/RUT/XSP) need exchange=CBOE +
+    tradingClass=<symbol> for IB to return the correct chain;
+    equity-style exchange=SMART picks up weeklies + related roots and
+    returns ambiguous results.
+
+    With `expiry` omitted the whole chain is returned (can be 1000+
+    contracts). With `expiry=YYYYMMDD` the response is filtered to
+    that single expiry day.
+
+    Currently scoped to symbols in FUTURES_ROOTS + INDEX_OPTION_ROOTS.
+    """
+    from clients.contract_resolver import resolve_option_contract, supports_index_options
+
+    symbol_upper = symbol.upper()
+    if not supports_index_options(symbol_upper):
+        raise HTTPException(
+            status_code=400,
+            detail=f"index options not supported for {symbol_upper}; supported: VIX, SPX, NDX, RUT, XSP",
+        )
+
+    if ib_pool is None:
+        raise HTTPException(status_code=503, detail="IB pool not initialised")
+
+    spec = resolve_option_contract(symbol_upper, expiry=expiry)
+
+    def _fetch_chain(client) -> list:
+        return client.ib.reqContractDetails(spec)
+
+    try:
+        async with ib_pool.acquire("data") as client:
+            details = await asyncio.wait_for(
+                asyncio.to_thread(_fetch_chain, client),
+                timeout=_INDEX_OPTIONS_CHAIN_TIMEOUT_S,
+            )
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="IB reqContractDetails timed out")
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"IB error: {exc}")
+
+    rows = []
+    for cd in details:
+        c = cd.contract
+        rows.append({
+            "conId": c.conId,
+            "symbol": c.symbol,
+            "localSymbol": c.localSymbol,
+            "exchange": c.exchange,
+            "currency": c.currency,
+            "lastTradeDateOrContractMonth": c.lastTradeDateOrContractMonth,
+            "strike": c.strike,
+            "right": c.right,
+            "multiplier": c.multiplier,
+            "tradingClass": c.tradingClass,
+            "minTick": cd.minTick,
+        })
+    # Sort by (expiry, strike, right) so the dashboard front of chain
+    # surfaces the nearest expiry's lowest call first.
+    rows.sort(key=lambda r: (
+        r["lastTradeDateOrContractMonth"] or "",
+        r["strike"] or 0.0,
+        r["right"] or "",
+    ))
+
+    # Distinct expiries for the dropdown UI.
+    expirations = sorted({r["lastTradeDateOrContractMonth"] for r in rows if r["lastTradeDateOrContractMonth"]})
+
+    return {
+        "symbol": symbol_upper,
+        "exchange": rows[0]["exchange"] if rows else "CBOE",
+        "tradingClass": rows[0]["tradingClass"] if rows else symbol_upper,
+        "expirations": expirations,
+        "contracts": rows,
+        "count": len(rows),
+    }
+
+
 # ── GARCH Convergence (Cross-Asset Vol Repricing Lag) ───────────────
 
 _garch_last_scan: float = 0.0

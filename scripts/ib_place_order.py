@@ -86,17 +86,23 @@ def place_order(params: dict) -> dict:
             contract = combo
 
         elif order_type == "option":
+            # Equity options route to SMART; index options (VIX/SPX/...)
+            # need explicit CBOE + tradingClass via the resolver so IB
+            # doesn't pick up VIXW weeklies or other related roots.
+            from clients.contract_resolver import resolve_option_contract
             expiry = params["expiry"]
             strike = float(params["strike"])
             right = params["right"]
-            contract = Option(
-                symbol=symbol,
-                lastTradeDateOrContractMonth=expiry,
-                strike=strike,
-                right=right,
-                exchange="SMART",
-                currency="USD",
-            )
+            con_id = params.get("conId")
+            if con_id:
+                # Caller passed the chain-resolved conId — use it directly
+                # to skip qualification ambiguity.
+                contract = Contract()
+                contract.conId = int(con_id)
+                contract.exchange = params.get("exchange", "SMART")
+                contract.currency = "USD"
+            else:
+                contract = resolve_option_contract(symbol, expiry, strike, right)
             qualified = client.qualify_contracts(contract)
             if not qualified:
                 return {"status": "error", "message": f"Could not qualify contract: {symbol}"}
