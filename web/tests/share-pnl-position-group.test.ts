@@ -194,4 +194,72 @@ describe("positionGroupShareData", () => {
     expect(data.exitPrice).toBe(1.0);
     expect(data.pnlPct).toBeCloseTo(231.35, 2);
   });
+
+  // Regression: portfolio-fallback path used legs[0].avg_cost as a per-share
+  // entryPrice then re-multiplied entryNotional by 100. Because avg_cost is
+  // already per-contract for options, entryNotional was 100× over and pnlPct
+  // collapsed toward zero. The fix is to treat avg_cost as per-contract for
+  // option legs (divide by 100) when seeding the per-share entryPrice.
+  it("uses per-share entry from portfolio fallback for closing options groups", () => {
+    const closeGroup: PositionFillGroup = {
+      id: "close-usax",
+      symbol: "USAX",
+      description: "Closed USAX Long Call",
+      isClosing: true,
+      totalQuantity: 65,
+      netPrice: 4.0,
+      totalCommission: -32.5,
+      totalPnL: 19389.45,
+      time: "2026-05-22T14:00:00+00:00",
+      fills: [
+        makeOptionFill({
+          execId: "close-usax-1",
+          symbol: "USAX",
+          side: "SLD",
+          quantity: 65,
+          avgPrice: 4.0,
+          realizedPNL: 19389.45,
+          time: "2026-05-22T14:00:00+00:00",
+          contract: { symbol: "USAX", conId: 999001, strike: 45, right: "C", expiry: "2026-06-19" },
+        }),
+      ],
+    };
+
+    const portfolioPosition = {
+      id: 1,
+      ticker: "USAX",
+      structure: "Long Call",
+      structure_type: "defined",
+      risk_profile: "defined",
+      expiry: "2026-06-19",
+      contracts: 65,
+      direction: "LONG",
+      entry_cost: 6630,
+      max_risk: 6630,
+      market_value: null,
+      legs: [
+        {
+          direction: "LONG" as const,
+          contracts: 65,
+          type: "Call" as const,
+          strike: 45,
+          entry_cost: 6630,
+          avg_cost: 102,
+          market_price: null,
+          market_value: null,
+        },
+      ],
+      kelly_optimal: null,
+      target: null,
+      stop: null,
+    };
+
+    const data = positionGroupShareData(closeGroup, [closeGroup], [portfolioPosition]);
+
+    // Without the fix: entryNotional would be 1.02 * 65 * 100 * 100 = $663,000 (100× too big),
+    // collapsing pnlPct to ~2.92%. With the fix: 19389.45 / 6630 = 292.45%.
+    expect(data.entryPrice).toBeCloseTo(1.02, 2);
+    expect(data.exitPrice).toBeCloseTo(4.0, 2);
+    expect(data.pnlPct).toBeCloseTo(292.45, 1);
+  });
 });

@@ -292,16 +292,18 @@ export function positionGroupShareData(
         return overlap.length >= 2;
       });
       if (matchingPosition) {
-        // Calculate per-unit entry price from legs
-        // For single-leg positions, use avg_cost directly
-        // For multi-leg, sum up the leg costs and divide by contracts
+        // PortfolioLeg.avg_cost is per-contract for options (already × 100) and per-share for stocks.
+        // entryPrice + entryNotional in this function follow the per-share convention,
+        // so divide by the leg's multiplier when constructing entryPrice from avg_cost.
+        const legMultiplier = (leg: typeof matchingPosition.legs[number]) => (leg.type === "Stock" ? 1 : 100);
         if (matchingPosition.legs.length === 1) {
-          entryPrice = matchingPosition.legs[0].avg_cost;
+          const onlyLeg = matchingPosition.legs[0];
+          entryPrice = onlyLeg.avg_cost / legMultiplier(onlyLeg);
         } else if (matchingPosition.legs.length > 1 && matchingPosition.contracts > 0) {
-          // Net entry price for combo = sum of (direction-adjusted avg_cost per leg)
+          // Net entry price for combo = sum of (direction-adjusted per-share avg_cost per leg)
           const netCost = matchingPosition.legs.reduce((sum, leg) => {
             const sign = leg.direction === "LONG" ? -1 : 1; // Long = paid, Short = received
-            return sum + sign * leg.avg_cost;
+            return sum + sign * (leg.avg_cost / legMultiplier(leg));
           }, 0);
           entryPrice = netCost;
         }
@@ -311,7 +313,8 @@ export function positionGroupShareData(
         }
         // Calculate notional for P&L %
         if (entryNotional === 0 && entryPrice != null) {
-          entryNotional = Math.abs(entryPrice) * (matchingPosition.contracts || group.totalQuantity) * 100;
+          const positionMultiplier = matchingPosition.legs.some((leg) => leg.type !== "Stock") ? 100 : 1;
+          entryNotional = Math.abs(entryPrice) * (matchingPosition.contracts || group.totalQuantity) * positionMultiplier;
         }
       }
     }
