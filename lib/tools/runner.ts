@@ -82,36 +82,26 @@ let _cachedPythonBin: string | null = null;
  * Resolve the Python interpreter to spawn.
  *
  * Order:
- *   1. `RADON_PYTHON_BIN` env override
- *   2. `<projectRoot>/.venv/bin/python3.13` (production layout on Hetzner)
- *   3. `<projectRoot>/.venv/bin/python3`
- *   4. `<projectRoot>/.venv/bin/python`
- *   5. `python3.13` on PATH (laptop dev fallback)
+ *   1. `RADON_PYTHON_BIN` env override (set on Hetzner via
+ *      radon-nextjs.service to point at the venv interpreter)
+ *   2. `python3.13` on PATH (laptop dev fallback — system Python has deps)
  *
- * Without this, `spawn("python3.13", ...)` hits the system interpreter,
- * which on the Hetzner VPS lacks every Radon dep (dotenv, ib_insync, ...).
- * The FastAPI service and every CLI script run via the venv at .venv/.
+ * Why not look up `<root>/.venv/bin/python3.13` from source? Turbopack's
+ * static analyzer follows string literals that look like file paths and
+ * attempts to resolve them at build time. On Hetzner the .venv binaries
+ * are symlinks to /usr/bin/python3.13, which lives outside the project
+ * root and trips a "Symlink .venv/bin/python3 is invalid" build error.
+ * Keeping the venv path out of source and in the systemd EnvironmentFile
+ * sidesteps the analyzer entirely. The `cwd` param is retained for API
+ * stability with `runScript` and tests.
  */
-export function resolvePythonBin(cwd: string): string {
+export function resolvePythonBin(_cwd: string): string {
   if (_cachedPythonBin) return _cachedPythonBin;
 
   const envOverride = process.env.RADON_PYTHON_BIN;
   if (envOverride && existsSync(envOverride)) {
     _cachedPythonBin = envOverride;
     return envOverride;
-  }
-
-  const venvCandidates = [
-    path.join(cwd, ".venv", "bin", "python3.13"),
-    path.join(cwd, ".venv", "bin", "python3"),
-    path.join(cwd, ".venv", "bin", "python"),
-  ];
-
-  for (const candidate of venvCandidates) {
-    if (existsSync(candidate)) {
-      _cachedPythonBin = candidate;
-      return candidate;
-    }
   }
 
   _cachedPythonBin = "python3.13";

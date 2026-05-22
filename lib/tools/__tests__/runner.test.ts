@@ -113,27 +113,7 @@ describe("resolvePythonBin", () => {
     }
   });
 
-  it("prefers <root>/.venv/bin/python3.13 when present", () => {
-    const venvBin = join(scratchRoot, ".venv", "bin");
-    mkdirSync(venvBin, { recursive: true });
-    const candidate = join(venvBin, "python3.13");
-    writeFileSync(candidate, "#!/bin/sh\nexit 0\n");
-    chmodSync(candidate, 0o755);
-
-    expect(resolvePythonBin(scratchRoot)).toBe(candidate);
-  });
-
-  it("falls back to python3 in venv when 3.13 missing", () => {
-    const venvBin = join(scratchRoot, ".venv", "bin");
-    mkdirSync(venvBin, { recursive: true });
-    const candidate = join(venvBin, "python3");
-    writeFileSync(candidate, "#!/bin/sh\nexit 0\n");
-    chmodSync(candidate, 0o755);
-
-    expect(resolvePythonBin(scratchRoot)).toBe(candidate);
-  });
-
-  it("falls back to 'python3.13' on PATH when no venv exists", () => {
+  it("falls back to 'python3.13' on PATH when no env override is set", () => {
     expect(resolvePythonBin(scratchRoot)).toBe("python3.13");
   });
 
@@ -153,19 +133,16 @@ describe("resolvePythonBin", () => {
   });
 });
 
-// Sanity test: the live repo root should resolve to a venv when one
-// exists (laptop dev or production), and to "python3.13" otherwise.
-// Either result is acceptable; the test asserts the returned value is
-// at least executable-or-on-PATH-looking.
+// Sanity test: the live repo root resolves to "python3.13" unless
+// RADON_PYTHON_BIN is set to an existing file. Tests run without that
+// env so the result must be the bare interpreter name.
 describe("resolvePythonBin (live tree)", () => {
-  beforeEach(() => _resetRootCache());
+  beforeEach(() => {
+    _resetRootCache();
+    delete process.env.RADON_PYTHON_BIN;
+  });
 
-  it("returns either an absolute venv path or the bare interpreter name", () => {
-    const bin = resolvePythonBin(resolveProjectRoot());
-    if (bin.startsWith("/")) {
-      expect(existsSync(bin)).toBe(true);
-    } else {
-      expect(bin).toBe("python3.13");
-    }
+  it("returns 'python3.13' by default (RADON_PYTHON_BIN unset)", () => {
+    expect(resolvePythonBin(resolveProjectRoot())).toBe("python3.13");
   });
 });
