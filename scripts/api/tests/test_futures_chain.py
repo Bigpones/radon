@@ -1,9 +1,13 @@
-"""Tests for /futures/chain (Phase 2 — VIX futures)."""
+"""Tests for /futures/chain (Phase 2 — VIX futures).
+
+Subprocess-backed since the rewrite — patches `run_script` rather
+than `ib_pool` for the same reason test_ticker_ratings_and_pi.py does.
+"""
 from __future__ import annotations
 
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -27,118 +31,74 @@ def client():
     return TestClient(app)
 
 
-def _fake_contract(*, conId, localSymbol, expiry):
-    """Match the shape ib_insync ContractDetails returns: .contract.{...}"""
-    contract = MagicMock()
-    contract.conId = conId
-    contract.symbol = "VIX"
-    contract.localSymbol = localSymbol
-    contract.exchange = "CFE"
-    contract.currency = "USD"
-    contract.lastTradeDateOrContractMonth = expiry
-    contract.multiplier = "1000"
-    contract.tradingClass = "VX"
-    cd = MagicMock()
-    cd.contract = contract
-    cd.marketName = "VX"
-    cd.minTick = 0.05
-    return cd
+def _fake_script_result(*, ok=True, data=None, error=None, exit_code=0):
+    from api.subprocess import ScriptResult
+    return ScriptResult(ok=ok, data=data, error=error, exit_code=exit_code)
 
 
-def test_futures_chain_returns_sorted_contracts(client, monkeypatch):
-    """Happy path: pool returns 3 contracts unsorted, route sorts them by expiry."""
-    from scripts.api import server
+def test_futures_chain_returns_payload(client):
+    payload = {
+        "symbol": "VIX",
+        "exchange": "CFE",
+        "contracts": [
+            {"conId": 1, "localSymbol": "VXM6", "lastTradeDateOrContractMonth": "20260617", "multiplier": "1000"},
+            {"conId": 2, "localSymbol": "VXN6", "lastTradeDateOrContractMonth": "20260722", "multiplier": "1000"},
+        ],
+        "count": 2,
+    }
 
-    fake_pool = MagicMock()
-    pool_client = MagicMock()
-    pool_client.ib.reqContractDetails = MagicMock(return_value=[
-        _fake_contract(conId=2, localSymbol="VXN6", expiry="20260722"),
-        _fake_contract(conId=1, localSymbol="VXM6", expiry="20260617"),
-        _fake_contract(conId=3, localSymbol="VXQ6", expiry="20260819"),
-    ])
+    async def _stub(*args, **kwargs):
+        return _fake_script_result(ok=True, data=payload)
 
-    class _PoolCtx:
-        async def __aenter__(self):
-            return pool_client
-        async def __aexit__(self, *args):
-            return False
+    with patch("scripts.api.server.run_script", side_effect=_stub) as run_mock:
+        resp = client.get("/futures/chain?symbol=VIX")
 
-    fake_pool.acquire = MagicMock(return_value=_PoolCtx())
-    monkeypatch.setattr(server, "ib_pool", fake_pool)
-
-    resp = client.get("/futures/chain?symbol=VIX")
     assert resp.status_code == 200
     body = resp.json()
     assert body["symbol"] == "VIX"
-    assert body["exchange"] == "CFE"
-    assert body["count"] == 3
-    # Sorted ascending — front month first.
-    assert [c["localSymbol"] for c in body["contracts"]] == ["VXM6", "VXN6", "VXQ6"]
-    assert body["contracts"][0]["conId"] == 1
+    assert body["count"] == 2
+    args, kwargs = run_mock.call_args
+    assert args[0] == "ib_chain.py"
+    assert "future" in args[1]
+    assert "VIX" in args[1]
 
 
-def test_futures_chain_unsupported_symbol_returns_400(client):
+def test_unsupported_symbol_returns_400(client):
     resp = client.get("/futures/chain?symbol=AAPL")
     assert resp.status_code == 400
     assert "futures not supported" in resp.json()["detail"]
 
 
-def test_futures_chain_handles_pool_timeout(client, monkeypatch):
-    from scripts.api import server
-    import time
+def test_subprocess_failure_returns_502(client):
+    async def _stub(*args, **kwargs):
+        return _fake_script_result(ok=False, error="boom", exit_code=1)
 
-    fake_pool = MagicMock()
-    pool_client = MagicMock()
-
-    def _hang(*args, **kwargs):
-        # Sleep past the route's 15s asyncio.wait_for budget.
-        time.sleep(20)
-        return []
-
-    pool_client.ib.reqContractDetails = _hang
-
-    class _PoolCtx:
-        async def __aenter__(self):
-            return pool_client
-        async def __aexit__(self, *args):
-            return False
-
-    fake_pool.acquire = MagicMock(return_value=_PoolCtx())
-    monkeypatch.setattr(server, "ib_pool", fake_pool)
-
-    # Override wait_for budget to 0.1s so the test runs quickly.
-    monkeypatch.setattr(server, "_FUTURES_CHAIN_TIMEOUT_S", 0.1, raising=False)
-
-    resp = client.get("/futures/chain?symbol=VIX")
-    assert resp.status_code == 504
-    assert "timed out" in resp.json()["detail"].lower()
+    with patch("scripts.api.server.run_script", side_effect=_stub):
+        resp = client.get("/futures/chain?symbol=VIX")
+    assert resp.status_code == 502
+    assert "boom" in resp.json()["detail"]
 
 
-def test_futures_chain_returns_503_when_pool_not_initialised(client, monkeypatch):
-    from scripts.api import server
-    monkeypatch.setattr(server, "ib_pool", None)
-    resp = client.get("/futures/chain?symbol=VIX")
-    assert resp.status_code == 503
+def test_script_error_payload_returns_502(client):
+    """If the subprocess returns ok but data.error is set (e.g. IB connect
+    failed), the route surfaces that as 502."""
+    async def _stub(*args, **kwargs):
+        return _fake_script_result(ok=True, data={"error": "IB connect failed: socket"})
+
+    with patch("scripts.api.server.run_script", side_effect=_stub):
+        resp = client.get("/futures/chain?symbol=VIX")
+    assert resp.status_code == 502
+    assert "IB connect failed" in resp.json()["detail"]
 
 
-def test_futures_chain_case_insensitive(client, monkeypatch):
-    from scripts.api import server
+def test_case_insensitive(client):
+    payload = {"symbol": "VIX", "exchange": "CFE", "contracts": [], "count": 0}
 
-    fake_pool = MagicMock()
-    pool_client = MagicMock()
-    pool_client.ib.reqContractDetails = MagicMock(return_value=[
-        _fake_contract(conId=1, localSymbol="VXM6", expiry="20260617"),
-    ])
+    async def _stub(*args, **kwargs):
+        return _fake_script_result(ok=True, data=payload)
 
-    class _PoolCtx:
-        async def __aenter__(self):
-            return pool_client
-        async def __aexit__(self, *args):
-            return False
-
-    fake_pool.acquire = MagicMock(return_value=_PoolCtx())
-    monkeypatch.setattr(server, "ib_pool", fake_pool)
-
-    resp = client.get("/futures/chain?symbol=vix")
+    with patch("scripts.api.server.run_script", side_effect=_stub) as run_mock:
+        resp = client.get("/futures/chain?symbol=vix")
     assert resp.status_code == 200
-    assert resp.json()["symbol"] == "VIX"
+    args, _ = run_mock.call_args
+    assert "VIX" in args[1]

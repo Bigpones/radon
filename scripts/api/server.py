@@ -1475,25 +1475,19 @@ async def leap_scan(preset: str = "mag7", min_gap: float = 10.0):
 
 # ── Index options chain (Phase 3 — VIX et al.) ──────────────────────
 
-_INDEX_OPTIONS_CHAIN_TIMEOUT_S = 20.0  # patched in tests
+_INDEX_OPTIONS_CHAIN_TIMEOUT_S = 45.0  # patched in tests
 
 
 @app.get("/index-options/chain")
 async def index_options_chain(symbol: str, expiry: str = ""):
     """List CBOE-listed index option contracts for `symbol`.
 
-    Indices (VIX/SPX/NDX/RUT/XSP) need exchange=CBOE +
-    tradingClass=<symbol> for IB to return the correct chain;
-    equity-style exchange=SMART picks up weeklies + related roots and
-    returns ambiguous results.
-
-    With `expiry` omitted the whole chain is returned (can be 1000+
-    contracts). With `expiry=YYYYMMDD` the response is filtered to
-    that single expiry day.
-
-    Currently scoped to symbols in FUTURES_ROOTS + INDEX_OPTION_ROOTS.
+    Subprocess-backed (ib_chain.py --kind option) for the same reason
+    /futures/chain is — cross-thread event loop deadlock on the pool's
+    data client when result sets exceed ~50 contracts. VIX/SPX/NDX
+    chains routinely return 1000+ contracts when expiry is unscoped.
     """
-    from clients.contract_resolver import resolve_option_contract, supports_index_options
+    from clients.contract_resolver import supports_index_options
 
     symbol_upper = symbol.upper()
     if not supports_index_options(symbol_upper):
@@ -1502,59 +1496,22 @@ async def index_options_chain(symbol: str, expiry: str = ""):
             detail=f"index options not supported for {symbol_upper}; supported: VIX, SPX, NDX, RUT, XSP",
         )
 
-    if ib_pool is None:
-        raise HTTPException(status_code=503, detail="IB pool not initialised")
+    args = ["--kind", "option", "--symbol", symbol_upper]
+    if expiry:
+        args.extend(["--expiry", expiry])
 
-    spec = resolve_option_contract(symbol_upper, expiry=expiry)
-
-    def _fetch_chain(client) -> list:
-        return client.ib.reqContractDetails(spec)
-
-    try:
-        async with ib_pool.acquire("data") as client:
-            details = await asyncio.wait_for(
-                asyncio.to_thread(_fetch_chain, client),
-                timeout=_INDEX_OPTIONS_CHAIN_TIMEOUT_S,
-            )
-    except asyncio.TimeoutError:
-        raise HTTPException(status_code=504, detail="IB reqContractDetails timed out")
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"IB error: {exc}")
-
-    rows = []
-    for cd in details:
-        c = cd.contract
-        rows.append({
-            "conId": c.conId,
-            "symbol": c.symbol,
-            "localSymbol": c.localSymbol,
-            "exchange": c.exchange,
-            "currency": c.currency,
-            "lastTradeDateOrContractMonth": c.lastTradeDateOrContractMonth,
-            "strike": c.strike,
-            "right": c.right,
-            "multiplier": c.multiplier,
-            "tradingClass": c.tradingClass,
-            "minTick": cd.minTick,
-        })
-    # Sort by (expiry, strike, right) so the dashboard front of chain
-    # surfaces the nearest expiry's lowest call first.
-    rows.sort(key=lambda r: (
-        r["lastTradeDateOrContractMonth"] or "",
-        r["strike"] or 0.0,
-        r["right"] or "",
-    ))
-
-    # Distinct expiries for the dropdown UI.
-    expirations = sorted({r["lastTradeDateOrContractMonth"] for r in rows if r["lastTradeDateOrContractMonth"]})
-
-    return {
+    result = await run_script("ib_chain.py", args, timeout=_INDEX_OPTIONS_CHAIN_TIMEOUT_S)
+    if not result.ok:
+        raise HTTPException(status_code=502, detail=result.error)
+    if result.data and result.data.get("error"):
+        raise HTTPException(status_code=502, detail=result.data["error"])
+    return result.data or {
         "symbol": symbol_upper,
-        "exchange": rows[0]["exchange"] if rows else "CBOE",
-        "tradingClass": rows[0]["tradingClass"] if rows else symbol_upper,
-        "expirations": expirations,
-        "contracts": rows,
-        "count": len(rows),
+        "exchange": "CBOE",
+        "tradingClass": symbol_upper,
+        "expirations": [],
+        "contracts": [],
+        "count": 0,
     }
 
 
@@ -1855,19 +1812,21 @@ async def options_expirations(symbol: str):
 
 # ── Futures chain (Phase 2 — VIX et al.) ────────────────────────────
 
-_FUTURES_CHAIN_TIMEOUT_S = 15.0  # patched in tests
+_FUTURES_CHAIN_TIMEOUT_S = 30.0  # patched in tests
 
 
 @app.get("/futures/chain")
 async def futures_chain(symbol: str):
-    """List all listed futures contracts for a supported underlying.
+    """List listed futures contracts for a supported underlying.
 
-    Phase 2 supports VIX only (the FUTURES_ROOTS table in
-    scripts/clients/contract_resolver.py is the source of truth).
-    Returns one row per listed expiry with the IB conId so order
-    placement can reference contracts uniquely without re-qualifying.
+    Routes through ib_chain.py (subprocess) so the request gets its
+    own event loop. The pool's data client lives on a thread with its
+    own loop — calling sync IB methods from asyncio.to_thread crashes
+    intermittently with "There is no current event loop in thread"
+    (large payloads consistently; small payloads luckily). Subprocess
+    avoids the cross-thread loop deadlock entirely.
     """
-    from clients.contract_resolver import resolve_future_contract, supports_futures
+    from clients.contract_resolver import supports_futures
 
     symbol_upper = symbol.upper()
     if not supports_futures(symbol_upper):
@@ -1876,54 +1835,16 @@ async def futures_chain(symbol: str):
             detail=f"futures not supported for {symbol_upper}; supported: VIX",
         )
 
-    if ib_pool is None:
-        raise HTTPException(status_code=503, detail="IB pool not initialised")
-
-    spec = resolve_future_contract(symbol_upper, expiry="")
-
-    def _fetch_chain(client) -> list:
-        # Synchronous call on the pool client's own thread/event loop.
-        # Calling reqContractDetailsAsync directly from the FastAPI
-        # handler awaits on the wrong loop (the IB socket reads happen
-        # on the pool's thread) and never resolves. Other endpoints use
-        # the same asyncio.to_thread shim — see options_expirations.
-        return client.ib.reqContractDetails(spec)
-
-    try:
-        async with ib_pool.acquire("data") as client:
-            details = await asyncio.wait_for(
-                asyncio.to_thread(_fetch_chain, client),
-                timeout=_FUTURES_CHAIN_TIMEOUT_S,
-            )
-    except asyncio.TimeoutError:
-        raise HTTPException(status_code=504, detail="IB reqContractDetails timed out")
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"IB error: {exc}")
-
-    # Sort by expiry ascending so the dashboard front-month sits at index 0.
-    rows = []
-    for cd in details:
-        c = cd.contract
-        rows.append({
-            "conId": c.conId,
-            "symbol": c.symbol,
-            "localSymbol": c.localSymbol,
-            "exchange": c.exchange,
-            "currency": c.currency,
-            "lastTradeDateOrContractMonth": c.lastTradeDateOrContractMonth,
-            "multiplier": c.multiplier,
-            "tradingClass": c.tradingClass,
-            "marketName": cd.marketName,
-            "minTick": cd.minTick,
-        })
-    rows.sort(key=lambda r: r["lastTradeDateOrContractMonth"] or "")
-
-    return {
-        "symbol": symbol_upper,
-        "exchange": rows[0]["exchange"] if rows else "CFE",
-        "contracts": rows,
-        "count": len(rows),
-    }
+    result = await run_script(
+        "ib_chain.py",
+        ["--kind", "future", "--symbol", symbol_upper],
+        timeout=_FUTURES_CHAIN_TIMEOUT_S,
+    )
+    if not result.ok:
+        raise HTTPException(status_code=502, detail=result.error)
+    if result.data and result.data.get("error"):
+        raise HTTPException(status_code=502, detail=result.data["error"])
+    return result.data or {"symbol": symbol_upper, "exchange": "CFE", "contracts": [], "count": 0}
 
 
 # ── PI command surface ──────────────────────────────────────────────
