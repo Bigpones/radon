@@ -27,7 +27,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(Path(__file__).parent))
 
 try:
-    from ib_insync import IB
+    from ib_insync import IB  # noqa: F401 (used implicitly via IBClient)
 except ImportError:
     print(json.dumps({"error": "ib_insync not installed"}))
     sys.exit(1)
@@ -38,7 +38,7 @@ from clients.contract_resolver import (
     supports_futures,
     supports_index_options,
 )
-from clients.ib_client import DEFAULT_HOST, DEFAULT_GATEWAY_PORT
+from clients.ib_client import DEFAULT_HOST, DEFAULT_GATEWAY_PORT, IBClient
 
 
 def fetch_chain(kind: str, symbol: str, expiry: str = "") -> dict:
@@ -54,19 +54,22 @@ def fetch_chain(kind: str, symbol: str, expiry: str = "") -> dict:
     else:
         return {"error": f"unknown kind: {kind!r}"}
 
-    ib = IB()
+    # Use IBClient wrapper so we get the auto-allocator + the same
+    # connection conventions as other subprocess scripts. Direct
+    # ib_insync.IB.connect rejects clientId="auto" with a ValueError.
+    client = IBClient()
     try:
-        ib.connect(host=DEFAULT_HOST, port=DEFAULT_GATEWAY_PORT, clientId="auto", timeout=10)
+        client.connect(host=DEFAULT_HOST, port=DEFAULT_GATEWAY_PORT, client_id="auto", timeout=10)
     except Exception as exc:  # noqa: BLE001
         return {"error": f"IB connect failed: {exc}"}
 
     try:
-        details = ib.reqContractDetails(spec)
+        details = client.ib.reqContractDetails(spec)
     except Exception as exc:  # noqa: BLE001
         return {"error": f"reqContractDetails failed: {exc}"}
     finally:
         try:
-            ib.disconnect()
+            client.disconnect()
         except Exception:
             pass
 
