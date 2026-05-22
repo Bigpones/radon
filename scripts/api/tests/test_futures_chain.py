@@ -51,7 +51,7 @@ def test_futures_chain_returns_sorted_contracts(client, monkeypatch):
 
     fake_pool = MagicMock()
     pool_client = MagicMock()
-    pool_client.ib.reqContractDetailsAsync = AsyncMock(return_value=[
+    pool_client.ib.reqContractDetails = MagicMock(return_value=[
         _fake_contract(conId=2, localSymbol="VXN6", expiry="20260722"),
         _fake_contract(conId=1, localSymbol="VXM6", expiry="20260617"),
         _fake_contract(conId=3, localSymbol="VXQ6", expiry="20260819"),
@@ -85,15 +85,17 @@ def test_futures_chain_unsupported_symbol_returns_400(client):
 
 def test_futures_chain_handles_pool_timeout(client, monkeypatch):
     from scripts.api import server
-    import asyncio
+    import time
 
     fake_pool = MagicMock()
     pool_client = MagicMock()
 
-    async def _hang(*args, **kwargs):
-        raise asyncio.TimeoutError()
+    def _hang(*args, **kwargs):
+        # Sleep past the route's 15s asyncio.wait_for budget.
+        time.sleep(20)
+        return []
 
-    pool_client.ib.reqContractDetailsAsync = _hang
+    pool_client.ib.reqContractDetails = _hang
 
     class _PoolCtx:
         async def __aenter__(self):
@@ -103,6 +105,9 @@ def test_futures_chain_handles_pool_timeout(client, monkeypatch):
 
     fake_pool.acquire = MagicMock(return_value=_PoolCtx())
     monkeypatch.setattr(server, "ib_pool", fake_pool)
+
+    # Override wait_for budget to 0.1s so the test runs quickly.
+    monkeypatch.setattr(server, "_FUTURES_CHAIN_TIMEOUT_S", 0.1, raising=False)
 
     resp = client.get("/futures/chain?symbol=VIX")
     assert resp.status_code == 504
@@ -121,7 +126,7 @@ def test_futures_chain_case_insensitive(client, monkeypatch):
 
     fake_pool = MagicMock()
     pool_client = MagicMock()
-    pool_client.ib.reqContractDetailsAsync = AsyncMock(return_value=[
+    pool_client.ib.reqContractDetails = MagicMock(return_value=[
         _fake_contract(conId=1, localSymbol="VXM6", expiry="20260617"),
     ])
 

@@ -1770,6 +1770,9 @@ async def options_expirations(symbol: str):
 
 # ── Futures chain (Phase 2 — VIX et al.) ────────────────────────────
 
+_FUTURES_CHAIN_TIMEOUT_S = 15.0  # patched in tests
+
+
 @app.get("/futures/chain")
 async def futures_chain(symbol: str):
     """List all listed futures contracts for a supported underlying.
@@ -1792,14 +1795,23 @@ async def futures_chain(symbol: str):
         raise HTTPException(status_code=503, detail="IB pool not initialised")
 
     spec = resolve_future_contract(symbol_upper, expiry="")
+
+    def _fetch_chain(client) -> list:
+        # Synchronous call on the pool client's own thread/event loop.
+        # Calling reqContractDetailsAsync directly from the FastAPI
+        # handler awaits on the wrong loop (the IB socket reads happen
+        # on the pool's thread) and never resolves. Other endpoints use
+        # the same asyncio.to_thread shim — see options_expirations.
+        return client.ib.reqContractDetails(spec)
+
     try:
         async with ib_pool.acquire("data") as client:
             details = await asyncio.wait_for(
-                client.ib.reqContractDetailsAsync(spec),
-                timeout=15,
+                asyncio.to_thread(_fetch_chain, client),
+                timeout=_FUTURES_CHAIN_TIMEOUT_S,
             )
     except asyncio.TimeoutError:
-        raise HTTPException(status_code=504, detail="IB reqContractDetailsAsync timed out")
+        raise HTTPException(status_code=504, detail="IB reqContractDetails timed out")
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"IB error: {exc}")
 
