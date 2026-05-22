@@ -236,6 +236,71 @@ class TestRehydrateFromExecutions:
         assert strikes == [130.0, 141.0]
         assert {t["action"] for t in ewy_rows} == {"BUY_OPTION", "SELL_TO_OPEN"}
 
+    def test_sell_closing_prior_long_labels_as_sell_option(self):
+        """Regression for 2026-05-22 mislabel bug. Pure-sell bucket whose
+        prior position was long must label as SELL_OPTION (close long),
+        not SELL_TO_OPEN (open short). fromJournal.ts treats those two
+        differently for isOpen / net_quantity attribution."""
+        # Existing journal row: bought 65 USAX $45 calls earlier.
+        existing = {
+            "trades": [
+                {
+                    "id": 1,
+                    "date": "2026-04-15",
+                    "ticker": "USAX",
+                    "structure": "Long Call $45 2026-06-19",
+                    "decision": "IB_AUTO_IMPORT",
+                    "action": "BUY_OPTION",
+                    "contracts": 65,
+                    "strike": 45.0,
+                    "right": "C",
+                    "expiry": "20260619",
+                    "ib_exec_id": "PRIOR-BUY",
+                }
+            ]
+        }
+        # Today's Flex pull: pure sell of all 65 — must read as a close.
+        sell_to_close = _make_execution(
+            exec_id="CLOSE-SELL",
+            symbol="USAX",
+            sec_type=SecurityType.OPTION,
+            side=Side.SELL,
+            quantity=65,
+            price=4.0,
+            strike=45.0,
+            right="C",
+            expiry="20260619",
+            when=datetime(2026, 5, 22, 14, 0, 0),
+        )
+        updated, imported, _, _ = rehydrate_from_executions([sell_to_close], existing)
+        assert imported == 1
+        new_row = next(t for t in updated["trades"] if t["ib_exec_id"] == "CLOSE-SELL")
+        assert new_row["action"] == "SELL_OPTION", (
+            f"Expected SELL_OPTION (close long), got {new_row['action']}. "
+            f"This regression bites fromJournal.ts: SELL_TO_OPEN sets "
+            f"isOpen=true with net_quantity=-65 (phantom new short), "
+            f"SELL_OPTION sets isOpen=false with net_quantity=0 (correct)."
+        )
+
+    def test_sell_with_no_prior_position_still_labels_sell_to_open(self):
+        """Counterpoint: when there's no prior long, a pure sell IS opening
+        a short. The label should remain SELL_TO_OPEN."""
+        existing = {"trades": []}
+        sell_to_open = _make_execution(
+            exec_id="SHORT-OPEN",
+            symbol="NEWNAME",
+            sec_type=SecurityType.OPTION,
+            side=Side.SELL,
+            quantity=10,
+            price=2.5,
+            strike=100.0,
+            right="P",
+            expiry="20260919",
+        )
+        updated, imported, _, _ = rehydrate_from_executions([sell_to_open], existing)
+        assert imported == 1
+        assert updated["trades"][0]["action"] == "SELL_TO_OPEN"
+
     def test_preserves_existing_rows(self, stock_buy):
         existing = {
             "trades": [

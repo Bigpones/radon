@@ -169,14 +169,33 @@ def _group_executions(executions: List[Any]) -> Dict[str, Dict[str, Any]]:
     return grouped
 
 
-def _resolve_action(bucket: Dict[str, Any]) -> Optional[str]:
-    """Map net qty + sec_type to the same action labels journalSync.ts emits."""
+def _resolve_action(bucket: Dict[str, Any], prior_qty: float = 0.0) -> Optional[str]:
+    """Map (prior_qty, bucket_net, sec_type) → action label.
+
+    Before 2026-05-22 this picked the label from `bucket_net` alone, which
+    mislabeled SELLs that closed a prior long as ``SELL_TO_OPEN`` (the
+    "open short" label). Consumers of the journal (``fromJournal.ts``
+    treats ``SELL_TO_OPEN`` as opening and ``SELL_OPTION`` as closing) saw
+    closed longs as new short positions. ``prior_qty`` is the running
+    signed position for this contract before this bucket's fills are
+    applied, derived from already-imported journal rows.
+    """
     sec_type = bucket["sec_type"]
     net = bucket["buy_qty"] - bucket["sell_qty"]
 
     if net > 0:
+        # Net buy. Whether the buys opened a new long or covered a prior
+        # short, the consumer-side label is the same — BUY/BUY_OPTION
+        # treats the row as adding to the long side. (Distinguishing
+        # "buy to cover" would require a separate label that
+        # fromJournal.ts doesn't recognise.)
         return "BUY" if sec_type == "STK" else "BUY_OPTION"
     if net < 0:
+        # Net sell. If the position was long beforehand, this is a close
+        # (SELL_OPTION). Otherwise it's opening / extending a short
+        # (SELL_TO_OPEN). prior_qty > 0 → was long.
+        if prior_qty > 0:
+            return "SELL" if sec_type == "STK" else "SELL_OPTION"
         return "SELL" if sec_type == "STK" else "SELL_TO_OPEN"
     # Net flat — buy and sell sides match. Treat as a closed round-trip;
     # _compute_pnl_summary() does the lot matching that gives us the
@@ -184,6 +203,59 @@ def _resolve_action(bucket: Dict[str, Any]) -> Optional[str]:
     if bucket["buy_qty"] > 0:
         return "CLOSED"
     return None
+
+
+def _contract_key_from_trade(trade: Dict[str, Any]) -> Optional[str]:
+    """Mirror ``_group_key`` for an existing journal row."""
+    ticker = trade.get("ticker") or trade.get("symbol")
+    if not ticker:
+        return None
+    structure = (trade.get("structure") or "").lower()
+    # Heuristic: stock rows lack strike/right/expiry.
+    if "stock" in structure or (trade.get("strike") is None and trade.get("right") is None and trade.get("expiry") is None):
+        return f"{ticker}|STK"
+    strike = trade.get("strike")
+    expiry = trade.get("expiry")
+    right = trade.get("right")
+    sec_type = "BAG" if "spread" in structure or "combo" in structure else "OPT"
+    return f"{ticker}|{sec_type}|{strike}|{expiry}|{right}"
+
+
+def _prior_state_index(trades: List[Dict[str, Any]]) -> Dict[str, float]:
+    """Build per-contract signed position from existing journal rows.
+
+    Sums ±contracts/shares using the action label's sign (BUY → +, SELL/
+    SHORT/CLOSED → -). The sign convention matches journal_basis.py's
+    ``_signed_qty`` — both fall back to net-qty sign rather than trusting
+    the OPEN/CLOSE semantic of the label itself, so this works even when
+    older rows are mislabeled.
+    """
+    state: Dict[str, float] = {}
+    for trade in sorted(trades, key=lambda t: str(t.get("date") or "")):
+        key = _contract_key_from_trade(trade)
+        if not key:
+            continue
+        action = str(trade.get("action") or "").upper()
+        qty_raw = trade.get("contracts") or trade.get("shares") or 0
+        try:
+            qty = abs(float(qty_raw))
+        except (TypeError, ValueError):
+            continue
+        if qty <= 0:
+            continue
+        if action.startswith("BUY"):
+            state[key] = state.get(key, 0.0) + qty
+        elif action.startswith("SELL") or action.startswith("SHORT") or action == "CLOSED":
+            state[key] = state.get(key, 0.0) - qty
+    return state
+
+
+def _bucket_contract_key(bucket: Dict[str, Any]) -> str:
+    """Mirror ``_group_key`` for a bucket so prior_state lookups line up."""
+    sec_type = bucket["sec_type"]
+    if sec_type == "STK":
+        return f"{bucket['symbol']}|{sec_type}"
+    return f"{bucket['symbol']}|{sec_type}|{bucket['strike']}|{bucket['expiry']}|{bucket['right']}"
 
 
 def _compute_pnl_summary(bucket: Dict[str, Any]) -> Dict[str, Decimal]:
@@ -300,8 +372,17 @@ def _composite_exec_id(exec_ids: List[str]) -> str:
     return "+".join(sorted(set(exec_ids)))
 
 
-def _bucket_to_entry(bucket: Dict[str, Any], next_id: int) -> Dict[str, Any]:
-    """Build the trade_log.json row for one grouped contract."""
+def _bucket_to_entry(
+    bucket: Dict[str, Any],
+    next_id: int,
+    prior_qty: float = 0.0,
+) -> Dict[str, Any]:
+    """Build the trade_log.json row for one grouped contract.
+
+    ``prior_qty`` is the contract's signed position before this bucket's
+    fills — used by ``_resolve_action`` to distinguish closing-long from
+    opening-short sells.
+    """
     sec_type = bucket["sec_type"]
     net_qty = bucket["buy_qty"] - bucket["sell_qty"]
     abs_qty = abs(int(net_qty)) if net_qty != 0 else int(bucket["buy_qty"])
@@ -317,7 +398,7 @@ def _bucket_to_entry(bucket: Dict[str, Any], next_id: int) -> Dict[str, Any]:
     total_cost = abs_qty * avg_price * multiplier + _decimal_to_float(bucket["total_commission"])
     expiry_iso = _expiry_to_iso(bucket["expiry"])
 
-    action = _resolve_action(bucket)
+    action = _resolve_action(bucket, prior_qty=prior_qty)
     if action is None:
         return {}
 
@@ -348,6 +429,10 @@ def _bucket_to_entry(bucket: Dict[str, Any], next_id: int) -> Dict[str, Any]:
         "proceeds": round(_decimal_to_float(pnl["proceeds"]), 4),
         "realized_pnl": round(_decimal_to_float(pnl["realized_pnl"]), 4),
         "realized_quantity": int(pnl["realized_qty"]),
+        # Basis allocated to the still-open residual after this bucket.
+        # Lets scripts/clients/journal_basis.py read a persisted value
+        # instead of re-running the lot matcher on every ib_sync.
+        "open_basis": round(_decimal_to_float(pnl["open_basis"]), 4),
         "total_round_trip_quantity": round_trip_quantity,
     }
 
@@ -441,10 +526,18 @@ def rehydrate_from_executions(
     legacy_keys = _existing_legacy_keys(trades)
     next_id = max((t.get("id", 0) for t in trades), default=0) + 1
 
+    # Pre-compute per-contract running qty from already-imported rows so
+    # this rehydrate batch can label closing sells as SELL_OPTION rather
+    # than SELL_TO_OPEN. Trades older than the Flex window contribute
+    # too — that's the entire point.
+    prior_state = _prior_state_index(trades)
+
     grouped = _group_executions(executions)
     candidate_entries: List[Dict[str, Any]] = []
     for bucket in grouped.values():
-        entry = _bucket_to_entry(bucket, next_id)
+        key = _bucket_contract_key(bucket)
+        prior_qty = prior_state.get(key, 0.0)
+        entry = _bucket_to_entry(bucket, next_id, prior_qty=prior_qty)
         if not entry:
             continue
         candidate_entries.append(entry)

@@ -124,7 +124,27 @@ def compute_open_basis_for_ticker(db, ticker: str) -> dict[str, float]:
         except (TypeError, ValueError):
             continue
 
-        bucket = buckets.setdefault(key, {"net_qty": 0.0, "fills": []})
+        # `open_basis` is persisted by journal_rehydrate.py on every row
+        # as the basis allocated to the still-open residual after that
+        # row. When present, the latest row's value supersedes the
+        # bucket-level lot-match recomputation below — that's the whole
+        # point of persisting it. Stays None for rows written by the
+        # real-time daemon (journal_sync.py), which still need the
+        # fallback compute path.
+        persisted_open_basis = payload.get("open_basis")
+        try:
+            persisted_open_basis = (
+                float(persisted_open_basis)
+                if persisted_open_basis is not None
+                else None
+            )
+        except (TypeError, ValueError):
+            persisted_open_basis = None
+
+        bucket = buckets.setdefault(
+            key,
+            {"net_qty": 0.0, "fills": [], "latest_persisted_open_basis": None},
+        )
         bucket["net_qty"] += signed_qty
         bucket["fills"].append(
             {
@@ -133,11 +153,19 @@ def compute_open_basis_for_ticker(db, ticker: str) -> dict[str, float]:
                 "total_cost": total_cost,
             }
         )
+        # Rows arrive ORDER BY filled_at ASC so the last write wins —
+        # exactly what we want for "basis as of latest row".
+        if persisted_open_basis is not None:
+            bucket["latest_persisted_open_basis"] = persisted_open_basis
 
     open_basis_lookup: dict[str, float] = {}
     for key, bucket in buckets.items():
         net_qty = float(bucket["net_qty"])
         if net_qty == 0:
+            continue
+
+        if bucket["latest_persisted_open_basis"] is not None:
+            open_basis_lookup[key] = round(bucket["latest_persisted_open_basis"], 4)
             continue
 
         opening_sign = 1 if net_qty > 0 else -1
