@@ -8,13 +8,8 @@ import { getRequestId, setNoStoreResponseHeaders } from "@/lib/apiContracts";
  * GET /api/leap
  *
  * Reads the latest LEAP IV-mispricing scan from `data/leap.json` (written
- * by `scripts/leap_scanner_uw.py --json`). Currently cache-only —
- * triggering a fresh scan from the dashboard is deferred until either
- *   (a) a scheduled systemd timer on Hetzner runs the scanner, or
- *   (b) `/leap` is added to the FastAPI bridge so this route can POST it.
- *
- * Until then: ssh radon@ib-gateway, run the scanner manually, and the
- * Opportunities → LEAP tab picks up the next refresh.
+ * by `scripts/leap_scanner_uw.py --json`, either via the systemd timer
+ * on Hetzner or via POST /api/leap/scan → FastAPI /leap/scan).
  */
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

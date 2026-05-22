@@ -580,6 +580,18 @@ body {
 
 .snapshot-card__see-all:hover { text-decoration: underline; }
 
+.snapshot-card__see-all--action {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.snapshot-card__see-all--action:disabled {
+  color: var(--text-muted);
+  cursor: progress;
+  text-decoration: none;
+}
+
 .snapshot-card__empty,
 .snapshot-card__error {
   font-family: var(--font-mono);

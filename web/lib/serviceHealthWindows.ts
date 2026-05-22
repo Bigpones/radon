@@ -161,6 +161,11 @@ export const SERVICE_FRESHNESS_WINDOWS: Record<string, Window> = {
   "discover": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY, category: "on-demand", requires_ib: false },
   "flow-analysis": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY, category: "on-demand", requires_ib: false },
   "analyst-ratings": { open: 30 * MIN, extended: 30 * MIN, closed: 3 * DAY, category: "on-demand", requires_ib: false },
+  // ``leap-scan`` runs once daily (radon-leap.timer) and via on-demand
+  // dashboard refresh. Daily cadence so 26h covers a weekend (Fri →
+  // Mon morning) without flipping stale; the on-demand button can
+  // bring it fresh in between.
+  "leap-scan": { open: 26 * HOUR, extended: 26 * HOUR, closed: 3 * DAY, category: "scheduled", requires_ib: false },
 
   // ``replica-watchdog`` and ``watchdog-alerts`` are EVENT-DRIVEN
   // writers: they only record a service_health row when something

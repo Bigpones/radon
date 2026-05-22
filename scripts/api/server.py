@@ -309,6 +309,11 @@ def _maybe_dual_write_to_db(path: Path, data: dict) -> None:
             service = "performance"
             taken_at = (data.get("computed_at") if isinstance(data, dict) else None) or fallback_iso
             upsert_performance_snapshot(taken_at, data)
+        elif name == "leap.json":
+            service = "leap-scan"
+            # No leap_snapshots table — file cache is canonical for this scan.
+            # We still want a service_health row so the banner can surface
+            # staleness when the timer stops firing.
         else:
             return  # unknown JSON — no DB target
         if service:
@@ -1416,6 +1421,53 @@ async def vcg_share():
     if not result.ok:
         raise HTTPException(status_code=502, detail=result.error)
     return result.data
+
+
+# ── LEAP (IV Mispricing Scanner) ────────────────────────────────────
+
+_leap_last_scan: float = 0.0
+_leap_scan_lock: Optional[asyncio.Lock] = None
+LEAP_COOLDOWN_S = 600  # 10 min — LEAP scans are slow + low-cadence
+
+
+@app.post("/leap/scan")
+async def leap_scan(preset: str = "mag7", min_gap: float = 10.0):
+    """Run LEAP scan (leap_scanner_uw.py --preset X --json).
+
+    The scanner writes data/leap.json directly; stdout is text + a summary
+    rather than JSON, so we ignore run_script's parsed payload and re-read
+    the cache file after the subprocess completes. 600s cooldown stops
+    accidental thrash on the Unusual Whales API.
+    """
+    global _leap_last_scan, _leap_scan_lock
+    import time as _time
+    if _leap_scan_lock is None:
+        _leap_scan_lock = asyncio.Lock()
+    now = _time.monotonic()
+    if now - _leap_last_scan < LEAP_COOLDOWN_S:
+        cached = _read_cache(DATA_DIR / "leap.json")
+        if cached:
+            return cached
+    async with _leap_scan_lock:
+        if _time.monotonic() - _leap_last_scan < LEAP_COOLDOWN_S:
+            cached = _read_cache(DATA_DIR / "leap.json")
+            if cached:
+                return cached
+        result = await run_script(
+            "leap_scanner_uw.py",
+            ["--preset", preset, "--min-gap", str(min_gap), "--json"],
+            timeout=300,
+        )
+        if not result.ok:
+            raise HTTPException(status_code=502, detail=result.error)
+        _leap_last_scan = _time.monotonic()
+        cached = _read_cache(DATA_DIR / "leap.json")
+        # The leap scanner subprocess already wrote the JSON atomically;
+        # we just need the DB dual-write so service_health[leap-scan] gets
+        # an "ok" row and the banner can detect a stale scheduled scan.
+        if cached:
+            _maybe_dual_write_to_db(DATA_DIR / "leap.json", cached)
+        return cached or {"scan_time": "", "min_gap": min_gap, "results": []}
 
 
 # ── GEX (Gamma Exposure Levels) ─────────────────────────────────────
