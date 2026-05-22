@@ -74,11 +74,12 @@ vi.mock("@/lib/db", () => ({
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
-// statSync from `fs` (some routes import it synchronously)
+// statSync / existsSync from `fs` (some routes import these synchronously)
 vi.mock("fs", () => ({
   statSync: vi.fn().mockImplementation(() => {
     throw new Error("ENOENT");
   }),
+  existsSync: vi.fn().mockReturnValue(false),
 }));
 
 // ---------------------------------------------------------------------------
@@ -133,12 +134,9 @@ afterEach(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("GET /api/ticker/ratings (post-incident regression)", () => {
-  it("returns 200 with parsed payload when runScript succeeds", async () => {
-    mockRunScript.mockResolvedValueOnce({
-      ok: true,
-      data: { ticker: "AMD", consensus: "Buy", buy_count: 26 },
-    });
+describe("GET /api/ticker/ratings (FastAPI passthrough)", () => {
+  it("returns 200 with parsed payload when FastAPI succeeds", async () => {
+    mockRadonFetch.mockResolvedValueOnce({ ticker: "AMD", consensus: "Buy", buy_count: 26 });
     const { GET } = await import("../app/api/ticker/ratings/route");
     const res = await GET(req("http://localhost/api/ticker/ratings?ticker=AMD"));
     expectJsonResponse(res);
@@ -146,20 +144,84 @@ describe("GET /api/ticker/ratings (post-incident regression)", () => {
     const body = (await jsonOf(res)) as Record<string, unknown>;
     expect(body.ticker).toBe("AMD");
     expect(body.consensus).toBe("Buy");
+    expect(mockRadonFetch).toHaveBeenCalledWith(
+      expect.stringMatching(/^\/ticker\/ratings\?ticker=AMD$/),
+      expect.objectContaining({ timeout: expect.any(Number) }),
+    );
   });
 
-  it("returns 502 with error envelope when runScript fails (the production symptom)", async () => {
-    mockRunScript.mockResolvedValueOnce({
-      ok: false,
-      exitCode: 1,
-      stderr: "ModuleNotFoundError: No module named 'dotenv'",
-    });
+  it("returns 400 when ticker query param is missing", async () => {
+    const { GET } = await import("../app/api/ticker/ratings/route");
+    const res = await GET(req("http://localhost/api/ticker/ratings"));
+    expect(res.status).toBe(400);
+    expect(mockRadonFetch).not.toHaveBeenCalled();
+  });
+
+  it("returns 502 with error envelope when FastAPI fails (the production symptom)", async () => {
+    mockRadonFetch.mockRejectedValueOnce(new Error("upstream: subprocess died"));
     const { GET } = await import("../app/api/ticker/ratings/route");
     const res = await GET(req("http://localhost/api/ticker/ratings?ticker=AMD"));
     expect(res.status).toBe(502);
     const body = (await jsonOf(res)) as Record<string, unknown>;
     expect(body.error).toContain("Failed to fetch ratings");
-    expect(body.stderr).toContain("dotenv");
+    expect(body.detail).toContain("subprocess died");
+  });
+});
+
+describe("POST /api/pi (FastAPI passthrough)", () => {
+  function piReq(input: string): Request {
+    return new Request("http://localhost/api/pi", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input }),
+    });
+  }
+
+  it("rejects unknown commands with 400 (no FastAPI call)", async () => {
+    const { POST } = await import("../app/api/pi/route");
+    const res = await POST(piReq("rm -rf /") as never);
+    expect(res.status).toBe(400);
+    expect(mockRadonFetch).not.toHaveBeenCalled();
+  });
+
+  it("forwards /scan to FastAPI /pi/exec and returns the assembled output", async () => {
+    mockRadonFetch.mockResolvedValueOnce({
+      ok: true,
+      stdout: "Scanner results: 3 tickers\nAAPL +0.42",
+      stderr: "",
+      exit_code: 0,
+      timed_out: false,
+    });
+    const { POST } = await import("../app/api/pi/route");
+    const res = await POST(piReq("/scan --top 5") as never);
+    expect(res.status).toBe(200);
+    const body = (await jsonOf(res)) as Record<string, unknown>;
+    expect(body.command).toBe("scan");
+    expect(body.status).toBe("ok");
+    expect(body.output).toContain("Scanner results");
+    const call = mockRadonFetch.mock.calls[0];
+    expect(call[0]).toBe("/pi/exec");
+    expect(call[1]).toMatchObject({ method: "POST" });
+    const bodyJson = JSON.parse(call[1].body as string);
+    expect(bodyJson.script).toBe("scanner.py");
+    expect(bodyJson.args).toEqual(["--top", "5"]);
+  });
+
+  it("returns 422 envelope when FastAPI reports a script failure", async () => {
+    mockRadonFetch.mockResolvedValueOnce({
+      ok: false,
+      stdout: "",
+      stderr: "Traceback: KeyError",
+      exit_code: 1,
+      timed_out: false,
+    });
+    const { POST } = await import("../app/api/pi/route");
+    const res = await POST(piReq("/scan") as never);
+    expect(res.status).toBe(422);
+    const body = (await jsonOf(res)) as Record<string, unknown>;
+    expect(body.command).toBe("scan");
+    expect(body.status).toBe("error");
+    expect(body.stderr).toContain("KeyError");
   });
 });
 

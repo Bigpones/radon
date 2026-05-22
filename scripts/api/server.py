@@ -46,7 +46,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 os.environ.setdefault("RADON_DB_NO_REPLICA", "1")
 
 from api.ib_pool import IBPool
-from api.subprocess import run_script, run_module, ScriptResult
+from api.subprocess import run_script, run_module, run_script_raw, ScriptResult
 from api.ib_gateway import (
     check_ib_gateway,
     ensure_ib_gateway,
@@ -1716,6 +1716,82 @@ async def options_expirations(symbol: str):
     if result.data and result.data.get("error"):
         raise HTTPException(status_code=502, detail=result.data["error"])
     return {"symbol": result.data.get("symbol"), "expirations": result.data.get("expirations")}
+
+
+# ── PI command surface ──────────────────────────────────────────────
+# Allowlist of scripts the embedded /api/pi chat command surface is
+# permitted to spawn. The Next.js layer does the argument parsing /
+# normalisation (preserving the existing helpers + tests); FastAPI just
+# enforces the allowlist + executes. Anything not in this set returns 400.
+_PI_SCRIPT_ALLOWLIST = frozenset({
+    "scanner.py",
+    "discover.py",
+    "evaluate.py",
+    "ib_sync.py",
+    "leap_scanner_uw.py",
+})
+
+
+@app.post("/pi/exec")
+async def pi_exec(payload: dict):
+    """Execute an allowlisted PI script and return raw stdout/stderr text.
+
+    Body shape: {"script": "scanner.py", "args": ["--top", "20"], "timeout": 120}
+
+    Returns: {"ok": bool, "stdout": str, "stderr": str, "exit_code": int|null,
+              "timed_out": bool}
+
+    The Next.js /api/pi route owns parsing + allowlisting upstream; this
+    enforces the same allowlist as a defence-in-depth measure.
+    """
+    script = payload.get("script") if isinstance(payload, dict) else None
+    if not isinstance(script, str) or not script:
+        raise HTTPException(status_code=400, detail="script is required")
+    if script not in _PI_SCRIPT_ALLOWLIST:
+        raise HTTPException(status_code=400, detail=f"Script not allowed: {script}")
+
+    args = payload.get("args") or []
+    if not isinstance(args, list) or any(not isinstance(a, str) for a in args):
+        raise HTTPException(status_code=400, detail="args must be a list of strings")
+
+    timeout = payload.get("timeout", 120)
+    try:
+        timeout = float(timeout)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="timeout must be a number")
+    timeout = max(1.0, min(timeout, 600.0))
+
+    result = await run_script_raw(script, args, timeout=timeout)
+    return {
+        "ok": result.ok,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "exit_code": result.exit_code,
+        "timed_out": result.timed_out,
+    }
+
+
+@app.get("/ticker/ratings")
+async def ticker_ratings(ticker: str):
+    """Analyst ratings + targets for a single ticker.
+
+    Thin passthrough to scripts/fetch_analyst_ratings.py with --json. The
+    script outputs a JSON array (one entry per ticker requested); for the
+    single-ticker case we unwrap and return the first element so the Next.js
+    route can render it directly.
+    """
+    upper = ticker.upper().strip()
+    if not upper:
+        raise HTTPException(status_code=400, detail="ticker is required")
+    result = await run_script(
+        "fetch_analyst_ratings.py", [upper, "--json"], timeout=60
+    )
+    if not result.ok:
+        raise HTTPException(status_code=502, detail=result.error)
+    payload = result.data
+    if isinstance(payload, list):
+        return payload[0] if payload else {}
+    return payload
 
 
 # ---------------------------------------------------------------------------

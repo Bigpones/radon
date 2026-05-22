@@ -1,9 +1,8 @@
-import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
-import { resolvePythonBin } from "@tools/runner";
+import { radonFetch, RadonApiError } from "@/lib/radonApi";
 
 export const runtime = "nodejs";
 
@@ -110,59 +109,67 @@ const normalizeCommand = (value: string): ParsedCommand | null => {
   };
 };
 
-const runPythonScript = (script: string, args: string[], cwd: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<ScriptResult> => {
-  return new Promise((resolve) => {
-    const pieces = [script, ...args];
-    const pythonBin = resolvePythonBin(cwd);
-    const proc = spawn(pythonBin, pieces, { cwd, env: process.env, stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    let timedOut = false;
+type PiExecResponse = {
+  ok: boolean;
+  stdout: string;
+  stderr: string;
+  exit_code: number | null;
+  timed_out: boolean;
+};
 
-    if (proc.stdout) {
-      proc.stdout.on("data", (chunk) => {
-        stdout += chunk.toString();
-      });
-    }
-
-    if (proc.stderr) {
-      proc.stderr.on("data", (chunk) => {
-        stderr += chunk.toString();
-      });
-    }
-
-    const onTimeout = () => {
-      timedOut = true;
-      proc.kill("SIGKILL");
+/**
+ * Execute an allowlisted PI script via FastAPI (no spawn from Next.js).
+ *
+ * The script + args are forwarded to POST /pi/exec, which runs the script
+ * server-side and returns raw stdout/stderr. CLAUDE.md: "No spawn() from
+ * Next.js." See feedback in the FastAPI /pi/exec handler for the allowlist
+ * that mirrors the one this route enforces upstream.
+ *
+ * `scriptPath` may arrive as either bare ("scanner.py") or prefixed with
+ * "scripts/" (the older form some call sites use); we strip the prefix so
+ * the allowlist on the server side matches either way.
+ */
+const runPythonScript = async (
+  scriptPath: string,
+  args: string[],
+  _cwd: string,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<ScriptResult> => {
+  const script = scriptPath.replace(/^scripts\//, "");
+  try {
+    const data = await radonFetch<PiExecResponse>("/pi/exec", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        script,
+        args,
+        timeout: Math.ceil(timeoutMs / 1000),
+      }),
+      // Add a small grace window so the route surfaces the upstream timeout
+      // as a structured failure rather than collapsing it into RadonApiError.
+      timeout: timeoutMs + 5000,
+    });
+    return {
+      command: scriptPath,
+      status: data.ok && !data.timed_out ? "ok" : "error",
+      output: trimOutput(data.stdout || ""),
+      stderr: trimOutput(data.stderr || ""),
+      exitCode: data.exit_code ?? 1,
+      timedOut: data.timed_out,
+      source: "script",
     };
-
-    const timer = setTimeout(onTimeout, timeoutMs);
-    proc.on("close", (code) => {
-      clearTimeout(timer);
-      resolve({
-        command: script,
-        status: code === 0 && !timedOut ? "ok" : "error",
-        output: trimOutput(stdout),
-        stderr: trimOutput(stderr),
-        exitCode: code ?? 1,
-        timedOut,
-        source: "script",
-      });
-    });
-
-    proc.on("error", () => {
-      clearTimeout(timer);
-      resolve({
-        command: script,
-        status: "error",
-        output: "",
-        stderr: "Failed to spawn python script.",
-        exitCode: 1,
-        timedOut,
-        source: "script",
-      });
-    });
-  });
+  } catch (error) {
+    const detail = error instanceof RadonApiError ? error.detail : error instanceof Error ? error.message : "unknown error";
+    return {
+      command: scriptPath,
+      status: "error",
+      output: "",
+      stderr: trimOutput(`FastAPI /pi/exec failed: ${detail}`),
+      exitCode: 1,
+      timedOut: false,
+      source: "script",
+    };
+  }
 };
 
 const readLocalJsonFile = async <T>(filePath: string): Promise<T> => {

@@ -1287,26 +1287,23 @@ describe("POST /api/orders/place — silent IB rejection states", () => {
 });
 
 // =============================================================================
-// 7. GET /api/ticker/ratings — mocked runScript
+// 7. GET /api/ticker/ratings — mocked radonFetch (FastAPI passthrough)
 // =============================================================================
 
 describe("GET /api/ticker/ratings — extended", () => {
   beforeEach(() => {
     vi.resetModules();
-    mockRunScript.mockReset();
+    mockRadonFetch.mockReset();
   });
 
-  it("returns ratings data when script succeeds", async () => {
-    mockRunScript.mockResolvedValue({
-      ok: true,
-      data: {
-        ticker: "AAPL",
-        consensus: "Buy",
-        buy_count: 25,
-        hold_count: 5,
-        sell_count: 1,
-        price_target_avg: 200,
-      },
+  it("returns ratings data when FastAPI succeeds", async () => {
+    mockRadonFetch.mockResolvedValue({
+      ticker: "AAPL",
+      consensus: "Buy",
+      buy_count: 25,
+      hold_count: 5,
+      sell_count: 1,
+      price_target_avg: 200,
     });
 
     const { GET } = await import("../app/api/ticker/ratings/route");
@@ -1318,12 +1315,8 @@ describe("GET /api/ticker/ratings — extended", () => {
     expect(body.consensus).toBe("Buy");
   });
 
-  it("returns 502 when script fails", async () => {
-    mockRunScript.mockResolvedValue({
-      ok: false,
-      exitCode: 1,
-      stderr: "UW API error",
-    });
+  it("returns 502 when FastAPI fails", async () => {
+    mockRadonFetch.mockRejectedValue(new Error("UW API error"));
 
     const { GET } = await import("../app/api/ticker/ratings/route");
     const res = await GET(new Request("http://localhost/api/ticker/ratings?ticker=XYZ"));

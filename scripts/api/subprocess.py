@@ -11,7 +11,7 @@ import logging
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Union
 
 logger = logging.getLogger("radon.subprocess")
 
@@ -48,9 +48,33 @@ def _extract_error_message(stdout: str, stderr: str, default: str) -> str:
 @dataclass
 class ScriptResult:
     ok: bool
-    data: Optional[dict] = None
+    data: Optional[Union[dict, list]] = None
     error: Optional[str] = None
     exit_code: Optional[int] = None
+
+
+@dataclass
+class RawScriptResult:
+    """Result of a script execution that does NOT parse stdout as JSON.
+
+    Used by the PI command surface: scripts like scanner / discover / evaluate
+    emit human-readable progress + report text, and the chat UI renders the
+    full stdout. Parsing as JSON would silently drop everything except the
+    first object.
+    """
+    ok: bool
+    stdout: str = ""
+    stderr: str = ""
+    exit_code: Optional[int] = None
+    timed_out: bool = False
+
+
+def _find_json_start(stdout: str) -> int:
+    """Return the earliest index of '{' or '[' in stdout, or -1 if neither."""
+    obj_idx = stdout.find("{")
+    arr_idx = stdout.find("[")
+    candidates = [i for i in (obj_idx, arr_idx) if i != -1]
+    return min(candidates) if candidates else -1
 
 
 async def run_script(
@@ -104,8 +128,9 @@ async def run_script(
             logger.warning("Script %s failed (code %d): %s", script, proc.returncode, err_msg)
             return ScriptResult(ok=False, error=err_msg, exit_code=proc.returncode)
 
-        # Extract JSON from stdout (scripts may print progress before JSON)
-        json_start = stdout.find("{")
+        # Extract JSON from stdout (scripts may print progress before JSON).
+        # Accept either object ('{') or array ('['); pick whichever appears first.
+        json_start = _find_json_start(stdout)
         if json_start == -1:
             # Some scripts write to files instead of stdout (rawOutput pattern)
             return ScriptResult(ok=True, data={})
@@ -129,6 +154,61 @@ async def run_script(
     except Exception as e:
         logger.error("Script %s error: %s", script, e)
         return ScriptResult(ok=False, error=str(e))
+
+
+async def run_script_raw(
+    script: str,
+    args: Optional[List[str]] = None,
+    timeout: float = 120.0,
+    cwd: Optional[str] = None,
+) -> RawScriptResult:
+    """Run a script and return raw stdout/stderr text (no JSON parsing).
+
+    Mirrors the Node.js `runPythonScript` helper that the PI route used to
+    spawn directly. Returns exit code + both streams so the caller can
+    decide how to render them.
+    """
+    script_path = SCRIPTS_DIR / script
+    if not script_path.exists():
+        return RawScriptResult(
+            ok=False, stderr=f"Script not found: {script}", exit_code=None
+        )
+
+    cmd = [sys.executable, str(script_path)] + (args or [])
+    work_dir = cwd or str(SCRIPTS_DIR)
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=work_dir,
+        )
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(
+            proc.communicate(), timeout=timeout
+        )
+        stdout = stdout_bytes.decode("utf-8", errors="replace")
+        stderr = stderr_bytes.decode("utf-8", errors="replace")
+        return RawScriptResult(
+            ok=proc.returncode == 0,
+            stdout=stdout,
+            stderr=stderr,
+            exit_code=proc.returncode,
+        )
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+            await proc.wait()
+        except Exception:
+            pass
+        return RawScriptResult(
+            ok=False,
+            stderr=f"Script timed out after {timeout}s",
+            exit_code=None,
+            timed_out=True,
+        )
+    except Exception as e:
+        return RawScriptResult(ok=False, stderr=str(e), exit_code=None)
 
 
 async def run_module(
@@ -165,7 +245,7 @@ async def run_module(
             )
             return ScriptResult(ok=False, error=err_msg, exit_code=proc.returncode)
 
-        json_start = stdout.find("{")
+        json_start = _find_json_start(stdout)
         if json_start == -1:
             return ScriptResult(ok=True, data={})
 
