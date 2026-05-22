@@ -14,7 +14,7 @@
 /* ---------- types ---------- */
 
 export type OrderPayload = {
-  type: "stock" | "option" | "combo";
+  type: "stock" | "option" | "combo" | "future";
   symbol: string;
   action: "BUY" | "SELL";
   quantity: number;

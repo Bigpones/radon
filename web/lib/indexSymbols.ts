@@ -50,3 +50,16 @@ export function indexExchangeFor(symbol: string | null | undefined): IndexExchan
   const upper = symbol.toUpperCase();
   return INDEX_SYMBOLS[upper] ?? null;
 }
+
+/**
+ * Symbols where Radon supports trading futures on the underlying index.
+ * Keep this in sync with scripts/clients/contract_resolver.py
+ * FUTURES_ROOTS. Phase 2 ships VIX only; SPX / NDX / RUT futures wire
+ * in later.
+ */
+const FUTURES_SUPPORTED_SYMBOLS = new Set(["VIX"]);
+
+export function hasFuturesSupport(symbol: string | null | undefined): boolean {
+  if (!symbol) return false;
+  return FUTURES_SUPPORTED_SYMBOLS.has(symbol.toUpperCase());
+}

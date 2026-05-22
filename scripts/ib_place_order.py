@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 try:
-    from ib_insync import Stock, Option, Contract, ComboLeg, LimitOrder, TagValue, util
+    from ib_insync import Stock, Option, Future, Contract, ComboLeg, LimitOrder, MarketOrder, TagValue, util
 except ImportError:
     print(json.dumps({"status": "error", "message": "ib_insync not installed"}))
     sys.exit(1)
@@ -100,6 +100,28 @@ def place_order(params: dict) -> dict:
             qualified = client.qualify_contracts(contract)
             if not qualified:
                 return {"status": "error", "message": f"Could not qualify contract: {symbol}"}
+            contract = qualified[0]
+
+        elif order_type == "future":
+            # VIX futures + other CFE-listed contracts. Caller can pass
+            # `conId` directly (preferred — disambiguates among multiple
+            # listings) OR `expiry` (YYYYMM or YYYYMMDD). The chain
+            # endpoint at /futures/chain hands the conId back.
+            from clients.contract_resolver import resolve_future_contract
+            con_id = params.get("conId")
+            expiry = params.get("expiry") or ""
+            if con_id:
+                contract = Contract()
+                contract.conId = int(con_id)
+                contract.exchange = params.get("exchange", "CFE")
+                contract.currency = "USD"
+            else:
+                if not expiry:
+                    return {"status": "error", "message": "future order requires conId or expiry"}
+                contract = resolve_future_contract(symbol, expiry)
+            qualified = client.qualify_contracts(contract)
+            if not qualified:
+                return {"status": "error", "message": f"Could not qualify future: {symbol} {expiry or con_id}"}
             contract = qualified[0]
 
         else:

@@ -26,7 +26,7 @@ type ComboLeg = {
 };
 
 type PlaceBody = {
-  type: "stock" | "option" | "combo";
+  type: "stock" | "option" | "combo" | "future";
   symbol: string;
   action: "BUY" | "SELL";
   quantity: number;
@@ -36,6 +36,9 @@ type PlaceBody = {
   strike?: number;
   right?: "C" | "P";
   legs?: ComboLeg[];
+  /** Futures: caller passes IB conId (preferred — from /futures/chain) or expiry+exchange. */
+  conId?: number;
+  exchange?: string;
 };
 
 export async function POST(request: Request): Promise<Response> {
@@ -192,6 +195,15 @@ export async function POST(request: Request): Promise<Response> {
       limitPrice: body.limitPrice,
       tif: body.tif || "DAY",
       ...(body.type === "option" ? { expiry: body.expiry, strike: body.strike, right: body.right } : {}),
+      ...(body.type === "future"
+        ? {
+            // Futures: prefer conId (unambiguous, from /futures/chain).
+            // Falls back to expiry+exchange if the chain wasn't called.
+            ...(body.conId != null ? { conId: body.conId } : {}),
+            ...(body.expiry ? { expiry: body.expiry } : {}),
+            ...(body.exchange ? { exchange: body.exchange } : {}),
+          }
+        : {}),
       ...(body.type === "combo" && body.legs
         ? {
             legs: body.legs.map((l) => ({

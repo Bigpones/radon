@@ -16,7 +16,8 @@ import { checkNakedShortRisk, type NakedShortPortfolio, type OrderPayload } from
 import { OrderConfirmSummary, type OrderSummary } from "@/lib/order";
 import { computeOrderRisk } from "@/lib/orderRisk";
 import { fmtSignedPrice, toneClass } from "@/lib/format";
-import { isIndexSymbol } from "@/lib/indexSymbols";
+import { isIndexSymbol, hasFuturesSupport } from "@/lib/indexSymbols";
+import { FuturesOrderForm } from "@/components/ticker-detail/FuturesOrderForm";
 
 type OrderTabProps = {
   ticker: string;
@@ -947,39 +948,43 @@ export default function OrderTab({ ticker, position, portfolio, prices, openOrde
         {isIndex ? (
           <div className="new-order-section-top">
             <div className="existing-orders-title">New Order</div>
-            <div
-              className="index-notice"
-              style={{
-                padding: "16px",
-                border: "1px solid var(--line-grid)",
-                borderRadius: "4px",
-                background: "color-mix(in srgb, var(--bg-panel-raised) 60%, transparent)",
-              }}
-            >
+            {hasFuturesSupport(ticker) ? (
+              <FuturesOrderForm ticker={ticker} />
+            ) : (
               <div
+                className="index-notice"
                 style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "10px",
-                  letterSpacing: "0.12em",
-                  textTransform: "uppercase",
-                  color: "var(--signal-core)",
-                  marginBottom: "8px",
+                  padding: "16px",
+                  border: "1px solid var(--line-grid)",
+                  borderRadius: "4px",
+                  background: "color-mix(in srgb, var(--bg-panel-raised) 60%, transparent)",
                 }}
               >
-                Index Instrument
+                <div
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "10px",
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: "var(--signal-core)",
+                    marginBottom: "8px",
+                  }}
+                >
+                  Index Instrument
+                </div>
+                <div
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: "13px",
+                    color: "var(--text-secondary)",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {ticker} is an index, not a tradeable security. To take exposure use {ticker} options
+                  (CBOE) — Phase 3 will wire the order form.
+                </div>
               </div>
-              <div
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: "13px",
-                  color: "var(--text-secondary)",
-                  lineHeight: 1.5,
-                }}
-              >
-                {ticker} is an index, not a tradeable security. To take exposure use {ticker} futures
-                (CFE) or {ticker} options (CBOE). Futures and options trading paths land in Phase 2 / 3.
-              </div>
-            </div>
+            )}
           </div>
         ) : (
           <>

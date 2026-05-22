@@ -6,7 +6,8 @@ import type { PriceData } from "@/lib/pricesProtocol";
 import { fmtPrice } from "@/lib/positionUtils";
 import OrderErrorBanner from "@/components/OrderErrorBanner";
 import { OrderConfirmSummary, type OrderSummary } from "@/lib/order";
-import { isIndexSymbol } from "@/lib/indexSymbols";
+import { isIndexSymbol, hasFuturesSupport } from "@/lib/indexSymbols";
+import { FuturesOrderForm } from "@/components/ticker-detail/FuturesOrderForm";
 
 /* ─── Types ─── */
 
@@ -581,7 +582,11 @@ export default function BookTab({
       {position && <PositionSummary position={position} />}
 
       {isIndex ? (
-        <IndexNotTradeableNotice ticker={ticker} />
+        hasFuturesSupport(ticker) ? (
+          <FuturesOrderForm ticker={ticker} />
+        ) : (
+          <IndexNotTradeableNotice ticker={ticker} />
+        )
       ) : (
         <StockOrderForm
           ticker={ticker}

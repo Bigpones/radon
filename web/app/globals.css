@@ -4822,6 +4822,113 @@ tr.leg-row td {
 .order-submit { margin-top: 4px; }
 .order-confirm-row { display: flex; gap: 8px; }
 .order-confirm-row .btn-primary { flex: 1; font-size: 10px; }
+
+/* ── Futures order form (Phase 2 — VIX futures via CFE) ─────────── */
+.futures-order-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line-grid);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bg-panel-raised) 60%, transparent);
+}
+.futures-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.futures-form-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.futures-form-input, .futures-form-select {
+  width: 100%;
+  background: var(--bg-base);
+  border: 1px solid var(--border-dim);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  padding: 8px 10px;
+  outline: none;
+  transition: border-color 200ms ease-in-out;
+}
+.futures-form-input:focus, .futures-form-select:focus { border-color: var(--border-focus); }
+.futures-form-action-row { flex-direction: row; gap: 8px; }
+.futures-form-action {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 10px 0;
+  border: 1px solid var(--border-dim);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 150ms ease-in-out;
+}
+.futures-form-action:hover { color: var(--text-primary); border-color: var(--border-focus); }
+.futures-form-action--active { color: var(--text-primary); border-color: var(--text-primary); }
+.futures-form-action--active:first-child { color: var(--positive); border-color: var(--positive); }
+.futures-form-action--active:last-child { color: var(--negative); border-color: var(--negative); }
+.futures-form-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-grid);
+  background: var(--bg-base);
+}
+.futures-form-summary-row {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.futures-form-summary-row > span:last-child { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.futures-form-submit {
+  padding: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: var(--signal-core);
+  color: var(--bg-base);
+  border: 0;
+  cursor: pointer;
+  transition: opacity 150ms ease-in-out;
+}
+.futures-form-submit:hover { opacity: 0.85; }
+.futures-form-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+.futures-form-loading,
+.futures-form-empty {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 12px;
+  border: 1px solid var(--line-grid);
+}
+.futures-form-error {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--negative);
+  padding: 8px 10px;
+  border: 1px solid var(--negative);
+  background: color-mix(in srgb, var(--negative) 5%, transparent);
+}
+.futures-form-success {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--positive);
+  padding: 8px 10px;
+  border: 1px solid var(--positive);
+  background: color-mix(in srgb, var(--positive) 5%, transparent);
+}
 /* Spread price strip */
 .spread-price-strip { display: flex; gap: 16px; padding: 10px 12px; background: var(--bg-panel); border: 1px solid var(--line-grid); margin-bottom: 12px; }
 .spread-price-item { display: flex; flex-direction: column; gap: 2px; }

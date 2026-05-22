@@ -1768,6 +1768,67 @@ async def options_expirations(symbol: str):
     return {"symbol": result.data.get("symbol"), "expirations": result.data.get("expirations")}
 
 
+# ── Futures chain (Phase 2 — VIX et al.) ────────────────────────────
+
+@app.get("/futures/chain")
+async def futures_chain(symbol: str):
+    """List all listed futures contracts for a supported underlying.
+
+    Phase 2 supports VIX only (the FUTURES_ROOTS table in
+    scripts/clients/contract_resolver.py is the source of truth).
+    Returns one row per listed expiry with the IB conId so order
+    placement can reference contracts uniquely without re-qualifying.
+    """
+    from clients.contract_resolver import resolve_future_contract, supports_futures
+
+    symbol_upper = symbol.upper()
+    if not supports_futures(symbol_upper):
+        raise HTTPException(
+            status_code=400,
+            detail=f"futures not supported for {symbol_upper}; supported: VIX",
+        )
+
+    if ib_pool is None:
+        raise HTTPException(status_code=503, detail="IB pool not initialised")
+
+    spec = resolve_future_contract(symbol_upper, expiry="")
+    try:
+        async with ib_pool.acquire("data") as client:
+            details = await asyncio.wait_for(
+                client.ib.reqContractDetailsAsync(spec),
+                timeout=15,
+            )
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="IB reqContractDetailsAsync timed out")
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"IB error: {exc}")
+
+    # Sort by expiry ascending so the dashboard front-month sits at index 0.
+    rows = []
+    for cd in details:
+        c = cd.contract
+        rows.append({
+            "conId": c.conId,
+            "symbol": c.symbol,
+            "localSymbol": c.localSymbol,
+            "exchange": c.exchange,
+            "currency": c.currency,
+            "lastTradeDateOrContractMonth": c.lastTradeDateOrContractMonth,
+            "multiplier": c.multiplier,
+            "tradingClass": c.tradingClass,
+            "marketName": cd.marketName,
+            "minTick": cd.minTick,
+        })
+    rows.sort(key=lambda r: r["lastTradeDateOrContractMonth"] or "")
+
+    return {
+        "symbol": symbol_upper,
+        "exchange": rows[0]["exchange"] if rows else "CFE",
+        "contracts": rows,
+        "count": len(rows),
+    }
+
+
 # ── PI command surface ──────────────────────────────────────────────
 # Allowlist of scripts the embedded /api/pi chat command surface is
 # permitted to spawn. The Next.js layer does the argument parsing /
