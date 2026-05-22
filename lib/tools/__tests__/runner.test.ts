@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { existsSync } from "node:fs";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { existsSync, mkdirSync, writeFileSync, chmodSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { runScript, resolveProjectRoot, _resetRootCache } from "../runner";
+import { tmpdir } from "node:os";
+import { runScript, resolveProjectRoot, resolvePythonBin, _resetRootCache } from "../runner";
 
 describe("resolveProjectRoot", () => {
   beforeEach(() => _resetRootCache());
@@ -84,6 +85,87 @@ describe("runScript", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.stderr).toContain("Schema validation failed");
+    }
+  });
+});
+
+// Regression coverage for the 2026-05-22 production outage where
+// /api/ticker/ratings returned 502 because `runScript` spawned bare
+// `python3.13`, which on Hetzner is the system interpreter and lacks
+// every Radon dep (dotenv, ib_insync, ...). The venv at <root>/.venv
+// is the only Python with deps installed. `resolvePythonBin` must
+// pick it up.
+describe("resolvePythonBin", () => {
+  let scratchRoot: string;
+
+  beforeEach(() => {
+    _resetRootCache();
+    scratchRoot = join(tmpdir(), `radon-runner-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(scratchRoot, { recursive: true });
+    delete process.env.RADON_PYTHON_BIN;
+  });
+
+  afterEach(() => {
+    _resetRootCache();
+    delete process.env.RADON_PYTHON_BIN;
+    if (scratchRoot && existsSync(scratchRoot)) {
+      rmSync(scratchRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("prefers <root>/.venv/bin/python3.13 when present", () => {
+    const venvBin = join(scratchRoot, ".venv", "bin");
+    mkdirSync(venvBin, { recursive: true });
+    const candidate = join(venvBin, "python3.13");
+    writeFileSync(candidate, "#!/bin/sh\nexit 0\n");
+    chmodSync(candidate, 0o755);
+
+    expect(resolvePythonBin(scratchRoot)).toBe(candidate);
+  });
+
+  it("falls back to python3 in venv when 3.13 missing", () => {
+    const venvBin = join(scratchRoot, ".venv", "bin");
+    mkdirSync(venvBin, { recursive: true });
+    const candidate = join(venvBin, "python3");
+    writeFileSync(candidate, "#!/bin/sh\nexit 0\n");
+    chmodSync(candidate, 0o755);
+
+    expect(resolvePythonBin(scratchRoot)).toBe(candidate);
+  });
+
+  it("falls back to 'python3.13' on PATH when no venv exists", () => {
+    expect(resolvePythonBin(scratchRoot)).toBe("python3.13");
+  });
+
+  it("honors RADON_PYTHON_BIN env override when the file exists", () => {
+    const override = join(scratchRoot, "custom-python");
+    writeFileSync(override, "#!/bin/sh\nexit 0\n");
+    chmodSync(override, 0o755);
+    process.env.RADON_PYTHON_BIN = override;
+
+    expect(resolvePythonBin(scratchRoot)).toBe(override);
+  });
+
+  it("ignores RADON_PYTHON_BIN when target file is missing", () => {
+    process.env.RADON_PYTHON_BIN = "/nonexistent/python";
+
+    expect(resolvePythonBin(scratchRoot)).toBe("python3.13");
+  });
+});
+
+// Sanity test: the live repo root should resolve to a venv when one
+// exists (laptop dev or production), and to "python3.13" otherwise.
+// Either result is acceptable; the test asserts the returned value is
+// at least executable-or-on-PATH-looking.
+describe("resolvePythonBin (live tree)", () => {
+  beforeEach(() => _resetRootCache());
+
+  it("returns either an absolute venv path or the bare interpreter name", () => {
+    const bin = resolvePythonBin(resolveProjectRoot());
+    if (bin.startsWith("/")) {
+      expect(existsSync(bin)).toBe(true);
+    } else {
+      expect(bin).toBe("python3.13");
     }
   });
 });

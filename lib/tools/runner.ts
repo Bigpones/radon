@@ -71,6 +71,51 @@ export function resolveProjectRoot(): string {
 /** Reset cached root (useful for tests). */
 export function _resetRootCache(): void {
   _cachedRoot = null;
+  _cachedPythonBin = null;
+}
+
+// ── Python binary resolution ──────────────────────────────────────────
+
+let _cachedPythonBin: string | null = null;
+
+/**
+ * Resolve the Python interpreter to spawn.
+ *
+ * Order:
+ *   1. `RADON_PYTHON_BIN` env override
+ *   2. `<projectRoot>/.venv/bin/python3.13` (production layout on Hetzner)
+ *   3. `<projectRoot>/.venv/bin/python3`
+ *   4. `<projectRoot>/.venv/bin/python`
+ *   5. `python3.13` on PATH (laptop dev fallback)
+ *
+ * Without this, `spawn("python3.13", ...)` hits the system interpreter,
+ * which on the Hetzner VPS lacks every Radon dep (dotenv, ib_insync, ...).
+ * The FastAPI service and every CLI script run via the venv at .venv/.
+ */
+export function resolvePythonBin(cwd: string): string {
+  if (_cachedPythonBin) return _cachedPythonBin;
+
+  const envOverride = process.env.RADON_PYTHON_BIN;
+  if (envOverride && existsSync(envOverride)) {
+    _cachedPythonBin = envOverride;
+    return envOverride;
+  }
+
+  const venvCandidates = [
+    path.join(cwd, ".venv", "bin", "python3.13"),
+    path.join(cwd, ".venv", "bin", "python3"),
+    path.join(cwd, ".venv", "bin", "python"),
+  ];
+
+  for (const candidate of venvCandidates) {
+    if (existsSync(candidate)) {
+      _cachedPythonBin = candidate;
+      return candidate;
+    }
+  }
+
+  _cachedPythonBin = "python3.13";
+  return "python3.13";
 }
 
 // ── Runner ────────────────────────────────────────────────────────────
@@ -109,7 +154,8 @@ export function runScript<T = unknown, S extends TSchema | undefined = undefined
       return;
     }
 
-    const proc: ChildProcess = spawn("python3.13", [scriptPath, ...args], {
+    const pythonBin = resolvePythonBin(cwd);
+    const proc: ChildProcess = spawn(pythonBin, [scriptPath, ...args], {
       cwd,
       env: process.env,
       detached,

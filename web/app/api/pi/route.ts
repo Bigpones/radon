@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
+import { resolvePythonBin } from "@tools/runner";
 
 export const runtime = "nodejs";
 
@@ -112,7 +113,8 @@ const normalizeCommand = (value: string): ParsedCommand | null => {
 const runPythonScript = (script: string, args: string[], cwd: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<ScriptResult> => {
   return new Promise((resolve) => {
     const pieces = [script, ...args];
-    const proc = spawn("python3.13", pieces, { cwd, env: process.env, stdio: ["ignore", "pipe", "pipe"] });
+    const pythonBin = resolvePythonBin(cwd);
+    const proc = spawn(pythonBin, pieces, { cwd, env: process.env, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     let timedOut = false;
