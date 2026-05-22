@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
-import { Link as LinkIcon, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Link as LinkIcon, X } from "lucide-react";
 import type { MarketEarPost } from "@/components/DashboardNewsFeed";
 import { formatAbsolute, formatRelative, formatTime } from "@/lib/newsfeedTime";
 
@@ -15,16 +15,38 @@ export type NewsfeedLightboxFocus = {
 type NewsfeedLightboxProps = {
   focus: NewsfeedLightboxFocus | null;
   onDismiss: () => void;
+  /** Called with -1 (previous) or +1 (next) when the user presses an
+   *  arrow key or clicks a navigation chevron. Parent decides what's
+   *  navigable; the lightbox just forwards the intent. */
+  onNavigate?: (direction: -1 | 1) => void;
+  /** Disable the previous chevron + ArrowLeft handler when there's no
+   *  earlier image-bearing post in the rail. */
+  canNavigatePrev?: boolean;
+  /** Disable the next chevron + ArrowRight handler when there's no
+   *  later image-bearing post in the rail. */
+  canNavigateNext?: boolean;
 };
 
 /**
  * NewsfeedLightbox — opens when a user clicks an image in the dashboard
  * news rail. Renders the image at full size on the left and the article
  * copy (title, body, tags, timestamp, source link) on the right so the
- * user can read the context without leaving the workspace. Dismissed by
- * the close button, Escape, or clicking the scrim.
+ * user can read the context without leaving the workspace.
+ *
+ * Keyboard:
+ *   Esc       dismiss
+ *   ←  / →    cycle to the previous / next post with an image
+ *
+ * Mouse: scrim click and the close X also dismiss; on-screen chevrons
+ * trigger the same prev/next as the arrow keys.
  */
-export default function NewsfeedLightbox({ focus, onDismiss }: NewsfeedLightboxProps) {
+export default function NewsfeedLightbox({
+  focus,
+  onDismiss,
+  onNavigate,
+  canNavigatePrev = false,
+  canNavigateNext = false,
+}: NewsfeedLightboxProps) {
   // Portal mount target. Defer to first client effect so SSR doesn't reach
   // for `document`, and so jsdom in vitest gets a real Element handle.
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
@@ -39,6 +61,16 @@ export default function NewsfeedLightbox({ focus, onDismiss }: NewsfeedLightboxP
       if (event.key === "Escape") {
         event.preventDefault();
         onDismiss();
+        return;
+      }
+      if (event.key === "ArrowLeft" && canNavigatePrev && onNavigate) {
+        event.preventDefault();
+        onNavigate(-1);
+        return;
+      }
+      if (event.key === "ArrowRight" && canNavigateNext && onNavigate) {
+        event.preventDefault();
+        onNavigate(1);
       }
     }
     document.addEventListener("keydown", onKey);
@@ -48,7 +80,7 @@ export default function NewsfeedLightbox({ focus, onDismiss }: NewsfeedLightboxP
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = previousOverflow;
     };
-  }, [focus, onDismiss]);
+  }, [focus, onDismiss, onNavigate, canNavigatePrev, canNavigateNext]);
 
   if (!focus || !portalTarget) return null;
 
@@ -75,6 +107,28 @@ export default function NewsfeedLightbox({ focus, onDismiss }: NewsfeedLightboxP
         aria-label="Dismiss lightbox"
         data-testid="newsfeed-lightbox-scrim"
       />
+      {onNavigate && canNavigatePrev ? (
+        <button
+          type="button"
+          className="newsfeed-lightbox__nav newsfeed-lightbox__nav--prev"
+          onClick={() => onNavigate(-1)}
+          aria-label="Previous post"
+          data-testid="newsfeed-lightbox-prev"
+        >
+          <ChevronLeft size={20} />
+        </button>
+      ) : null}
+      {onNavigate && canNavigateNext ? (
+        <button
+          type="button"
+          className="newsfeed-lightbox__nav newsfeed-lightbox__nav--next"
+          onClick={() => onNavigate(1)}
+          aria-label="Next post"
+          data-testid="newsfeed-lightbox-next"
+        >
+          <ChevronRight size={20} />
+        </button>
+      ) : null}
       <div className="newsfeed-lightbox__panel">
         <button
           type="button"
@@ -135,6 +189,11 @@ export default function NewsfeedLightbox({ focus, onDismiss }: NewsfeedLightboxP
               {absolute}
             </span>
           </footer>
+          {onNavigate && (canNavigatePrev || canNavigateNext) ? (
+            <p className="newsfeed-lightbox__hint" aria-hidden>
+              ← / → to cycle posts · Esc to close
+            </p>
+          ) : null}
         </article>
       </div>
     </div>,

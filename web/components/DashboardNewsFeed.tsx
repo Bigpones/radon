@@ -235,6 +235,44 @@ export default function DashboardNewsFeed() {
     [filteredPosts, safePage],
   );
   const showPagination = filteredPosts.length > PAGE_SIZE;
+
+  // Lightbox cycle list — every filtered post that has at least one
+  // image, ordered to match the rail. Image-less posts (e.g. "The Fed
+  // volatility trade") aren't navigable because the lightbox is
+  // image-centric; landing on a text-only post would render an empty
+  // media pane.
+  const navigablePosts = useMemo(
+    () => filteredPosts.filter((p) => Array.isArray(p.images) && p.images.length > 0 && p.images[0]),
+    [filteredPosts],
+  );
+
+  const lightboxIndex = useMemo(() => {
+    if (!lightboxFocus) return -1;
+    return navigablePosts.findIndex((p) => p.id === lightboxFocus.post.id);
+  }, [navigablePosts, lightboxFocus]);
+
+  const canNavigatePrev = lightboxIndex > 0;
+  const canNavigateNext = lightboxIndex >= 0 && lightboxIndex < navigablePosts.length - 1;
+
+  const navigateLightbox = useCallback(
+    (direction: -1 | 1) => {
+      if (lightboxIndex < 0) return;
+      const next = lightboxIndex + direction;
+      if (next < 0 || next >= navigablePosts.length) return;
+      const target = navigablePosts[next];
+      const firstImage = target.images?.[0];
+      if (!firstImage) return;
+      setLightboxFocus({ post: target, imageUrl: firstImage });
+      // If the target lives on a different paginated page, follow the
+      // cursor so closing the lightbox lands the user where the post
+      // they were viewing is visible.
+      const targetPage = Math.floor(next / PAGE_SIZE) + 1;
+      if (targetPage !== safePage) {
+        setCurrentPage(targetPage);
+      }
+    },
+    [lightboxIndex, navigablePosts, safePage],
+  );
   const rangeStart = filteredPosts.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
   const rangeEnd = Math.min(safePage * PAGE_SIZE, filteredPosts.length);
 
@@ -382,7 +420,13 @@ export default function DashboardNewsFeed() {
           </>
         )}
       </div>
-      <NewsfeedLightbox focus={lightboxFocus} onDismiss={() => setLightboxFocus(null)} />
+      <NewsfeedLightbox
+        focus={lightboxFocus}
+        onDismiss={() => setLightboxFocus(null)}
+        onNavigate={navigateLightbox}
+        canNavigatePrev={canNavigatePrev}
+        canNavigateNext={canNavigateNext}
+      />
     </div>
   );
 }

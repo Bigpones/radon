@@ -2753,6 +2753,61 @@ td.last-price-cell {
   color: var(--signal-core);
 }
 
+/* Prev / next chevrons. Float outside the panel so they don't compete
+   with the image; they're the only on-scrim interactive elements. The
+   arrow-key shortcuts do the same job; the chevrons are the
+   discoverable affordance for users who don't try the keyboard. */
+.newsfeed-lightbox__nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  width: 44px;
+  height: 44px;
+  background: color-mix(in srgb, var(--bg-canvas) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--signal-core) 22%, var(--line-grid));
+  border-radius: 4px;
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease, transform 150ms ease;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.newsfeed-lightbox__nav--prev { left: 24px; }
+.newsfeed-lightbox__nav--next { right: 24px; }
+
+.newsfeed-lightbox__nav:hover {
+  border-color: var(--signal-core);
+  background: color-mix(in srgb, var(--signal-core) 14%, var(--bg-canvas));
+  color: var(--signal-core);
+}
+
+.newsfeed-lightbox__nav--prev:hover { transform: translateY(-50%) translateX(-2px); }
+.newsfeed-lightbox__nav--next:hover { transform: translateY(-50%) translateX(2px); }
+
+@media (max-width: 900px) {
+  .newsfeed-lightbox__nav { width: 36px; height: 36px; }
+  .newsfeed-lightbox__nav--prev { left: 8px; }
+  .newsfeed-lightbox__nav--next { right: 8px; }
+}
+
+/* Footer hint surfaces the keyboard shortcuts so users discover the
+   arrow-key cycling without trial-and-error. Quiet treatment so it
+   doesn't compete with the source link or absolute timestamp. */
+.newsfeed-lightbox__hint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-top: 8px;
+  text-align: right;
+}
+
 .newsfeed-lightbox__media {
   /* Deeper-than-canvas radial wash so the image reads as the focal anchor,
      floating above the panel surface rather than embedded in it. */

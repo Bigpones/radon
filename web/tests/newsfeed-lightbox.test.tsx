@@ -112,4 +112,107 @@ describe("NewsfeedLightbox", () => {
     rerender(<NewsfeedLightbox focus={null} onDismiss={onDismiss} />);
     expect(document.body.style.overflow).not.toBe("hidden");
   });
+
+  it("ArrowRight fires onNavigate(+1) when canNavigateNext=true", () => {
+    const onNavigate = vi.fn();
+    render(
+      <NewsfeedLightbox
+        focus={FOCUS}
+        onDismiss={vi.fn()}
+        onNavigate={onNavigate}
+        canNavigatePrev
+        canNavigateNext
+      />,
+    );
+    fireEvent.keyDown(document, { key: "ArrowRight" });
+    expect(onNavigate).toHaveBeenCalledTimes(1);
+    expect(onNavigate).toHaveBeenCalledWith(1);
+  });
+
+  it("ArrowLeft fires onNavigate(-1) when canNavigatePrev=true", () => {
+    const onNavigate = vi.fn();
+    render(
+      <NewsfeedLightbox
+        focus={FOCUS}
+        onDismiss={vi.fn()}
+        onNavigate={onNavigate}
+        canNavigatePrev
+        canNavigateNext
+      />,
+    );
+    fireEvent.keyDown(document, { key: "ArrowLeft" });
+    expect(onNavigate).toHaveBeenCalledTimes(1);
+    expect(onNavigate).toHaveBeenCalledWith(-1);
+  });
+
+  it("ArrowRight is a no-op when canNavigateNext=false (end of list)", () => {
+    const onNavigate = vi.fn();
+    render(
+      <NewsfeedLightbox
+        focus={FOCUS}
+        onDismiss={vi.fn()}
+        onNavigate={onNavigate}
+        canNavigatePrev
+        canNavigateNext={false}
+      />,
+    );
+    fireEvent.keyDown(document, { key: "ArrowRight" });
+    expect(onNavigate).not.toHaveBeenCalled();
+  });
+
+  it("ArrowLeft is a no-op when canNavigatePrev=false (start of list)", () => {
+    const onNavigate = vi.fn();
+    render(
+      <NewsfeedLightbox
+        focus={FOCUS}
+        onDismiss={vi.fn()}
+        onNavigate={onNavigate}
+        canNavigatePrev={false}
+        canNavigateNext
+      />,
+    );
+    fireEvent.keyDown(document, { key: "ArrowLeft" });
+    expect(onNavigate).not.toHaveBeenCalled();
+  });
+
+  it("renders prev/next chevrons only when their direction is navigable", () => {
+    const { queryByTestId, rerender } = render(
+      <NewsfeedLightbox
+        focus={FOCUS}
+        onDismiss={vi.fn()}
+        onNavigate={vi.fn()}
+        canNavigatePrev
+        canNavigateNext
+      />,
+    );
+    expect(queryByTestId("newsfeed-lightbox-prev")).not.toBeNull();
+    expect(queryByTestId("newsfeed-lightbox-next")).not.toBeNull();
+
+    rerender(
+      <NewsfeedLightbox
+        focus={FOCUS}
+        onDismiss={vi.fn()}
+        onNavigate={vi.fn()}
+        canNavigatePrev={false}
+        canNavigateNext={false}
+      />,
+    );
+    expect(queryByTestId("newsfeed-lightbox-prev")).toBeNull();
+    expect(queryByTestId("newsfeed-lightbox-next")).toBeNull();
+  });
+
+  it("clicking the next chevron fires onNavigate(+1)", () => {
+    const onNavigate = vi.fn();
+    const { getByTestId } = render(
+      <NewsfeedLightbox
+        focus={FOCUS}
+        onDismiss={vi.fn()}
+        onNavigate={onNavigate}
+        canNavigatePrev
+        canNavigateNext
+      />,
+    );
+    fireEvent.click(getByTestId("newsfeed-lightbox-next"));
+    expect(onNavigate).toHaveBeenCalledWith(1);
+  });
 });
