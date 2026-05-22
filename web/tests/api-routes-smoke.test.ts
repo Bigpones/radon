@@ -339,6 +339,66 @@ describe("GET /api/leap", () => {
   });
 });
 
+describe("GET /api/garch-convergence", () => {
+  it("returns 200 with payload when garch_convergence.json exists", async () => {
+    mockReadFile.mockResolvedValueOnce(JSON.stringify({
+      scan_time: "2026-05-22T10:00:00Z",
+      tickers: { NVDA: { price: 800 } },
+      pairs: [{ pair: ["NVDA", "AMD"], divergence: 0.42 }],
+    }));
+    const { GET } = await import("../app/api/garch-convergence/route");
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const body = (await jsonOf(res)) as Record<string, unknown>;
+    expect(Array.isArray(body.pairs)).toBe(true);
+    expect(body.cache_meta).toBeDefined();
+  });
+
+  it("returns 200 with empty pairs when file missing (graceful)", async () => {
+    mockReadFile.mockRejectedValueOnce(new Error("ENOENT"));
+    const { GET } = await import("../app/api/garch-convergence/route");
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const body = (await jsonOf(res)) as Record<string, unknown>;
+    expect(body.pairs).toEqual([]);
+    expect(body.tickers).toEqual({});
+  });
+});
+
+describe("POST /api/garch-convergence/scan", () => {
+  it("forwards body to FastAPI and returns the payload on success", async () => {
+    mockRadonFetch.mockResolvedValueOnce({
+      scan_time: "2026-05-22T10:00:00Z",
+      tickers: {},
+      pairs: [{ pair: ["NVDA", "AMD"], divergence: 0.1 }],
+    });
+    const { POST } = await import("../app/api/garch-convergence/scan/route");
+    const res = await POST(req("http://localhost/api/garch-convergence/scan", {
+      method: "POST",
+      body: JSON.stringify({ preset: "semis" }),
+    }));
+    expect(res.status).toBe(200);
+    const body = (await jsonOf(res)) as Record<string, unknown>;
+    expect(Array.isArray(body.pairs)).toBe(true);
+    expect(mockRadonFetch).toHaveBeenCalledWith(
+      "/garch-convergence/scan?preset=semis",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("returns 502 envelope when FastAPI fails", async () => {
+    mockRadonFetch.mockRejectedValueOnce(new Error("upstream timeout"));
+    const { POST } = await import("../app/api/garch-convergence/scan/route");
+    const res = await POST(req("http://localhost/api/garch-convergence/scan", {
+      method: "POST",
+      body: JSON.stringify({}),
+    }));
+    expect(res.status).toBe(502);
+    const body = (await jsonOf(res)) as Record<string, unknown>;
+    expect(body.error).toBeDefined();
+  });
+});
+
 describe("GET /api/options/expirations", () => {
   it("returns 400 when symbol missing", async () => {
     const { GET } = await import("../app/api/options/expirations/route");

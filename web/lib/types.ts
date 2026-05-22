@@ -447,6 +447,44 @@ export type LeapData = {
   results: LeapResult[];
 };
 
+// GARCH convergence scanner — surfaced via /api/garch-convergence, written
+// by scripts/garch_convergence.py --json. Scans correlated pairs for IV
+// repricing lags. Each pair has a leader / lagger; the dashboard ranks
+// pairs by `divergence` (composite metric) with `gates_passed` indicating
+// which rows are actionable per the four-gate framework.
+export type GarchPair = {
+  pair: [string, string];
+  leader: string;
+  lagger: string;
+  divergence: number;
+  lagger_hv_iv_gap: number;
+  lagger_iv_rank: number | null;
+  signal: string;
+  gates_passed: boolean;
+  failing_gates: string[];
+  expected_iv: number | null;
+  expected_move: number | null;
+};
+
+export type GarchTickerVol = {
+  price: number | null;
+  hv20: number | null;
+  hv60: number | null;
+  hv252: number | null;
+  leap_atm_iv: number | null;
+  iv_rank: number | null;
+  iv_hv60: number;
+  hv20_minus_iv: number;
+  has_leaps: boolean;
+  leap_count: number;
+};
+
+export type GarchConvergenceData = {
+  scan_time: string;
+  tickers: Record<string, GarchTickerVol>;
+  pairs: GarchPair[];
+};
+
 // Flow Analysis types
 export type FlowAnalysisPosition = {
   ticker: string;

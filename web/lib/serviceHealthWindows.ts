@@ -166,6 +166,10 @@ export const SERVICE_FRESHNESS_WINDOWS: Record<string, Window> = {
   // Mon morning) without flipping stale; the on-demand button can
   // bring it fresh in between.
   "leap-scan": { open: 26 * HOUR, extended: 26 * HOUR, closed: 3 * DAY, category: "scheduled", requires_ib: false },
+  // ``garch-scan`` runs on-demand via the dashboard plus an optional
+  // scheduled timer (not yet shipped — when it lands, default to a
+  // mid-session cadence). UW-only data flow, no IB dependency.
+  "garch-scan": { open: 26 * HOUR, extended: 26 * HOUR, closed: 3 * DAY, category: "scheduled", requires_ib: false },
 
   // ``replica-watchdog`` and ``watchdog-alerts`` are EVENT-DRIVEN
   // writers: they only record a service_health row when something

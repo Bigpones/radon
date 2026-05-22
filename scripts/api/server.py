@@ -314,6 +314,9 @@ def _maybe_dual_write_to_db(path: Path, data: dict) -> None:
             # No leap_snapshots table — file cache is canonical for this scan.
             # We still want a service_health row so the banner can surface
             # staleness when the timer stops firing.
+        elif name == "garch_convergence.json":
+            service = "garch-scan"
+            # Same as leap: file cache is canonical, row only drives the banner.
         else:
             return  # unknown JSON — no DB target
         if service:
@@ -1468,6 +1471,53 @@ async def leap_scan(preset: str = "mag7", min_gap: float = 10.0):
         if cached:
             _maybe_dual_write_to_db(DATA_DIR / "leap.json", cached)
         return cached or {"scan_time": "", "min_gap": min_gap, "results": []}
+
+
+# ── GARCH Convergence (Cross-Asset Vol Repricing Lag) ───────────────
+
+_garch_last_scan: float = 0.0
+_garch_scan_lock: Optional[asyncio.Lock] = None
+GARCH_COOLDOWN_S = 600  # 10 min — UW rate-limit + scan latency
+
+
+@app.post("/garch-convergence/scan")
+async def garch_convergence_scan(preset: str = "mega-tech"):
+    """Run GARCH convergence scan (garch_convergence.py --preset X --json).
+
+    Mirrors /leap/scan semantics: 600s cooldown + lock, subprocess writes
+    data/garch_convergence.json directly, we re-read the cache file after
+    the subprocess completes and route through _maybe_dual_write_to_db so
+    service_health[garch-scan] gets an "ok" row.
+
+    Built-in presets: semis, mega-tech, energy, china-etf, all. File
+    presets (data/presets/) also accepted.
+    """
+    global _garch_last_scan, _garch_scan_lock
+    import time as _time
+    if _garch_scan_lock is None:
+        _garch_scan_lock = asyncio.Lock()
+    now = _time.monotonic()
+    if now - _garch_last_scan < GARCH_COOLDOWN_S:
+        cached = _read_cache(DATA_DIR / "garch_convergence.json")
+        if cached:
+            return cached
+    async with _garch_scan_lock:
+        if _time.monotonic() - _garch_last_scan < GARCH_COOLDOWN_S:
+            cached = _read_cache(DATA_DIR / "garch_convergence.json")
+            if cached:
+                return cached
+        result = await run_script(
+            "garch_convergence.py",
+            ["--preset", preset, "--json", "--no-open"],
+            timeout=180,
+        )
+        if not result.ok:
+            raise HTTPException(status_code=502, detail=result.error)
+        _garch_last_scan = _time.monotonic()
+        cached = _read_cache(DATA_DIR / "garch_convergence.json")
+        if cached:
+            _maybe_dual_write_to_db(DATA_DIR / "garch_convergence.json", cached)
+        return cached or {"scan_time": "", "tickers": {}, "pairs": []}
 
 
 # ── GEX (Gamma Exposure Levels) ─────────────────────────────────────

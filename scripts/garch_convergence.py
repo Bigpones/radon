@@ -796,7 +796,18 @@ Examples:
 
     # ── Step 4: Output ──
     if args.json:
-        print(json.dumps(to_json(vol_data, pair_results), indent=2))
+        json_data = to_json(vol_data, pair_results)
+        # Mirror to data/garch_convergence.json so the dashboard
+        # Opportunities → GARCH tab can read the latest scan via
+        # /api/garch-convergence. Mirrors the LEAP scanner convention
+        # (data/leap.json) added in commit f2bd329 / 35da343.
+        cache_path = _PROJECT_DIR / "data" / "garch_convergence.json"
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps(json_data, indent=2))
+        print(f"✓ Dashboard cache saved to {cache_path}", file=sys.stderr)
+        # Still emit to stdout so callers parsing via `run_script` see the
+        # payload directly without a second file read.
+        print(json.dumps(json_data, indent=2))
     else:
         html = generate_html(vol_data, pair_results, description, elapsed)
         date_str = datetime.now().strftime("%Y-%m-%d")
