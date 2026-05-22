@@ -265,5 +265,114 @@ class TestJournalSyncHandlerExecute:
         assert result["skipped"] == 1
 
 
+class TestSellCloseLabeling:
+    """Regression for 2026-05-22 SELL_TO_OPEN mislabel bug.
+
+    Companion to ``test_sell_closing_prior_long_labels_as_sell_option`` in
+    test_journal_rehydrate.py. ``fromJournal.ts`` treats SELL_TO_OPEN as
+    opening (isOpen=true, net_quantity=-qty — phantom new short) and
+    SELL_OPTION as closing (isOpen=false, net_quantity=0). The real-time
+    handler must pick the right label by looking up the contract's prior
+    signed position from the journal.
+    """
+
+    def _patch_get_db(self, db_mock):
+        """Patch get_db to return the supplied mock DB."""
+        return patch("monitor_daemon.handlers.journal_sync.get_db", return_value=db_mock)
+
+    def _fake_db(self, rows):
+        result = MagicMock()
+        result.rows = rows
+        db = MagicMock()
+        db.execute.return_value = result
+        return db
+
+    def _row(self, payload: dict, filled_at: str = "2026-04-15T10:00:00Z") -> dict:
+        return {
+            "payload": json.dumps(payload),
+            "filled_at": filled_at,
+            "written_at": filled_at,
+        }
+
+    def test_sell_closing_prior_long_labels_as_sell_option(self, trade_log_path):
+        """Prior BUY of 65 USAX $45 calls + today's SELL 65 = SELL_OPTION."""
+        prior_rows = [
+            self._row(
+                {
+                    "ticker": "USAX",
+                    "action": "BUY_OPTION",
+                    "contracts": 65,
+                    "total_cost": 6630.0,
+                    "right": "C",
+                    "strike": 45.0,
+                    "expiry": "20260619",
+                }
+            )
+        ]
+        db = self._fake_db(prior_rows)
+
+        sell_close = _mock_fill(
+            exec_id="CLOSE-SELL",
+            symbol="USAX",
+            side="SLD",
+            shares=65,
+            price=4.0,
+            sec_type="OPT",
+            strike=45.0,
+            right="C",
+            expiry="20260619",
+            when=datetime(2026, 5, 22, 14, 0, 0),
+        )
+
+        with patch("monitor_daemon.handlers.journal_sync.IBClient") as mock_cls, \
+             self._patch_get_db(db):
+            mock_client = MagicMock()
+            mock_client.get_fills.return_value = [sell_close]
+            mock_cls.return_value = mock_client
+
+            handler = JournalSyncHandler(trade_log_path=trade_log_path)
+            result = handler.execute()
+
+        assert result["imported"] == 1
+        loaded = verified_load(str(trade_log_path))
+        new_row = next(t for t in loaded["trades"] if t["ib_exec_id"] == "CLOSE-SELL")
+        assert new_row["action"] == "SELL_OPTION", (
+            f"Expected SELL_OPTION (close long), got {new_row['action']}. "
+            "Mislabel causes fromJournal.ts to mark the position isOpen=true "
+            "with net_quantity=-65 (phantom new short) instead of "
+            "isOpen=false with net_quantity=0 (correct close)."
+        )
+
+    def test_sell_with_no_prior_position_still_labels_sell_to_open(self, trade_log_path):
+        """Counterpoint: no prior position → SELL_TO_OPEN stays."""
+        db = self._fake_db([])  # empty journal
+
+        sell_to_open = _mock_fill(
+            exec_id="SHORT-OPEN",
+            symbol="NEWNAME",
+            side="SLD",
+            shares=10,
+            price=2.5,
+            sec_type="OPT",
+            strike=100.0,
+            right="P",
+            expiry="20260919",
+        )
+
+        with patch("monitor_daemon.handlers.journal_sync.IBClient") as mock_cls, \
+             self._patch_get_db(db):
+            mock_client = MagicMock()
+            mock_client.get_fills.return_value = [sell_to_open]
+            mock_cls.return_value = mock_client
+
+            handler = JournalSyncHandler(trade_log_path=trade_log_path)
+            result = handler.execute()
+
+        assert result["imported"] == 1
+        loaded = verified_load(str(trade_log_path))
+        new_row = next(t for t in loaded["trades"] if t["ib_exec_id"] == "SHORT-OPEN")
+        assert new_row["action"] == "SELL_TO_OPEN"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

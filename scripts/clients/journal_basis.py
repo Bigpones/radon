@@ -71,6 +71,87 @@ def _bucket_key(payload: dict[str, Any]) -> Optional[str]:
     return f"{ticker}|{expiry}|{right}|{strike}"
 
 
+def prior_net_qty_for_contract(
+    db,
+    *,
+    ticker: str,
+    sec_type: str,
+    strike: Any = None,
+    right: Any = None,
+    expiry: Any = None,
+) -> float:
+    """Return signed net qty for one contract from already-imported journal rows.
+
+    Used by the real-time fill writer to decide whether a SELL closes a long
+    (label ``SELL_OPTION``) or opens a short (``SELL_TO_OPEN``). Sums signed
+    qty across all matching rows: BUY → +, SELL/SHORT/CLOSED → −. Uses the
+    same key normalisation as ``_bucket_key`` so the lookup lines up with
+    the open-basis bucket math.
+
+    STK rows are matched on ticker alone (strike/right/expiry ignored).
+    OPT/BAG rows require all four to normalise to non-empty values.
+    """
+
+    normalized_ticker = _normalize_ticker(ticker)
+    if not normalized_ticker:
+        return 0.0
+
+    sec_type_upper = (sec_type or "").upper()
+    target_key: Optional[str]
+    if sec_type_upper == "STK":
+        target_key = None  # match all rows for ticker
+    else:
+        target_payload = {
+            "ticker": normalized_ticker,
+            "expiry": expiry,
+            "right": right,
+            "strike": strike,
+        }
+        target_key = _bucket_key(target_payload)
+        if target_key is None:
+            return 0.0
+
+    result = db.execute(
+        """
+        SELECT payload, filled_at, written_at
+        FROM journal
+        WHERE UPPER(COALESCE(
+            json_extract(payload, '$.ticker'),
+            json_extract(payload, '$.symbol'),
+            ''
+        )) = ?
+        ORDER BY COALESCE(filled_at, written_at) ASC, written_at ASC
+        """,
+        (normalized_ticker,),
+    )
+
+    net_qty = 0.0
+    for row in result.rows:
+        payload = _payload_from_row(row)
+        if _normalize_ticker(payload.get("ticker") or payload.get("symbol")) != normalized_ticker:
+            continue
+
+        if target_key is not None:
+            if _bucket_key(payload) != target_key:
+                continue
+        else:
+            # STK match: skip rows that look like options (have strike/right).
+            if payload.get("strike") is not None or payload.get("right"):
+                continue
+
+        qty_raw = payload.get("contracts")
+        if qty_raw is None:
+            qty_raw = payload.get("shares")
+        try:
+            qty = abs(float(qty_raw))
+        except (TypeError, ValueError):
+            continue
+
+        net_qty += _signed_qty(payload.get("action"), qty)
+
+    return net_qty
+
+
 def compute_open_basis_for_ticker(db, ticker: str) -> dict[str, float]:
     """Returns journal-derived open basis dollars keyed by contract.
 

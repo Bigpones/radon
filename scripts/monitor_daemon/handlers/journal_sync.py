@@ -29,6 +29,7 @@ from typing import Any, Dict, List, Optional
 
 from .base import BaseHandler
 from clients.ib_client import IBClient, DEFAULT_HOST
+from clients.journal_basis import prior_net_qty_for_contract
 from utils.atomic_io import atomic_save, verified_load
 
 try:
@@ -37,6 +38,14 @@ try:
     from db.writer import upsert_journal_entry  # type: ignore
 except ImportError:  # pragma: no cover — DB layer optional in unit tests
     upsert_journal_entry = None  # type: ignore[assignment]
+
+try:
+    # Used to look up prior signed net qty per contract so closing sells
+    # label as SELL_OPTION instead of SELL_TO_OPEN. Optional — hosts
+    # without libsql fall back to prior_qty=0 (= old behaviour).
+    from db.client import get_db  # type: ignore
+except ImportError:  # pragma: no cover — DB layer optional in unit tests
+    get_db = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -205,9 +214,22 @@ class JournalSyncHandler(BaseHandler):
         seen_ids = self._existing_exec_ids(existing["trades"])
         next_id = max((t.get("id", 0) for t in existing["trades"]), default=0) + 1
 
+        # Per-contract running signed net qty. Seeded lazily from the
+        # journal DB on first sight of each contract, then mutated in
+        # place as we walk this cycle's fills so a back-to-back sell of
+        # the same long still reads as a close.
+        db = self._open_db()
+        prior_state: Dict[str, float] = {}
+
         rows: List[Dict[str, Any]] = []
         for fill in fills:
-            entry = self._fill_to_entry(fill, next_id)
+            contract_key = self._fill_contract_key(fill)
+            if contract_key and contract_key not in prior_state:
+                prior_state[contract_key] = self._lookup_prior_qty(db, fill)
+
+            prior_qty = prior_state.get(contract_key, 0.0) if contract_key else 0.0
+
+            entry = self._fill_to_entry(fill, next_id, prior_qty=prior_qty)
             if entry is None:
                 continue
             if str(entry["ib_exec_id"]) in seen_ids:
@@ -215,9 +237,83 @@ class JournalSyncHandler(BaseHandler):
             seen_ids.add(str(entry["ib_exec_id"]))
             rows.append(entry)
             next_id += 1
+
+            if contract_key:
+                prior_state[contract_key] = prior_qty + self._fill_signed_qty(fill)
         return rows
 
-    def _fill_to_entry(self, fill: Any, next_id: int) -> Optional[Dict[str, Any]]:
+    @staticmethod
+    def _open_db() -> Any:
+        """Open the Turso/libsql client used for prior-qty lookups.
+
+        Returns ``None`` when the DB layer is unavailable (unit tests,
+        hosts without libsql) — callers must treat that as "no prior
+        history, default prior_qty=0".
+        """
+        if get_db is None:
+            return None
+        try:
+            return get_db()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("journal_sync: prior-qty DB unavailable: %s", exc)
+            return None
+
+    @staticmethod
+    def _fill_contract_key(fill: Any) -> Optional[str]:
+        contract = getattr(fill, "contract", None)
+        if contract is None:
+            return None
+        ticker = str(getattr(contract, "symbol", "") or "").strip().upper()
+        if not ticker:
+            return None
+        sec_type = getattr(contract, "secType", "STK") or "STK"
+        if sec_type == "STK":
+            return f"{ticker}|STK"
+        strike = getattr(contract, "strike", None)
+        right = getattr(contract, "right", None)
+        expiry = getattr(contract, "lastTradeDateOrContractMonth", None)
+        return f"{ticker}|{sec_type}|{strike}|{right}|{expiry}"
+
+    @staticmethod
+    def _fill_signed_qty(fill: Any) -> float:
+        execution = getattr(fill, "execution", None)
+        if execution is None:
+            return 0.0
+        try:
+            qty = abs(float(getattr(execution, "shares", 0) or 0))
+        except (TypeError, ValueError):
+            return 0.0
+        side = str(getattr(execution, "side", "") or "").upper()
+        if side in ("BOT", "BUY"):
+            return qty
+        if side in ("SLD", "SELL"):
+            return -qty
+        return 0.0
+
+    def _lookup_prior_qty(self, db: Any, fill: Any) -> float:
+        if db is None:
+            return 0.0
+        contract = getattr(fill, "contract", None)
+        if contract is None:
+            return 0.0
+        ticker = getattr(contract, "symbol", None)
+        if not ticker:
+            return 0.0
+        sec_type = getattr(contract, "secType", "STK") or "STK"
+        try:
+            return prior_net_qty_for_contract(
+                db,
+                ticker=ticker,
+                sec_type=sec_type,
+                strike=getattr(contract, "strike", None),
+                right=getattr(contract, "right", None),
+                expiry=getattr(contract, "lastTradeDateOrContractMonth", None),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("journal_sync: prior-qty lookup failed for %s: %s", ticker, exc)
+            return 0.0
+
+    def _fill_to_entry(self, fill: Any, next_id: int, prior_qty: float = 0.0) -> Optional[Dict[str, Any]]:
         execution = getattr(fill, "execution", None)
         contract = getattr(fill, "contract", None)
         commission_report = getattr(fill, "commissionReport", None)
@@ -230,7 +326,7 @@ class JournalSyncHandler(BaseHandler):
 
         sec_type = getattr(contract, "secType", "STK")
         side = getattr(execution, "side", "")
-        action = self._side_to_action(side, sec_type)
+        action = self._side_to_action(side, sec_type, prior_qty=prior_qty)
         if action is None:
             return None
 
@@ -292,12 +388,28 @@ class JournalSyncHandler(BaseHandler):
         return entry
 
     @staticmethod
-    def _side_to_action(side: str, sec_type: str) -> Optional[str]:
+    def _side_to_action(side: str, sec_type: str, prior_qty: float = 0.0) -> Optional[str]:
+        """Map (side, sec_type, prior_qty) → action label.
+
+        ``prior_qty`` is the contract's signed net position before this
+        fill, derived from already-imported journal rows. Without it, a
+        SELL that closes a prior long was mislabeled ``SELL_TO_OPEN``
+        (the "open short" label) instead of ``SELL_OPTION`` (close
+        long). ``fromJournal.ts`` treats those differently —
+        SELL_TO_OPEN sets isOpen=true with net_quantity=-qty (phantom
+        new short), SELL_OPTION sets isOpen=false with net_quantity=0.
+        Companion to ``_resolve_action`` in journal_rehydrate.py.
+        """
         upper = (side or "").upper()
         if upper in ("BOT", "BUY"):
+            # BUY label is the same whether opening a long or covering a
+            # short — fromJournal.ts treats both as adding to long side.
             return "BUY" if sec_type == "STK" else "BUY_OPTION"
         if upper in ("SLD", "SELL"):
-            return "SELL" if sec_type == "STK" else "SELL_TO_OPEN"
+            if sec_type == "STK":
+                # STK has no OPEN/CLOSE distinction.
+                return "SELL"
+            return "SELL_OPTION" if prior_qty > 0 else "SELL_TO_OPEN"
         return None
 
     @staticmethod
