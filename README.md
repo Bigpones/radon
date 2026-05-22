@@ -29,19 +29,21 @@ Any gate fails, no trade. Full rules in [`CLAUDE.md`](CLAUDE.md). Strategy specs
 
 **Prerequisites**
 
-- Python 3.13 (3.14 has an `ib_insync`/`eventkit` incompatibility)
+- Python 3.13 (3.14 has an `ib_insync` / `eventkit` incompatibility)
 - Node.js 18+ and `bun` (npm is not used for the JS stack)
 - Interactive Brokers Gateway (cloud via Tailscale, Docker, or local TWS)
-- API keys: Unusual Whales, Anthropic, Exa, Cerebras (optional), Clerk
+- Accounts at the external services listed below — start with [`.env.example`](.env.example) and [`web/.env.example`](web/.env.example), both fully annotated with sign-up URLs
 
 ```bash
 git clone https://github.com/joemccann/radon.git
 cd radon
+cp .env.example .env             # then fill in
+cp web/.env.example web/.env     # then fill in
 pip install -r requirements.txt
 cd web && bun install && cd ..
 ```
 
-Populate `web/.env` and the root `.env`. Full variable list in [`docs/operations.md`](docs/operations.md).
+The two `.env.example` files are the canonical variable reference — every required and optional key has an inline comment with purpose, format, and required-vs-optional. Read those before the operations runbook.
 
 **Dev launchers**
 
@@ -53,6 +55,51 @@ scripts/local.sh    # fully local: laptop runs everything including the IB Gatew
 `cloud.sh` is the everyday workflow. `local.sh` is for offline dev or when the VPS is down. Mode persists to `.env.ib-mode`; toggle later via `scripts/ib mode local|cloud`.
 
 Open `http://localhost:3000`. Clerk auto-bypasses on localhost in non-production.
+
+## External services
+
+Radon is glued together from a long list of third-party services. The full env-var matrix lives in [`.env.example`](.env.example) and [`web/.env.example`](web/.env.example); the table below summarises why each one is there and where to sign up.
+
+### Required (production)
+
+| Service | Purpose | Env vars | Where |
+|---|---|---|---|
+| **Interactive Brokers** | Real-time quotes, options chains, order routing, positions. IB Gateway + IB Flex Web Service. | `TWS_USERID`, `TWS_PASSWORD`, `IB_FLEX_TOKEN`, `IB_FLEX_QUERY_ID` (blotter), `IB_FLEX_NAV_QUERY_ID` (cash flows), `IB_GATEWAY_*` | [ibkr.com](https://www.interactivebrokers.com/) · IB Pro account · Flex Web Service enabled in Account Management |
+| **Unusual Whales** | Dark pool flow, options flow, OI changes, sweeps, analyst data, LEAP IV. | `UW_TOKEN` | [unusualwhales.com](https://unusualwhales.com/referral#39985a64-656c-4642-a051-db89f6324d64) |
+| **Clerk** | JWT auth for the terminal + FastAPI. Localhost auto-bypassed in dev. | `CLERK_ISSUER`, `CLERK_JWKS_URL`, `CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `ALLOWED_USER_IDS` | [clerk.com](https://clerk.com/) |
+| **Turso (libSQL)** | Cloud-hosted SQLite. Canonical store for journal, service_health, snapshots. | `TURSO_DB_URL`, `TURSO_AUTH_TOKEN` | [turso.tech](https://turso.tech/) |
+| **Anthropic Claude API** | Assistant chat, share-card OG renders, vision tagger (newsfeed), seasonality vision fallback. | `ANTHROPIC_API_KEY` (aliases `CLAUDE_CODE_API_KEY`, `CLAUDE_API_KEY`) | [console.anthropic.com](https://console.anthropic.com/) |
+
+### Required for specific subsystems
+
+| Service | Subsystem | Env vars | Where |
+|---|---|---|---|
+| **MenthorQ** | `/menthorq/*` CTA / dashboard / screener / forex / summary / quin surfaces. Username/password login via Playwright. | `MENTHORQ_USER`, `MENTHORQ_PASS` | [menthorq.com](https://menthorq.com/) |
+| **MarketDataWorks (MDW)** | Inbound shared-secret used by MDW → FastAPI pushes that feed CTA enrichment. Validates `X-API-Key` header. | `MDW_API_KEY` | Vendor-issued |
+| **The Market Ear** | Real-time intraday news scraped by `scripts/newsfeed/`. Headless Playwright login; session cached at `data/newsfeed-storage.json` (~30d), full re-auth ~6h. | `THEMARKETEAR_EMAIL`, `THEMARKETEAR_PASSWORD` | [themarketear.com](https://themarketear.com/) (paid subscription) |
+| **Cerebras** | Newsfeed text tagger (gpt-oss-120b → qwen-3 fallback). Falls back to Anthropic when unset. | `CEREBRAS_API_KEY` | [cerebras.ai](https://www.cerebras.ai/inference) |
+| **Artificial Analysis** | LLM Token Expenditure Index (`/regime/llm`, daily timer). Free tier 1000 req/day. | `ARTIFICIAL_ANALYSIS_API_KEY` | [artificialanalysis.ai](https://artificialanalysis.ai/login) → Insights dashboard |
+| **Exa** | Company and market research surfaces. | `EXA_API_KEY` | [dashboard.exa.ai](https://dashboard.exa.ai/api-keys) |
+
+### Infrastructure (production)
+
+| Service | Purpose | Notes |
+|---|---|---|
+| **Hetzner Cloud** | VPS that hosts FastAPI, IB Gateway (docker), the WS relay, the monitor daemon, the newsfeed, Caddy, and `media.radon.run`. | Resolved as `ib-gateway` via Tailscale on the laptop |
+| **Tailscale** | Mesh VPN between laptop and VPS. Laptop reaches `ib-gateway:4001` over Tailscale; FastAPI on the VPS binds to localhost-only. | [tailscale.com](https://tailscale.com/) |
+| **Caddy** | TLS termination + reverse proxy on the VPS. Serves `app.radon.run` and `media.radon.run`. | Config in the sibling `radon-cloud` repo |
+| **GitHub Actions** | `git push origin main` triggers `.github/workflows/deploy.yml` which SSHes to Hetzner and runs `bash scripts/deploy.sh`. | Confirm: `gh run list --workflow=deploy.yml --limit 1` |
+
+### Optional alerting / fallback data
+
+| Service | Purpose | Env vars | Where |
+|---|---|---|---|
+| **Pushover** | Watchdog P1 alerts that cut through iOS Do Not Disturb. P2/P3 land in `service_health` only. Absent vars degrade gracefully. | `PUSHOVER_USER`, `PUSHOVER_TOKEN` | [pushover.net](https://pushover.net/) |
+| **FRED (St. Louis Fed)** | Risk-free rate (DFF) for Black-Scholes implied value. No key required; 24h cache + 0.0 fallback. | none | Public API |
+| **Cboe** | COR1M historical fallback when IB / UW are missing the series. | none | Public CSV feed |
+| **Yahoo Finance** | Last-resort price fallback when IB and UW both fail. Never the first or second source. | none | Public API |
+
+Production `.env` lives on the VPS at `/home/radon/radon-cloud/.env`. Laptop dev uses the root `.env` for FastAPI and scripts, plus `web/.env` for Next.js (some keys are duplicated because Next.js can't read the root file from inside `web/`).
 
 ## Architecture at a glance
 
@@ -145,17 +192,16 @@ radon/
 └─ CLAUDE.md             Authoritative developer runbook
 ```
 
-## Data sources
+## Data source priority
 
-In strict priority order:
+Strict order for any price / flow / chain lookup. The full external-service inventory is in [External services](#external-services) above.
 
 1. **Interactive Brokers** for real-time quotes, options chains, and portfolio state
 2. **Unusual Whales** for dark pool flow, sweeps, options flow, and analyst data
-3. **Exa** for company and market research
-4. **Cboe official feeds** for COR1M historical fallback
-5. **Yahoo Finance** as a strict last resort
+3. **Cboe official feeds** for COR1M historical fallback
+4. **Yahoo Finance** as a strict last resort
 
-Never skip to Yahoo or web scrape without trying IB then Unusual Whales first.
+Never skip to Yahoo or web scrape without trying IB then Unusual Whales first. Research surfaces (Exa) and news (themarketear, MenthorQ) are orthogonal — they don't substitute for missing price data.
 
 ## Deployment
 
