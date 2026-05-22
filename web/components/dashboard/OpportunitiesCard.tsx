@@ -278,8 +278,20 @@ export function OpportunitiesCard() {
       ) : (
         <ul className="snapshot-rows">
           {garchRows.map((p) => {
+            // Signal values: STRONG / MODERATE / WEAK / NONE.
+            // Color by gates_passed: bull (signal-core) when actionable,
+            // muted otherwise. Always render the signal label so the user
+            // sees WHY a row is muted (NONE / failing gate) instead of a
+            // dead "—" placeholder.
             const direction = p.gates_passed ? "bull" : "neutral";
+            const signalLabel = p.signal || "NONE";
             const pairKey = `g-${p.pair[0]}-${p.pair[1]}`;
+            const gapText = p.lagger_hv_iv_gap >= 0
+              ? `+${p.lagger_hv_iv_gap.toFixed(1)}`
+              : p.lagger_hv_iv_gap.toFixed(1);
+            const divergenceText = p.divergence >= 0
+              ? `+${p.divergence.toFixed(2)}`
+              : p.divergence.toFixed(2);
             return (
               <li key={pairKey} className="snapshot-row">
                 <Link
@@ -290,14 +302,12 @@ export function OpportunitiesCard() {
                   {p.pair[0]}↔{p.pair[1]}
                 </Link>
                 <span className="snapshot-row__signal">
-                  Lag {p.lagger} · gap {p.lagger_hv_iv_gap >= 0 ? `+${p.lagger_hv_iv_gap.toFixed(1)}` : p.lagger_hv_iv_gap.toFixed(1)}
+                  Lag {p.lagger} · gap {gapText}
                 </span>
                 <span className={`snapshot-row__direction snapshot-row__direction--${direction}`}>
-                  {p.gates_passed ? p.signal || "Actionable" : "—"}
+                  {signalLabel}
                 </span>
-                <span className="snapshot-row__score">
-                  {p.divergence >= 0 ? `+${p.divergence.toFixed(2)}` : p.divergence.toFixed(2)}
-                </span>
+                <span className="snapshot-row__score">{divergenceText}</span>
               </li>
             );
           })}
