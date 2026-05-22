@@ -9831,6 +9831,11 @@ body[data-mobile="true"] td.right {
   padding: 8px 10px;
   border-radius: 4px;
   border-left: 2px solid var(--warning);
+  /* Notes commonly embed long dotted identifiers (push-lock holder,
+     module paths) that don't have natural break opportunities. Let
+     the browser break anywhere so the note stays a tidy block. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .admin-card-note-inline {
@@ -9894,6 +9899,12 @@ body[data-mobile="true"] td.right {
   font-size: 13px;
   font-family: var(--font-mono);
   color: var(--text-primary);
+  /* Long identifier values (e.g. push-lock holder = a dotted module
+     path) overflow the 2-column grid without break opportunities.
+     anywhere lets the browser break at any character, keeping the
+     row height stable instead of pushing the value out the side. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .admin-pool-table,

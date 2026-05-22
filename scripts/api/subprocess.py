@@ -68,6 +68,22 @@ class RawScriptResult:
     exit_code: Optional[int] = None
     timed_out: bool = False
 
+    @property
+    def error(self) -> Optional[str]:
+        """Surface a ScriptResult-shaped `error` so callers can branch
+        on result.error without caring whether the result came from
+        run_script or run_script_raw."""
+        if self.ok:
+            return None
+        return self.stderr.strip() or f"Script exited with code {self.exit_code}"
+
+    @property
+    def data(self) -> dict:
+        """RawScriptResult never carries parsed JSON; keep the attribute
+        so wrapper code that does `result.data` for an unconditional
+        peek doesn't AttributeError."""
+        return {}
+
 
 def _find_json_start(stdout: str) -> int:
     """Return the earliest index of '{' or '[' in stdout, or -1 if neither."""

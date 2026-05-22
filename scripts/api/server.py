@@ -423,7 +423,9 @@ def _is_cri_cache_stale(data: Optional[dict], *, mtime_ms: Optional[float] = Non
 
 async def _warm_journal_reconciliation_on_startup() -> None:
     logger.info("Journal startup reconcile triggered")
-    result = await run_script("ib_reconcile.py", [], timeout=120)
+    # raw=True: ib_reconcile.py emits a status report on stdout, not
+    # JSON. The default runner crashes on the first '{' in the report.
+    result = await run_script_raw("ib_reconcile.py", [], timeout=120)
     if result.ok:
         logger.info("Journal startup reconcile complete")
     else:
@@ -1175,8 +1177,14 @@ async def portfolio_sync():
     Scripts auto-allocate client IDs from subprocess range (20-49).
     Auto-restarts IB Gateway on ECONNREFUSED and retries once.
     """
+    # raw=True: ib_sync.py --sync writes data/portfolio.json + emits
+    # human-readable status text on stdout. The default JSON-parsing
+    # runner crashes on the first '{' it finds in the status report —
+    # broken since the script grew its summary banner. See
+    # feedback_dont_cache_empty_results / journalctl ERROR
+    # "Invalid JSON output: Extra data".
     result = await _run_ib_script_with_recovery(
-        "ib_sync.py", ["--sync", "--port", str(DEFAULT_GATEWAY_PORT)], timeout=30
+        "ib_sync.py", ["--sync", "--port", str(DEFAULT_GATEWAY_PORT)], timeout=30, raw=True
     )
     if not result.ok:
         raise HTTPException(status_code=502, detail=result.error)
@@ -1199,7 +1207,7 @@ async def portfolio_background_sync(bg: BackgroundTasks):
 async def _bg_sync_via_subprocess():
     """Background task: run ib_sync.py as subprocess with auto-recovery."""
     result = await _run_ib_script_with_recovery(
-        "ib_sync.py", ["--sync", "--port", str(DEFAULT_GATEWAY_PORT)], timeout=30
+        "ib_sync.py", ["--sync", "--port", str(DEFAULT_GATEWAY_PORT)], timeout=30, raw=True
     )
     if result.ok:
         logger.info("Background portfolio sync complete")
@@ -1218,7 +1226,7 @@ async def orders_refresh():
         return {"status": "ok", "orders": []}
 
     result = await _run_ib_script_with_recovery(
-        "ib_orders.py", ["--sync", "--port", str(DEFAULT_GATEWAY_PORT)], timeout=30
+        "ib_orders.py", ["--sync", "--port", str(DEFAULT_GATEWAY_PORT)], timeout=30, raw=True
     )
     if not result.ok:
         raise HTTPException(status_code=502, detail=result.error)
@@ -1353,10 +1361,12 @@ async def cta_share():
 @app.post("/journal/reconcile")
 async def journal_reconcile():
     """Run IB reconciliation to refresh reconciliation.json for journal auto-import."""
-    result = await run_script("ib_reconcile.py", [], timeout=120)
+    # ib_reconcile.py writes a file and emits human-readable status on
+    # stdout — use raw runner to avoid the JSON-parse crash.
+    result = await run_script_raw("ib_reconcile.py", [], timeout=120)
     if not result.ok:
         raise HTTPException(status_code=502, detail=result.error)
-    return result.data or {"ok": True}
+    return {"ok": True}
 
 
 @app.post("/journal/rehydrate")
@@ -1978,7 +1988,7 @@ def _should_auto_restart_ib_gateway_after_runtime_failure() -> bool:
 
 
 async def _run_ib_script_with_recovery(
-    script: str, args: list, timeout: float = 30
+    script: str, args: list, timeout: float = 30, raw: bool = False
 ) -> ScriptResult:
     """Run an IB-dependent script with pre-flight health check and cooldown.
 
@@ -1986,8 +1996,15 @@ async def _run_ib_script_with_recovery(
     1. Cooldown: if a recent IB script failed, skip for _IB_SCRIPT_COOLDOWN_SECS
     2. Pool check: if pool is disconnected, verify Gateway before spawning
     3. Post-failure: verify Gateway health before restarting
+
+    Pass `raw=True` for scripts that write to a file and emit
+    human-readable text on stdout (ib_sync.py --sync, ib_orders.py
+    --sync, ib_reconcile.py). The default JSON-parsing path crashes on
+    those with "Invalid JSON output" because run_script greedily parses
+    the first '{' it finds in the status text.
     """
     global _ib_last_failure
+    _runner = run_script_raw if raw else run_script
 
     # Layer 1: Cooldown — skip if a recent failure occurred
     now = time.monotonic()
@@ -2019,7 +2036,7 @@ async def _run_ib_script_with_recovery(
                 error="IB Gateway is not accepting connections. Check IBKR Mobile for 2FA approval.",
             )
 
-    result = await run_script(script, args, timeout=timeout)
+    result = await _runner(script, args, timeout=timeout)
 
     # Clear cooldown on success
     if result.ok:
@@ -2082,7 +2099,7 @@ async def _run_ib_script_with_recovery(
                 if ib_pool:
                     await ib_pool.disconnect_all()
                     await ib_pool.connect_all()
-                result = await run_script(script, args, timeout=timeout)
+                result = await _runner(script, args, timeout=timeout)
             else:
                 logger.error("IB Gateway restart failed: %s", gw_result)
                 result = ScriptResult(
