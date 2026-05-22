@@ -35,8 +35,10 @@ vi.mock("@/components/ModifyOrderModal", () => ({
   default: () => null,
 }));
 
-/** LONG 65× USAX Call $45.0 at avg_cost $1.50/contract.
- *  entry_cost = 65 × 1.50 × 100 = $9,750. */
+/** LONG 65× USAX Call $45.0 at avg_cost $150 per-contract (= $1.50/share).
+ *  entry_cost = 65 × 150 = $9,750. Per IB convention, `leg.avg_cost`
+ *  for options is per-contract (already × multiplier); same shape that
+ *  PositionTable / InstrumentDetail divide by 100 to display per-share. */
 const LONG_USAX_CALL: PortfolioPosition = {
   id: 11,
   ticker: "USAX",
@@ -60,7 +62,43 @@ const LONG_USAX_CALL: PortfolioPosition = {
       type: "Call",
       strike: 45,
       entry_cost: 9750,
-      avg_cost: 1.5,
+      avg_cost: 150,
+      market_price: 4.0,
+      market_value: 26000,
+      market_price_is_calculated: false,
+    },
+  ],
+};
+
+/** Production-repro fixture: LONG 65× USAX Call $45.0, avg_cost $102/contract
+ *  (~$1.02/share). User sells at $4.00 limit → expected Realized P&L
+ *  = 65 × $4.00 × 100 − 65 × $102 = $26,000 − $6,630 = +$19,370.
+ *  Pre-fix the code multiplied the already-per-contract avg_cost by 100
+ *  again, giving costBasis = $661,055 → P&L = −$635,055. */
+const LONG_USAX_CALL_PROD_REPRO: PortfolioPosition = {
+  id: 12,
+  ticker: "USAX",
+  structure: "Long Call $45.0",
+  structure_type: "Long Call",
+  risk_profile: "defined",
+  expiry: "2027-01-15",
+  contracts: 65,
+  direction: "LONG",
+  entry_cost: 6630,
+  max_risk: 6630,
+  market_value: 26000,
+  kelly_optimal: null,
+  target: null,
+  stop: null,
+  entry_date: "2026-03-01",
+  legs: [
+    {
+      direction: "LONG",
+      contracts: 65,
+      type: "Call",
+      strike: 45,
+      entry_cost: 6630,
+      avg_cost: 102,
       market_price: 4.0,
       market_value: 26000,
       market_price_is_calculated: false,
@@ -170,12 +208,53 @@ describe("OrderTab — SELL-to-close on LONG single-leg surfaces realized P&L", 
     expect(metrics).not.toHaveProperty("Total");
 
     expect(metrics).toHaveProperty("Est. Realized P&L");
-    // Realized P&L = 65 × (4.00 − 1.50) × 100 = $16,250.
+    // Realized P&L = 65 × $4.00 × 100 − 65 × $150 = $26,000 − $9,750 = $16,250.
     expect(metrics["Est. Realized P&L"]).toMatch(/\$16,250/);
 
     // Max Gain / Max Loss are forward-risk metrics for OPEN trades;
     // they're meaningless on a pure close and must not render.
     expect(metrics).not.toHaveProperty("Max Gain");
     expect(metrics).not.toHaveProperty("Max Loss");
+  });
+
+  /**
+   * Production repro (2026-05-22): LONG 65× USAX Call $45 at $102/contract
+   * avg_cost, SELL @ $4.00. Pre-fix the order summary multiplied the
+   * already-per-contract avg_cost by 100 again, returning costBasis
+   * $661,055 and Est. Realized P&L −$635,055 instead of +$19,370.
+   */
+  it("uses per-contract avg_cost directly (no double × multiplier) on close P&L", () => {
+    const portfolio: PortfolioData = {
+      ...PORTFOLIO,
+      positions: [LONG_USAX_CALL_PROD_REPRO],
+    };
+
+    const { container, getByText } = render(
+      React.createElement(OrderTab, {
+        ticker: "USAX",
+        position: LONG_USAX_CALL_PROD_REPRO,
+        portfolio,
+        prices: PRICES,
+        openOrders: [],
+      }),
+    );
+
+    const qtyInput = container.querySelector<HTMLInputElement>(".order-input");
+    fireEvent.change(qtyInput!, { target: { value: "65" } });
+
+    const limitInput = container.querySelector<HTMLInputElement>(".modify-price-input");
+    fireEvent.change(limitInput!, { target: { value: "4.00" } });
+
+    fireEvent.click(getByText("Place Order"));
+
+    const metrics = readSummaryMetrics(container);
+
+    expect(metrics.Proceeds).toMatch(/\$26,000/);
+
+    // Cost basis = 65 × $102 = $6,630 (per-contract avg_cost, NOT × 100).
+    // Realized P&L = $26,000 − $6,630 = +$19,370 profit.
+    expect(metrics["Est. Realized P&L"]).toMatch(/\$19,370/);
+    // Guardrail: bug surfaced as −$635,055; ensure we're not there.
+    expect(metrics["Est. Realized P&L"]).not.toMatch(/635,055/);
   });
 });

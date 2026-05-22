@@ -348,8 +348,16 @@ function NewOrderForm({
       coveringLongContracts >= parsedQty;
 
     if (isClosingLong) {
+      // `onlyLeg.avg_cost` is per-contract for options (IB's `pos.avgCost`
+      // is already multiplied by the contract multiplier for OPT secType;
+      // see `scripts/ib_sync.py:fetch_positions` and the journal-basis
+      // override on the same path). Stocks are per-share. Match the unit
+      // the leg already carries — do NOT multiply by `multiplier` again,
+      // or option cost-basis is over-counted by 100×.
+      //   Before fix: LONG 65 USAX C $45 avg_cost=$102 → costBasis = 65×102×100 = $661,055 → PnL = −$635,055.
+      //   After fix:  costBasis = 65×102 = $6,630 → PnL = +$19,370.
       const proceeds = parsedQty * parsedPrice * multiplier;
-      const costBasis = parsedQty * onlyLeg.avg_cost * multiplier;
+      const costBasis = parsedQty * onlyLeg.avg_cost;
       return {
         description,
         totalCost: proceeds,
