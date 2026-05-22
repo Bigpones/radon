@@ -47,8 +47,8 @@ export default function Sidebar({ activeSection, actionTone, lastSync }: Sidebar
         <img
           src="/brand/radon-monogram.svg"
           alt=""
-          width={28}
-          height={28}
+          width={22}
+          height={22}
           className="logo-mark"
           aria-hidden
         />
