@@ -373,6 +373,157 @@ class TestSellCloseLabeling:
         new_row = next(t for t in loaded["trades"] if t["ib_exec_id"] == "SHORT-OPEN")
         assert new_row["action"] == "SELL_TO_OPEN"
 
+    def test_partial_close_of_long_labels_as_sell_option(self, trade_log_path):
+        """Sell some but not all of a long position is still SELL_OPTION.
+        prior_qty=65, sell 25 → remaining 40. The 25 sold are closing
+        the long, not opening a short. (fromJournal.ts would otherwise
+        produce isOpen=true with net_quantity=-25 — phantom short.)"""
+        prior_rows = [
+            self._row(
+                {
+                    "ticker": "USAX",
+                    "action": "BUY_OPTION",
+                    "contracts": 65,
+                    "total_cost": 6630.0,
+                    "right": "C",
+                    "strike": 45.0,
+                    "expiry": "20260619",
+                }
+            )
+        ]
+        db = self._fake_db(prior_rows)
+
+        partial_close = _mock_fill(
+            exec_id="PARTIAL-CLOSE",
+            symbol="USAX",
+            side="SLD",
+            shares=25,
+            price=4.0,
+            sec_type="OPT",
+            strike=45.0,
+            right="C",
+            expiry="20260619",
+        )
+
+        with patch("monitor_daemon.handlers.journal_sync.IBClient") as mock_cls, \
+             self._patch_get_db(db):
+            mock_client = MagicMock()
+            mock_client.get_fills.return_value = [partial_close]
+            mock_cls.return_value = mock_client
+
+            handler = JournalSyncHandler(trade_log_path=trade_log_path)
+            handler.execute()
+
+        loaded = verified_load(str(trade_log_path))
+        new_row = next(t for t in loaded["trades"] if t["ib_exec_id"] == "PARTIAL-CLOSE")
+        assert new_row["action"] == "SELL_OPTION"
+
+    def test_short_cover_buy_stays_buy_option(self, trade_log_path):
+        """Symmetry check: covering a short with a BUY keeps BUY_OPTION.
+        fromJournal.ts does not distinguish open-long from cover-short
+        on the buy side — both use the BUY/BUY_OPTION label, so this
+        is a no-change case. Captures it explicitly to lock the
+        behaviour against future "let's add BUY_TO_COVER" refactors."""
+        prior_short = [
+            self._row(
+                {
+                    "ticker": "NVDA",
+                    "action": "SELL_TO_OPEN",
+                    "contracts": 10,
+                    "total_cost": 250.0,
+                    "right": "P",
+                    "strike": 80.0,
+                    "expiry": "20260919",
+                }
+            )
+        ]
+        db = self._fake_db(prior_short)
+
+        cover_buy = _mock_fill(
+            exec_id="COVER-BUY",
+            symbol="NVDA",
+            side="BOT",
+            shares=10,
+            price=2.0,
+            sec_type="OPT",
+            strike=80.0,
+            right="P",
+            expiry="20260919",
+        )
+
+        with patch("monitor_daemon.handlers.journal_sync.IBClient") as mock_cls, \
+             self._patch_get_db(db):
+            mock_client = MagicMock()
+            mock_client.get_fills.return_value = [cover_buy]
+            mock_cls.return_value = mock_client
+
+            handler = JournalSyncHandler(trade_log_path=trade_log_path)
+            handler.execute()
+
+        loaded = verified_load(str(trade_log_path))
+        new_row = next(t for t in loaded["trades"] if t["ib_exec_id"] == "COVER-BUY")
+        assert new_row["action"] == "BUY_OPTION"
+
+    def test_two_sells_in_one_cycle_both_label_sell_option(self, trade_log_path):
+        """Within a single execute() cycle the per-contract prior_state
+        must mutate as fills are processed, so two sells of the same
+        long both see prior_qty > 0 and both label SELL_OPTION.
+        Without the in-cycle mutation, the second sell would see the
+        DB-derived 65 prior + the first sell's -25 not yet applied,
+        and label correctly only by luck."""
+        prior_rows = [
+            self._row(
+                {
+                    "ticker": "USAX",
+                    "action": "BUY_OPTION",
+                    "contracts": 65,
+                    "total_cost": 6630.0,
+                    "right": "C",
+                    "strike": 45.0,
+                    "expiry": "20260619",
+                }
+            )
+        ]
+        db = self._fake_db(prior_rows)
+
+        sell_a = _mock_fill(
+            exec_id="SELL-A",
+            symbol="USAX",
+            side="SLD",
+            shares=25,
+            price=4.0,
+            sec_type="OPT",
+            strike=45.0,
+            right="C",
+            expiry="20260619",
+            when=datetime(2026, 5, 22, 14, 0, 0),
+        )
+        sell_b = _mock_fill(
+            exec_id="SELL-B",
+            symbol="USAX",
+            side="SLD",
+            shares=25,
+            price=4.10,
+            sec_type="OPT",
+            strike=45.0,
+            right="C",
+            expiry="20260619",
+            when=datetime(2026, 5, 22, 14, 5, 0),
+        )
+
+        with patch("monitor_daemon.handlers.journal_sync.IBClient") as mock_cls, \
+             self._patch_get_db(db):
+            mock_client = MagicMock()
+            mock_client.get_fills.return_value = [sell_a, sell_b]
+            mock_cls.return_value = mock_client
+
+            handler = JournalSyncHandler(trade_log_path=trade_log_path)
+            handler.execute()
+
+        loaded = verified_load(str(trade_log_path))
+        actions = {t["ib_exec_id"]: t["action"] for t in loaded["trades"] if t["ib_exec_id"] in {"SELL-A", "SELL-B"}}
+        assert actions == {"SELL-A": "SELL_OPTION", "SELL-B": "SELL_OPTION"}
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
