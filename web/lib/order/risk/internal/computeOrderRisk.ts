@@ -165,7 +165,11 @@ export function legRisk(
     }
     return {
       maxLoss: premiumDollars,
-      maxGain: intrinsicDollars - premiumDollars,
+      // Clamp at 0: when `premiumDollars > intrinsicDollars` (paid more than
+      // the strike-to-zero floor — out-of-money put with extreme premium),
+      // the position can never profit at expiry. maxGain = 0, matching the
+      // multi-leg path's `Math.max(0, …)` convention.
+      maxGain: Math.max(0, intrinsicDollars - premiumDollars),
       unboundedLoss: false,
       unboundedGain: false,
     };
@@ -183,8 +187,15 @@ export function legRisk(
   }
   // Naked / cash-secured short put: gain capped at premium, loss at the
   // assignment-at-zero bound (strike × contracts × 100) minus premium.
+  // Clamp at 0 to match the multi-leg path's `Math.max(0, ...)` convention.
+  // When `premiumDollars > intrinsicDollars` (premium received exceeds the
+  // strike-to-zero floor — an arb-only scenario in real markets, but the
+  // function shouldn't return nonsensical negative maxLoss for fuzz inputs)
+  // the position is structurally guaranteed-profit and `maxLoss = 0` is the
+  // right reading. The 2026-05-26 fuzz suite caught this asymmetry between
+  // the single-leg and multi-leg paths.
   return {
-    maxLoss: intrinsicDollars - premiumDollars,
+    maxLoss: Math.max(0, intrinsicDollars - premiumDollars),
     maxGain: premiumDollars,
     unboundedLoss: false,
     unboundedGain: false,

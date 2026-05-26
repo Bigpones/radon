@@ -249,6 +249,25 @@ describe("computeOrderRisk — empty / edge inputs", () => {
     const risk = computeOrderRisk([leg("BUY", "C", 100)], 2, 0);
     expect(risk.maxLoss).toBeNull();
   });
+
+  it("SELL P with premium > strike clamps maxLoss to 0 (fuzz regression 2026-05-26)", () => {
+    // legRisk subtracted premium from intrinsic without clamping, so a $1
+    // strike + $1.01 premium produced maxLoss = -$1. The multi-leg path
+    // already clamped via Math.max(0, …); the single-leg path now matches.
+    // Caught by the fuzz suite's P4 monotonicity property.
+    const risk = computeOrderRisk([leg("SELL", "P", 1)], -1.01, 1);
+    expect(risk.maxLoss).toBe(0);
+    expect(risk.maxGain).toBe(101);
+  });
+
+  it("BUY P with premium > strike clamps maxGain to 0 (companion clamp)", () => {
+    // An out-of-money long put paid above the strike-to-zero floor can
+    // never profit at expiry. Mirror clamp for the BUY P branch so the
+    // single-leg and multi-leg paths agree on the floor.
+    const risk = computeOrderRisk([leg("BUY", "P", 1)], 2, 1);
+    expect(risk.maxLoss).toBe(200);
+    expect(risk.maxGain).toBe(0);
+  });
 });
 
 /* ---------------------------------------------------------------------------
