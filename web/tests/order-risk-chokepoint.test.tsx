@@ -194,6 +194,83 @@ describe("OrderRiskGate — gate is a thin pairing", () => {
   });
 });
 
+describe("WULF covered short — single-leg credit semantics", () => {
+  // 2026-05-26 weekend repro: with `isDebit` derived from live WS quotes,
+  // a SELL leg on a closed market showed `Max Loss = abs(credit)` instead of
+  // `$0`. The fix is structural: single-leg SELL ⇒ credit, single-leg BUY ⇒
+  // debit. This test pins the credit-sign contract at the hook level so
+  // future refactors of OptionsChainTab cannot regress it.
+  it("SELL 77x $31 Call against held 77x LONG $17 Call yields max loss $0, max gain $150,920", () => {
+    const portfolio: PortfolioData = {
+      positions: [
+        {
+          id: 12,
+          ticker: "WULF",
+          structure: "Long Call",
+          structure_type: "Long Option",
+          risk_profile: "defined",
+          expiry: "2027-01-15",
+          contracts: 77,
+          direction: "LONG",
+          entry_cost: 40_040,
+          max_risk: null,
+          market_value: null,
+          legs: [
+            {
+              direction: "LONG" as const,
+              contracts: 77,
+              type: "Call" as const,
+              strike: 17,
+              entry_cost: 40_040,
+              avg_cost: 5.20,
+              market_price: null,
+              market_value: null,
+            },
+          ],
+          kelly_optimal: null,
+          target: null,
+          stop: null,
+        } as unknown as PortfolioData["positions"][number],
+      ],
+      bankroll: 0,
+      open_risk: 0,
+      open_risk_pct: 0,
+      convexity_score: null,
+      convexity_breakdown: null,
+      account_summary: null,
+    } as unknown as PortfolioData;
+
+    const input = {
+      ticker: "WULF",
+      chainLegs: [
+        {
+          action: "SELL" as const,
+          right: "C" as const,
+          strike: 31,
+          expiry: "20270115",
+          quantity: 77,
+        },
+      ],
+      netPremium: -5.60, // CREDIT — caller must pass this signed correctly
+      description: "Short Call @ $5.60",
+      totalCost: -43_120,
+    };
+
+    const { result } = renderHook(() => useOrderRisk(input, portfolio));
+    expect(result.current).not.toBeNull();
+    expect(result.current!.coverageStatus).toBe("resolved");
+    expect(result.current!.summary.maxLossUnbounded).toBe(false);
+    expect(result.current!.summary.maxLoss).toBe(0);
+    expect(result.current!.summary.maxGain).toBeCloseTo(150_920, 0);
+    expect(result.current!.coveringLegs).toHaveLength(1);
+    expect(result.current!.coveringLegs[0]).toMatchObject({
+      type: "Option",
+      strike: 17,
+      contracts: 77,
+    });
+  });
+});
+
 describe("brand integrity", () => {
   it("isAugmentedOrderSummary returns false for plain literals", () => {
     expect(

@@ -322,7 +322,18 @@ function OrderBuilder({
     if (!isValidPrice) return null;
     const totalCost = parsedPrice * totalQty * 100;
     const description = `${structure || "Option"} @ ${fmtPrice(parsedPrice)}`;
-    const isCredit = isDebit === false;
+    // Single-leg orders: debit/credit is STRUCTURALLY determined by action,
+    // not by the WS net-price probe. SELL → receive premium → credit;
+    // BUY → pay premium → debit. Falling back on `isDebit` (computed from
+    // `computeNetPrice` on live WS quotes) breaks on weekends / off-hours
+    // when bid/ask are null and `isDebit` is `null` — the old code then
+    // defaulted to treating the order as a debit and the resulting risk
+    // numbers came out with a flipped credit sign (Max Loss = abs(credit)
+    // instead of $0). For multi-leg combos `isDebit` is still meaningful
+    // because structure determines the sign.
+    const isCredit = isCombo
+      ? isDebit === false
+      : legs[0]?.action === "SELL";
     const netPremium = isCredit ? -Math.abs(parsedPrice) : parsedPrice;
     const chainLegs = (normalizedOrder?.legs ?? legs).map((l) => ({
       action: l.action,
