@@ -47,13 +47,11 @@ while IFS= read -r -d '' d; do
   add "$d" "pytest cache directory"
 done < <(find "$SCRIPTS_DIR" -type d -name ".pytest_cache" -print0 2>/dev/null)
 
-while IFS= read -r -d '' d; do
-  add "$d" "__pycache__ directory"
-done < <(find "$SCRIPTS_DIR" -type d -name "__pycache__" -print0 2>/dev/null)
-
-while IFS= read -r -d '' f; do
-  add "$f" "compiled .pyc file"
-done < <(find "$SCRIPTS_DIR" -name "*.pyc" -print0 2>/dev/null)
+# 2. Python bytecode cache (__pycache__/, *.pyc) is intentionally NOT audited:
+# already in .gitignore, never tracked, auto-regenerated on every Python
+# import. Flagging it every session buried the real signal from checks 3-6
+# under hundreds of noise rows. To wipe pycache manually:
+#   find scripts -type d -name __pycache__ -exec rm -rf {} +
 
 # 3. Legacy utils superseded by clients/
 # These modules carry "Legacy … kept for backward-compatible scripts/tests"
