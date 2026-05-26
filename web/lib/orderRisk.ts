@@ -22,8 +22,41 @@
  *     a stock-to-zero stress, not a defined-risk cap)
  */
 
+import type { PortfolioData } from "./types";
+
 export type LegRight = "C" | "P";
 export type LegAction = "BUY" | "SELL";
+
+/**
+ * Shape consumed by `augmentOrderLegsWithPortfolioCoverage` — matches the
+ * chain-order-builder's per-leg state. Quantity here is the raw user-entered
+ * contract count for the leg (NOT a per-combo ratio); augmentation normalises
+ * it to a ratio against `comboQuantity` so callers don't need to pre-divide
+ * before calling `computeOrderRisk`.
+ */
+export interface ChainOrderLeg {
+  action: LegAction;
+  right: LegRight;
+  strike: number;
+  expiry: string;
+  quantity: number;
+}
+
+export interface CoveringPortfolioLeg {
+  right: LegRight;
+  strike: number;
+  expiry: string;
+  contracts: number;
+}
+
+export interface AugmentedOrderLegs {
+  /** Risk legs ready for `computeOrderRisk`, with per-combo ratios. */
+  riskLegs: OrderRiskLeg[];
+  /** Number of combo units — pass to `computeOrderRisk` as `comboQuantity`. */
+  comboQuantity: number;
+  /** Held LONG legs from portfolio injected as virtual coverage. */
+  coveringLegs: CoveringPortfolioLeg[];
+}
 
 export interface OrderRiskLeg {
   action: LegAction;
@@ -597,4 +630,173 @@ function sideMaxGain(sameRightLegs: OrderRiskLeg[], right: LegRight): number {
     lossAtZero += sign * leg.strike * leg.quantity;
   }
   return Math.max(0, lossAtZero) * MULTIPLIER;
+}
+
+/* ---------------------------------------------------------------------------
+ * Portfolio-coverage augmentation
+ *
+ * The chain order builder lets the operator click any strike on the chain and
+ * SELL it. Without portfolio awareness, the resulting leg is treated as a
+ * standalone instrument by `computeOrderRisk`. For a SHORT CALL with no held
+ * LONG call this is correct — UNBOUNDED is the right answer. But when the
+ * operator already holds LONG calls of the SAME UNDERLYING and EXPIRY at a
+ * different strike, the resulting position is a vertical spread (or partial
+ * spread), and the risk model should see both legs.
+ *
+ * This helper transforms `ChainOrderLeg[]` into the convention expected by
+ * `computeOrderRisk`:
+ *
+ *   - Chain leg quantity (raw user-entered contracts) is normalised to a
+ *     per-combo ratio. `comboQuantity` carries the contract count.
+ *   - For each SELL chain leg, the held LONG legs on the same ticker /
+ *     expiry / right are injected as virtual BUY legs with ratio
+ *     `held_contracts / comboQuantity`. Coverage is capped at the chain
+ *     leg's contract count — additional held longs above that beyond don't
+ *     belong inside the resulting-position model (they remain a separately
+ *     held instrument and would inflate Max Gain via long-call unbounded
+ *     upside).
+ *   - Fractional ratios are deliberate. legsAreBounded compares the
+ *     numeric ratios; partial coverage surfaces as longRatio less than
+ *     shortRatio, which resolves to UNBOUNDED — the correct answer when
+ *     N held longs only cover N of M shorts.
+ *
+ * Why not generalise `OrderRiskLeg.coveringLongContracts`? That field models
+ * SAME-OPTION coverage (close-out semantics: SELL of contracts you already
+ * hold short-circuits to maxLoss = 0). Spread coverage at a different strike
+ * isn't a close — it's a structural transformation, and is most cleanly
+ * expressed as a multi-leg combo. The single-leg branch keeps its existing
+ * semantics; this helper just hands a different shape to the multi-leg path
+ * when coverage exists.
+ *
+ * Expiry normalisation: portfolio positions store expiry as "YYYY-MM-DD"
+ * while chain legs use "YYYYMMDD". `normaliseExpiry` strips dashes and is
+ * tolerant of either input.
+ * -------------------------------------------------------------------------*/
+
+function normaliseExpiry(value: string): string {
+  return value.replace(/-/g, "");
+}
+
+function gcdInt(a: number, b: number): number {
+  let x = Math.abs(Math.trunc(a));
+  let y = Math.abs(Math.trunc(b));
+  while (y !== 0) {
+    [x, y] = [y, x % y];
+  }
+  return x || 1;
+}
+
+function comboUnitFromQuantities(quantities: number[]): number {
+  if (quantities.length === 0) return 1;
+  return quantities.reduce((acc, q) => gcdInt(acc, q));
+}
+
+/**
+ * Build the risk-leg representation for a chain-built order, augmented with
+ * any portfolio coverage. See block comment above for the full semantics.
+ *
+ * @param chainLegs  Raw chain order legs (per-leg quantity is the user-entered contract count).
+ * @param ticker     Underlying symbol — used to filter portfolio positions.
+ * @param portfolio  Live portfolio snapshot or null. When null, the helper still
+ *                   normalises chain leg quantities to per-combo ratios so the
+ *                   single-leg quantity² bug stays fixed even without coverage.
+ * @returns          `{ riskLegs, comboQuantity, coveringLegs }`.
+ */
+export function augmentOrderLegsWithPortfolioCoverage(
+  chainLegs: ChainOrderLeg[],
+  ticker: string,
+  portfolio: PortfolioData | null,
+): AugmentedOrderLegs {
+  if (chainLegs.length === 0) {
+    return { riskLegs: [], comboQuantity: 1, coveringLegs: [] };
+  }
+
+  const quantities = chainLegs.map((l) => Math.max(1, Math.trunc(l.quantity)));
+  const comboQuantity = comboUnitFromQuantities(quantities);
+
+  const riskLegs: OrderRiskLeg[] = chainLegs.map((leg, i) => ({
+    action: leg.action,
+    right: leg.right,
+    strike: leg.strike,
+    expiry: leg.expiry,
+    quantity: quantities[i] / comboQuantity,
+  }));
+
+  const coveringLegs: CoveringPortfolioLeg[] = [];
+  if (!portfolio) {
+    return { riskLegs, comboQuantity, coveringLegs };
+  }
+
+  // Per-target index of held LONG contracts: key = expiry|right|strike.
+  // Held SHORT and STK positions never act as coverage for a chain short
+  // (held shorts compound it, stock doesn't structurally cap an option).
+  type HeldKey = string;
+  const heldLongIndex = new Map<HeldKey, { contracts: number; strike: number; right: LegRight; expiry: string }>();
+  for (const pos of portfolio.positions ?? []) {
+    if (pos.ticker !== ticker) continue;
+    const expiry = pos.expiry ? normaliseExpiry(pos.expiry) : "";
+    if (!expiry) continue;
+    for (const leg of pos.legs ?? []) {
+      if (leg.direction !== "LONG") continue;
+      if (leg.type !== "Call" && leg.type !== "Put") continue;
+      if (leg.strike == null || !Number.isFinite(leg.strike) || leg.strike <= 0) continue;
+      if (leg.contracts <= 0) continue;
+      const right: LegRight = leg.type === "Call" ? "C" : "P";
+      const key: HeldKey = `${expiry}|${right}|${leg.strike}`;
+      const prior = heldLongIndex.get(key);
+      heldLongIndex.set(key, {
+        contracts: (prior?.contracts ?? 0) + leg.contracts,
+        strike: leg.strike,
+        right,
+        expiry,
+      });
+    }
+  }
+
+  if (heldLongIndex.size === 0) {
+    return { riskLegs, comboQuantity, coveringLegs };
+  }
+
+  // For each SELL chain leg, draw down covering held LONG contracts of the
+  // same expiry and right. Coverage is capped at the chain leg's contract
+  // count so we don't inject more longs than the short can pair with.
+  //
+  // Multiple SELL chain legs at the same right share a single coverage pool
+  // — a held long can only cover one short at a time. We consume in order
+  // of the chain legs list.
+  const remainingByKey = new Map<HeldKey, number>();
+  for (const [k, v] of heldLongIndex) remainingByKey.set(k, v.contracts);
+
+  for (let i = 0; i < chainLegs.length; i++) {
+    const chain = chainLegs[i];
+    if (chain.action !== "SELL") continue;
+    const chainExpiry = normaliseExpiry(chain.expiry);
+    let remainingShort = quantities[i];
+
+    for (const [key, leg] of heldLongIndex.entries()) {
+      if (remainingShort <= 0) break;
+      if (leg.right !== chain.right) continue;
+      if (leg.expiry !== chainExpiry) continue;
+      const available = remainingByKey.get(key) ?? 0;
+      if (available <= 0) continue;
+      const consumed = Math.min(available, remainingShort);
+      remainingByKey.set(key, available - consumed);
+      remainingShort -= consumed;
+      coveringLegs.push({
+        right: leg.right,
+        strike: leg.strike,
+        expiry: leg.expiry,
+        contracts: consumed,
+      });
+      riskLegs.push({
+        action: "BUY",
+        right: leg.right,
+        strike: leg.strike,
+        expiry: leg.expiry,
+        quantity: consumed / comboQuantity,
+      });
+    }
+  }
+
+  return { riskLegs, comboQuantity, coveringLegs };
 }

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PriceData, OptionContract } from "@/lib/pricesProtocol";
 import { optionKey, normalizeOptionExpiry } from "@/lib/pricesProtocol";
-import type { PortfolioPosition } from "@/lib/types";
+import type { PortfolioData, PortfolioPosition } from "@/lib/types";
 import { fmtPrice } from "@/lib/positionUtils";
 import OrderErrorBanner from "@/components/OrderErrorBanner";
 import { useTickerDetail } from "@/lib/TickerDetailContext";
@@ -25,7 +25,7 @@ import {
   ALL_STRIKES,
 } from "@/lib/optionsChainUtils";
 import { OrderPriceStrip, OrderLegPills, OrderConfirmSummary, type OrderLeg as UnifiedOrderLeg, type OrderSummary } from "@/lib/order";
-import { computeOrderRisk } from "@/lib/orderRisk";
+import { augmentOrderLegsWithPortfolioCoverage, computeOrderRisk } from "@/lib/orderRisk";
 import { useViewport } from "@/lib/useViewport";
 import MobileChainLadder from "@/components/mobile/MobileChainLadder";
 
@@ -37,6 +37,12 @@ type OptionsChainTabProps = {
   tickerPriceData: PriceData | null;
   focusPosition?: PortfolioPosition | null;
   focusPositionRequested?: boolean;
+  /**
+   * Full portfolio snapshot. Used by the chain `OrderBuilder` so SELL legs at
+   * a different strike than a held LONG (same ticker / expiry / right) compose
+   * to a vertical spread instead of flagging "uncovered short".
+   */
+  portfolio?: PortfolioData | null;
 };
 
 type ChainStrike = {
@@ -210,6 +216,7 @@ function OrderBuilder({
   ticker,
   legs,
   prices,
+  portfolio,
   onRemoveLeg,
   onUpdateLeg,
   onClearLegs,
@@ -217,6 +224,7 @@ function OrderBuilder({
   ticker: string;
   legs: OrderLeg[];
   prices: Record<string, PriceData>;
+  portfolio?: PortfolioData | null;
   onRemoveLeg: (id: string) => void;
   onUpdateLeg: (id: string, updates: Partial<OrderLeg>) => void;
   onClearLegs: () => void;
@@ -297,6 +305,28 @@ function OrderBuilder({
     }
   }, [signedNetPrices.mid, priceManuallySet, structureKey]);
 
+  // Augment chain legs with portfolio coverage BEFORE computing risk so a
+  // SELL leg at a different strike against a held LONG (same ticker / expiry
+  // / right) composes to a vertical spread. Also normalises chain leg
+  // quantities to per-combo ratios — fixes the latent N² bug where the
+  // single-leg branch of `computeOrderRisk` multiplied `leg.quantity` (raw
+  // contracts) by `comboQuantity` (also raw contracts) and inflated Max Gain
+  // by `quantity²`. See `augmentOrderLegsWithPortfolioCoverage` for the
+  // full coverage semantics + WULF-style spread case (commit 2026-05-26).
+  const augmented = useMemo(() => {
+    const chainLegs = (normalizedOrder?.legs ?? legs).map((l) => ({
+      action: l.action,
+      right: l.right,
+      strike: l.strike,
+      expiry: l.expiry,
+      // normalizeComboOrder has already divided multi-leg quantities by GCD;
+      // single-leg falls through with the raw user-entered count, which the
+      // augmentation helper normalises to a per-combo ratio.
+      quantity: normalizedOrder ? l.quantity : Math.max(1, Math.trunc(l.quantity)),
+    }));
+    return augmentOrderLegsWithPortfolioCoverage(chainLegs, ticker, portfolio ?? null);
+  }, [legs, normalizedOrder, ticker, portfolio]);
+
   // Calculate order summary for confirmation. Per-leg max-loss math via
   // computeOrderRisk so naked short legs (risk reversals, short straddles,
   // jade lizards) surface correct dollar exposure instead of the legacy
@@ -309,14 +339,10 @@ function OrderBuilder({
     const isCredit = isDebit === false;
     // netPremium: positive for debit, negative for credit, per-combo per-share.
     const netPremium = isCredit ? -Math.abs(parsedPrice) : parsedPrice;
-    const riskLegs = (normalizedOrder?.legs ?? legs).map((l) => ({
-      action: l.action,
-      right: l.right,
-      strike: l.strike,
-      expiry: l.expiry,
-      quantity: l.quantity,
-    }));
-    const risk = computeOrderRisk(riskLegs, netPremium, totalQty);
+    // `augmented.comboQuantity` carries the contract count; chain legs ride
+    // as per-combo ratios. For single-leg orders this means `totalQty` and
+    // `augmented.comboQuantity` agree, with leg.quantity normalised to 1.
+    const risk = computeOrderRisk(augmented.riskLegs, netPremium, augmented.comboQuantity);
 
     return {
       description,
@@ -327,7 +353,7 @@ function OrderBuilder({
       maxGainUnbounded: risk.maxGainUnbounded,
       undefinedRiskReason: risk.undefinedRiskReason,
     };
-  }, [isValidPrice, parsedPrice, totalQty, structure, legs, isDebit, normalizedOrder]);
+  }, [isValidPrice, parsedPrice, totalQty, structure, isDebit, augmented]);
 
   const handlePlace = useCallback(async () => {
     if (!confirmStep) {
@@ -468,6 +494,30 @@ function OrderBuilder({
           Clear
         </button>
       </div>
+
+      {/* Coverage hint: show when a held LONG bounds an otherwise-naked SELL.
+          Helps the operator understand why Max Loss dropped from UNBOUNDED. */}
+      {augmented.coveringLegs.length > 0 && (
+        <div
+          className="order-builder-coverage"
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "10px",
+            color: "var(--text-secondary)",
+            padding: "4px 8px",
+            marginBottom: "8px",
+            background: "color-mix(in srgb, var(--ok) 8%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)",
+            borderRadius: "4px",
+            letterSpacing: "0.04em",
+          }}
+        >
+          COVERED BY HELD{" "}
+          {augmented.coveringLegs
+            .map((l) => `LONG ${l.contracts}× $${l.strike} ${l.right === "C" ? "Call" : "Put"}`)
+            .join(" + ")}
+        </div>
+      )}
 
       {/* Price strip for combo orders */}
       {isCombo && stripPrices.available && (
@@ -731,6 +781,7 @@ export default function OptionsChainTab({
   tickerPriceData,
   focusPosition = null,
   focusPositionRequested = false,
+  portfolio = null,
 }: OptionsChainTabProps) {
   const [expirations, setExpirations] = useState<string[]>([]);
   const [selectedExpiry, setSelectedExpiry] = useState<string | null>(null);
@@ -1201,6 +1252,7 @@ export default function OptionsChainTab({
         ticker={ticker}
         legs={orderLegs}
         prices={prices}
+        portfolio={portfolio}
         onRemoveLeg={handleRemoveLeg}
         onUpdateLeg={handleUpdateLeg}
         onClearLegs={handleClearLegs}

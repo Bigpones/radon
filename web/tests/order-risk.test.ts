@@ -11,7 +11,13 @@
  * `Max Loss: $5,000` and reality was ≈$755,000 of assignment exposure.
  */
 import { describe, it, expect } from "vitest";
-import { computeOrderRisk, type OrderRiskLeg } from "../lib/orderRisk";
+import {
+  computeOrderRisk,
+  augmentOrderLegsWithPortfolioCoverage,
+  type OrderRiskLeg,
+  type ChainOrderLeg,
+} from "../lib/orderRisk";
+import type { PortfolioData } from "../lib/types";
 
 function leg(
   action: "BUY" | "SELL",
@@ -351,5 +357,336 @@ describe("computeOrderRisk — closing-trade coverage", () => {
     const risk = computeOrderRisk([leg("SELL", "C", 100)], 2, 1);
     expect(risk.maxLossUnbounded).toBe(true);
     expect(risk.hasUndefinedRisk).toBe(true);
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * Chain order builder → portfolio-coverage augmentation.
+ *
+ * The 2026-05-26 WULF bug: the operator held 77 LONG $17C exp 2027-01-15 and
+ * clicked SELL on the $31C of the same expiry. The chain order builder
+ * computed risk over the SELL leg in isolation, surfaced "UNBOUNDED", and
+ * also displayed Max Gain × 77² because single-leg orders carry `quantity = N`
+ * AND `comboQuantity = N` (both copies of the user's qty), which the
+ * single-leg branch of computeOrderRisk multiplies together.
+ *
+ * augmentOrderLegsWithPortfolioCoverage exists so the chain order builder
+ * can model the RESULTING POSITION (chain leg + held long legs of the same
+ * underlying/expiry/right) without leaking the per-combo / per-contract
+ * convention. Chain leg quantity is normalised to a per-combo ratio (1) with
+ * total contracts carried in `comboQuantity`; same-right held longs are
+ * injected as virtual BUY legs with `quantity = held_contracts / comboQuantity`.
+ * Fractional ratios are deliberate — partial coverage surfaces as longRatio
+ * less than shortRatio, which the existing legsAreBounded path resolves to
+ * UNBOUNDED.
+ * -------------------------------------------------------------------------*/
+
+function buildPortfolio(positions: PortfolioData["positions"]): PortfolioData {
+  return {
+    positions,
+    bankroll: 0,
+    open_risk: 0,
+    open_risk_pct: 0,
+    convexity_score: null,
+    convexity_breakdown: null,
+    account_summary: null,
+  } as unknown as PortfolioData;
+}
+
+function makePos(opts: {
+  ticker: string;
+  expiry: string;
+  right: "Call" | "Put";
+  strike: number;
+  direction: "LONG" | "SHORT";
+  contracts: number;
+}): PortfolioData["positions"][number] {
+  return {
+    id: Math.floor(Math.random() * 10_000),
+    ticker: opts.ticker,
+    structure: opts.direction === "LONG" ? `Long ${opts.right}` : `Short ${opts.right}`,
+    structure_type: opts.direction === "LONG" ? "Long Option" : "Short Option",
+    risk_profile: "defined",
+    expiry: opts.expiry,
+    contracts: opts.contracts,
+    direction: opts.direction,
+    entry_cost: 0,
+    max_risk: null,
+    market_value: null,
+    legs: [
+      {
+        direction: opts.direction,
+        contracts: opts.contracts,
+        type: opts.right,
+        strike: opts.strike,
+        entry_cost: 0,
+        avg_cost: 0,
+        market_price: null,
+        market_value: null,
+      },
+    ],
+    kelly_optimal: null,
+    target: null,
+    stop: null,
+  } as unknown as PortfolioData["positions"][number];
+}
+
+function chainSell(strike: number, right: "C" | "P", quantity: number, expiry = "20270115"): ChainOrderLeg {
+  return { action: "SELL", right, strike, expiry, quantity };
+}
+function chainBuy(strike: number, right: "C" | "P", quantity: number, expiry = "20270115"): ChainOrderLeg {
+  return { action: "BUY", right, strike, expiry, quantity };
+}
+
+describe("augmentOrderLegsWithPortfolioCoverage — WULF-style spread coverage", () => {
+  it("LONG 77x $17C + chain SELL 77x $31C same expiry → bull call spread, NOT unbounded", () => {
+    // The exact WULF screenshot scenario. Without augmentation: UNBOUNDED.
+    const portfolio = buildPortfolio([
+      makePos({ ticker: "WULF", expiry: "2027-01-15", right: "Call", strike: 17, direction: "LONG", contracts: 77 }),
+    ]);
+    const { riskLegs, comboQuantity, coveringLegs } = augmentOrderLegsWithPortfolioCoverage(
+      [chainSell(31, "C", 77)],
+      "WULF",
+      portfolio,
+    );
+
+    // Chain leg + one virtual long leg
+    expect(riskLegs).toHaveLength(2);
+    expect(comboQuantity).toBe(77);
+    expect(coveringLegs).toHaveLength(1);
+    expect(coveringLegs[0]).toMatchObject({ strike: 17, contracts: 77, right: "C" });
+
+    // netPremium = -5.60 credit per share
+    const risk = computeOrderRisk(riskLegs, -5.60, comboQuantity);
+    expect(risk.maxLossUnbounded).toBe(false);
+    expect(risk.hasUndefinedRisk).toBe(false);
+    // Bull call CREDIT spread: long lower / short higher with credit received
+    // means the structure can never lose money (proof in tasks/todo.md).
+    expect(risk.maxLoss).toBe(0);
+    // Max gain at S ≥ K_short: spread width × N × 100 + credit dollars
+    //   = 14 × 77 × 100 + 5.60 × 77 × 100 = $107,800 + $43,120 = $150,920
+    expect(risk.maxGain).toBeCloseTo(150_920, 0);
+  });
+
+  it("LONG 65x $17C + chain SELL 77x $31C → 12 contracts uncovered → UNBOUNDED", () => {
+    const portfolio = buildPortfolio([
+      makePos({ ticker: "WULF", expiry: "2027-01-15", right: "Call", strike: 17, direction: "LONG", contracts: 65 }),
+    ]);
+    const { riskLegs, comboQuantity } = augmentOrderLegsWithPortfolioCoverage(
+      [chainSell(31, "C", 77)],
+      "WULF",
+      portfolio,
+    );
+    const risk = computeOrderRisk(riskLegs, -5.60, comboQuantity);
+    expect(risk.maxLossUnbounded).toBe(true);
+    expect(risk.hasUndefinedRisk).toBe(true);
+    expect(risk.undefinedRiskReason).toMatch(/short call/i);
+  });
+
+  it("LONG 100x $17C + chain SELL 77x $31C → over-coverage, still bounded", () => {
+    const portfolio = buildPortfolio([
+      makePos({ ticker: "WULF", expiry: "2027-01-15", right: "Call", strike: 17, direction: "LONG", contracts: 100 }),
+    ]);
+    const { riskLegs, comboQuantity, coveringLegs } = augmentOrderLegsWithPortfolioCoverage(
+      [chainSell(31, "C", 77)],
+      "WULF",
+      portfolio,
+    );
+    // Only 77 contracts of coverage modelled (capped at chain leg's qty); the
+    // extra 23 long calls remain a separate held position — including them
+    // would inflate Max Gain by the unbounded long-call upside.
+    expect(coveringLegs[0].contracts).toBe(77);
+    const risk = computeOrderRisk(riskLegs, -5.60, comboQuantity);
+    expect(risk.maxLossUnbounded).toBe(false);
+  });
+
+  it("LONG $17C in expiry A + chain SELL $31C in expiry B → no coverage, UNBOUNDED", () => {
+    const portfolio = buildPortfolio([
+      makePos({ ticker: "WULF", expiry: "2026-09-18", right: "Call", strike: 17, direction: "LONG", contracts: 77 }),
+    ]);
+    const { riskLegs, comboQuantity, coveringLegs } = augmentOrderLegsWithPortfolioCoverage(
+      [chainSell(31, "C", 77, "20270115")],
+      "WULF",
+      portfolio,
+    );
+    expect(coveringLegs).toHaveLength(0);
+    expect(riskLegs).toHaveLength(1);
+    const risk = computeOrderRisk(riskLegs, -5.60, comboQuantity);
+    expect(risk.maxLossUnbounded).toBe(true);
+  });
+
+  it("LONG 30x $19P + chain SELL 30x $17P same expiry → bull put spread, bounded", () => {
+    // Put-side symmetry: held LONG put at HIGHER strike covers short put at
+    // LOWER strike (bull put spread).
+    const portfolio = buildPortfolio([
+      makePos({ ticker: "WULF", expiry: "2027-01-15", right: "Put", strike: 19, direction: "LONG", contracts: 30 }),
+    ]);
+    const { riskLegs, comboQuantity, coveringLegs } = augmentOrderLegsWithPortfolioCoverage(
+      [chainSell(17, "P", 30)],
+      "WULF",
+      portfolio,
+    );
+    expect(coveringLegs).toHaveLength(1);
+    expect(coveringLegs[0]).toMatchObject({ strike: 19, right: "P" });
+    const risk = computeOrderRisk(riskLegs, -1.0, comboQuantity);
+    expect(risk.maxLossUnbounded).toBe(false);
+    expect(risk.hasUndefinedRisk).toBe(false);
+  });
+
+  it("LONG 30x $15P + chain SELL 30x $17P same expiry → long put at LOWER strike does NOT cover, undefined", () => {
+    // A long put with K_long < K_short does NOT bound a short put — at S=0
+    // the short owes K_short × 100 while the long pays only K_long × 100,
+    // net loss = (K_short - K_long) × N × 100 (still finite, but undefined-risk).
+    // The existing put-bounded model captures this as bounded numerically yet
+    // surfaces undefined-risk because the loss is structural strike-to-zero.
+    const portfolio = buildPortfolio([
+      makePos({ ticker: "WULF", expiry: "2027-01-15", right: "Put", strike: 15, direction: "LONG", contracts: 30 }),
+    ]);
+    const { riskLegs, comboQuantity } = augmentOrderLegsWithPortfolioCoverage(
+      [chainSell(17, "P", 30)],
+      "WULF",
+      portfolio,
+    );
+    const risk = computeOrderRisk(riskLegs, -0.50, comboQuantity);
+    // Numerically bounded but classified as defined-risk via the long-put cap
+    // (15-to-0 floor). Loss at S=0: (17 - 15) × 30 × 100 - 0.50 × 30 × 100
+    //   = 6,000 - 1,500 = 4,500.
+    expect(risk.maxLossUnbounded).toBe(false);
+    expect(risk.maxLoss).toBeCloseTo(4_500, 0);
+  });
+
+  it("SHORT positions in portfolio are NOT injected as coverage", () => {
+    // Held SHORT calls do not cover a new short call — they compound it.
+    const portfolio = buildPortfolio([
+      makePos({ ticker: "WULF", expiry: "2027-01-15", right: "Call", strike: 17, direction: "SHORT", contracts: 77 }),
+    ]);
+    const { riskLegs, coveringLegs } = augmentOrderLegsWithPortfolioCoverage(
+      [chainSell(31, "C", 77)],
+      "WULF",
+      portfolio,
+    );
+    expect(coveringLegs).toHaveLength(0);
+    expect(riskLegs).toHaveLength(1);
+  });
+
+  it("STK / non-option positions ignored even on same ticker", () => {
+    // Stock can't cover an option leg — different secType. Filter must
+    // require `type ∈ {Call, Put}` and a finite strike.
+    const stockPos = {
+      ...makePos({ ticker: "WULF", expiry: "", right: "Call", strike: 17, direction: "LONG", contracts: 1000 }),
+      structure: "Long Stock",
+      structure_type: "Stock",
+      legs: [
+        {
+          direction: "LONG" as const,
+          contracts: 1000,
+          type: "Stock" as const,
+          strike: null,
+          entry_cost: 0,
+          avg_cost: 0,
+          market_price: null,
+          market_value: null,
+        },
+      ],
+    };
+    const portfolio = buildPortfolio([stockPos as unknown as PortfolioData["positions"][number]]);
+    const { coveringLegs } = augmentOrderLegsWithPortfolioCoverage(
+      [chainSell(31, "C", 77)],
+      "WULF",
+      portfolio,
+    );
+    expect(coveringLegs).toHaveLength(0);
+  });
+
+  it("different ticker positions are not pulled in as coverage", () => {
+    const portfolio = buildPortfolio([
+      makePos({ ticker: "AAPL", expiry: "2027-01-15", right: "Call", strike: 17, direction: "LONG", contracts: 500 }),
+    ]);
+    const { coveringLegs } = augmentOrderLegsWithPortfolioCoverage(
+      [chainSell(31, "C", 77)],
+      "WULF",
+      portfolio,
+    );
+    expect(coveringLegs).toHaveLength(0);
+  });
+
+  it("multiple covering positions at different strikes are summed", () => {
+    const portfolio = buildPortfolio([
+      makePos({ ticker: "WULF", expiry: "2027-01-15", right: "Call", strike: 17, direction: "LONG", contracts: 50 }),
+      makePos({ ticker: "WULF", expiry: "2027-01-15", right: "Call", strike: 19, direction: "LONG", contracts: 27 }),
+    ]);
+    const { riskLegs, coveringLegs } = augmentOrderLegsWithPortfolioCoverage(
+      [chainSell(31, "C", 77)],
+      "WULF",
+      portfolio,
+    );
+    expect(coveringLegs).toHaveLength(2);
+    expect(coveringLegs.map((l) => l.strike).sort((a, b) => a - b)).toEqual([17, 19]);
+    expect(riskLegs).toHaveLength(3);
+    const risk = computeOrderRisk(riskLegs, -5.60, 77);
+    expect(risk.maxLossUnbounded).toBe(false);
+  });
+
+  it("BUY chain legs are not augmented (no portfolio coverage modelling for opening longs)", () => {
+    const portfolio = buildPortfolio([
+      makePos({ ticker: "WULF", expiry: "2027-01-15", right: "Call", strike: 17, direction: "LONG", contracts: 77 }),
+    ]);
+    const { riskLegs, coveringLegs } = augmentOrderLegsWithPortfolioCoverage(
+      [chainBuy(31, "C", 77)],
+      "WULF",
+      portfolio,
+    );
+    // Opening additional longs doesn't need synthetic coverage; the BUY leg
+    // is its own bounded-loss instrument.
+    expect(coveringLegs).toHaveLength(0);
+    expect(riskLegs).toHaveLength(1);
+  });
+
+  it("no portfolio passed → returns chain legs verbatim with quantity normalised", () => {
+    const { riskLegs, comboQuantity, coveringLegs } = augmentOrderLegsWithPortfolioCoverage(
+      [chainSell(31, "C", 77)],
+      "WULF",
+      null,
+    );
+    expect(coveringLegs).toHaveLength(0);
+    expect(riskLegs).toHaveLength(1);
+    // Quantity normalised: single-leg ratio = 1, comboQuantity carries N.
+    expect(riskLegs[0].quantity).toBe(1);
+    expect(comboQuantity).toBe(77);
+  });
+});
+
+describe("augmentOrderLegsWithPortfolioCoverage — quantity² regression", () => {
+  it("single-leg chain order with quantity=77 produces contracts=77 (NOT 77²)", () => {
+    // Before fix: chain OrderBuilder passed leg.quantity=77 AND comboQuantity=77
+    // to computeOrderRisk, so the single-leg branch computed contracts = 77×77 =
+    // 5,929, inflating Max Gain to $3,320,240 instead of $43,120 on a $5.60
+    // credit for 77 contracts.
+    const { riskLegs, comboQuantity } = augmentOrderLegsWithPortfolioCoverage(
+      [chainSell(100, "C", 77)],
+      "WULF",
+      null,
+    );
+    // No coverage available — single naked short call. Max gain = premium × N × 100.
+    const risk = computeOrderRisk(riskLegs, -5.60, comboQuantity);
+    expect(risk.maxGain).toBeCloseTo(5.60 * 77 * 100, 0); // $43,120
+    expect(risk.maxGain).not.toBeCloseTo(5.60 * 77 * 77 * 100, 0); // NOT $3,320,240
+  });
+
+  it("two-leg chain combo with equal quantities preserves per-combo ratios", () => {
+    // Regression guard: a custom 50x/50x vertical built via chain clicks must
+    // not double-count quantity. Both legs land with `quantity = 1` ratio and
+    // comboQuantity = 50.
+    const { riskLegs, comboQuantity } = augmentOrderLegsWithPortfolioCoverage(
+      [chainBuy(100, "C", 50), chainSell(110, "C", 50)],
+      "AAPL",
+      null,
+    );
+    expect(comboQuantity).toBe(50);
+    expect(riskLegs.every((l) => l.quantity === 1)).toBe(true);
+    const risk = computeOrderRisk(riskLegs, 2, comboQuantity);
+    // Bull call spread, 50 contracts, $2 debit per share → $10,000 max loss.
+    expect(risk.maxLoss).toBeCloseTo(10_000, 0);
+    expect(risk.maxGain).toBeCloseTo(40_000, 0); // (10 width - 2 debit) × 50 × 100
   });
 });

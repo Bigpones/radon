@@ -225,6 +225,10 @@ export default function TickerDetailContent({
             // actual position expiry, leading to mismatched-expiry orders.
             focusPosition={position ?? null}
             focusPositionRequested={position != null}
+            // Portfolio-aware risk: chain SELL legs against a held LONG at
+            // the same expiry compose to a bull/bear vertical spread instead
+            // of "uncovered short". See `augmentOrderLegsWithPortfolioCoverage`.
+            portfolio={portfolio}
           />
         )}
         {resolvedTab === "position" && position && (
