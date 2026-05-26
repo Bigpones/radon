@@ -454,7 +454,7 @@ describe("augmentOrderLegsWithPortfolioCoverage — WULF-style spread coverage",
     expect(riskLegs).toHaveLength(2);
     expect(comboQuantity).toBe(77);
     expect(coveringLegs).toHaveLength(1);
-    expect(coveringLegs[0]).toMatchObject({ strike: 17, contracts: 77, right: "C" });
+    expect(coveringLegs[0]).toMatchObject({ type: "Option", strike: 17, contracts: 77, right: "C" });
 
     // netPremium = -5.60 credit per share
     const risk = computeOrderRisk(riskLegs, -5.60, comboQuantity);
@@ -495,7 +495,7 @@ describe("augmentOrderLegsWithPortfolioCoverage — WULF-style spread coverage",
     // Only 77 contracts of coverage modelled (capped at chain leg's qty); the
     // extra 23 long calls remain a separate held position — including them
     // would inflate Max Gain by the unbounded long-call upside.
-    expect(coveringLegs[0].contracts).toBe(77);
+    expect(coveringLegs[0]).toMatchObject({ type: "Option", contracts: 77 });
     const risk = computeOrderRisk(riskLegs, -5.60, comboQuantity);
     expect(risk.maxLossUnbounded).toBe(false);
   });
@@ -527,7 +527,7 @@ describe("augmentOrderLegsWithPortfolioCoverage — WULF-style spread coverage",
       portfolio,
     );
     expect(coveringLegs).toHaveLength(1);
-    expect(coveringLegs[0]).toMatchObject({ strike: 19, right: "P" });
+    expect(coveringLegs[0]).toMatchObject({ type: "Option", strike: 19, right: "P" });
     const risk = computeOrderRisk(riskLegs, -1.0, comboQuantity);
     expect(risk.maxLossUnbounded).toBe(false);
     expect(risk.hasUndefinedRisk).toBe(false);
@@ -569,33 +569,22 @@ describe("augmentOrderLegsWithPortfolioCoverage — WULF-style spread coverage",
     expect(riskLegs).toHaveLength(1);
   });
 
-  it("STK / non-option positions ignored even on same ticker", () => {
-    // Stock can't cover an option leg — different secType. Filter must
-    // require `type ∈ {Call, Put}` and a finite strike.
-    const stockPos = {
-      ...makePos({ ticker: "WULF", expiry: "", right: "Call", strike: 17, direction: "LONG", contracts: 1000 }),
-      structure: "Long Stock",
-      structure_type: "Stock",
-      legs: [
-        {
-          direction: "LONG" as const,
-          contracts: 1000,
-          type: "Stock" as const,
-          strike: null,
-          entry_cost: 0,
-          avg_cost: 0,
-          market_price: null,
-          market_value: null,
-        },
-      ],
-    };
-    const portfolio = buildPortfolio([stockPos as unknown as PortfolioData["positions"][number]]);
+  it("STK positions never produce an Option-typed coverage entry", () => {
+    // Stock IS recognised as coverage for short calls (covered-call
+    // semantics — see the stock-backed covered-call suite). This test
+    // pins the discriminator: stock must surface as `type: "Stock"`, never
+    // as `type: "Option"`, so the chip-rendering code can branch cleanly.
+    const portfolio = buildPortfolio([
+      makeStockPos({ ticker: "WULF", shares: 7700, avgCost: 12 }),
+    ]);
     const { coveringLegs } = augmentOrderLegsWithPortfolioCoverage(
       [chainSell(31, "C", 77)],
       "WULF",
       portfolio,
     );
-    expect(coveringLegs).toHaveLength(0);
+    // One stock entry, zero option entries.
+    expect(coveringLegs.filter((l) => l.type === "Option")).toHaveLength(0);
+    expect(coveringLegs.filter((l) => l.type === "Stock")).toHaveLength(1);
   });
 
   it("different ticker positions are not pulled in as coverage", () => {
@@ -621,7 +610,12 @@ describe("augmentOrderLegsWithPortfolioCoverage — WULF-style spread coverage",
       portfolio,
     );
     expect(coveringLegs).toHaveLength(2);
-    expect(coveringLegs.map((l) => l.strike).sort((a, b) => a - b)).toEqual([17, 19]);
+    expect(
+      coveringLegs
+        .map((l) => (l.type === "Option" ? l.strike : null))
+        .filter((s): s is number => s != null)
+        .sort((a, b) => a - b),
+    ).toEqual([17, 19]);
     expect(riskLegs).toHaveLength(3);
     const risk = computeOrderRisk(riskLegs, -5.60, 77);
     expect(risk.maxLossUnbounded).toBe(false);
@@ -688,5 +682,290 @@ describe("augmentOrderLegsWithPortfolioCoverage — quantity² regression", () =
     // Bull call spread, 50 contracts, $2 debit per share → $10,000 max loss.
     expect(risk.maxLoss).toBeCloseTo(10_000, 0);
     expect(risk.maxGain).toBeCloseTo(40_000, 0); // (10 width - 2 debit) × 50 × 100
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * Stock-backed covered call coverage.
+ *
+ * 2026-05-26 RR repro: operator held 10,000 LONG shares of RR @ $4.43 avg
+ * cost and clicked SELL on the $3.50 Call exp 2026-06-18 for 100 contracts
+ * @ $0.19 credit. The chain order builder reported `Max Loss: UNBOUNDED`
+ * with a Gate 1 "Uncovered short call" badge. Reality: standard covered
+ * call — bounded by stock-to-zero net of premium.
+ *
+ * Model:
+ *   - Each 100 shares of held LONG stock cover ONE short call as a covered
+ *     call.
+ *   - Inject a virtual `BUY C strike=0` leg whose ratio matches the consumed
+ *     share block. `strike=0` is the synthetic representation of long stock
+ *     ("call with no strike pays max(0, S-0) = S").
+ *   - Fold the stock's per-share avg_cost into `netPremiumAdjustment` so
+ *     the synthetic combo carries the sunk basis. Without this, the model
+ *     would compute "long stock at $0 + short call" → max loss = 0, which
+ *     is the same flavor of wrong as the original UNBOUNDED reading.
+ *
+ * Math sanity-checks below are derived, not memorised.
+ * -------------------------------------------------------------------------*/
+
+function makeStockPos(opts: {
+  ticker: string;
+  shares: number;
+  avgCost: number;
+  direction?: "LONG" | "SHORT";
+}): PortfolioData["positions"][number] {
+  return {
+    id: Math.floor(Math.random() * 10_000),
+    ticker: opts.ticker,
+    structure: `${opts.direction ?? "LONG"} Stock`,
+    structure_type: "Stock",
+    risk_profile: "equity",
+    expiry: "",
+    contracts: opts.shares,
+    direction: opts.direction ?? "LONG",
+    entry_cost: opts.shares * opts.avgCost,
+    max_risk: null,
+    market_value: null,
+    legs: [
+      {
+        direction: opts.direction ?? "LONG",
+        contracts: opts.shares,
+        type: "Stock",
+        strike: null,
+        entry_cost: opts.shares * opts.avgCost,
+        avg_cost: opts.avgCost,
+        market_price: null,
+        market_value: null,
+      },
+    ],
+    kelly_optimal: null,
+    target: null,
+    stop: null,
+  } as unknown as PortfolioData["positions"][number];
+}
+
+describe("augmentOrderLegsWithPortfolioCoverage — stock-backed covered call", () => {
+  it("RR repro: 10,000 long shares @ $4.43 + SELL 100x $3.50C → covered call, bounded by stock-to-zero", () => {
+    const portfolio = buildPortfolio([
+      makeStockPos({ ticker: "RR", shares: 10_000, avgCost: 4.43 }),
+    ]);
+    const { riskLegs, comboQuantity, coveringLegs, netPremiumAdjustment } =
+      augmentOrderLegsWithPortfolioCoverage(
+        [chainSell(3.5, "C", 100, "20260618")],
+        "RR",
+        portfolio,
+      );
+
+    expect(comboQuantity).toBe(100);
+    expect(coveringLegs).toEqual([
+      { type: "Stock", shares: 10_000, avgCost: 4.43 },
+    ]);
+    // Virtual long C strike=0 ratio = 10,000 / 100 / 100 = 1
+    expect(riskLegs).toHaveLength(2);
+    const virtualStockLeg = riskLegs.find((l) => l.strike === 0);
+    expect(virtualStockLeg).toMatchObject({ action: "BUY", right: "C", quantity: 1 });
+    // Per-share-per-combo basis: (10,000 × 4.43) / (100 × 100) = $4.43
+    expect(netPremiumAdjustment).toBeCloseTo(4.43, 5);
+
+    // Apply adjustment then compute risk
+    const chainNetPremium = -0.19; // credit
+    const adjustedNetPremium = chainNetPremium + netPremiumAdjustment; // 4.24 debit
+    const risk = computeOrderRisk(riskLegs, adjustedNetPremium, comboQuantity);
+
+    expect(risk.maxLossUnbounded).toBe(false);
+    expect(risk.hasUndefinedRisk).toBe(false);
+    // Max loss at S=0: stock to zero ($44,300) less premium ($1,900) = $42,400
+    expect(risk.maxLoss).toBeCloseTo(42_400, 0);
+    // Max gain: covered call where K < S₀ is a guaranteed loss. Best
+    // outcome at S ≥ K: (K - S₀ + P) × N × 100 = (3.50 - 4.43 + 0.19) × 10,000
+    //   = -$7,400 → clamped to $0 by Math.max(0, ...) in computeBoundedMaxGain.
+    expect(risk.maxGain).toBe(0);
+  });
+
+  it("typical covered call with K > S₀ → bounded gain (lock-in + premium)", () => {
+    // Long 1,000 shares ABC @ $50, sell 10× $60C at $1.00 credit per share.
+    const portfolio = buildPortfolio([
+      makeStockPos({ ticker: "ABC", shares: 1_000, avgCost: 50 }),
+    ]);
+    const { riskLegs, comboQuantity, coveringLegs, netPremiumAdjustment } =
+      augmentOrderLegsWithPortfolioCoverage(
+        [chainSell(60, "C", 10, "20260620")],
+        "ABC",
+        portfolio,
+      );
+    expect(coveringLegs).toEqual([
+      { type: "Stock", shares: 1_000, avgCost: 50 },
+    ]);
+    expect(netPremiumAdjustment).toBeCloseTo(50, 5);
+
+    const chainNetPremium = -1.0;
+    const adjusted = chainNetPremium + netPremiumAdjustment; // 49 debit
+    const risk = computeOrderRisk(riskLegs, adjusted, comboQuantity);
+
+    expect(risk.maxLossUnbounded).toBe(false);
+    // Max loss at S=0: stock to zero ($50,000) less premium ($1,000) = $49,000
+    expect(risk.maxLoss).toBeCloseTo(49_000, 0);
+    // Max gain at S ≥ K: (60 - 50 + 1) × 1000 = $11,000
+    expect(risk.maxGain).toBeCloseTo(11_000, 0);
+    expect(risk.maxGainUnbounded).toBe(false);
+  });
+
+  it("only 50 shares for 1 short call → partial cover → UNBOUNDED", () => {
+    const portfolio = buildPortfolio([
+      makeStockPos({ ticker: "RR", shares: 50, avgCost: 4.43 }),
+    ]);
+    const { riskLegs, comboQuantity, coveringLegs, netPremiumAdjustment } =
+      augmentOrderLegsWithPortfolioCoverage(
+        [chainSell(3.5, "C", 1, "20260618")],
+        "RR",
+        portfolio,
+      );
+    // 50 shares consumed; virtual long ratio = 0.5; short ratio = 1.
+    expect(coveringLegs).toEqual([
+      { type: "Stock", shares: 50, avgCost: 4.43 },
+    ]);
+    const risk = computeOrderRisk(
+      riskLegs,
+      -0.19 + netPremiumAdjustment,
+      comboQuantity,
+    );
+    expect(risk.maxLossUnbounded).toBe(true);
+    expect(risk.hasUndefinedRisk).toBe(true);
+    expect(risk.undefinedRiskReason).toMatch(/short call/i);
+  });
+
+  it("over-coverage (more shares than short calls need) caps at exactly 100 per call", () => {
+    // Hold 500 shares, sell 1 call → 100 shares cover, 400 left uncovered
+    // and outside the model (they're a separate stock position).
+    const portfolio = buildPortfolio([
+      makeStockPos({ ticker: "RR", shares: 500, avgCost: 4.00 }),
+    ]);
+    const { coveringLegs, netPremiumAdjustment } = augmentOrderLegsWithPortfolioCoverage(
+      [chainSell(5, "C", 1, "20260618")],
+      "RR",
+      portfolio,
+    );
+    expect(coveringLegs).toEqual([{ type: "Stock", shares: 100, avgCost: 4.00 }]);
+    // Per-share-per-combo: 100 × 4 / (1 × 100) = $4
+    expect(netPremiumAdjustment).toBeCloseTo(4.0, 5);
+  });
+
+  it("option coverage takes precedence over stock; stock fills any residue", () => {
+    // Hold 1 long $20C exp X + 100 shares + sell 2 short $25C exp X.
+    // Option covers 1 short call → vertical spread for that pair.
+    // Remaining 1 short call gets covered by 100 shares → covered call.
+    const portfolio = buildPortfolio([
+      makePos({ ticker: "ABC", expiry: "2026-09-18", right: "Call", strike: 20, direction: "LONG", contracts: 1 }),
+      makeStockPos({ ticker: "ABC", shares: 100, avgCost: 22 }),
+    ]);
+    const { riskLegs, coveringLegs, netPremiumAdjustment } =
+      augmentOrderLegsWithPortfolioCoverage(
+        [chainSell(25, "C", 2, "20260918")],
+        "ABC",
+        portfolio,
+      );
+    // Two coverage entries: 1 option, then 1 stock-100 covering the residue.
+    expect(coveringLegs).toHaveLength(2);
+    expect(coveringLegs[0]).toMatchObject({ type: "Option", strike: 20, contracts: 1 });
+    expect(coveringLegs[1]).toMatchObject({ type: "Stock", shares: 100 });
+    // Per-share-per-combo: 100 × 22 / (2 × 100) = $11 (stock-half of the trade)
+    expect(netPremiumAdjustment).toBeCloseTo(11, 5);
+    // riskLegs: 2 chain (one ratio 1 each — no, just one chain leg with ratio 1) +
+    // 1 virtual option BUY + 1 virtual stock BUY = 3 total.
+    expect(riskLegs).toHaveLength(3);
+  });
+
+  it("multiple LONG stock lots on same ticker: shares pool, avg_cost weighted", () => {
+    const portfolio = buildPortfolio([
+      makeStockPos({ ticker: "RR", shares: 600, avgCost: 5.00 }),
+      makeStockPos({ ticker: "RR", shares: 400, avgCost: 3.50 }),
+    ]);
+    // Weighted avg = (600×5 + 400×3.5) / 1000 = (3000 + 1400) / 1000 = $4.40
+    const { coveringLegs, netPremiumAdjustment } = augmentOrderLegsWithPortfolioCoverage(
+      [chainSell(5, "C", 10, "20260620")],
+      "RR",
+      portfolio,
+    );
+    expect(coveringLegs).toEqual([{ type: "Stock", shares: 1000, avgCost: 4.40 }]);
+    // 1000 × 4.40 / (10 × 100) = $4.40
+    expect(netPremiumAdjustment).toBeCloseTo(4.40, 5);
+  });
+
+  it("SHORT stock on same ticker is NOT injected as coverage", () => {
+    const portfolio = buildPortfolio([
+      makeStockPos({ ticker: "RR", shares: 1000, avgCost: 4.43, direction: "SHORT" }),
+    ]);
+    const { coveringLegs, netPremiumAdjustment } = augmentOrderLegsWithPortfolioCoverage(
+      [chainSell(3.5, "C", 10, "20260618")],
+      "RR",
+      portfolio,
+    );
+    expect(coveringLegs).toEqual([]);
+    expect(netPremiumAdjustment).toBe(0);
+  });
+
+  it("stock on a different ticker is ignored", () => {
+    const portfolio = buildPortfolio([
+      makeStockPos({ ticker: "AAPL", shares: 10_000, avgCost: 150 }),
+    ]);
+    const { coveringLegs, netPremiumAdjustment } = augmentOrderLegsWithPortfolioCoverage(
+      [chainSell(3.5, "C", 100, "20260618")],
+      "RR",
+      portfolio,
+    );
+    expect(coveringLegs).toEqual([]);
+    expect(netPremiumAdjustment).toBe(0);
+  });
+
+  it("long stock does NOT cover a SHORT PUT (puts obligate buying, not delivering)", () => {
+    // Conceptually a long put is the right way to cover a short put.
+    // Stock backing is for short calls only.
+    const portfolio = buildPortfolio([
+      makeStockPos({ ticker: "RR", shares: 10_000, avgCost: 4.43 }),
+    ]);
+    const { riskLegs, coveringLegs, netPremiumAdjustment } =
+      augmentOrderLegsWithPortfolioCoverage(
+        [chainSell(3.5, "P", 100, "20260618")],
+        "RR",
+        portfolio,
+      );
+    expect(coveringLegs).toEqual([]);
+    expect(netPremiumAdjustment).toBe(0);
+    expect(riskLegs).toHaveLength(1);
+  });
+
+  it("BUY call chain legs are not stock-augmented", () => {
+    const portfolio = buildPortfolio([
+      makeStockPos({ ticker: "RR", shares: 10_000, avgCost: 4.43 }),
+    ]);
+    const { riskLegs, coveringLegs, netPremiumAdjustment } =
+      augmentOrderLegsWithPortfolioCoverage(
+        [chainBuy(3.5, "C", 100, "20260618")],
+        "RR",
+        portfolio,
+      );
+    expect(coveringLegs).toEqual([]);
+    expect(netPremiumAdjustment).toBe(0);
+    expect(riskLegs).toHaveLength(1);
+  });
+
+  it("strike=0 virtual leg walks correctly through sideMaxLoss/sideMaxGain (guard regression)", () => {
+    // Before the index-based first-iteration fix, `lastStrike > 0` skipped
+    // integration when the first strike WAS 0, breaking the strike walk
+    // for any structure that included a virtual stock leg. This test pins
+    // the fix at the math level — no portfolio, just direct OrderRiskLeg
+    // construction that exercises the strike=0 path.
+    const risk = computeOrderRisk(
+      [
+        { action: "BUY", right: "C", strike: 0, expiry: "20260620", quantity: 1 },
+        { action: "SELL", right: "C", strike: 60, expiry: "20260620", quantity: 1 },
+      ],
+      // Adjusted net premium = $50 stock basis − $1 short-call credit = $49 debit
+      49,
+      10,
+    );
+    // Same as the typical covered call: max loss $49,000, max gain $11,000.
+    expect(risk.maxLoss).toBeCloseTo(49_000, 0);
+    expect(risk.maxGain).toBeCloseTo(11_000, 0);
   });
 });

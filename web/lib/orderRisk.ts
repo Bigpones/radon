@@ -42,20 +42,36 @@ export interface ChainOrderLeg {
   quantity: number;
 }
 
-export interface CoveringPortfolioLeg {
-  right: LegRight;
-  strike: number;
-  expiry: string;
-  contracts: number;
-}
+/**
+ * Discriminated union — option coverage and stock coverage carry different
+ * meaningful fields. Stock has shares + per-share avg_cost (no strike, no
+ * expiry); option has strike, expiry, contracts, right. Splitting them keeps
+ * the chip-rendering code from formatting stock as "0× $0 Call" or similar.
+ */
+export type CoveringPortfolioLeg =
+  | { type: "Option"; right: LegRight; strike: number; expiry: string; contracts: number }
+  | { type: "Stock"; shares: number; avgCost: number };
 
 export interface AugmentedOrderLegs {
   /** Risk legs ready for `computeOrderRisk`, with per-combo ratios. */
   riskLegs: OrderRiskLeg[];
   /** Number of combo units — pass to `computeOrderRisk` as `comboQuantity`. */
   comboQuantity: number;
-  /** Held LONG legs from portfolio injected as virtual coverage. */
+  /** Held positions from portfolio injected as virtual coverage. */
   coveringLegs: CoveringPortfolioLeg[];
+  /**
+   * Dollar amount (per share, per combo) to ADD to the chain's `netPremium`
+   * before calling `computeOrderRisk`. Non-zero only when stock coverage
+   * folds its sunk cost basis into the synthetic combo so the risk model
+   * sees the structure as "long stock at $X.YZ + short call at $K" instead
+   * of "short call at $K alone". Callers MUST add this — otherwise the
+   * stock-to-zero floor reads as $0 max loss.
+   *
+   * The chain UI continues to display the unmodified user-entered limit
+   * (the order's actual cash flow), only the max-loss/max-gain math uses
+   * the adjusted premium.
+   */
+  netPremiumAdjustment: number;
 }
 
 export interface OrderRiskLeg {
@@ -494,10 +510,16 @@ function sideMaxLoss(sameRightLegs: OrderRiskLeg[], right: LegRight): number {
     let lastStrike = 0;
     let intrinsicAtStrike = 0;
     let worstSoFar = 0;
-    for (const k of strikes) {
+    // Index-based first-iteration skip — NOT `lastStrike > 0`. The old guard
+    // silently broke when a virtual stock-coverage leg landed at strike=0
+    // (after processing k=0, lastStrike stayed at 0, so the next segment
+    // failed the > 0 check and integration was dropped). Index check survives
+    // any strike value including zero and negative sentinels.
+    for (let i = 0; i < strikes.length; i++) {
+      const k = strikes[i];
       // Between lastStrike and k, every contract above k contributes
       // (k - lastStrike) × cumulativeRatio. Negative ratio = losing.
-      if (lastStrike > 0) {
+      if (i > 0) {
         intrinsicAtStrike += (k - lastStrike) * cumulativeRatio;
       }
       // Update worst BEFORE applying this strike's ratio so we capture
@@ -609,8 +631,11 @@ function sideMaxGain(sameRightLegs: OrderRiskLeg[], right: LegRight): number {
     let lastStrike = 0;
     let intrinsic = 0;
     let bestSoFar = 0;
-    for (const k of strikes) {
-      if (lastStrike > 0) {
+    // Index-based first-iteration skip — mirror of the sideMaxLoss fix so
+    // strike=0 virtual stock-coverage legs are walked correctly.
+    for (let i = 0; i < strikes.length; i++) {
+      const k = strikes[i];
+      if (i > 0) {
         intrinsic += (k - lastStrike) * cumulativeRatio;
       }
       bestSoFar = Math.max(bestSoFar, intrinsic);
@@ -695,12 +720,26 @@ function comboUnitFromQuantities(quantities: number[]): number {
  * Build the risk-leg representation for a chain-built order, augmented with
  * any portfolio coverage. See block comment above for the full semantics.
  *
+ * Coverage precedence per SELL chain leg:
+ *   1. Held LONG option (same ticker / expiry / right, any strike).
+ *      Pairing N short ↔ N long composes a vertical spread (bull/bear call
+ *      or put). Bounded loss via the multi-leg risk model.
+ *   2. Held LONG stock — only for SELL CALL legs. Each 100 shares cover
+ *      one short call as a covered call. Modelled by injecting a virtual
+ *      `BUY C strike=0` leg (stock = "long call at strike 0") AND folding
+ *      the stock's avg_cost into `netPremiumAdjustment` so the structure's
+ *      max-loss bottoms at stock-to-zero net of premium received, not at $0.
+ *
+ * SELL PUT coverage by stock is intentionally NOT modelled — long stock
+ * does not cap a short put obligation (the short put owes BUYING more
+ * stock at strike, which long stock does not satisfy).
+ *
  * @param chainLegs  Raw chain order legs (per-leg quantity is the user-entered contract count).
  * @param ticker     Underlying symbol — used to filter portfolio positions.
  * @param portfolio  Live portfolio snapshot or null. When null, the helper still
  *                   normalises chain leg quantities to per-combo ratios so the
  *                   single-leg quantity² bug stays fixed even without coverage.
- * @returns          `{ riskLegs, comboQuantity, coveringLegs }`.
+ * @returns          `{ riskLegs, comboQuantity, coveringLegs, netPremiumAdjustment }`.
  */
 export function augmentOrderLegsWithPortfolioCoverage(
   chainLegs: ChainOrderLeg[],
@@ -708,7 +747,7 @@ export function augmentOrderLegsWithPortfolioCoverage(
   portfolio: PortfolioData | null,
 ): AugmentedOrderLegs {
   if (chainLegs.length === 0) {
-    return { riskLegs: [], comboQuantity: 1, coveringLegs: [] };
+    return { riskLegs: [], comboQuantity: 1, coveringLegs: [], netPremiumAdjustment: 0 };
   }
 
   const quantities = chainLegs.map((l) => Math.max(1, Math.trunc(l.quantity)));
@@ -724,23 +763,33 @@ export function augmentOrderLegsWithPortfolioCoverage(
 
   const coveringLegs: CoveringPortfolioLeg[] = [];
   if (!portfolio) {
-    return { riskLegs, comboQuantity, coveringLegs };
+    return { riskLegs, comboQuantity, coveringLegs, netPremiumAdjustment: 0 };
   }
 
-  // Per-target index of held LONG contracts: key = expiry|right|strike.
-  // Held SHORT and STK positions never act as coverage for a chain short
-  // (held shorts compound it, stock doesn't structurally cap an option).
+  // Per-target index of held LONG OPTION contracts: key = expiry|right|strike.
   type HeldKey = string;
   const heldLongIndex = new Map<HeldKey, { contracts: number; strike: number; right: LegRight; expiry: string }>();
+  // Aggregate LONG stock contracts on this ticker, weighted by avg_cost.
+  // Multiple lots / positions are pooled because stock is fungible.
+  let longStockShares = 0;
+  let longStockBasisDollars = 0;
   for (const pos of portfolio.positions ?? []) {
     if (pos.ticker !== ticker) continue;
-    const expiry = pos.expiry ? normaliseExpiry(pos.expiry) : "";
-    if (!expiry) continue;
     for (const leg of pos.legs ?? []) {
       if (leg.direction !== "LONG") continue;
-      if (leg.type !== "Call" && leg.type !== "Put") continue;
-      if (leg.strike == null || !Number.isFinite(leg.strike) || leg.strike <= 0) continue;
       if (leg.contracts <= 0) continue;
+      if (leg.type === "Stock") {
+        // Stocks don't have expiry / strike. avg_cost is per-share.
+        const avgCost = Number.isFinite(leg.avg_cost) ? leg.avg_cost : 0;
+        if (avgCost < 0) continue;
+        longStockShares += leg.contracts;
+        longStockBasisDollars += leg.contracts * avgCost;
+        continue;
+      }
+      if (leg.type !== "Call" && leg.type !== "Put") continue;
+      const expiry = pos.expiry ? normaliseExpiry(pos.expiry) : "";
+      if (!expiry) continue;
+      if (leg.strike == null || !Number.isFinite(leg.strike) || leg.strike <= 0) continue;
       const right: LegRight = leg.type === "Call" ? "C" : "P";
       const key: HeldKey = `${expiry}|${right}|${leg.strike}`;
       const prior = heldLongIndex.get(key);
@@ -753,12 +802,9 @@ export function augmentOrderLegsWithPortfolioCoverage(
     }
   }
 
-  if (heldLongIndex.size === 0) {
-    return { riskLegs, comboQuantity, coveringLegs };
-  }
-
-  // For each SELL chain leg, draw down covering held LONG contracts of the
-  // same expiry and right. Coverage is capped at the chain leg's contract
+  // --- Pass 1: option coverage ---------------------------------------------
+  // For each SELL chain leg, draw down covering held LONG option contracts of
+  // the same expiry and right. Coverage is capped at the chain leg's contract
   // count so we don't inject more longs than the short can pair with.
   //
   // Multiple SELL chain legs at the same right share a single coverage pool
@@ -766,6 +812,10 @@ export function augmentOrderLegsWithPortfolioCoverage(
   // of the chain legs list.
   const remainingByKey = new Map<HeldKey, number>();
   for (const [k, v] of heldLongIndex) remainingByKey.set(k, v.contracts);
+
+  // Track per-leg remaining naked short contracts after option coverage. Used
+  // by pass 2 to apply stock coverage to the residue.
+  const remainingShortByLeg: number[] = quantities.slice();
 
   for (let i = 0; i < chainLegs.length; i++) {
     const chain = chainLegs[i];
@@ -783,6 +833,7 @@ export function augmentOrderLegsWithPortfolioCoverage(
       remainingByKey.set(key, available - consumed);
       remainingShort -= consumed;
       coveringLegs.push({
+        type: "Option",
         right: leg.right,
         strike: leg.strike,
         expiry: leg.expiry,
@@ -796,7 +847,64 @@ export function augmentOrderLegsWithPortfolioCoverage(
         quantity: consumed / comboQuantity,
       });
     }
+    remainingShortByLeg[i] = remainingShort;
   }
 
-  return { riskLegs, comboQuantity, coveringLegs };
+  // --- Pass 2: stock coverage for SELL CALL legs ---------------------------
+  // Each 100 shares of held LONG stock cover one short call (covered-call
+  // semantics). We:
+  //   - cap consumption at exactly (remaining_short_calls × 100) per leg so
+  //     extra shares stay outside the model (otherwise they'd inflate the
+  //     long-call ratio and flip the structure to "unbounded gain", which
+  //     is true of the held shares but not of THIS order's structure).
+  //   - inject a virtual `BUY C strike=0` leg whose ratio = shares / (100 ×
+  //     comboQuantity). Strike=0 is mathematically equivalent to long stock
+  //     (intrinsic = max(0, S - 0) = S), and `sideMaxLoss` / `sideMaxGain`
+  //     handle it correctly after the index-based first-iteration fix.
+  //   - fold the stock's per-share cost basis into `netPremiumAdjustment`
+  //     so the synthetic combo's net debit reflects sunk basis. Without
+  //     this, the model would say "long stock at $0 + short call" → max
+  //     loss = 0 (free stock can't lose), which is wrong.
+  //
+  // Weighted avg cost: longStockBasisDollars / longStockShares. We consume
+  // a fraction of shares; cost basis scales linearly with shares consumed.
+  let netPremiumAdjustment = 0;
+  let remainingShares = longStockShares;
+  const stockAvgCost = longStockShares > 0 ? longStockBasisDollars / longStockShares : 0;
+
+  for (let i = 0; i < chainLegs.length; i++) {
+    const chain = chainLegs[i];
+    if (chain.action !== "SELL") continue;
+    if (chain.right !== "C") continue;
+    const remainingShort = remainingShortByLeg[i];
+    if (remainingShort <= 0) continue;
+    const sharesNeeded = remainingShort * 100;
+    const sharesConsumed = Math.min(remainingShares, sharesNeeded);
+    if (sharesConsumed <= 0) continue;
+    remainingShares -= sharesConsumed;
+
+    // Inject virtual long call at strike=0 (stock equivalent).
+    // ratio = sharesConsumed / 100 / comboQuantity gives the per-combo unit:
+    // for 100 shares, 1 combo (1 short call), ratio = 1 (one call's worth).
+    riskLegs.push({
+      action: "BUY",
+      right: "C",
+      strike: 0,
+      expiry: chain.expiry,
+      quantity: sharesConsumed / 100 / comboQuantity,
+    });
+
+    // Cost basis per-share-per-combo: sharesConsumed × avgCost gives total
+    // dollars; divide by (comboQuantity × MULTIPLIER) to express in the
+    // per-share-per-combo unit that `netPremium` uses.
+    netPremiumAdjustment += (sharesConsumed * stockAvgCost) / (comboQuantity * MULTIPLIER);
+
+    coveringLegs.push({
+      type: "Stock",
+      shares: sharesConsumed,
+      avgCost: stockAvgCost,
+    });
+  }
+
+  return { riskLegs, comboQuantity, coveringLegs, netPremiumAdjustment };
 }

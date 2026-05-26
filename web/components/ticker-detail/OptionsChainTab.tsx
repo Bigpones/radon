@@ -342,7 +342,14 @@ function OrderBuilder({
     // `augmented.comboQuantity` carries the contract count; chain legs ride
     // as per-combo ratios. For single-leg orders this means `totalQty` and
     // `augmented.comboQuantity` agree, with leg.quantity normalised to 1.
-    const risk = computeOrderRisk(augmented.riskLegs, netPremium, augmented.comboQuantity);
+    //
+    // `netPremiumAdjustment` is non-zero only when stock coverage folds its
+    // sunk basis into the synthetic combo (covered call). It must be ADDED
+    // here so `computeOrderRisk` sees the structure as long-stock-at-basis
+    // + short-call instead of "free long stock + short call" (which would
+    // bottom max-loss at $0).
+    const adjustedNetPremium = netPremium + augmented.netPremiumAdjustment;
+    const risk = computeOrderRisk(augmented.riskLegs, adjustedNetPremium, augmented.comboQuantity);
 
     return {
       description,
@@ -496,7 +503,9 @@ function OrderBuilder({
       </div>
 
       {/* Coverage hint: show when a held LONG bounds an otherwise-naked SELL.
-          Helps the operator understand why Max Loss dropped from UNBOUNDED. */}
+          Helps the operator understand why Max Loss dropped from UNBOUNDED.
+          Stock-coverage chips include the avg cost so the operator sees the
+          basis driving the structural max-loss (stock-to-zero net of premium). */}
       {augmented.coveringLegs.length > 0 && (
         <div
           className="order-builder-coverage"
@@ -514,7 +523,11 @@ function OrderBuilder({
         >
           COVERED BY HELD{" "}
           {augmented.coveringLegs
-            .map((l) => `LONG ${l.contracts}× $${l.strike} ${l.right === "C" ? "Call" : "Put"}`)
+            .map((l) =>
+              l.type === "Option"
+                ? `LONG ${l.contracts}× $${l.strike} ${l.right === "C" ? "Call" : "Put"}`
+                : `${l.shares.toLocaleString()} shares @ $${l.avgCost.toFixed(2)}`,
+            )
             .join(" + ")}
         </div>
       )}
