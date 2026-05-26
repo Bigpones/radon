@@ -21,13 +21,18 @@ def main():
     parser.add_argument("--symbol", required=True)
     parser.add_argument("--expiry", default=None, help="If provided, fetch strikes for this expiry")
     parser.add_argument("--port", type=int, default=4001)
-    parser.add_argument("--client-id", type=int, default=27)
+    # client_id="auto" rotates through SUBPROCESS_ID_RANGE (20-49) so parallel
+    # chain fetches (one per expiry) don't collide on a single hardcoded ID.
+    # Accept int overrides for ad-hoc CLI use; default routes through the
+    # auto-allocator that the rest of the subprocess scripts use.
+    parser.add_argument("--client-id", default="auto")
     args = parser.parse_args()
 
+    client_id = int(args.client_id) if args.client_id != "auto" else "auto"
     client = IBClient()
 
     try:
-        client.connect(port=args.port, client_id=args.client_id)
+        client.connect(port=args.port, client_id=client_id)
 
         # Qualify the underlying to get a valid conId (required by reqSecDefOptParams)
         from ib_insync import Stock
