@@ -713,7 +713,12 @@ async function handleSnapshotRequest(client, symbols) {
 
     try {
       await snapshotLimiter.submit(() => {
-        ib.reqMktData(requestId, contract, "233,165", true, false);
+        // IB rejects snapshot=true paired with generic ticks (233=RTVolume,
+        // 165=Misc Stats) — both are streaming-only. Snapshot still returns
+        // bid/ask/last/close/volume/high/low/open via default tick types,
+        // which is what the snapshot consumer needs. The streaming path at
+        // line 566 keeps "233,165" because snapshot=false there.
+        ib.reqMktData(requestId, contract, "", true, false);
       });
     } catch (error) {
       clearSnapshot(requestId);
