@@ -2,9 +2,20 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useIndexOptionsChain } from "@/lib/useIndexOptionsChain";
+import { OrderRiskGate, type OrderRiskInput } from "@/lib/order";
+import type { PortfolioData } from "@/lib/types";
 
 interface IndexOptionOrderFormProps {
   ticker: string;
+  /**
+   * Live portfolio snapshot. Cash-settled index options (SPX/NDX/VIX) have
+   * the same risk shape as equity options for the purposes of this gate
+   * (single-leg covered-by-portfolio detection at the option level). Stock
+   * coverage is not applicable because the underlying is an index, not
+   * deliverable shares. Pass `null` if portfolio is not in scope — the
+   * gate renders "Coverage indeterminate" and disables submit.
+   */
+  portfolio?: PortfolioData | null;
 }
 
 type OrderAction = "BUY" | "SELL";
@@ -29,7 +40,7 @@ function formatExpiry(date: string): string {
  * Submits to /api/orders/place with type=option + conId + exchange so
  * IB doesn't pick up VIXW weeklies or other related roots by accident.
  */
-export function IndexOptionOrderForm({ ticker }: IndexOptionOrderFormProps) {
+export function IndexOptionOrderForm({ ticker, portfolio = null }: IndexOptionOrderFormProps) {
   const symbol = ticker.toUpperCase();
 
   // Step 1: expiries (no expiry scope)
@@ -77,6 +88,36 @@ export function IndexOptionOrderForm({ ticker }: IndexOptionOrderFormProps) {
     if (!Number.isFinite(price) || !Number.isFinite(qty) || qty <= 0) return null;
     return Math.abs(price * qty * 100);
   }, [limitPrice, quantity]);
+
+  // Build the chokepoint input. Index options (SPX/NDX/VIX) are cash-settled
+  // but the risk model is identical to equity options for the structures the
+  // chokepoint covers: single-leg naked SELL CALL → UNBOUNDED; SELL PUT →
+  // strike × 100 × N minus premium; LONG → premium debit. Without the gate,
+  // SPX SELL CALL silently submitted with no UNBOUNDED warning — the
+  // highest-blast-radius gap surfaced by the audit (commit ac6c886).
+  const riskInput: OrderRiskInput | null = useMemo(() => {
+    const price = parseFloat(limitPrice);
+    const qty = parseInt(quantity, 10);
+    if (!selectedContract || !Number.isFinite(price) || price <= 0 || !Number.isFinite(qty) || qty <= 0) return null;
+    const totalCost = Math.abs(price * qty * 100);
+    const description = `${action} ${qty} ${selectedContract.localSymbol} @ $${price.toFixed(2)}`;
+    return {
+      ticker: symbol,
+      chainLegs: [
+        {
+          action,
+          right,
+          strike: selectedContract.strike,
+          // Normalise IB's "YYYYMMDD" expiry to the same string the augmenter expects.
+          expiry: selectedContract.lastTradeDateOrContractMonth,
+          quantity: qty,
+        },
+      ],
+      netPremium: action === "SELL" ? -price : price,
+      description,
+      totalCost: action === "SELL" ? -totalCost : totalCost,
+    };
+  }, [selectedContract, action, right, quantity, limitPrice, symbol]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -269,6 +310,16 @@ export function IndexOptionOrderForm({ ticker }: IndexOptionOrderFormProps) {
           </span>
         </div>
       </div>
+
+      {/* Risk math owned by `<OrderRiskGate>`. Critical for SPX/NDX SELL
+          CALL which is structurally UNBOUNDED — before this gate the form
+          showed only positive Notional with no warning. */}
+      <OrderRiskGate
+        input={riskInput}
+        portfolio={portfolio}
+        surface="index-option-form"
+        variant="info"
+      />
 
       <button
         type="submit"

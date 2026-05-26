@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PriceData } from "@/lib/pricesProtocol";
+import type { PortfolioData } from "@/lib/types";
 import { fmtPrice } from "@/lib/positionUtils";
 import { formatExpiry, daysToExpiry, type OrderLeg } from "@/lib/optionsChainUtils";
 import BottomSheet from "./BottomSheet";
@@ -28,6 +29,12 @@ type MobileChainLadderProps = {
   onRemoveLeg?: (id: string) => void;
   onUpdateLeg?: (id: string, updates: Partial<OrderLeg>) => void;
   onClearLegs?: () => void;
+  /**
+   * Live portfolio snapshot. Threaded down so the mobile ticket's risk gate
+   * can fold in held-LONG coverage for SELL legs and stock-backed covered
+   * calls — same contract as desktop chain.
+   */
+  portfolio?: PortfolioData | null;
 };
 
 type SelectedCell = {
@@ -73,6 +80,7 @@ export default function MobileChainLadder({
   onRemoveLeg,
   onUpdateLeg,
   onClearLegs,
+  portfolio = null,
 }: MobileChainLadderProps) {
   const [selected, setSelected] = useState<SelectedCell | null>(null);
   const [ticketOpen, setTicketOpen] = useState(false);
@@ -201,6 +209,7 @@ export default function MobileChainLadder({
         ticker={ticker}
         legs={orderLegs}
         prices={prices}
+        portfolio={portfolio}
         onClose={() => setTicketOpen(false)}
         onRemoveLeg={(id) => onRemoveLeg?.(id)}
         onUpdateLeg={(id, updates) => onUpdateLeg?.(id, updates)}

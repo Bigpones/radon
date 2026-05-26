@@ -13,3 +13,10 @@ export type { OrderRiskInput, OrderRiskState, ChainOrderLeg, CoveringPortfolioLe
 export { OrderRiskGate } from "./OrderRiskGate";
 export type { OrderRiskGateProps } from "./OrderRiskGate";
 export type { AugmentedOrderSummary, CoverageStatus, OrderPresentationSummary } from "../types";
+// Telemetry: per-session ring buffer for bug-report correlation. Operators /
+// devs can paste `dumpOrderRiskTraces()` into the console to inspect.
+export {
+  dumpOrderRiskTraces,
+  clearOrderRiskTraces,
+  type OrderRiskTrace,
+} from "./telemetry";

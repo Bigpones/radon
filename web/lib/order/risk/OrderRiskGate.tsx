@@ -18,6 +18,7 @@
 import type { PortfolioData } from "@/lib/types";
 import { OrderConfirmSummary } from "../components/OrderConfirmSummary";
 import { useOrderRisk, type OrderRiskInput, type OrderRiskState } from "./useOrderRisk";
+import { useRecordOrderRiskTrace } from "./telemetry";
 
 export interface OrderRiskGateProps {
   /**
@@ -53,10 +54,7 @@ export interface OrderRiskGateProps {
 export function OrderRiskGate({
   input,
   portfolio,
-  // Tagged for telemetry — surface identifier flows into the trace buffer
-  // when the telemetry step lands (separate PR). Today it's unused at
-  // runtime but required at the type level so call sites declare it.
-  surface: _surface,
+  surface,
   variant = "info",
   className,
   onState,
@@ -68,6 +66,25 @@ export function OrderRiskGate({
   if (onState) {
     onState(state);
   }
+
+  // Telemetry: record one trace per resolved-state observation. The hook
+  // unconditionally runs (React hooks rule) — when `state` is null it
+  // simply records nothing.
+  useRecordOrderRiskTrace(
+    surface,
+    state?.summary ?? null,
+    input?.ticker ?? "",
+    input?.chainLegs.length ?? 0,
+    // comboQuantity is internal to the hook but inferrable: the summary's
+    // traceId changes on every memo update, so we just need a stable proxy.
+    // Pass quantities count for now; future: thread comboQuantity through
+    // state if the bug reports need it.
+    input?.chainLegs.reduce((sum, l) => sum + Math.max(1, Math.trunc(l.quantity)), 0) ?? 0,
+    state?.coveringLegs.length ?? 0,
+    0, // netPremiumAdjustment is internal; future: surface on state if needed
+    state?.summary.maxLossUnbounded === true ||
+      (state?.summary.undefinedRiskReason != null && state.summary.undefinedRiskReason.length > 0),
+  );
 
   if (state == null) return null;
 

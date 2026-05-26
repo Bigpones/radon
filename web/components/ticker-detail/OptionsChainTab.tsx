@@ -1122,6 +1122,7 @@ export default function OptionsChainTab({
         onRemoveLeg={handleRemoveLeg}
         onUpdateLeg={handleUpdateLeg}
         onClearLegs={handleClearLegs}
+        portfolio={portfolio ?? null}
       />
     );
   }

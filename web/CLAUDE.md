@@ -38,7 +38,7 @@ Three production bugs in eight days (AAOI risk reversal, WULF bull call spread, 
 4. **Pending UX is mandatory.** `portfolio === undefined` → `coverageStatus: "pending"` → skeleton "Coverage indeterminate — portfolio resolving". `portfolio === null` → `coverageStatus: "no-portfolio"` → skeleton "Coverage indeterminate — portfolio not in scope". Parent surface MUST disable submit when `state.okToSubmit !== true`.
 5. **Close-out branch.** Pass `closeOut: { entryCostDollars }` on the input to short-circuit max-loss/max-gain (both 0 by construction; the order adds no new exposure) and surface proceeds + realized P&L instead. The hook owns the cost-basis convention (`avg_cost` is per-contract for options, per-share for stocks); surfaces just hand the dollar number.
 
-Migrated: `OptionsChainTab`, `OrderTab` (single + combo), `InstrumentDetailModal`, `BookTab`. Pending (next step): `MobileOrderTicket`, `FuturesOrderForm`, `IndexOptionOrderForm`, `ModifyOrderModal`. Full plan: `tasks/order-risk-chokepoint-refactor.md`.
+**Migrated as of step 4 (2026-05-26):** `OptionsChainTab`, `OrderTab` (single + combo), `InstrumentDetailModal`, `BookTab`, `MobileOrderTicket`, `IndexOptionOrderForm`, `ModifyOrderModal`. `FuturesOrderForm` gets an inline UNBOUNDED warning for SELL (futures don't fit the option-centric `OrderRiskInput` shape; a follow-up step will extend the union to a `{ type: "future" }` variant). Telemetry: `<OrderRiskGate>` writes per-render traces to `sessionStorage` under `radon:order-risk-traces` (ring-buffered to 50). Inspect via `dumpOrderRiskTraces()` from `@/lib/order/risk` in DevTools. Full plan: `tasks/order-risk-chokepoint-refactor.md`.
 
 ### IB Error Message Rendering
 

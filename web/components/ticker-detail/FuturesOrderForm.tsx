@@ -2,9 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useFuturesChain, type FuturesChainContract } from "@/lib/useFuturesChain";
+import type { PortfolioData } from "@/lib/types";
 
 interface FuturesOrderFormProps {
   ticker: string;
+  /**
+   * Accepted but currently unused — futures don't yet route through
+   * `<OrderRiskGate>` (which is option-centric). A follow-up step will
+   * extend `OrderRiskInput` with a discriminated `{ type: "future" }` variant
+   * so SHORT futures can flow through the same chokepoint as options.
+   * Threaded today so the call site is ready for that extension.
+   */
+  portfolio?: PortfolioData | null;
 }
 
 type OrderAction = "BUY" | "SELL";
@@ -34,7 +43,7 @@ function formatExpiry(date: string): string {
  * sees the actual exposure (1 VIX future at 19 = $19,000 notional,
  * ~$5,500 initial margin).
  */
-export function FuturesOrderForm({ ticker }: FuturesOrderFormProps) {
+export function FuturesOrderForm({ ticker, portfolio: _portfolio = null }: FuturesOrderFormProps) {
   const symbol = ticker.toUpperCase();
   const { data, loading, error } = useFuturesChain(symbol);
 
@@ -228,6 +237,26 @@ export function FuturesOrderForm({ ticker }: FuturesOrderFormProps) {
           </span>
         </div>
       </div>
+
+      {/* SHORT futures = structurally UNBOUNDED downside (no price ceiling).
+          Until futures route through `<OrderRiskGate>` (separate scope —
+          requires extending `OrderRiskInput` with a `{ type: "future" }`
+          variant), surface a Gate-1 style warning inline. The warning
+          mirrors the visual language of the option-side undefined-risk
+          panel so operators read it the same way. */}
+      {action === "SELL" && (
+        <div
+          className="order-confirm-undefined-risk"
+          role="alert"
+          data-testid="futures-order-undefined-risk-warning"
+          style={{ marginTop: 12 }}
+        >
+          <span className="order-confirm-undefined-risk-label">GATE 1: Undefined risk</span>
+          <span className="order-confirm-undefined-risk-detail">
+            Short futures — downside is structurally unbounded (no price ceiling).
+          </span>
+        </div>
+      )}
 
       <button
         type="submit"

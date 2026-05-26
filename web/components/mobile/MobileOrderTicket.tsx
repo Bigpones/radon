@@ -12,7 +12,9 @@ import {
 } from "@/lib/optionsChainUtils";
 import { normalizeOptionExpiry } from "@/lib/pricesProtocol";
 import type { PriceData } from "@/lib/pricesProtocol";
+import type { PortfolioData } from "@/lib/types";
 import { fmtPrice } from "@/lib/positionUtils";
+import { OrderRiskGate, type OrderRiskInput } from "@/lib/order";
 import BottomSheet from "./BottomSheet";
 
 type MobileOrderTicketProps = {
@@ -20,6 +22,13 @@ type MobileOrderTicketProps = {
   ticker: string;
   legs: OrderLeg[];
   prices: Record<string, PriceData>;
+  /**
+   * Live portfolio snapshot — routed into `<OrderRiskGate>` for held-LONG
+   * coverage detection. `null` is acceptable (gate renders "Coverage
+   * indeterminate" + disables submit); `undefined` triggers the pending
+   * skeleton.
+   */
+  portfolio?: PortfolioData | null;
   onClose: () => void;
   onRemoveLeg: (id: string) => void;
   onUpdateLeg: (id: string, updates: Partial<OrderLeg>) => void;
@@ -37,6 +46,7 @@ export default function MobileOrderTicket({
   ticker,
   legs,
   prices,
+  portfolio = null,
   onClose,
   onRemoveLeg,
   onUpdateLeg,
@@ -107,6 +117,37 @@ export default function MobileOrderTicket({
         ? Math.abs(parsedPrice)
         : -Math.abs(parsedPrice)
     : NaN;
+
+  // Build the chokepoint input — every order surface that displays risk math
+  // MUST route through `<OrderRiskGate>`. Mobile was a structural gap before
+  // (commit 6a14278 landed desktop; this is the mobile equivalent). Same
+  // single-leg credit-sign rule applies: a SELL leg is structurally a credit
+  // regardless of whether live WS bid/ask have populated.
+  const riskInput: OrderRiskInput | null = useMemo(() => {
+    if (!isValidPrice || legs.length === 0) return null;
+    const totalCost = parsedPrice * totalQty * 100;
+    const description = `${structure || "Option"} @ ${fmtPrice(parsedPrice)}`;
+    const isCredit = isCombo
+      ? isDebit === false
+      : legs[0]?.action === "SELL";
+    const netPremium = isCredit ? -Math.abs(parsedPrice) : parsedPrice;
+    const chainLegs = (normalizedOrder?.legs ?? legs).map((l) => ({
+      action: l.action,
+      right: l.right,
+      strike: l.strike,
+      expiry: l.expiry,
+      // normalizeComboOrder has divided multi-leg by GCD; single-leg passes
+      // through with raw user-entered count (the hook re-normalises).
+      quantity: normalizedOrder ? l.quantity : Math.max(1, Math.trunc(l.quantity)),
+    }));
+    return {
+      ticker,
+      chainLegs,
+      netPremium,
+      description,
+      totalCost: isCredit ? -totalCost : totalCost,
+    };
+  }, [isValidPrice, parsedPrice, totalQty, structure, isDebit, isCombo, legs, normalizedOrder, ticker]);
 
   const adjustPrice = (delta: number) => {
     const next = (parseFloat(limitPriceText) || signedQuote.mid || 0) + delta;
@@ -287,6 +328,17 @@ export default function MobileOrderTicket({
           >
             <Plus size={18} aria-hidden />
           </button>
+        </div>
+
+        {/* Risk summary owned by `<OrderRiskGate>` — covers WULF/RR/AAOI
+            bug class on mobile (was a structural gap before this commit). */}
+        <div className="mobile-ticket__risk" data-testid="mobile-order-ticket-risk">
+          <OrderRiskGate
+            input={riskInput}
+            portfolio={portfolio}
+            surface="mobile-ticket"
+            variant="info"
+          />
         </div>
 
         <div className="mobile-ticket__tif" role="radiogroup" aria-label="Time in force">

@@ -12,7 +12,14 @@ import { fmtPrice, legPriceKey } from "@/lib/positionUtils";
 import { computeLegImpliedValue } from "@/lib/impliedValue";
 import { useRiskFreeRate } from "@/lib/useRiskFreeRate";
 import { ModifyOrderQuoteTelemetry } from "./QuoteTelemetry";
-import { OrderPriceStrip, OrderLegPills, type OrderLeg as UnifiedOrderLeg } from "@/lib/order";
+import {
+  OrderPriceStrip,
+  OrderLegPills,
+  OrderRiskGate,
+  type OrderLeg as UnifiedOrderLeg,
+  type OrderRiskInput,
+  type ChainOrderLeg,
+} from "@/lib/order";
 
 type EditableComboLeg = {
   action: "BUY" | "SELL";
@@ -265,6 +272,69 @@ export default function ModifyOrderModal({ order, loading, prices, portfolio, on
   );
 
   const riskFreeRate = useRiskFreeRate();
+
+  // ----- riskInput memo (must precede the `if (!order) return null` early
+  //       return so React's hook ordering invariant holds across renders).
+  //
+  // Build the chokepoint input for the POST-MODIFY order shape. Routing
+  // through `<OrderRiskGate>` here closes the audit-flagged gap where a
+  // user could restructure a defined-risk combo (bull-put-spread) into
+  // a naked short put inside this modal with zero risk feedback before
+  // resubmit. Single-leg modifies use `order.contract` directly; combos
+  // use the editable legs.
+  const riskInput: OrderRiskInput | null = useMemo(() => {
+    if (!order) return null;
+    const parsedNewLocal = parseFloat(newPrice);
+    const parsedQtyLocal = Number.parseInt(newQuantity, 10);
+    if (!(parsedNewLocal > 0)) return null;
+    if (!(Number.isInteger(parsedQtyLocal) && parsedQtyLocal > 0)) return null;
+    const symbol = order.contract.symbol;
+    const action: "BUY" | "SELL" = order.action === "SELL" ? "SELL" : "BUY";
+    const isComboLocal = order.contract.secType === "BAG" && editableLegs.length >= 2;
+
+    if (isComboLocal) {
+      const chainLegs: ChainOrderLeg[] = [];
+      for (const leg of editableLegs) {
+        const strikeNum = Number.parseFloat(leg.strike);
+        const ratio = Number.parseInt(leg.ratio, 10);
+        if (!Number.isFinite(strikeNum) || strikeNum <= 0) return null;
+        if (!Number.isInteger(ratio) || ratio <= 0) return null;
+        if (!leg.expiry) return null;
+        chainLegs.push({
+          action: leg.action,
+          right: leg.right,
+          strike: strikeNum,
+          expiry: leg.expiry,
+          quantity: ratio * parsedQtyLocal,
+        });
+      }
+      const totalCost = parsedNewLocal * parsedQtyLocal * 100;
+      const isCredit = action === "SELL";
+      return {
+        ticker: symbol,
+        chainLegs,
+        netPremium: isCredit ? -Math.abs(parsedNewLocal) : Math.abs(parsedNewLocal),
+        description: `${action} ${parsedQtyLocal}x ${symbol} combo @ ${fmtPrice(parsedNewLocal)}`,
+        totalCost: isCredit ? -totalCost : totalCost,
+      };
+    }
+
+    if (order.contract.secType !== "OPT") return null;
+    const strikeNum = order.contract.strike;
+    const right: "C" | "P" = order.contract.right === "P" || order.contract.right === "PUT" ? "P" : "C";
+    const expiry = order.contract.expiry ?? "";
+    if (!strikeNum || !expiry) return null;
+    const totalCost = parsedNewLocal * parsedQtyLocal * 100;
+    return {
+      ticker: symbol,
+      chainLegs: [
+        { action, right, strike: strikeNum, expiry, quantity: parsedQtyLocal },
+      ],
+      netPremium: action === "SELL" ? -parsedNewLocal : parsedNewLocal,
+      description: `${action} ${parsedQtyLocal}x ${symbol} ${right} @ ${fmtPrice(parsedNewLocal)}`,
+      totalCost: action === "SELL" ? -totalCost : totalCost,
+    };
+  }, [order, editableLegs, newPrice, newQuantity]);
 
   if (!order) return null;
 
@@ -612,6 +682,16 @@ export default function ModifyOrderModal({ order, loading, prices, portfolio, on
             </div>
           )}
         </div>
+
+        {/* Risk math for the POST-MODIFY shape. Owned by `<OrderRiskGate>`
+            — surfaces UNBOUNDED if a leg edit turns a defined-risk combo
+            into a naked short. Closes the audit gap (commit ac6c886). */}
+        <OrderRiskGate
+          input={riskInput}
+          portfolio={portfolio ?? null}
+          surface="modify-order-modal"
+          variant="info"
+        />
 
         <div className="modify-actions">
           <button className="btn-secondary" onClick={onClose} disabled={loading}>

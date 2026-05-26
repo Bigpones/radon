@@ -956,10 +956,10 @@ export default function OrderTab({ ticker, position, portfolio, prices, openOrde
         {isIndex ? (
           <div className="new-order-section-top">
             <div className="existing-orders-title">New Order</div>
-            {hasFuturesSupport(ticker) && <FuturesOrderForm ticker={ticker} />}
+            {hasFuturesSupport(ticker) && <FuturesOrderForm ticker={ticker} portfolio={portfolio} />}
             {hasIndexOptionsSupport(ticker) && (
               <div style={{ marginTop: hasFuturesSupport(ticker) ? "24px" : "0" }}>
-                <IndexOptionOrderForm ticker={ticker} />
+                <IndexOptionOrderForm ticker={ticker} portfolio={portfolio} />
               </div>
             )}
             {!hasFuturesSupport(ticker) && !hasIndexOptionsSupport(ticker) && (
