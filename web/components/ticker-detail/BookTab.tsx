@@ -5,7 +5,7 @@ import type { OpenOrder, PortfolioPosition } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { fmtPrice } from "@/lib/positionUtils";
 import OrderErrorBanner from "@/components/OrderErrorBanner";
-import { OrderConfirmSummary, type OrderSummary } from "@/lib/order";
+import { OrderRiskGate, type OrderRiskInput } from "@/lib/order";
 import { isIndexSymbol, hasFuturesSupport, hasIndexOptionsSupport } from "@/lib/indexSymbols";
 import { FuturesOrderForm } from "@/components/ticker-detail/FuturesOrderForm";
 import { IndexOptionOrderForm } from "@/components/ticker-detail/IndexOptionOrderForm";
@@ -328,12 +328,19 @@ function StockOrderForm({
     !isNaN(parsedPrice) &&
     parsedPrice > 0;
 
-  // Calculate order summary for confirmation (stock: no multiplier)
-  const orderSummary: OrderSummary | null = useMemo(() => {
+  // Build the chokepoint input. Stock orders have no chain legs (no options
+  // semantics) — the gate's empty-chainLegs branch returns a presentation
+  // summary with totalCost only, no max-loss/max-gain. A future step can
+  // extend the gate to detect "SELL stock without held shares" → UNBOUNDED
+  // (short stock has no ceiling), but that's a separate fix.
+  const riskInput: OrderRiskInput | null = useMemo(() => {
     if (!isValid) return null;
     const totalCost = parsedQty * parsedPrice;
     const description = `${action} ${parsedQty} ${ticker} @ ${fmtPrice(parsedPrice)}`;
     return {
+      ticker,
+      chainLegs: [],
+      netPremium: action === "SELL" ? -parsedPrice : parsedPrice,
       description,
       totalCost: action === "SELL" ? -totalCost : totalCost,
     };
@@ -512,9 +519,17 @@ function StockOrderForm({
       <OrderErrorBanner error={error} />
       {success && <div className="order-success">{success}</div>}
 
-      {/* Order Summary (shown in confirm step) */}
-      {confirmStep && orderSummary && (
-        <OrderConfirmSummary summary={orderSummary} variant="info" />
+      {/* Order Summary (shown in confirm step). Owned by `<OrderRiskGate>`.
+          Stock orders pass `portfolio={null}` for now — no portfolio coverage
+          model exists yet for stock, so the gate renders the presentation
+          summary without risk fields. */}
+      {confirmStep && (
+        <OrderRiskGate
+          input={riskInput}
+          portfolio={null}
+          surface="book-tab-stock"
+          variant="info"
+        />
       )}
 
       <div className="order-submit">

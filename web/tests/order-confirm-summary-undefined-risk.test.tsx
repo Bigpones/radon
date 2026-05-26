@@ -13,13 +13,20 @@ import React from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import { OrderConfirmSummary } from "../lib/order/components/OrderConfirmSummary";
-import type { OrderSummary } from "../lib/order/types";
+import type { OrderPresentationSummary } from "../lib/order/types";
+// Test-only brand helper. Production code routes through `<OrderRiskGate>`;
+// these render tests just want to exercise `<OrderConfirmSummary>`'s
+// presentation logic for given field values, so we attach the brand
+// directly to bypass the augmentation pipeline.
+import { brandAugmentedSummaryForTest } from "../lib/order/risk/__test_only__";
+
+const augment = brandAugmentedSummaryForTest;
 
 afterEach(cleanup);
 
 describe("OrderConfirmSummary — undefined risk surfacing", () => {
   it("renders the corrected 6-figure Max Loss for the AAOI risk reversal", () => {
-    const summary: OrderSummary = {
+    const summary: OrderPresentationSummary = {
       description: "Risk Reversal @ $1.00",
       totalCost: 5000,
       maxGain: null,
@@ -29,7 +36,7 @@ describe("OrderConfirmSummary — undefined risk surfacing", () => {
       undefinedRiskReason: "Naked short put",
     };
     const { getByTestId, container } = render(
-      <OrderConfirmSummary summary={summary} variant="info" />,
+      <OrderConfirmSummary summary={augment(summary)} variant="info" />,
     );
     // Warning surface is mandatory
     const warning = getByTestId("order-undefined-risk-warning");
@@ -48,7 +55,7 @@ describe("OrderConfirmSummary — undefined risk surfacing", () => {
   });
 
   it("renders UNBOUNDED for a naked short call (full undefined-risk path)", () => {
-    const summary: OrderSummary = {
+    const summary: OrderPresentationSummary = {
       description: "Short Call @ $5.00",
       totalCost: -500,
       maxGain: 500,
@@ -56,7 +63,7 @@ describe("OrderConfirmSummary — undefined risk surfacing", () => {
       maxLossUnbounded: true,
       undefinedRiskReason: "Uncovered short call",
     };
-    const { container } = render(<OrderConfirmSummary summary={summary} variant="info" />);
+    const { container } = render(<OrderConfirmSummary summary={augment(summary)} variant="info" />);
     const text = container.textContent ?? "";
     expect(text).toMatch(/Max Loss:/);
     expect(text).toMatch(/UNBOUNDED/);
@@ -65,7 +72,7 @@ describe("OrderConfirmSummary — undefined risk surfacing", () => {
   });
 
   it("does NOT render the warning for a defined-risk bull call spread", () => {
-    const summary: OrderSummary = {
+    const summary: OrderPresentationSummary = {
       description: "Bull Call Spread @ $2.00",
       totalCost: 200,
       maxGain: 800,
@@ -74,7 +81,7 @@ describe("OrderConfirmSummary — undefined risk surfacing", () => {
       undefinedRiskReason: null,
     };
     const { container, queryByTestId } = render(
-      <OrderConfirmSummary summary={summary} variant="info" />,
+      <OrderConfirmSummary summary={augment(summary)} variant="info" />,
     );
     expect(queryByTestId("order-undefined-risk-warning")).toBeNull();
     const text = container.textContent ?? "";

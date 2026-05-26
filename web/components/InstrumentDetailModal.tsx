@@ -7,8 +7,8 @@ import { fmtPrice, fmtUsd, legPriceKey } from "@/lib/positionUtils";
 import Modal from "./Modal";
 import OrderErrorBanner from "./OrderErrorBanner";
 import { InstrumentOrderQuoteTelemetry } from "./QuoteTelemetry";
-import { OrderConfirmSummary, type OrderSummary } from "@/lib/order";
-import { computeOrderRisk } from "@/lib/orderRisk";
+import { OrderRiskGate, type OrderRiskInput } from "@/lib/order";
+import type { PortfolioData } from "@/lib/types";
 
 export type InstrumentDetailProps = {
   leg: PortfolioLeg | null;
@@ -16,11 +16,19 @@ export type InstrumentDetailProps = {
   expiry: string;
   prices: Record<string, PriceData>;
   onClose: () => void;
+  /**
+   * Live portfolio snapshot. Optional today (callers pre-refactor don't
+   * thread it); when omitted the order-risk gate renders "Coverage
+   * indeterminate" and the operator sees the gap explicitly. Wiring the
+   * prop in every call site is its own step in `tasks/order-risk-
+   * chokepoint-refactor.md`.
+   */
+  portfolio?: PortfolioData | null;
 };
 
 type OrderAction = "BUY" | "SELL";
 
-export default function InstrumentDetailModal({ leg, ticker, expiry, prices, onClose }: InstrumentDetailProps) {
+export default function InstrumentDetailModal({ leg, ticker, expiry, prices, onClose, portfolio = null }: InstrumentDetailProps) {
   const [quantity, setQuantity] = useState(() => String(leg?.contracts ?? ""));
 
   useEffect(() => {
@@ -89,6 +97,7 @@ export default function InstrumentDetailModal({ leg, ticker, expiry, prices, onC
             priceData={priceData}
             quantity={quantity}
             onQuantityChange={setQuantity}
+            portfolio={portfolio}
           />
         </div>
       </div>
@@ -105,6 +114,7 @@ function LegOrderForm({
   priceData,
   quantity,
   onQuantityChange,
+  portfolio,
 }: {
   ticker: string;
   expiry: string;
@@ -112,6 +122,7 @@ function LegOrderForm({
   priceData: PriceData | null;
   quantity: string;
   onQuantityChange: (value: string) => void;
+  portfolio: PortfolioData | null;
 }) {
   const bid = priceData?.bid ?? null;
   const ask = priceData?.ask ?? null;
@@ -134,49 +145,58 @@ function LegOrderForm({
   const right = leg.type === "Call" ? "C" : "P";
   const expiryClean = expiry.replace(/-/g, "");
 
-  // Calculate order summary for confirmation (single option). Uses
-  // computeOrderRisk so SELL naked legs render UNBOUNDED (call) or
-  // surface assignment-at-zero exposure (put) instead of silently dropping
-  // the field.
-  const orderSummary: OrderSummary | null = useMemo(() => {
+  // Build the chokepoint input. Risk math + close-out detection + portfolio
+  // coverage all flow through `<OrderRiskGate>` below. The previous in-line
+  // `isClosingHeld` boolean was qty-blind (treated SELL N of held M < N as
+  // a pure close); the gate's `closeOut` branch is qty-aware via the
+  // `entryCostDollars` parameter.
+  //
+  // `portfolio` may be null here if the modal was opened from a surface
+  // that hasn't yet been threaded with the prop — the gate then renders a
+  // "Coverage indeterminate" skeleton instead of silently wrong risk.
+  const riskInput: OrderRiskInput | null = useMemo(() => {
     if (!isValid) return null;
     const totalCost = parsedQty * parsedPrice * 100;
     const description = `${action} ${parsedQty}x ${ticker} ${strikeStr}${right} @ ${fmtPrice(parsedPrice)}`;
     const optionRight: "C" | "P" | null = right === "C" ? "C" : right === "P" ? "P" : null;
     if (optionRight == null || leg.strike == null) {
       return {
+        ticker,
+        chainLegs: [],
+        netPremium: action === "SELL" ? -parsedPrice : parsedPrice,
         description,
         totalCost: action === "SELL" ? -totalCost : totalCost,
       };
     }
-    // When closing a held leg (LONG → action=SELL, SHORT → action=BUY) the
-    // trade reduces exposure; for open-fresh SELL legs the model surfaces
-    // the naked-short risk. We pass the trade's action verbatim so the
-    // confirmation reflects the order being placed.
+    // Close-out path: SELL of a held LONG (or BUY of a held SHORT) up to
+    // the held-contract count is a pure close. Above the count → the
+    // excess opens fresh exposure and goes through the augmentation
+    // pipeline normally.
     const isClosingHeld =
-      (leg.direction === "LONG" && action === "SELL") ||
-      (leg.direction === "SHORT" && action === "BUY");
+      ((leg.direction === "LONG" && action === "SELL") ||
+        (leg.direction === "SHORT" && action === "BUY")) &&
+      parsedQty <= leg.contracts;
     if (isClosingHeld) {
+      const proceeds = action === "SELL" ? totalCost : -totalCost;
       return {
+        ticker,
+        chainLegs: [],
+        netPremium: action === "SELL" ? -parsedPrice : parsedPrice,
         description,
-        totalCost: action === "SELL" ? -totalCost : totalCost,
+        totalCost: proceeds,
+        closeOut: { entryCostDollars: parsedQty * Math.abs(leg.avg_cost) },
       };
     }
-    const risk = computeOrderRisk(
-      [{ action, right: optionRight, strike: leg.strike, expiry, quantity: 1 }],
-      parsedPrice,
-      parsedQty,
-    );
     return {
+      ticker,
+      chainLegs: [
+        { action, right: optionRight, strike: leg.strike, expiry, quantity: parsedQty },
+      ],
+      netPremium: action === "SELL" ? -parsedPrice : parsedPrice,
       description,
       totalCost: action === "SELL" ? -totalCost : totalCost,
-      maxGain: risk.maxGain,
-      maxLoss: risk.maxLoss,
-      maxLossUnbounded: risk.maxLossUnbounded,
-      maxGainUnbounded: risk.maxGainUnbounded,
-      undefinedRiskReason: risk.undefinedRiskReason,
     };
-  }, [isValid, parsedQty, parsedPrice, action, ticker, strikeStr, right, leg.strike, leg.direction, expiry]);
+  }, [isValid, parsedQty, parsedPrice, action, ticker, strikeStr, right, leg.strike, leg.direction, leg.contracts, leg.avg_cost, expiry]);
 
   const handlePlace = useCallback(async () => {
     if (!confirmStep) {
@@ -289,9 +309,14 @@ function LegOrderForm({
       <OrderErrorBanner error={error} />
       {success && <div className="order-success">{success}</div>}
 
-      {/* Order Summary (shown in confirm step) */}
-      {confirmStep && orderSummary && (
-        <OrderConfirmSummary summary={orderSummary} variant="info" />
+      {/* Order Summary (shown in confirm step). Owned by `<OrderRiskGate>`. */}
+      {confirmStep && (
+        <OrderRiskGate
+          input={riskInput}
+          portfolio={portfolio}
+          surface="instrument-modal"
+          variant="info"
+        />
       )}
 
       <div className="order-submit">

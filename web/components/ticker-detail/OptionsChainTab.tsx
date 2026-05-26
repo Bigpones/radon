@@ -24,8 +24,14 @@ import {
   getVisibleStrikes,
   ALL_STRIKES,
 } from "@/lib/optionsChainUtils";
-import { OrderPriceStrip, OrderLegPills, OrderConfirmSummary, type OrderLeg as UnifiedOrderLeg, type OrderSummary } from "@/lib/order";
-import { augmentOrderLegsWithPortfolioCoverage, computeOrderRisk } from "@/lib/orderRisk";
+import {
+  OrderPriceStrip,
+  OrderLegPills,
+  OrderRiskGate,
+  useOrderRisk,
+  type OrderLeg as UnifiedOrderLeg,
+  type OrderRiskInput,
+} from "@/lib/order";
 import { useViewport } from "@/lib/useViewport";
 import MobileChainLadder from "@/components/mobile/MobileChainLadder";
 
@@ -305,62 +311,41 @@ function OrderBuilder({
     }
   }, [signedNetPrices.mid, priceManuallySet, structureKey]);
 
-  // Augment chain legs with portfolio coverage BEFORE computing risk so a
-  // SELL leg at a different strike against a held LONG (same ticker / expiry
-  // / right) composes to a vertical spread. Also normalises chain leg
-  // quantities to per-combo ratios — fixes the latent N² bug where the
-  // single-leg branch of `computeOrderRisk` multiplied `leg.quantity` (raw
-  // contracts) by `comboQuantity` (also raw contracts) and inflated Max Gain
-  // by `quantity²`. See `augmentOrderLegsWithPortfolioCoverage` for the
-  // full coverage semantics + WULF-style spread case (commit 2026-05-26).
-  const augmented = useMemo(() => {
+  // Build the chokepoint input. All risk math + portfolio augmentation now
+  // lives in `useOrderRisk` (called by `<OrderRiskGate>` below). The chain
+  // hands raw user-entered legs in; the gate folds coverage, fixes per-combo
+  // ratios, applies `netPremiumAdjustment` for stock-backed covered calls.
+  // The old in-line augmentation + computeOrderRisk has moved behind
+  // `@/lib/order/risk` and is ESLint-banned at every call site outside that
+  // module. See `tasks/order-risk-chokepoint-refactor.md`.
+  const riskInput: OrderRiskInput | null = useMemo(() => {
+    if (!isValidPrice) return null;
+    const totalCost = parsedPrice * totalQty * 100;
+    const description = `${structure || "Option"} @ ${fmtPrice(parsedPrice)}`;
+    const isCredit = isDebit === false;
+    const netPremium = isCredit ? -Math.abs(parsedPrice) : parsedPrice;
     const chainLegs = (normalizedOrder?.legs ?? legs).map((l) => ({
       action: l.action,
       right: l.right,
       strike: l.strike,
       expiry: l.expiry,
-      // normalizeComboOrder has already divided multi-leg quantities by GCD;
-      // single-leg falls through with the raw user-entered count, which the
-      // augmentation helper normalises to a per-combo ratio.
+      // normalizeComboOrder already divides multi-leg quantities by GCD; the
+      // hook re-normalises single-leg quantities to per-combo ratios.
       quantity: normalizedOrder ? l.quantity : Math.max(1, Math.trunc(l.quantity)),
     }));
-    return augmentOrderLegsWithPortfolioCoverage(chainLegs, ticker, portfolio ?? null);
-  }, [legs, normalizedOrder, ticker, portfolio]);
-
-  // Calculate order summary for confirmation. Per-leg max-loss math via
-  // computeOrderRisk so naked short legs (risk reversals, short straddles,
-  // jade lizards) surface correct dollar exposure instead of the legacy
-  // "max loss = net debit" assumption.
-  const orderSummary: OrderSummary | null = useMemo(() => {
-    if (!isValidPrice) return null;
-
-    const totalCost = parsedPrice * totalQty * 100;
-    const description = `${structure || "Option"} @ ${fmtPrice(parsedPrice)}`;
-    const isCredit = isDebit === false;
-    // netPremium: positive for debit, negative for credit, per-combo per-share.
-    const netPremium = isCredit ? -Math.abs(parsedPrice) : parsedPrice;
-    // `augmented.comboQuantity` carries the contract count; chain legs ride
-    // as per-combo ratios. For single-leg orders this means `totalQty` and
-    // `augmented.comboQuantity` agree, with leg.quantity normalised to 1.
-    //
-    // `netPremiumAdjustment` is non-zero only when stock coverage folds its
-    // sunk basis into the synthetic combo (covered call). It must be ADDED
-    // here so `computeOrderRisk` sees the structure as long-stock-at-basis
-    // + short-call instead of "free long stock + short call" (which would
-    // bottom max-loss at $0).
-    const adjustedNetPremium = netPremium + augmented.netPremiumAdjustment;
-    const risk = computeOrderRisk(augmented.riskLegs, adjustedNetPremium, augmented.comboQuantity);
-
     return {
+      ticker,
+      chainLegs,
+      netPremium,
       description,
       totalCost: isCredit ? -totalCost : totalCost,
-      maxGain: risk.maxGain,
-      maxLoss: risk.maxLoss,
-      maxLossUnbounded: risk.maxLossUnbounded,
-      maxGainUnbounded: risk.maxGainUnbounded,
-      undefinedRiskReason: risk.undefinedRiskReason,
     };
-  }, [isValidPrice, parsedPrice, totalQty, structure, isDebit, augmented]);
+  }, [isValidPrice, parsedPrice, totalQty, structure, isDebit, legs, normalizedOrder, ticker]);
+
+  // Pull the resolved state for the coverage chip + (later) submit gating.
+  // Calling `useOrderRisk` directly here is equivalent to the gate; the gate
+  // wraps both the hook and the summary render below.
+  const riskState = useOrderRisk(riskInput, portfolio ?? null);
 
   const handlePlace = useCallback(async () => {
     if (!confirmStep) {
@@ -506,7 +491,7 @@ function OrderBuilder({
           Helps the operator understand why Max Loss dropped from UNBOUNDED.
           Stock-coverage chips include the avg cost so the operator sees the
           basis driving the structural max-loss (stock-to-zero net of premium). */}
-      {augmented.coveringLegs.length > 0 && (
+      {riskState != null && riskState.coveringLegs.length > 0 && (
         <div
           className="order-builder-coverage"
           style={{
@@ -522,7 +507,7 @@ function OrderBuilder({
           }}
         >
           COVERED BY HELD{" "}
-          {augmented.coveringLegs
+          {riskState.coveringLegs
             .map((l) =>
               l.type === "Option"
                 ? `LONG ${l.contracts}× $${l.strike} ${l.right === "C" ? "Call" : "Put"}`
@@ -747,9 +732,18 @@ function OrderBuilder({
       <OrderErrorBanner error={error} />
       {success && <div className="order-success">{success}</div>}
 
-      {/* Order Summary (shown in confirm step) */}
-      {confirmStep && orderSummary && (
-        <OrderConfirmSummary summary={orderSummary} variant="info" />
+      {/* Order Summary (shown in confirm step). Risk math is owned entirely
+          by `<OrderRiskGate>` — it consumes `riskInput` + `portfolio`, runs
+          the augmentation pipeline, and renders `<OrderConfirmSummary>` with
+          a branded summary. The parent surface no longer constructs the
+          summary literal; the brand at the type level prevents that. */}
+      {confirmStep && (
+        <OrderRiskGate
+          input={riskInput}
+          portfolio={portfolio ?? null}
+          surface="chain-builder"
+          variant="info"
+        />
       )}
 
       {/* Submit */}

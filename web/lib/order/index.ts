@@ -17,11 +17,27 @@ export type {
   OrderLeg,
   OrderFormState,
   OrderValidation,
+  // OrderSummary is the legacy alias to OrderPresentationSummary; kept for
+  // existing consumer-code references during the migration but should not be
+  // newly authored against. Render through <OrderRiskGate> instead.
   OrderSummary,
+  OrderPresentationSummary,
+  AugmentedOrderSummary,
+  CoverageStatus,
   PriceDisplayProps,
   LegDisplayProps,
   OrderFormProps,
 } from "./types";
+
+// Risk chokepoint — the only public way to compute order risk math.
+export { useOrderRisk, OrderRiskGate } from "./risk";
+export type {
+  OrderRiskInput,
+  OrderRiskState,
+  OrderRiskGateProps,
+  ChainOrderLeg,
+  CoveringPortfolioLeg,
+} from "./risk";
 
 // Hooks
 export { useOrderPrices } from "./hooks/useOrderPrices";

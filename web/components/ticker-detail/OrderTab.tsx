@@ -13,8 +13,7 @@ import ModifyOrderModal from "@/components/ModifyOrderModal";
 import OrderErrorBanner from "@/components/OrderErrorBanner";
 import type { ModifyOrderRequest } from "@/lib/orderModify";
 import { checkNakedShortRisk, type NakedShortPortfolio, type OrderPayload } from "@/lib/nakedShortGuard";
-import { OrderConfirmSummary, type OrderSummary } from "@/lib/order";
-import { computeOrderRisk } from "@/lib/orderRisk";
+import { OrderRiskGate, type OrderRiskInput } from "@/lib/order";
 import { fmtSignedPrice, toneClass } from "@/lib/format";
 import { isIndexSymbol, hasFuturesSupport, hasIndexOptionsSupport } from "@/lib/indexSymbols";
 import { FuturesOrderForm } from "@/components/ticker-detail/FuturesOrderForm";
@@ -293,23 +292,38 @@ function NewOrderForm({
   const parsedPrice = parseFloat(limitPrice);
   const isValid = !isNaN(parsedQty) && parsedQty > 0 && !isNaN(parsedPrice) && parsedPrice > 0;
 
-  // Calculate order summary for confirmation (single leg: stock or single option).
-  // For options we route through computeOrderRisk so naked short calls render
-  // UNBOUNDED and naked short puts surface their assignment-at-zero exposure.
-  const orderSummary: OrderSummary | null = useMemo(() => {
+  // Build the chokepoint input. All single-leg risk math + close-out
+  // detection now lives in `useOrderRisk` (via `<OrderRiskGate>` below).
+  // The previous in-line `computeOrderRisk` + close-out short-circuit was
+  // ~80 lines of business logic re-invented per surface; the gate owns it.
+  //
+  // Per-contract avg_cost note (preserved from the previous implementation
+  // for the close-out branch): `onlyLeg.avg_cost` is per-contract for
+  // options (IB's `pos.avgCost` is already multiplied by the contract
+  // multiplier for OPT secType) and per-share for stocks. We compute
+  // `entryCostDollars` here in that same unit so the gate's close-out
+  // path doesn't have to re-derive multipliers.
+  //   Before fix (commit d420c16): cost basis was multiplied by 100 twice,
+  //   producing PnL = −$635,055 on a $19,389.45 USAX winner.
+  const riskInput: OrderRiskInput | null = useMemo(() => {
     if (!isValid) return null;
-
     const isOption =
       position?.legs?.length === 1 &&
       position.legs[0].strike != null &&
       (position.legs[0].type === "Call" || position.legs[0].type === "Put");
     const multiplier = isOption ? 100 : 1;
     const totalCost = parsedQty * parsedPrice * multiplier;
-    const type = isOption ? position?.structure ?? "Option" : "Stock";
-    const description = `${action} ${parsedQty}${isOption ? "x" : ""} ${ticker} ${type} @ ${fmtPrice(parsedPrice)}`;
+    const typeLabel = isOption ? position?.structure ?? "Option" : "Stock";
+    const description = `${action} ${parsedQty}${isOption ? "x" : ""} ${ticker} ${typeLabel} @ ${fmtPrice(parsedPrice)}`;
 
+    // Stock or no-position cases: pass through with no chainLegs payload
+    // (the gate will run augmentation with an empty leg list, yielding a
+    // pure description + totalCost summary, no risk fields).
     if (!isOption || position == null) {
       return {
+        ticker,
+        chainLegs: [],
+        netPremium: action === "SELL" ? -parsedPrice : parsedPrice,
         description,
         totalCost: action === "SELL" ? -totalCost : totalCost,
       };
@@ -317,67 +331,48 @@ function NewOrderForm({
 
     const onlyLeg = position.legs[0];
     const right: "C" | "P" = onlyLeg.type === "Call" ? "C" : "P";
-    // Translate the form action into the leg's effective direction for the
-    // bought/sold contract. SELL against a held LONG closes the position;
-    // we pass `coveringLongContracts` so the risk model recognises the
-    // close (or partial close) instead of flagging it as a naked short.
     const legAction: "BUY" | "SELL" =
       action === "BUY" ? "BUY" : (onlyLeg.direction === "LONG" ? "SELL" : "BUY");
-    const coveringLongContracts =
-      legAction === "SELL" && onlyLeg.direction === "LONG"
-        ? onlyLeg.contracts
-        : 0;
-    const riskLegs = [{
-      action: legAction,
-      right,
-      strike: onlyLeg.strike as number,
-      expiry: position.expiry,
-      quantity: 1,
-      coveringLongContracts,
-    }];
-    const risk = computeOrderRisk(riskLegs, parsedPrice, parsedQty);
-
-    // Pure close: SELL on a held LONG single-leg where the position
-    // covers the order fully (partial closes still qualify — the
-    // remaining LONG contracts stay open at unchanged risk). For these
-    // the operator-facing answer is *not* max-gain/max-loss (those are
-    // both zero by construction; the existing risk model is correct
-    // but uninformative) — it's "what cash do I receive and what's my
-    // realized P&L vs. the entry?" Mirrors the combo-close treatment
-    // already in place below (line ~692).
     const isClosingLong =
       legAction === "SELL" &&
       onlyLeg.direction === "LONG" &&
-      coveringLongContracts >= parsedQty;
+      onlyLeg.contracts >= parsedQty;
 
     if (isClosingLong) {
-      // `onlyLeg.avg_cost` is per-contract for options (IB's `pos.avgCost`
-      // is already multiplied by the contract multiplier for OPT secType;
-      // see `scripts/ib_sync.py:fetch_positions` and the journal-basis
-      // override on the same path). Stocks are per-share. Match the unit
-      // the leg already carries — do NOT multiply by `multiplier` again,
-      // or option cost-basis is over-counted by 100×.
-      //   Before fix: LONG 65 USAX C $45 avg_cost=$102 → costBasis = 65×102×100 = $661,055 → PnL = −$635,055.
-      //   After fix:  costBasis = 65×102 = $6,630 → PnL = +$19,370.
+      // Pure close (or partial close) of a held LONG. The gate's `closeOut`
+      // branch surfaces proceeds + realized P&L. avg_cost is per-contract
+      // for options, per-share for stocks (see comment above).
       const proceeds = parsedQty * parsedPrice * multiplier;
-      const costBasis = parsedQty * onlyLeg.avg_cost;
+      const entryCostDollars = parsedQty * onlyLeg.avg_cost;
       return {
+        ticker,
+        chainLegs: [],
+        netPremium: -parsedPrice,
         description,
         totalCost: proceeds,
         totalLabel: "Proceeds:",
-        estimatedPnl: proceeds - costBasis,
-        estimatedPnlLabel: "Est. Realized P&L:",
+        closeOut: { entryCostDollars },
       };
     }
 
+    // Open-fresh path: chain leg carries the order; the augmentation pipe
+    // looks at the held position (it's in `portfolio`) to attach any
+    // cross-strike coverage automatically — same logic that powers the
+    // chain builder.
     return {
+      ticker,
+      chainLegs: [
+        {
+          action: legAction,
+          right,
+          strike: onlyLeg.strike as number,
+          expiry: position.expiry,
+          quantity: parsedQty,
+        },
+      ],
+      netPremium: legAction === "SELL" ? -parsedPrice : parsedPrice,
       description,
       totalCost: action === "SELL" ? -totalCost : totalCost,
-      maxGain: risk.maxGain,
-      maxLoss: risk.maxLoss,
-      maxLossUnbounded: risk.maxLossUnbounded,
-      maxGainUnbounded: risk.maxGainUnbounded,
-      undefinedRiskReason: risk.undefinedRiskReason,
     };
   }, [isValid, parsedQty, parsedPrice, action, ticker, position]);
 
@@ -519,9 +514,14 @@ function NewOrderForm({
       <OrderErrorBanner error={error} />
       {success && <div className="order-success">{success}</div>}
 
-      {/* Order Summary (shown in confirm step) */}
-      {confirmStep && orderSummary && (
-        <OrderConfirmSummary summary={orderSummary} variant="info" />
+      {/* Order Summary (shown in confirm step). Owned by `<OrderRiskGate>`. */}
+      {confirmStep && (
+        <OrderRiskGate
+          input={riskInput}
+          portfolio={portfolio}
+          surface="order-tab-single"
+          variant="info"
+        />
       )}
 
       <div className="order-submit">
@@ -719,47 +719,49 @@ function ComboOrderForm({
   // to a held combo) we use the per-leg risk model so risk reversals,
   // short straddles, and ratio spreads surface their true exposure
   // instead of the legacy "max loss = net debit" assumption.
-  const orderSummary: OrderSummary | null = useMemo(() => {
+  const riskInput: OrderRiskInput | null = useMemo(() => {
     if (!isValid) return null;
 
     const totalCost = parsedQty * parsedPrice * 100;
     const description = `${action} ${parsedQty}x ${position.structure} @ ${fmtSignedPrice(parsedPrice)}`;
 
-    // SELL is the close/flatten path for a held combo. Show close-specific
-    // cash-flow semantics instead of opening-spread payoff terms.
+    // SELL is the close/flatten path for a held combo. The gate's `closeOut`
+    // branch surfaces close-credit/close-debit + realized P&L.
     if (action === "SELL") {
       const closeCashFlow = totalCost;
       return {
+        ticker,
+        chainLegs: [],
+        netPremium: parsedPrice,
         description,
-        totalCost: Math.abs(closeCashFlow),
-        totalLabel: `${closeCashFlow >= 0 ? "Close Credit" : "Close Debit"}:`,
-        estimatedPnl: closeCashFlow - resolveEntryCost(position),
-        estimatedPnlLabel: "Est. Realized P&L:",
+        totalCost: closeCashFlow,
+        closeOut: { entryCostDollars: resolveEntryCost(position) },
       };
     }
 
-    // Buying to open: per-leg risk model
-    const riskLegs = legsWithActions
+    // Buying to open: hand the legs to the gate. The augmentation helper
+    // will look at portfolio coverage automatically.
+    const chainLegs = legsWithActions
       .filter((l) => l.strike != null)
       .map((l) => ({
         action: l.legAction,
         right: l.right,
         strike: l.strike as number,
         expiry: l.expiry,
-        quantity: 1, // legs are already per-combo ratios in this view
+        // Per-combo ratio = 1 here because `legsWithActions` already encodes
+        // the ratio (one entry per combo unit). `parsedQty` becomes the
+        // combo unit count via the augmentation helper's GCD pass.
+        quantity: parsedQty,
       }));
-    const risk = computeOrderRisk(riskLegs, parsedPrice, parsedQty);
 
     return {
+      ticker,
+      chainLegs,
+      netPremium: parsedPrice,
       description,
       totalCost,
-      maxGain: risk.maxGain,
-      maxLoss: risk.maxLoss,
-      maxLossUnbounded: risk.maxLossUnbounded,
-      maxGainUnbounded: risk.maxGainUnbounded,
-      undefinedRiskReason: risk.undefinedRiskReason,
     };
-  }, [isValid, parsedQty, parsedPrice, action, position, legsWithActions]);
+  }, [isValid, parsedQty, parsedPrice, action, position, legsWithActions, ticker]);
 
   return (
     <div className="order-form">
@@ -884,9 +886,14 @@ function ComboOrderForm({
       <OrderErrorBanner error={error} />
       {success && <div className="order-success">{success}</div>}
 
-      {/* Order Summary (shown in confirm step) */}
-      {confirmStep && orderSummary && (
-        <OrderConfirmSummary summary={orderSummary} variant="info" />
+      {/* Order Summary (shown in confirm step). Owned by `<OrderRiskGate>`. */}
+      {confirmStep && (
+        <OrderRiskGate
+          input={riskInput}
+          portfolio={portfolio}
+          surface="order-tab-combo"
+          variant="info"
+        />
       )}
 
       {/* Submit / Confirm */}

@@ -26,7 +26,19 @@ Covered routes: `menthorq/cta`, `journal`, `discover`, `flow-analysis`, `blotter
 4. **Combo natural market uses cross-fields:** BUY combo pays ASK on BUY legs, BID on SELL legs; SELL combo receives BID on BUY legs, ASK on SELL legs. Impls: `computeNetOptionQuote()`, `ComboOrderForm.netPrices`, `resolveOrderPriceData()`.
 5. **Trace path before fixing:** chain builder → `/api/orders/place` → FastAPI bridge → `scripts/ib_place_order.py`.
 6. **Required regressions:** unit (action/ratio/net-price), browser (displayed net + submitted payload).
-7. **Closing-trade detection (2026-05-20, commit e55b643).** `OrderRiskLeg.coveringLongContracts` tells risk model how many contracts of the exact same option are held LONG. SELL with `coveringLongContracts >= effectiveContracts` short-circuits to `maxLoss: 0`. SELL with `coveringLongContracts < effectiveContracts` flags only excess (M−N) as naked. Wired in `OrderTab.NewOrderForm.orderSummary`. Without this, every SELL-to-close of a long call triggered false "Uncovered short call". See `web/lib/orderRisk.ts:36-50` (field), `:187-219` (short-circuit), `:277-285` (multi-leg discount), `:311-315` (helper).
+7. **Closing-trade detection (2026-05-20, commit e55b643).** `OrderRiskLeg.coveringLongContracts` tells risk model how many contracts of the exact same option are held LONG. SELL with `coveringLongContracts >= effectiveContracts` short-circuits to `maxLoss: 0`. SELL with `coveringLongContracts < effectiveContracts` flags only excess (M−N) as naked. Without this, every SELL-to-close of a long call triggered false "Uncovered short call". Now consumed internally by `useOrderRisk`; surfaces don't construct it by hand.
+
+### Order-Risk Chokepoint (2026-05-26)
+
+Three production bugs in eight days (AAOI risk reversal, WULF bull call spread, RR covered call) shipped wrong risk math at the portfolio/order seam — each fix surgical to one surface, each followed by the next surface re-discovering the same gap. The chokepoint pattern eliminates the bug class structurally.
+
+1. **Every order surface MUST render `<OrderRiskGate>`** from `@/lib/order/risk`. The gate owns `useOrderRisk` + `<OrderConfirmSummary>` + (future) telemetry. Wire it with `input` (an `OrderRiskInput`) + `portfolio` + `surface` (kebab-case tag for the telemetry buffer).
+2. **`<OrderConfirmSummary>` only accepts `AugmentedOrderSummary`** — a branded type that can be produced ONLY by `useOrderRisk`. Plain literals fail typecheck; `as` casts trip a dev-mode runtime assertion.
+3. **`computeOrderRisk` and `augmentOrderLegsWithPortfolioCoverage` are module-private** under `web/lib/order/risk/internal/`. ESLint blocks direct imports (`no-restricted-imports`). Tests reach them through `web/lib/order/risk/__test_only__.ts`, which is exempt via the global `tests/**` + `e2e/**` ignore.
+4. **Pending UX is mandatory.** `portfolio === undefined` → `coverageStatus: "pending"` → skeleton "Coverage indeterminate — portfolio resolving". `portfolio === null` → `coverageStatus: "no-portfolio"` → skeleton "Coverage indeterminate — portfolio not in scope". Parent surface MUST disable submit when `state.okToSubmit !== true`.
+5. **Close-out branch.** Pass `closeOut: { entryCostDollars }` on the input to short-circuit max-loss/max-gain (both 0 by construction; the order adds no new exposure) and surface proceeds + realized P&L instead. The hook owns the cost-basis convention (`avg_cost` is per-contract for options, per-share for stocks); surfaces just hand the dollar number.
+
+Migrated: `OptionsChainTab`, `OrderTab` (single + combo), `InstrumentDetailModal`, `BookTab`. Pending (next step): `MobileOrderTicket`, `FuturesOrderForm`, `IndexOptionOrderForm`, `ModifyOrderModal`. Full plan: `tasks/order-risk-chokepoint-refactor.md`.
 
 ### IB Error Message Rendering
 
