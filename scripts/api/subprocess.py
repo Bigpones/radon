@@ -86,11 +86,56 @@ class RawScriptResult:
 
 
 def _find_json_start(stdout: str) -> int:
-    """Return the earliest index of '{' or '[' in stdout, or -1 if neither."""
+    """Return the earliest index of '{' or '[' in stdout, or -1 if neither.
+
+    Used as the FAST path. `_extract_json_payload` below is the smarter
+    extractor that scans line-by-line from the end, parses each candidate,
+    and returns the first one that round-trips. The fast path remains the
+    default because most scripts emit only the result JSON; the smart path
+    activates only on parse failure.
+    """
     obj_idx = stdout.find("{")
     arr_idx = stdout.find("[")
     candidates = [i for i in (obj_idx, arr_idx) if i != -1]
     return min(candidates) if candidates else -1
+
+
+def _extract_json_payload(stdout: str) -> Optional[object]:
+    """Locate the LAST line in stdout that parses as a complete JSON value.
+
+    Scripts may print progress lines to stdout before the result. A naive
+    "find first `{` or `[`" parser breaks when a progress line contains a
+    list literal — e.g. `Combo order: 2 legs, ratios=[1, 1]` shipped
+    `[1, 1]` as the first JSON-looking thing and tripped on the real
+    result as "Extra data: line 2 column 1 (char 7)" (EWY bearish risk
+    reversal bug, 2026-05-27).
+
+    Strategy:
+      1. Walk stdout lines in REVERSE order.
+      2. For each line that strips to a `{...}`/`[...]` body, attempt
+         `json.loads` — the FIRST line that fully parses wins.
+      3. If no single line parses, fall back to the slice-from-first-`{`
+         strategy via `_find_json_start` (preserving the original
+         behaviour for scripts that emit pretty-printed multi-line JSON).
+    """
+    lines = stdout.splitlines()
+    for line in reversed(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped[0] not in ("{", "["):
+            continue
+        try:
+            return json.loads(stripped)
+        except json.JSONDecodeError:
+            # Not a single-line JSON — could be a partial line. Keep walking.
+            continue
+
+    # Fallback: multi-line JSON. Slice from the first '{' or '[' to end.
+    start = _find_json_start(stdout)
+    if start == -1:
+        return None
+    return json.loads(stdout[start:])
 
 
 async def run_script(
@@ -145,14 +190,15 @@ async def run_script(
             return ScriptResult(ok=False, error=err_msg, exit_code=proc.returncode)
 
         # Extract JSON from stdout (scripts may print progress before JSON).
-        # Accept either object ('{') or array ('['); pick whichever appears first.
-        json_start = _find_json_start(stdout)
-        if json_start == -1:
+        # `_extract_json_payload` walks lines in reverse and picks the LAST
+        # line that parses as a complete JSON value — so a stray progress
+        # print containing a Python list literal (e.g. `ratios=[1, 1]`)
+        # doesn't get mistaken for the result.
+        payload = _extract_json_payload(stdout)
+        if payload is None:
             # Some scripts write to files instead of stdout (rawOutput pattern)
             return ScriptResult(ok=True, data={})
-
-        data = json.loads(stdout[json_start:])
-        return ScriptResult(ok=True, data=data)
+        return ScriptResult(ok=True, data=payload)
 
     except asyncio.TimeoutError:
         logger.error("Script %s timed out after %.0fs", script, timeout)
@@ -261,12 +307,10 @@ async def run_module(
             )
             return ScriptResult(ok=False, error=err_msg, exit_code=proc.returncode)
 
-        json_start = _find_json_start(stdout)
-        if json_start == -1:
+        payload = _extract_json_payload(stdout)
+        if payload is None:
             return ScriptResult(ok=True, data={})
-
-        data = json.loads(stdout[json_start:])
-        return ScriptResult(ok=True, data=data)
+        return ScriptResult(ok=True, data=payload)
 
     except asyncio.TimeoutError:
         try:

@@ -158,7 +158,17 @@ def place_order(params: dict) -> dict:
 
         if order_type == "combo":
             order.smartComboRoutingParams = [TagValue("NonGuaranteed", "1")]
-            print(f"  Combo order: {len(legs_data)} legs, NonGuaranteed=1, ratios={[int(l.get('ratio',1)) for l in legs_data]}")
+            # Progress to stderr — stdout is reserved for the final JSON
+            # result. The list-literal in the format string used to land on
+            # stdout, where the subprocess wrapper's `_find_json_start` saw
+            # the `[1, 1]` ratios as the JSON document and tripped on the
+            # real result as "Extra data: line 2 column 1 (char 7)" (the
+            # EWY bearish risk reversal bug, 2026-05-27).
+            print(
+                f"  Combo order: {len(legs_data)} legs, NonGuaranteed=1, "
+                f"ratios={[int(l.get('ratio', 1)) for l in legs_data]}",
+                file=sys.stderr,
+            )
 
         # Place
         trade = client.place_order(contract, order)

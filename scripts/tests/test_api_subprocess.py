@@ -23,7 +23,13 @@ import pytest
 SCRIPTS_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-from api.subprocess import run_script, run_module, ScriptResult, _extract_error_message
+from api.subprocess import (
+    run_script,
+    run_module,
+    ScriptResult,
+    _extract_error_message,
+    _extract_json_payload,
+)
 
 
 @pytest.fixture
@@ -70,6 +76,56 @@ class TestRunScript:
         )
         assert result.ok
         assert result.data["result"] == "done"
+
+    def test_progress_line_with_list_literal_does_not_break_parser(self, temp_script):
+        """EWY bearish risk reversal regression (2026-05-27).
+
+        `ib_place_order.py` used to print a combo-order progress line
+        containing a Python list literal (`ratios=[1, 1]`) to stdout
+        BEFORE the final result JSON. The pre-fix extractor sliced from
+        the first `{` or `[`, parsed `[1, 1]`, and then tripped on the
+        result as `Extra data: line 2 column 1 (char 7)` — char 7 being
+        exactly the length of `[1, 1]\\n`. The line is now sent to
+        stderr at the script, AND the extractor scans lines from the
+        end so any future progress print with brackets is harmless.
+        """
+        script = temp_script(
+            'import json\n'
+            'print("  Combo order: 2 legs, NonGuaranteed=1, ratios=[1, 1]")\n'
+            'print(json.dumps({"status": "ok", "orderId": 12345, "permId": 67890}))\n'
+        )
+        result = asyncio.run(_run_raw_script(script))
+        assert result.ok
+        assert result.data["status"] == "ok"
+        assert result.data["orderId"] == 12345
+        assert result.data["permId"] == 67890
+
+    def test_multiple_progress_lines_with_brackets(self, temp_script):
+        """Defensive: multiple progress lines with bracket literals still
+        resolve to the LAST line that parses as complete JSON."""
+        script = temp_script(
+            'import json\n'
+            'print("Step 1: [a, b]")\n'
+            'print("Step 2: {x: 1}")\n'
+            'print("Step 3: ratios=[1, 1, 1]")\n'
+            'print(json.dumps({"status": "ok"}))\n'
+        )
+        result = asyncio.run(_run_raw_script(script))
+        assert result.ok
+        assert result.data["status"] == "ok"
+
+    def test_result_is_a_top_level_array(self, temp_script):
+        """Scripts may emit a JSON array as the final result (leap scanner
+        pattern). The extractor must accept array roots too."""
+        script = temp_script(
+            'import json\n'
+            'print("Computing...")\n'
+            'print(json.dumps([{"ticker": "AAPL"}, {"ticker": "TSLA"}]))\n'
+        )
+        result = asyncio.run(_run_raw_script(script))
+        assert result.ok
+        assert isinstance(result.data, list)
+        assert len(result.data) == 2
 
     def test_empty_stdout_returns_empty_dict(self, temp_script):
         """Scripts that write to files produce no stdout JSON."""
@@ -241,12 +297,16 @@ async def _run_raw_script(script_path: str, timeout: float = 10.0) -> ScriptResu
                 err_msg = err_msg[:300] + "..."
             return ScriptResult(ok=False, error=err_msg, exit_code=proc.returncode)
 
-        json_start = stdout.find("{")
-        if json_start == -1:
+        # Use the real extractor so this helper exercises the production
+        # parser. Embedding a separate copy here is what kept the EWY
+        # bearish-risk-reversal bug invisible to the test suite — the
+        # stale embedded copy used `stdout.find("{")` and only saw the
+        # first `{`/`[` in stdout, missing the case where a progress
+        # line contained a list literal.
+        payload = _extract_json_payload(stdout)
+        if payload is None:
             return ScriptResult(ok=True, data={})
-
-        data = json.loads(stdout[json_start:])
-        return ScriptResult(ok=True, data=data)
+        return ScriptResult(ok=True, data=payload)
 
     except _aio.TimeoutError:
         try:
