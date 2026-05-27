@@ -233,7 +233,12 @@ export async function POST(request: Request): Promise<Response> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(orderPayload),
-      timeout: 20_000,
+      // 30s = 25s FastAPI script budget + 5s network/transport slack.
+      // ib_place_order.py polls IB up to 12s for combo confirmation
+      // before returning either ok-with-permId or the explicit
+      // "stuck-in-PendingSubmit" error. Setting this below the
+      // script timeout would abort before the error could surface.
+      timeout: 30_000,
     });
 
     // IB silent rejection: order was submitted but immediately cancelled/inactive.

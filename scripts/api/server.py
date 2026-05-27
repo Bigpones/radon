@@ -1257,8 +1257,16 @@ async def orders_place(request: Request):
         }
 
     order_json = json.dumps(body)
+    # 25s timeout accommodates: connect (~3s) + qualify (~2s) + place + the
+    # 12s combo confirm-poll inside ib_place_order.py + finally-disconnect.
+    # 15s was tight for combos and timed out before the script could surface
+    # PendingSubmit-stuck rejections — the script then never wrote a result
+    # and the route reported an "Invalid JSON output" or timeout. Combo
+    # orders DAY-TIF outside RTH naturally sit longer in PendingSubmit, so
+    # the script must be able to detect the no-confirm case and return an
+    # error inside the FastAPI timeout window.
     result = await _run_ib_script_with_recovery(
-        "ib_place_order.py", ["--json", order_json], timeout=15
+        "ib_place_order.py", ["--json", order_json], timeout=25
     )
     if not result.ok:
         raise HTTPException(status_code=502, detail=result.error)

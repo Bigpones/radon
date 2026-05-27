@@ -12,6 +12,7 @@ Usage:
 
 import json
 import sys
+import time
 from pathlib import Path
 
 try:
@@ -173,10 +174,45 @@ def place_order(params: dict) -> dict:
         # Place
         trade = client.place_order(contract, order)
 
-        # Combo orders need extra time: IB routes each leg independently and
-        # risk checks take longer — 2 s is not enough to get an ack.
-        wait_secs = 5 if order_type == "combo" else 2
-        client.sleep(wait_secs)
+        # Poll trade.orderStatus until IB issues a permId OR the status moves
+        # past PendingSubmit/ApiPending. Without this wait, `finally:
+        # client.disconnect()` runs while the order is still in PendingSubmit;
+        # IB then drops the order because the placing client went away before
+        # acknowledging.  The 2026-05-27 MU risk-reversal repro returned
+        # `{status:"ok", permId:0, initialStatus:"PendingSubmit"}` and the
+        # subsequent /orders sync found nothing — because IB had silently
+        # discarded the unconfirmed order on disconnect.
+        #
+        # Terminal-or-confirmed predicate:
+        #   perm_id != 0                      → IB assigned the permanent id
+        #   status in {Submitted, PreSubmitted, Filled, Cancelled,
+        #              Inactive, ApiCancelled, Rejected}
+        #       → IB has fully processed; whatever the verdict, it's not in
+        #         limbo.  PendingSubmit / ApiPending / Unknown are the
+        #         "still in limbo" cases and we keep waiting on those.
+        #
+        # Combos get the longer deadline because IB risk-checks each leg
+        # independently AND the SmartRouting + NonGuaranteed handshake adds
+        # ~3-5s on top of single-leg latency.
+        deadline = time.time() + (12.0 if order_type == "combo" else 6.0)
+        terminal_states = {
+            "Submitted",
+            "PreSubmitted",
+            "Filled",
+            "Cancelled",
+            "ApiCancelled",
+            "Inactive",
+            "Rejected",
+        }
+        while time.time() < deadline:
+            client.sleep(0.5)
+            if trade.order.permId != 0:
+                break
+            s = trade.orderStatus.status if trade.orderStatus else ""
+            if s in terminal_states:
+                break
+            if ib_errors:
+                break
 
         order_id = trade.order.orderId
         perm_id = trade.order.permId
@@ -188,6 +224,45 @@ def place_order(params: dict) -> dict:
             return {
                 "status": "error",
                 "message": f"IB error {code}: {msg}",
+                "orderId": order_id,
+                "permId": perm_id,
+                "initialStatus": status,
+            }
+
+        # Refuse to claim success if IB hasn't actually accepted the order.
+        # PendingSubmit + permId=0 after the polling deadline means IB
+        # never confirmed; disconnecting now would drop the order. Surface
+        # a clear error so the UI doesn't show a misleading green toast.
+        if perm_id == 0 and status in ("PendingSubmit", "ApiPending", "Unknown", ""):
+            hint = (
+                "IB never confirmed the order. Common causes: market is "
+                "closed and TIF=DAY (use GTC for after-hours), insufficient "
+                "trading permissions for this structure (Tier 4 for naked "
+                "shorts), or pre-trade risk rejection. Check IB Gateway logs."
+            )
+            return {
+                "status": "error",
+                "message": f"Order stuck in {status or 'Unknown'} (no permId). {hint}",
+                "orderId": order_id,
+                "permId": perm_id,
+                "initialStatus": status,
+            }
+
+        # Terminal-but-failed states. If IB rejected or cancelled the order
+        # in the wait window, surface that as an error — the UI shouldn't
+        # show "Order placed" for a rejected order even when status comes
+        # without an explicit errorEvent.
+        if status in ("Rejected", "Cancelled", "ApiCancelled", "Inactive"):
+            why = ""
+            if trade.orderStatus is not None:
+                # `whyHeld` / `lastFillPrice` may carry IB's reason text on
+                # some rejections; surface whatever's there.
+                wh = getattr(trade.orderStatus, "whyHeld", None)
+                if wh:
+                    why = f" ({wh})"
+            return {
+                "status": "error",
+                "message": f"Order {status}{why}",
                 "orderId": order_id,
                 "permId": perm_id,
                 "initialStatus": status,
