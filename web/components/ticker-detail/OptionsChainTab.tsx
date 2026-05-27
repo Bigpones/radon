@@ -336,14 +336,23 @@ function OrderBuilder({
       ? isDebit === false
       : legs[0]?.action === "SELL";
     const netPremium = isCredit ? -Math.abs(parsedPrice) : parsedPrice;
-    const chainLegs = (normalizedOrder?.legs ?? legs).map((l) => ({
+    // `ChainOrderLeg.quantity` MUST be the raw user-entered contract count
+    // (see `augmentOrderLegsWithPortfolioCoverage`'s docblock). The augmenter
+    // computes the per-combo ratio itself via `gcd(quantities)`.
+    //
+    // Regression 2026-05-27 (VIX bull call spread): passing `normalizedOrder.legs`
+    // here handed in ratio quantities (e.g. 1/1 for a 500/500 spread). The
+    // augmenter then computed `comboQuantity = gcd(1, 1) = 1`, collapsing the
+    // 500-contract aggregate into per-combo dollars ($880 / $120 instead of
+    // $440k / $60k). Always source from raw `legs`. Multi-leg fuzz property
+    // P3b in `tests/fuzz/order-risk.fuzz.test.ts` pins the contract going
+    // forward.
+    const chainLegs = legs.map((l) => ({
       action: l.action,
       right: l.right,
       strike: l.strike,
       expiry: l.expiry,
-      // normalizeComboOrder already divides multi-leg quantities by GCD; the
-      // hook re-normalises single-leg quantities to per-combo ratios.
-      quantity: normalizedOrder ? l.quantity : Math.max(1, Math.trunc(l.quantity)),
+      quantity: Math.max(1, Math.trunc(l.quantity)),
     }));
     return {
       ticker,
@@ -352,7 +361,7 @@ function OrderBuilder({
       description,
       totalCost: isCredit ? -totalCost : totalCost,
     };
-  }, [isValidPrice, parsedPrice, totalQty, structure, isDebit, legs, normalizedOrder, ticker]);
+  }, [isValidPrice, parsedPrice, totalQty, structure, isDebit, legs, ticker]);
 
   // Pull the resolved state for the coverage chip + (later) submit gating.
   // Calling `useOrderRisk` directly here is equivalent to the gate; the gate

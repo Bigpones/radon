@@ -271,6 +271,79 @@ describe("WULF covered short — single-leg credit semantics", () => {
   });
 });
 
+describe("multi-leg combo scaling — bull call spread", () => {
+  // 2026-05-27 production regression (VIX 500/500 bull call spread).
+  // OptionsChainTab was passing already-GCD-normalised legs (q=1/1 for a
+  // 500/500 spread) into `chainLegs`. The augmenter then re-applied gcd,
+  // resolved `comboQuantity = 1`, and the displayed risk was per-combo
+  // ($880 / $120) instead of 500-combo ($440,000 / $60,000).
+  //
+  // This test pins the chain contract: `ChainOrderLeg.quantity` is raw
+  // user-entered contracts. Scaling all legs by N must scale risk by N.
+  it("500/500 VIX 18/28 bull call spread @ $1.20 debit ⇒ max gain $440,000, max loss $60,000", () => {
+    const input = {
+      ticker: "VIX",
+      chainLegs: [
+        { action: "BUY" as const,  right: "C" as const, strike: 18, expiry: "20260616", quantity: 500 },
+        { action: "SELL" as const, right: "C" as const, strike: 28, expiry: "20260616", quantity: 500 },
+      ],
+      netPremium: 1.20, // net debit
+      description: "Bull Call Spread @ $1.20",
+      totalCost: 60_000,
+    };
+    const { result } = renderHook(() => useOrderRisk(input, emptyPortfolio));
+    expect(result.current).not.toBeNull();
+    expect(result.current!.coverageStatus).toBe("resolved");
+    expect(result.current!.summary.maxLossUnbounded).toBe(false);
+    expect(result.current!.summary.maxGainUnbounded).toBe(false);
+    expect(result.current!.summary.maxLoss).toBeCloseTo(60_000, 0);
+    expect(result.current!.summary.maxGain).toBeCloseTo(440_000, 0);
+    expect(result.current!.okToSubmit).toBe(true);
+  });
+
+  it("scales linearly: N×N bull call spread risk = N × 1×1 bull call spread risk", () => {
+    const make = (qty: number) => ({
+      ticker: "VIX",
+      chainLegs: [
+        { action: "BUY" as const,  right: "C" as const, strike: 18, expiry: "20260616", quantity: qty },
+        { action: "SELL" as const, right: "C" as const, strike: 28, expiry: "20260616", quantity: qty },
+      ],
+      netPremium: 1.20,
+      description: "Bull Call Spread @ $1.20",
+      totalCost: 120 * qty,
+    });
+    const r1 = renderHook(() => useOrderRisk(make(1), emptyPortfolio)).result;
+    const r500 = renderHook(() => useOrderRisk(make(500), emptyPortfolio)).result;
+    expect(r500.current!.summary.maxLoss).toBeCloseTo(500 * (r1.current!.summary.maxLoss as number), 0);
+    expect(r500.current!.summary.maxGain).toBeCloseTo(500 * (r1.current!.summary.maxGain as number), 0);
+  });
+
+  it("scales linearly: asymmetric ratios (1×2 backspread) preserve combo unit", () => {
+    // 100 long / 200 short is gcd=100 → 1 combo of (1 long, 2 short) × 100.
+    // Augmenter must resolve `comboQuantity = 100`, NOT 1.
+    const input = {
+      ticker: "TEST",
+      chainLegs: [
+        { action: "BUY" as const,  right: "C" as const, strike: 50, expiry: "20260919", quantity: 100 },
+        { action: "SELL" as const, right: "C" as const, strike: 60, expiry: "20260919", quantity: 200 },
+      ],
+      // 1×2 short call ratio = unbounded loss (net short calls). The point
+      // here isn't the dollar value (it's UNBOUNDED) — it's that the augmenter
+      // doesn't collapse the 100-combo aggregate into a single combo.
+      netPremium: -0.50,
+      description: "1x2 Call Backspread",
+      totalCost: -5_000,
+    };
+    const { result } = renderHook(() => useOrderRisk(input, emptyPortfolio));
+    expect(result.current!.summary.maxLossUnbounded).toBe(true);
+    // Sanity: traceId present, coverage resolved — confirms the pipeline
+    // ran (didn't bail early). UNBOUNDED is the structural answer regardless
+    // of the comboQuantity drift, but the regression we're guarding against
+    // shows up on BOUNDED structures. The two preceding tests cover that.
+    expect(result.current!.coverageStatus).toBe("resolved");
+  });
+});
+
 describe("brand integrity", () => {
   it("isAugmentedOrderSummary returns false for plain literals", () => {
     expect(

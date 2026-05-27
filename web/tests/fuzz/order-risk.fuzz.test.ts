@@ -184,6 +184,48 @@ describe("fuzz: P3 — single-leg quantity linearity", () => {
 });
 
 // ---------------------------------------------------------------------------
+// P3b — Multi-leg quantity linearity. Multiplying EVERY leg's quantity by N
+// must scale bounded maxLoss / maxGain by exactly N. This is the property
+// that catches `OptionsChainTab` (or any other surface) pre-normalising
+// quantities via `normalizeComboOrder` (gcd) before handing them to the
+// augmenter — which then strips the gcd a second time, collapsing the
+// N-combo aggregate into a 1-combo per-unit number.
+//
+// 2026-05-27 production regression (VIX 500/500 bull call spread) — chain UI
+// displayed per-combo dollars ($880 / $120) instead of $440k / $60k. The
+// example-based test in `order-risk-chokepoint.test.tsx` pins the exact
+// shape; this fuzz pins the general invariant across every combo the
+// generator emits.
+// ---------------------------------------------------------------------------
+describe("fuzz: P3b — multi-leg quantity linearity", () => {
+  it("multiplying every leg's quantity by N scales bounded maxLoss / maxGain by N", () => {
+    fc.assert(
+      fc.property(arbChainOrder, fc.integer({ min: 1, max: 50 }), arbNetPremium, (baseLegs, N, prem) => {
+        const legsN: ChainOrderLeg[] = baseLegs.map((l) => ({ ...l, quantity: l.quantity * N }));
+        const r1 = runRisk(baseLegs, "ZZZZ_NO_COVER", null, prem);
+        const rN = runRisk(legsN,    "ZZZZ_NO_COVER", null, prem);
+        // Bounded-ness must agree.
+        if (rN.maxLossUnbounded !== r1.maxLossUnbounded) return false;
+        if (rN.maxGainUnbounded !== r1.maxGainUnbounded) return false;
+        // When bounded, magnitudes scale linearly. Relative tolerance is the
+        // right shape — 50× scaled comparison absorbs ~50× accumulated float
+        // error. Anything tighter than 1e-3 trips on legitimate roundoff.
+        const relTol = (a: number, b: number) =>
+          Math.abs(a - b) / Math.max(1, Math.abs(a), Math.abs(b));
+        if (rN.maxLoss !== null && r1.maxLoss !== null) {
+          if (relTol(rN.maxLoss, N * r1.maxLoss) > 1e-3) return false;
+        }
+        if (rN.maxGain !== null && r1.maxGain !== null) {
+          if (relTol(rN.maxGain, N * r1.maxGain) > 1e-3) return false;
+        }
+        return true;
+      }),
+      fcOpts(),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // P4 — Coverage monotonicity. THE bug class catcher.
 //
 // Take a no-cover portfolio + order. Compute risk. Add a LONG position of
