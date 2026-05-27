@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import type { OpenOrder, PortfolioPosition } from "@/lib/types";
+import type { OpenOrder, PortfolioData, PortfolioPosition } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { fmtPrice } from "@/lib/positionUtils";
 import OrderErrorBanner from "@/components/OrderErrorBanner";
-import { OrderRiskGate, type OrderRiskInput } from "@/lib/order";
+import { OrderRiskGate, type LinearOrderRiskInput } from "@/lib/order";
 import { isIndexSymbol, hasFuturesSupport, hasIndexOptionsSupport } from "@/lib/indexSymbols";
 import { FuturesOrderForm } from "@/components/ticker-detail/FuturesOrderForm";
 import { IndexOptionOrderForm } from "@/components/ticker-detail/IndexOptionOrderForm";
@@ -18,6 +18,10 @@ type BookTabProps = {
   prices: Record<string, PriceData>;
   openOrders: OpenOrder[];
   tickerPriceData: PriceData | null;
+  /** Threaded to `StockOrderForm` so SELL stock against held shares
+   *  short-circuits to a close-out branch, and SELL with held=0
+   *  surfaces UNBOUNDED via the linear risk branch. */
+  portfolio?: PortfolioData | null;
 };
 
 type OrderAction = "BUY" | "SELL";
@@ -296,12 +300,14 @@ function OpenOrdersList({ orders }: { orders: OpenOrder[] }) {
 function StockOrderForm({
   ticker,
   position,
+  portfolio,
   bid,
   ask,
   mid,
 }: {
   ticker: string;
   position: PortfolioPosition | null;
+  portfolio: PortfolioData | null;
   bid: number | null;
   ask: number | null;
   mid: number | null;
@@ -328,23 +334,75 @@ function StockOrderForm({
     !isNaN(parsedPrice) &&
     parsedPrice > 0;
 
-  // Build the chokepoint input. Stock orders have no chain legs (no options
-  // semantics) — the gate's empty-chainLegs branch returns a presentation
-  // summary with totalCost only, no max-loss/max-gain. A future step can
-  // extend the gate to detect "SELL stock without held shares" → UNBOUNDED
-  // (short stock has no ceiling), but that's a separate fix.
-  const riskInput: OrderRiskInput | null = useMemo(() => {
-    if (!isValid) return null;
-    const totalCost = parsedQty * parsedPrice;
-    const description = `${action} ${parsedQty} ${ticker} @ ${fmtPrice(parsedPrice)}`;
+  // Stock orders route through the linear branch of `<OrderRiskGate>`.
+  // Held LONG / SHORT shares are looked up from the portfolio so a SELL
+  // against held shares short-circuits to a close-out (with realised P&L)
+  // and a SELL without held shares surfaces UNBOUNDED (short-sell of
+  // borrowed shares — no price ceiling).
+  const { heldLong, heldShort, avgCost } = useMemo(() => {
+    if (!portfolio) return { heldLong: 0, heldShort: 0, avgCost: 0 };
+    let long = 0;
+    let short = 0;
+    let basisDollars = 0;
+    let totalSharesForBasis = 0;
+    for (const pos of portfolio.positions ?? []) {
+      if (pos.ticker !== ticker) continue;
+      for (const leg of pos.legs ?? []) {
+        if (leg.type !== "Stock") continue;
+        const c = leg.contracts ?? 0;
+        if (c <= 0) continue;
+        const cost = Number.isFinite(leg.avg_cost) ? leg.avg_cost : 0;
+        if (leg.direction === "LONG") {
+          long += c;
+          basisDollars += c * cost;
+          totalSharesForBasis += c;
+        } else if (leg.direction === "SHORT") {
+          short += c;
+        }
+      }
+    }
     return {
-      ticker,
-      chainLegs: [],
-      netPremium: action === "SELL" ? -parsedPrice : parsedPrice,
-      description,
-      totalCost: action === "SELL" ? -totalCost : totalCost,
+      heldLong: long,
+      heldShort: short,
+      avgCost: totalSharesForBasis > 0 ? basisDollars / totalSharesForBasis : 0,
     };
-  }, [isValid, parsedQty, parsedPrice, action, ticker]);
+  }, [portfolio, ticker]);
+
+  const riskInput: LinearOrderRiskInput | null = useMemo(() => {
+    if (!isValid) return null;
+    const description = `${action} ${parsedQty} ${ticker} @ ${fmtPrice(parsedPrice)}`;
+    // Close-out branch: SELL against held LONG ≥ qty, OR BUY against held
+    // SHORT ≥ qty. Provides basis so the summary reports realised P&L.
+    const isClosingLong = action === "SELL" && heldLong >= parsedQty;
+    const isClosingShort = action === "BUY" && heldShort >= parsedQty;
+    if (isClosingLong || isClosingShort) {
+      return {
+        type: "linear",
+        ticker,
+        instrument: "stock",
+        action,
+        quantity: parsedQty,
+        limitPrice: parsedPrice,
+        multiplier: 1,
+        heldQuantity: heldLong,
+        heldShortQuantity: heldShort,
+        description,
+        closeOut: { entryCostDollars: parsedQty * avgCost },
+      };
+    }
+    return {
+      type: "linear",
+      ticker,
+      instrument: "stock",
+      action,
+      quantity: parsedQty,
+      limitPrice: parsedPrice,
+      multiplier: 1,
+      heldQuantity: heldLong,
+      heldShortQuantity: heldShort,
+      description,
+    };
+  }, [isValid, parsedQty, parsedPrice, action, ticker, heldLong, heldShort, avgCost]);
 
   const handlePlace = useCallback(async () => {
     if (!confirmStep) {
@@ -519,14 +577,13 @@ function StockOrderForm({
       <OrderErrorBanner error={error} />
       {success && <div className="order-success">{success}</div>}
 
-      {/* Order Summary (shown in confirm step). Owned by `<OrderRiskGate>`.
-          Stock orders pass `portfolio={null}` for now — no portfolio coverage
-          model exists yet for stock, so the gate renders the presentation
-          summary without risk fields. */}
+      {/* Order Summary (shown in confirm step). Linear-branch
+          chokepoint surfaces UNBOUNDED for naked short stock, close-out
+          P&L for SELL-against-held-LONG / BUY-against-held-SHORT. */}
       {confirmStep && (
         <OrderRiskGate
           input={riskInput}
-          portfolio={null}
+          portfolio={portfolio}
           surface="book-tab-stock"
           variant="info"
         />
@@ -573,6 +630,7 @@ export default function BookTab({
   prices,
   openOrders,
   tickerPriceData,
+  portfolio = null,
 }: BookTabProps) {
   const priceData = tickerPriceData ?? prices[ticker] ?? null;
   const bid = priceData?.bid ?? null;
@@ -613,6 +671,7 @@ export default function BookTab({
         <StockOrderForm
           ticker={ticker}
           position={position}
+          portfolio={portfolio}
           bid={bid}
           ask={ask}
           mid={mid}

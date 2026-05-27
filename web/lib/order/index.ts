@@ -33,6 +33,8 @@ export type {
 export { useOrderRisk, OrderRiskGate } from "./risk";
 export type {
   OrderRiskInput,
+  OptionOrderRiskInput,
+  LinearOrderRiskInput,
   OrderRiskState,
   OrderRiskGateProps,
   ChainOrderLeg,

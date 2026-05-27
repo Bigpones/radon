@@ -2,16 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useFuturesChain, type FuturesChainContract } from "@/lib/useFuturesChain";
+import { OrderRiskGate, type LinearOrderRiskInput } from "@/lib/order";
 import type { PortfolioData } from "@/lib/types";
 
 interface FuturesOrderFormProps {
   ticker: string;
   /**
-   * Accepted but currently unused — futures don't yet route through
-   * `<OrderRiskGate>` (which is option-centric). A follow-up step will
-   * extend `OrderRiskInput` with a discriminated `{ type: "future" }` variant
-   * so SHORT futures can flow through the same chokepoint as options.
-   * Threaded today so the call site is ready for that extension.
+   * Live portfolio snapshot — routes into `<OrderRiskGate>` so SHORT futures
+   * land in the same UNBOUNDED treatment as a naked short call. Linear
+   * branch (added 2026-05-26 via OrderRiskInput discriminated union).
    */
   portfolio?: PortfolioData | null;
 }
@@ -43,7 +42,7 @@ function formatExpiry(date: string): string {
  * sees the actual exposure (1 VIX future at 19 = $19,000 notional,
  * ~$5,500 initial margin).
  */
-export function FuturesOrderForm({ ticker, portfolio: _portfolio = null }: FuturesOrderFormProps) {
+export function FuturesOrderForm({ ticker, portfolio = null }: FuturesOrderFormProps) {
   const symbol = ticker.toUpperCase();
   const { data, loading, error } = useFuturesChain(symbol);
 
@@ -80,6 +79,26 @@ export function FuturesOrderForm({ ticker, portfolio: _portfolio = null }: Futur
     if (!Number.isFinite(price) || !Number.isFinite(qty) || qty <= 0) return null;
     return Math.abs(price * qty * multiplier);
   }, [limitPrice, quantity, multiplier]);
+
+  // Chokepoint input for the linear branch. SHORT futures → UNBOUNDED;
+  // LONG futures → bounded by price-to-zero × multiplier. heldQuantity is
+  // not yet looked up from the portfolio (rare for futures); a future
+  // refinement could scan portfolio for the same conId.
+  const riskInput: LinearOrderRiskInput | null = useMemo(() => {
+    const price = parseFloat(limitPrice);
+    const qty = parseInt(quantity, 10);
+    if (!selectedContract || !Number.isFinite(price) || price <= 0 || !Number.isFinite(qty) || qty <= 0) return null;
+    return {
+      type: "linear",
+      ticker: symbol,
+      instrument: "future",
+      action,
+      quantity: qty,
+      limitPrice: price,
+      multiplier,
+      description: `${action} ${qty} ${selectedContract.localSymbol} @ $${price.toFixed(2)}`,
+    };
+  }, [selectedContract, action, quantity, limitPrice, multiplier, symbol]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -238,25 +257,16 @@ export function FuturesOrderForm({ ticker, portfolio: _portfolio = null }: Futur
         </div>
       </div>
 
-      {/* SHORT futures = structurally UNBOUNDED downside (no price ceiling).
-          Until futures route through `<OrderRiskGate>` (separate scope —
-          requires extending `OrderRiskInput` with a `{ type: "future" }`
-          variant), surface a Gate-1 style warning inline. The warning
-          mirrors the visual language of the option-side undefined-risk
-          panel so operators read it the same way. */}
-      {action === "SELL" && (
-        <div
-          className="order-confirm-undefined-risk"
-          role="alert"
-          data-testid="futures-order-undefined-risk-warning"
-          style={{ marginTop: 12 }}
-        >
-          <span className="order-confirm-undefined-risk-label">GATE 1: Undefined risk</span>
-          <span className="order-confirm-undefined-risk-detail">
-            Short futures — downside is structurally unbounded (no price ceiling).
-          </span>
-        </div>
-      )}
+      {/* Risk math owned by `<OrderRiskGate>` via the linear branch
+          (commit 2026-05-26). SHORT futures surface UNBOUNDED + Gate-1
+          warning automatically; LONG futures get a bounded max-loss
+          equal to price-to-zero × multiplier × qty. */}
+      <OrderRiskGate
+        input={riskInput}
+        portfolio={portfolio}
+        surface="futures-form"
+        variant="info"
+      />
 
       <button
         type="submit"

@@ -9,7 +9,14 @@
  */
 
 export { useOrderRisk } from "./useOrderRisk";
-export type { OrderRiskInput, OrderRiskState, ChainOrderLeg, CoveringPortfolioLeg } from "./useOrderRisk";
+export type {
+  OrderRiskInput,
+  OptionOrderRiskInput,
+  LinearOrderRiskInput,
+  OrderRiskState,
+  ChainOrderLeg,
+  CoveringPortfolioLeg,
+} from "./useOrderRisk";
 export { OrderRiskGate } from "./OrderRiskGate";
 export type { OrderRiskGateProps } from "./OrderRiskGate";
 export type { AugmentedOrderSummary, CoverageStatus, OrderPresentationSummary } from "../types";

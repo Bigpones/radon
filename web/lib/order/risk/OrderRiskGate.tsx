@@ -69,17 +69,26 @@ export function OrderRiskGate({
 
   // Telemetry: record one trace per resolved-state observation. The hook
   // unconditionally runs (React hooks rule) — when `state` is null it
-  // simply records nothing.
+  // simply records nothing. `chainLegs` only exists on the option branch;
+  // linear inputs report legCount = 1 (one instrument) and contracts =
+  // the linear quantity.
+  const isLinear = input?.type === "linear";
+  const isOption = input != null && !isLinear;
+  const legCount = isOption ? (input as { chainLegs: unknown[] }).chainLegs.length : isLinear ? 1 : 0;
+  const totalContracts = isOption
+    ? (input as { chainLegs: { quantity: number }[] }).chainLegs.reduce(
+        (sum, l) => sum + Math.max(1, Math.trunc(l.quantity)),
+        0,
+      )
+    : isLinear
+      ? Math.max(1, Math.trunc((input as { quantity: number }).quantity))
+      : 0;
   useRecordOrderRiskTrace(
     surface,
     state?.summary ?? null,
     input?.ticker ?? "",
-    input?.chainLegs.length ?? 0,
-    // comboQuantity is internal to the hook but inferrable: the summary's
-    // traceId changes on every memo update, so we just need a stable proxy.
-    // Pass quantities count for now; future: thread comboQuantity through
-    // state if the bug reports need it.
-    input?.chainLegs.reduce((sum, l) => sum + Math.max(1, Math.trunc(l.quantity)), 0) ?? 0,
+    legCount,
+    totalContracts,
     state?.coveringLegs.length ?? 0,
     0, // netPremiumAdjustment is internal; future: surface on state if needed
     state?.summary.maxLossUnbounded === true ||

@@ -212,6 +212,7 @@ export default function TickerDetailContent({
             prices={prices}
             openOrders={tickerOrders}
             tickerPriceData={priceData}
+            portfolio={portfolio}
           />
         )}
         {resolvedTab === "chain" && (
