@@ -51,28 +51,45 @@ def place_order(params: dict) -> dict:
     try:
         # Build contract
         if order_type == "combo":
+            # Route each leg through `resolve_option_contract` so index combos
+            # (VIX/SPX/NDX/RUT/XSP) land on CBOE with the correct
+            # tradingClass — hardcoding `exchange="SMART"` per leg silently
+            # failed qualification for index roots (IB returns no contracts
+            # for SMART-routed VIX options because the listings live at
+            # CBOE). The resolver falls through to SMART for equity
+            # symbols, preserving the prior behaviour.
+            from clients.contract_resolver import (
+                INDEX_OPTION_ROOTS,
+                resolve_option_contract,
+            )
+
             legs_data = params["legs"]
-            options = []
-            for leg in legs_data:
-                opt = Option(
-                    symbol=symbol,
-                    lastTradeDateOrContractMonth=leg["expiry"],
-                    strike=float(leg["strike"]),
-                    right=leg["right"],
-                    exchange="SMART",
-                    currency="USD",
+            options = [
+                resolve_option_contract(
+                    symbol,
+                    leg["expiry"],
+                    float(leg["strike"]),
+                    leg["right"],
                 )
-                options.append(opt)
+                for leg in legs_data
+            ]
 
             qualified = client.qualify_contracts(*options)
             if len(qualified) != len(options):
                 return {"status": "error", "message": f"Could not qualify all combo legs for {symbol}"}
 
+            # Index-option combos use the index's CBOE/NASDAQ leg exchange
+            # on both the BAG envelope and each ComboLeg. Equity combos stay
+            # on SMART. Mismatching the BAG envelope and the leg exchange
+            # makes IB Smart silently refuse the combo (no errorEvent).
+            index_meta = INDEX_OPTION_ROOTS.get(symbol.upper())
+            leg_exchange = index_meta["exchange"] if index_meta else "SMART"
+
             combo = Contract()
             combo.symbol = symbol
             combo.secType = "BAG"
             combo.currency = "USD"
-            combo.exchange = "SMART"
+            combo.exchange = leg_exchange
 
             combo_legs = []
             for i, leg in enumerate(legs_data):
@@ -80,7 +97,7 @@ def place_order(params: dict) -> dict:
                 cl.conId = qualified[i].conId
                 cl.ratio = int(leg.get("ratio", 1))
                 cl.action = leg["action"].upper()
-                cl.exchange = "SMART"
+                cl.exchange = leg_exchange
                 combo_legs.append(cl)
 
             combo.comboLegs = combo_legs
