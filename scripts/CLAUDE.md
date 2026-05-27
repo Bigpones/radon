@@ -71,6 +71,24 @@ Browser-side regression tests live in `web/`; this side has unit + route coverag
 
 ---
 
+## Order Placement Contract (`ib_place_order.py`)
+
+Every IB-placing subprocess MUST follow these rules. Disregarding any one of them produces silent dropped orders.
+
+1. **Never disconnect the placing client while `trade.order.permId == 0`.** IB silently discards orders still in `PendingSubmit` / `ApiPending` when the placing client goes away — no `errorEvent` fires, the order vanishes, subsequent `reqAllOpenOrders()` from other clients can't see it because it never reached IB's order management system. `ib_place_order.py` polls `trade.order.permId` and `trade.orderStatus.status` for up to **12s on combo orders** and **6s on single-leg** before disconnecting. If still `permId == 0 && status ∈ {PendingSubmit, ApiPending, Unknown}` after the deadline, return `status:"error"` with the operator-readable hint covering market-closed-DAY-TIF / Tier-4 / pre-trade-risk / combo-router-limitation. Terminal-failed states (`Rejected`/`Cancelled`/`ApiCancelled`/`Inactive`) also return error.
+
+2. **stdout is reserved for the result JSON.** Every progress / debug print MUST go to stderr. A list literal anywhere in stdout (e.g. `f"ratios={[1, 1]}"`) trips the FastAPI bridge's JSON extractor because the first `[` or `{` is consumed by `json.loads` and the real result becomes "Extra data: line 2 column 1 (char 7)". The wrapper has a defensive last-line scan now but the script-side discipline is still the primary rule.
+
+3. **Some IB combo structures are silently dropped by IB Smart routing.** Bearish risk reversal (SELL CALL + BUY PUT) is the documented case (2026-05-27). Don't conclude the script is broken when the structure hangs in `PendingSubmit` despite single-leg variants transmitting fine — verify with the bullish counterpart and a defined-risk spread. Workaround: place the legs separately. See `feedback_ib_combo_router_silent_drops_bearish_rr.md`.
+
+4. **Live testing without paper sandbox = orders fill.** When probing order placement against a live IBKR account (no paper-trading available in current setup), use limit prices ≥ 50% away from the market for SELL probes (or ≤ 50% for BUY probes) so they cannot reasonably fill before the cancel call lands. Better: place the order, immediately cancel, do NOT call `client.sleep()` between place and cancel. Even then, races happen — budget for accidental fills.
+
+5. **IB Gateway will auto-restart under heavy subprocess load.** Hammering `place_order` / `qualify_contracts` from many fresh clients in rapid succession can trigger an IB Gateway 2FA-renewal cycle (~30s downtime + pool clients reset). Each probe should reuse a single `IBClient` connection across all test cases rather than connect-disconnect per case.
+
+FastAPI timeouts now match the script deadlines: `/orders/place` is 25s subprocess + 30s `radonFetch`.
+
+---
+
 ## Position Cache Refresh Contract (`ib_sync.py`)
 
 `ib_insync.positions()` returns an in-memory cache. TWS push updates `pos.position` immediately but `pos.avgCost` lags while TWS recomputes VWAP server-side. `IBClient.get_positions()` calls `reqPositions()` + `sleep(1)` BEFORE reading, draining pending updates so size and avgCost are consistent. Opt out via `get_positions(refresh=False)` for tight read loops. Try/except so gateway hiccups fall back to cache. Tests: `test_ib_client.py::TestPortfolioOperations`. Added 2026-05-20 (commit 5d10def).

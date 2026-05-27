@@ -235,10 +235,15 @@ def place_order(params: dict) -> dict:
         # a clear error so the UI doesn't show a misleading green toast.
         if perm_id == 0 and status in ("PendingSubmit", "ApiPending", "Unknown", ""):
             hint = (
-                "IB never confirmed the order. Common causes: market is "
-                "closed and TIF=DAY (use GTC for after-hours), insufficient "
-                "trading permissions for this structure (Tier 4 for naked "
-                "shorts), or pre-trade risk rejection. Check IB Gateway logs."
+                "IB never confirmed the order. Common causes: "
+                "(1) market is closed and TIF=DAY (use GTC for after-hours), "
+                "(2) insufficient trading permissions for this structure (Tier 4 for naked shorts), "
+                "(3) pre-trade risk rejection, "
+                "(4) IB combo router doesn't route this BAG structure — "
+                "specifically, bearish risk reversals (SELL CALL + BUY PUT) "
+                "are silently dropped by IB Smart even when the bullish "
+                "counterpart routes fine on the same account. Workaround: "
+                "place the legs separately as two single-leg orders."
             )
             return {
                 "status": "error",
