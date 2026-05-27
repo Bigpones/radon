@@ -175,7 +175,17 @@ def place_order(params: dict) -> dict:
         )
 
         if order_type == "combo":
-            order.smartComboRoutingParams = [TagValue("NonGuaranteed", "1")]
+            # `smartComboRoutingParams` applies ONLY to SMART-routed combos.
+            # Equity options route via SMART, so NonGuaranteed=1 is required
+            # there (without it IB Smart errors 10043: "Missing or invalid
+            # NonGuaranteed value"). Index combos route directly to a
+            # single exchange (CBOE/NASDAQ) — they execute atomically on
+            # that exchange's combo book and `smartComboRoutingParams`
+            # is rejected by IB as inapplicable. Set the param iff the
+            # BAG's leg exchange is SMART.
+            smart_routed = combo.exchange == "SMART"
+            if smart_routed:
+                order.smartComboRoutingParams = [TagValue("NonGuaranteed", "1")]
             # Progress to stderr — stdout is reserved for the final JSON
             # result. The list-literal in the format string used to land on
             # stdout, where the subprocess wrapper's `_find_json_start` saw
@@ -183,7 +193,9 @@ def place_order(params: dict) -> dict:
             # real result as "Extra data: line 2 column 1 (char 7)" (the
             # EWY bearish risk reversal bug, 2026-05-27).
             print(
-                f"  Combo order: {len(legs_data)} legs, NonGuaranteed=1, "
+                f"  Combo order: {len(legs_data)} legs, "
+                f"exchange={combo.exchange}, "
+                f"NonGuaranteed={'1' if smart_routed else 'n/a'}, "
                 f"ratios={[int(l.get('ratio', 1)) for l in legs_data]}",
                 file=sys.stderr,
             )
