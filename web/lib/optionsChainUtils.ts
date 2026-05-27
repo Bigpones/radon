@@ -77,6 +77,29 @@ export function detectStructure(legs: OrderLeg[]): string {
   return `${legs.length}-Leg Combo`;
 }
 
+/**
+ * Detect a BEARISH risk reversal — SELL CALL + BUY PUT on the same expiry,
+ * different strikes. IB Smart's combo router has been observed (2026-05-27)
+ * to silently drop this structure as a BAG, even though the BULLISH
+ * counterpart (BUY CALL + SELL PUT) routes fine and the individual legs as
+ * singletons transmit cleanly. The chain order builder surfaces a heads-up
+ * when this returns true so the operator knows to expect a possible
+ * "Order stuck in PendingSubmit" error and can pre-emptively split into
+ * single-leg orders. Full diagnostic in
+ * `feedback_ib_combo_router_silent_drops_bearish_rr.md`.
+ */
+export function isBearishRiskReversal(legs: OrderLeg[]): boolean {
+  if (legs.length !== 2) return false;
+  const [a, b] = legs;
+  if (a.expiry !== b.expiry) return false;
+  if (a.right === b.right) return false;
+  if (a.action === b.action) return false;
+  if (a.strike === b.strike) return false; // synthetic short, not RR
+  const callLeg = a.right === "C" ? a : b;
+  const putLeg = a.right === "P" ? a : b;
+  return callLeg.action === "SELL" && putLeg.action === "BUY";
+}
+
 function greatestCommonDivisor(a: number, b: number): number {
   let x = Math.abs(Math.trunc(a)) || 1;
   let y = Math.abs(Math.trunc(b)) || 1;

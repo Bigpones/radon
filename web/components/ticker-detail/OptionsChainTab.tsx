@@ -15,6 +15,7 @@ import {
   formatExpiry,
   daysToExpiry,
   detectStructure,
+  isBearishRiskReversal,
   computeNetPrice,
   computeNetOptionQuote,
   getComboEntryAction,
@@ -525,6 +526,43 @@ function OrderBuilder({
                 : `${l.shares.toLocaleString()} shares @ $${l.avgCost.toFixed(2)}`,
             )
             .join(" + ")}
+        </div>
+      )}
+
+      {/* Bearish risk reversal heads-up. IB Smart's combo router has been
+          observed to silently drop this BAG structure (SELL CALL + BUY PUT,
+          different strikes) without an errorEvent — the order vanishes into
+          PendingSubmit and gets discarded when the placing client
+          disconnects. Bullish RR with identical strikes routes fine; single
+          legs route fine. Warn the operator pre-emptively so the routing
+          failure isn't a surprise. Diagnostic in
+          `feedback_ib_combo_router_silent_drops_bearish_rr.md`. */}
+      {isBearishRiskReversal(legs) && (
+        <div
+          className="order-builder-routing-warning"
+          role="status"
+          data-testid="order-builder-bearish-rr-warning"
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "10px",
+            color: "var(--text-secondary)",
+            padding: "6px 8px",
+            marginBottom: "8px",
+            background: "color-mix(in srgb, var(--warning, var(--fault)) 8%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--warning, var(--fault)) 40%, transparent)",
+            borderRadius: "4px",
+            lineHeight: 1.5,
+          }}
+        >
+          <div style={{ letterSpacing: "0.04em", marginBottom: 2 }}>
+            HEADS-UP — BEARISH RISK REVERSAL ROUTING
+          </div>
+          <div>
+            IB Smart sometimes silently drops this combo. If the order
+            sits in PendingSubmit with no permId after submit, place the
+            legs separately (SELL the call as one order, BUY the put as
+            another) — both transmit fine as singletons.
+          </div>
         </div>
       )}
 

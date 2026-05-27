@@ -3,6 +3,7 @@ import {
   type OrderLeg,
   formatExpiry,
   detectStructure,
+  isBearishRiskReversal,
   normalizeComboOrder,
   computeNetPrice,
   computeNetOptionQuote,
@@ -414,5 +415,84 @@ describe("getVisibleStrikes", () => {
     expect(getVisibleStrikes(strikes, 180, ALL_STRIKES)).toEqual(strikes);
     expect(getVisibleStrikes(strikes, 230, ALL_STRIKES)).toEqual(strikes);
     expect(getVisibleStrikes(strikes, null, ALL_STRIKES)).toEqual(strikes);
+  });
+});
+
+/* ─── isBearishRiskReversal ─── */
+
+describe("isBearishRiskReversal", () => {
+  // The 2026-05-27 EWY/MU finding: IB Smart silently drops BAG orders of
+  // this exact structure, while the bullish counterpart routes fine.
+  // The chain order builder uses this classifier to show a heads-up tooltip
+  // so the operator pre-emptively knows to expect a PendingSubmit hang.
+
+  it("returns true for SELL call + BUY put at different strikes, same expiry", () => {
+    const legs = [
+      makeLeg({ strike: 975, right: "C", action: "SELL" }),
+      makeLeg({ strike: 885, right: "P", action: "BUY" }),
+    ];
+    expect(isBearishRiskReversal(legs)).toBe(true);
+  });
+
+  it("returns true regardless of leg order", () => {
+    const legs = [
+      makeLeg({ strike: 885, right: "P", action: "BUY" }),
+      makeLeg({ strike: 975, right: "C", action: "SELL" }),
+    ];
+    expect(isBearishRiskReversal(legs)).toBe(true);
+  });
+
+  it("returns false for bullish RR (BUY call + SELL put) — routes fine at IB", () => {
+    const legs = [
+      makeLeg({ strike: 975, right: "C", action: "BUY" }),
+      makeLeg({ strike: 885, right: "P", action: "SELL" }),
+    ];
+    expect(isBearishRiskReversal(legs)).toBe(false);
+  });
+
+  it("returns false for synthetic short (SELL call + BUY put at same strike)", () => {
+    const legs = [
+      makeLeg({ strike: 100, right: "C", action: "SELL" }),
+      makeLeg({ strike: 100, right: "P", action: "BUY" }),
+    ];
+    expect(isBearishRiskReversal(legs)).toBe(false);
+  });
+
+  it("returns false for different expiries (calendar-like)", () => {
+    const legs = [
+      makeLeg({ strike: 975, right: "C", action: "SELL", expiry: "20260605" }),
+      makeLeg({ strike: 885, right: "P", action: "BUY", expiry: "20260717" }),
+    ];
+    expect(isBearishRiskReversal(legs)).toBe(false);
+  });
+
+  it("returns false for same-right combos (call spread, put spread)", () => {
+    const callSpread = [
+      makeLeg({ strike: 100, right: "C", action: "SELL" }),
+      makeLeg({ strike: 110, right: "C", action: "BUY" }),
+    ];
+    expect(isBearishRiskReversal(callSpread)).toBe(false);
+  });
+
+  it("returns false for single leg or empty", () => {
+    expect(isBearishRiskReversal([])).toBe(false);
+    expect(isBearishRiskReversal([makeLeg({ strike: 100, right: "C", action: "SELL" })])).toBe(false);
+  });
+
+  it("returns false for same-action combos (straddle/strangle)", () => {
+    const longStrangle = [
+      makeLeg({ strike: 110, right: "C", action: "BUY" }),
+      makeLeg({ strike: 90, right: "P", action: "BUY" }),
+    ];
+    expect(isBearishRiskReversal(longStrangle)).toBe(false);
+  });
+
+  it("returns false for 3+ leg combos", () => {
+    const ironCondor = [
+      makeLeg({ strike: 90, right: "P", action: "BUY" }),
+      makeLeg({ strike: 95, right: "P", action: "SELL" }),
+      makeLeg({ strike: 105, right: "C", action: "SELL" }),
+    ];
+    expect(isBearishRiskReversal(ironCondor)).toBe(false);
   });
 });
