@@ -906,7 +906,16 @@ body {
     background: transparent;
     border: 0;
   }
+  .dashboard-section,
+  .dashboard-section__body,
+  .snapshot-card {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
   .dashboard-section--portfolio { order: 1; }
+  .dashboard-section--news { order: 2; }
   .dashboard-section--orders { order: 3; }
   .dashboard-section--opportunities { order: 4; }
   .dashboard-section__toggle {
