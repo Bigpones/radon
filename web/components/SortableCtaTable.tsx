@@ -5,6 +5,7 @@ import type { CtaRow } from "@/lib/useMenthorqCta";
 import { SECTION_TOOLTIPS } from "@/lib/sectionTooltips";
 import InfoTooltip from "./InfoTooltip";
 import { normalizeCtaPercentile } from "@/lib/ctaPercentiles";
+import { useViewport } from "@/lib/useViewport";
 
 /* ─── Props ──────────────────────────────────────────── */
 
@@ -124,6 +125,7 @@ type SortDir = "asc" | "desc";
 export default function SortableCtaTable({ sectionKey, rows, callout }: SortableCtaTableProps) {
   const [sortCol, setSortCol] = useState<NumericSortCol | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const { isMobile, hasMounted } = useViewport();
 
   function handleSort(col: NumericSortCol) {
     if (sortCol === col) {
@@ -160,6 +162,46 @@ export default function SortableCtaTable({ sectionKey, rows, callout }: Sortable
       color: sortCol === col ? "var(--text-primary)" : undefined,
       whiteSpace: "nowrap",
     };
+  }
+
+  function renderMobileRows() {
+    return (
+      <div className="cta-mobile-list" data-testid="cta-mobile-list">
+        {sorted.map((r) => {
+          const flag = flagForRow(r);
+          return (
+            <article key={r.underlying} className="cta-mobile-card">
+              <div className="cta-mobile-card__head">
+                <span className="cta-mobile-card__ticker">{r.underlying}</span>
+                {flag ? (
+                  <span className={`cta-flag cta-flag-${flag.kind}`} title={flag.tooltip} aria-label={flag.tooltip}>
+                    {flag.kind === "short" ? "!" : "^"}
+                  </span>
+                ) : null}
+              </div>
+              <div className="cta-mobile-card__grid">
+                <div>
+                  <span className="cta-mobile-card__label">Today</span>
+                  <span style={{ color: posColor(r.position_today) }}>{fmt(r.position_today)}</span>
+                </div>
+                <div>
+                  <span className="cta-mobile-card__label">3M %ile</span>
+                  <span>{fmtPctile(r.percentile_3m)}</span>
+                </div>
+                <div>
+                  <span className="cta-mobile-card__label">3M Z</span>
+                  <span style={{ color: zColor(r.z_score_3m), opacity: zOpacity(r.z_score_3m) }}>{fmt(r.z_score_3m)}</span>
+                </div>
+                <div>
+                  <span className="cta-mobile-card__label">1M ago</span>
+                  <span style={{ color: posColor(r.position_1m_ago) }}>{fmt(r.position_1m_ago)}</span>
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    );
   }
 
   return (
@@ -219,6 +261,7 @@ export default function SortableCtaTable({ sectionKey, rows, callout }: Sortable
           <span className="cta-section-callout-body">{callout.body}</span>
         </div>
       )}
+      {hasMounted && isMobile ? renderMobileRows() : (
       <div className="cta-table-wrap" style={{ width: "100%" }}>
         <table className="cta-table" style={{ width: "100%" }}>
           <thead>
@@ -295,6 +338,7 @@ export default function SortableCtaTable({ sectionKey, rows, callout }: Sortable
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }

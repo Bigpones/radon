@@ -93,6 +93,11 @@ describe("components/SortableCtaTable.tsx — sortable table", () => {
     // The sort logic must re-order the rows array
     expect(src).toMatch(/\.sort\(/);
   });
+
+  it("renders a mobile card list instead of the wide table on mobile", () => {
+    expect(src).toContain("cta-mobile-list");
+    expect(src).toContain("useViewport");
+  });
 });
 
 describe("components/RegimePanel.tsx — CTA section removed", () => {

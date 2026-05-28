@@ -40,7 +40,7 @@ export default function FlowAnalysisTickerInput({ initialTicker = "" }: Props) {
           <input
             id="flow-ticker-input"
             type="text"
-            placeholder="Enter ticker (AAPL, NVDA, SPY)"
+            placeholder="Ticker"
             value={value}
             autoComplete="off"
             onChange={(event) => {

@@ -82,7 +82,8 @@ async function setupMocks(page: Page) {
 test.describe("Mobile chart sizing", () => {
   test("CRI history chart respects 60vh height ceiling on mobile", async ({ page }) => {
     await setupMocks(page);
-    await page.goto("/regime/cri");
+    await page.goto("/regime/cri", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("mobile-tab-bar")).toBeVisible();
 
     const surface = page.locator(".cri-history-chart-surface").first();
     await expect(surface).toBeVisible();
@@ -98,7 +99,8 @@ test.describe("Mobile chart sizing", () => {
 
   test("CRI chart svg fills the panel width", async ({ page }) => {
     await setupMocks(page);
-    await page.goto("/regime/cri");
+    await page.goto("/regime/cri", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("mobile-tab-bar")).toBeVisible();
 
     const svg = page.locator(".cri-history-chart-svg").first();
     if (await svg.count()) {
@@ -113,14 +115,16 @@ test.describe("Mobile chart sizing", () => {
 
   test("body[data-mobile=true] is set when chart pages render", async ({ page }) => {
     await setupMocks(page);
-    await page.goto("/regime/cri");
+    await page.goto("/regime/cri", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("mobile-tab-bar")).toBeVisible();
     const dataMobile = await page.evaluate(() => document.body.dataset.mobile);
     expect(dataMobile).toBe("true");
   });
 
   test("ColumnsToggle and other table-only widgets are hidden", async ({ page }) => {
     await setupMocks(page);
-    await page.goto("/portfolio");
+    await page.goto("/portfolio", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("mobile-tab-bar")).toBeVisible();
     const toggles = page.locator(".columns-toggle");
     if (await toggles.count()) {
       // None should be visible (display: none under data-mobile)

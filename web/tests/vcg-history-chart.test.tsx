@@ -172,7 +172,7 @@ describe("VcgPanel — chart range chips", () => {
     expect(buttons.length).toBe(5);
   });
 
-  it("defaults to 1Y when ≥ 252 sessions are available", () => {
+  it("defaults to 1M when at least one month of sessions is available", () => {
     mockUseVcg.mockReturnValue({
       data: buildVcgData({ history: buildHistory(300) }),
       loading: false,
@@ -181,8 +181,8 @@ describe("VcgPanel — chart range chips", () => {
     });
 
     const { getByTestId } = render(React.createElement(VcgPanel, { prices: {} }));
-    const oneYearChip = getByTestId("vcg-history-range-chips-1y");
-    expect(oneYearChip.getAttribute("aria-pressed")).toBe("true");
+    const oneMonthChip = getByTestId("vcg-history-range-chips-1m");
+    expect(oneMonthChip.getAttribute("aria-pressed")).toBe("true");
   });
 
   it("defaults to All when history is short (e.g. 30 sessions)", () => {
@@ -216,8 +216,8 @@ describe("VcgPanel — chart range chips", () => {
       return svg.querySelectorAll('rect[opacity="0.22"]').length;
     }
 
-    // Default 1Y on 300 sessions → 252 visible bars.
-    expect(barCount()).toBe(252);
+    // Default 1M on 300 sessions → 21 visible bars.
+    expect(barCount()).toBe(21);
 
     // Switch to 3M.
     fireEvent.click(getByTestId("vcg-history-range-chips-3m"));

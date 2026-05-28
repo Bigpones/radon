@@ -1,5 +1,9 @@
 # Lessons
 
+## 2026-05-28
+
+- When the user asks whether the work was committed and pushed, stop implementation churn and immediately verify `git status`, update task docs, commit the intended changes, push, and report the exact commit hash plus any verification blockers.
+
 ## 2026-03-29
 
 - gnzsnz IB Gateway Docker image uses socat on port 4003 to proxy to Java Gateway on localhost:4001 inside the container. External port mapping must be `host:4001 → container:4003`, not `4001:4001`. The `4001:4001` mapping only works from localhost because Java binds to `127.0.0.1`.

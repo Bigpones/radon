@@ -126,7 +126,49 @@ function deriveDisplayStatus(args: {
 /* ─── Provider ────────────────────────────────────────── */
 
 export function IBStatusProvider({ children }: { children: ReactNode }) {
+  if (
+    process.env.NEXT_PUBLIC_RADON_AUTHLESS_TEST === "1" ||
+    process.env.RADON_AUTHLESS_TEST === "1"
+  ) {
+    return (
+      <IBStatusContext.Provider
+        value={{
+          wsConnected: true,
+          ibConnected: true,
+          disconnectedSince: null,
+          connectionState: "connected",
+          authState: "authenticated",
+          serviceState: "healthy",
+          upstreamDead: false,
+          displayStatus: "connected",
+        }}
+      >
+        {children}
+      </IBStatusContext.Provider>
+    );
+  }
+  return <AuthenticatedIBStatusProvider>{children}</AuthenticatedIBStatusProvider>;
+}
+
+function AuthenticatedIBStatusProvider({ children }: { children: ReactNode }) {
+  if (process.env.NODE_ENV === "test") {
+    return <IBStatusCoreProvider getToken={undefined}>{children}</IBStatusCoreProvider>;
+  }
+  return <ClerkIBStatusProvider>{children}</ClerkIBStatusProvider>;
+}
+
+function ClerkIBStatusProvider({ children }: { children: ReactNode }) {
   const { getToken } = useAuth();
+  return <IBStatusCoreProvider getToken={getToken}>{children}</IBStatusCoreProvider>;
+}
+
+function IBStatusCoreProvider({
+  children,
+  getToken,
+}: {
+  children: ReactNode;
+  getToken: (() => Promise<string | null>) | undefined;
+}) {
   const [wsConnected, setWsConnected] = useState(false);
   const [ibConnected, setIbConnected] = useState(true); // assume connected until told otherwise
   const [disconnectedSince, setDisconnectedSince] = useState<number | null>(null);
@@ -192,10 +234,7 @@ export function IBStatusProvider({ children }: { children: ReactNode }) {
 
     const gen = ++socketGenRef.current;
 
-    (async () => {
-      const url = await buildAuthenticatedUrl(socketUrl);
-      if (gen !== socketGenRef.current) return; // stale connect attempt
-
+    const openSocket = (url: string) => {
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
@@ -270,6 +309,17 @@ export function IBStatusProvider({ children }: { children: ReactNode }) {
       if (!mountedRef.current) return;
       ws.close();
     };
+    };
+
+    if (!getTokenRef.current) {
+      openSocket(socketUrl);
+      return;
+    }
+
+    (async () => {
+      const url = await buildAuthenticatedUrl(socketUrl);
+      if (gen !== socketGenRef.current) return; // stale connect attempt
+      openSocket(url);
     })();
   }, [socketUrl, clearReconnectTimer, clearStalenessTimer, buildAuthenticatedUrl]);
 

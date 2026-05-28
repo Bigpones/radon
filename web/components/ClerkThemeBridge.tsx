@@ -6,6 +6,12 @@ import { useTheme } from "@/lib/ThemeContext";
 
 export default function ClerkThemeBridge({ children }: { children: React.ReactNode }) {
   const { theme } = useTheme();
+  if (
+    process.env.NEXT_PUBLIC_RADON_AUTHLESS_TEST === "1" ||
+    process.env.RADON_AUTHLESS_TEST === "1"
+  ) {
+    return <>{children}</>;
+  }
   return (
     <ClerkProvider appearance={{ baseTheme: theme === "dark" ? dark : undefined }}>
       {children}

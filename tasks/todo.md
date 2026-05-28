@@ -1,5 +1,169 @@
 # TODO
 
+## Session: Scope MenthorQ Ticker Enhancement (2026-05-28)
+
+### Goal
+Scope a ticker-enrichment feature sourced from MenthorQ dashboard intraday pages, including company profile overwrite/persistence, unavailable states, and non-equity instrument behavior.
+
+### Dependency Graph
+- T1 (Map existing MenthorQ client, CTA cache/DB persistence, ticker detail company data flow, and provider fallback conventions) depends_on: []
+- T2 (Define MenthorQ ticker dashboard fetch contract, URL shape, and normalization strategy) depends_on: [T1]
+- T3 (Define DB schema and API shape for ticker enrichment reads and background sync) depends_on: [T1, T2]
+- T4 (Define UI behavior for equity, index, future, volatility product, and unavailable MenthorQ states) depends_on: [T3]
+- T5 (Define test plan, implementation phases, and risks) depends_on: [T2, T3, T4]
+
+### Checklist
+- [x] T1 Map existing MenthorQ client, CTA cache/DB persistence, ticker detail company data flow, and provider fallback conventions
+- [x] T2 Define MenthorQ ticker dashboard fetch contract, URL shape, and normalization strategy
+- [x] T3 Define DB schema and API shape for ticker enrichment reads and background sync
+- [x] T4 Define UI behavior for equity, index, future, volatility product, and unavailable MenthorQ states
+- [x] T5 Define test plan, implementation phases, and risks
+
+### Review
+- Current seams:
+  - `scripts/clients/menthorq_client.py` already handles authenticated Playwright navigation, storage reuse, dashboard commands, HTML scraping, and S3 image fallback.
+  - `scripts/gex_scan.py` has ticker-specific MQ behavior but uses a hardcoded ticker map and should not be reused as the arbitrary-symbol contract.
+  - CTA persistence provides the closest pattern: `menthorq_cta` table, writer helpers, DB-first Next API route, disk fallback.
+  - Company tab currently reads `/api/ticker/info` and should keep UW/Exa/Yahoo as its baseline while adding source-tagged MenthorQ enrichment.
+- Proposed data model:
+  - Add `menthorq_ticker_enrichment` keyed by `ticker`, with `asset_type`, `source_date`, `fetched_at`, `status` (`available`, `unavailable`, `error`), `payload`, and `error`.
+  - Persist one overwrite row per ticker first. Add append-only history later only if intraday retention becomes useful.
+- Fetch/API shape:
+  - Add `MenthorQClient.get_ticker_dashboard(ticker, command="intraday", date=None, tickers="commons")`.
+  - Use URL shape `action=data&type=dashboard&commands=intraday&tickers=commons&date=YYYY-MM-DD&ticker=mu`.
+  - Extract structured JSON from intercepted `admin-ajax.php` first, then visible cards/tables. Empty useful payload writes `status="unavailable"`, not hard failure.
+  - Add DB-first `GET /api/ticker/menthorq?ticker=MU`; optional background `POST /api/ticker/menthorq/sync` should spawn Python and not run Playwright inline.
+- UI:
+  - Add compact MenthorQ module to Company tab or merge source-tagged enriched fields into the existing profile.
+  - For unavailable MenthorQ data, render a muted unavailable module instead of an error.
+  - For index/future/vol products, hide or label company profile as not applicable while still showing intraday/key-level data when available.
+- Test plan:
+  - Python URL/fetch normalization, writer upsert/unavailable/error rows, and fetch-script fixtures for equity and non-company instruments.
+  - Next route DB read/missing/unavailable/no-cache tests.
+  - Company tab rendering tests for equity enrichment and index/vol not-applicable states.
+  - E2E fixture for a ticker with MenthorQ data and one without provider coverage.
+
+## Session: SpotGamma Paid API Delta Report (2026-05-28)
+
+### Goal
+Research SpotGamma paid/API availability, compare its likely data surface with Radon's current Unusual Whales and MenthorQ integrations, and produce a local HTML report showing deltas, overlaps, and feature enhancements unlocked by a paid SpotGamma account.
+
+### Dependency Graph
+- T1 (Inventory current Radon UW and MenthorQ integration surfaces from docs, scripts, API routes, and UI contracts) depends_on: []
+- T2 (Research current SpotGamma paid/API product surface from primary or high-signal sources, noting confidence and citation quality) depends_on: []
+- T3 (Compare SpotGamma against current UW and MenthorQ capabilities across flow, dealer positioning, levels, Greeks, alerts, history, and integration friction) depends_on: [T1, T2]
+- T4 (Create a branded standalone HTML report with deltas, overlaps, source notes, risks, and feature enhancement roadmap) depends_on: [T3]
+- T5 (Open the report locally and document review results) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inventory current Radon UW and MenthorQ integration surfaces from docs, scripts, API routes, and UI contracts
+- [x] T2 Research current SpotGamma paid/API product surface from primary or high-signal sources, noting confidence and citation quality
+- [x] T3 Compare SpotGamma against current UW and MenthorQ capabilities across flow, dealer positioning, levels, Greeks, alerts, history, and integration friction
+- [x] T4 Create a branded standalone HTML report with deltas, overlaps, source notes, risks, and feature enhancement roadmap
+- [x] T5 Open the report locally and document review results
+
+### Review
+- Created and opened [spotgamma-paid-api-delta-report-2026-05-28.html](/Users/joemccann/dev/apps/finance/radon/reports/spotgamma-paid-api-delta-report-2026-05-28.html).
+- SpotGamma research used public SpotGamma pricing/product pages, support articles, and official HIRO/Tape user-guide PDFs. Public evidence supports paid dashboards/tools and institutional custom access, but not a self-service paid developer REST/WebSocket API.
+- Current Radon comparison used [docs/unusual_whales_api.md](/Users/joemccann/dev/apps/finance/radon/docs/unusual_whales_api.md), [uw_client.py](/Users/joemccann/dev/apps/finance/radon/scripts/clients/uw_client.py), [menthorq_client.py](/Users/joemccann/dev/apps/finance/radon/scripts/clients/menthorq_client.py), [docs/menthorq-prompts.md](/Users/joemccann/dev/apps/finance/radon/docs/menthorq-prompts.md), and [docs/strategies.md](/Users/joemccann/dev/apps/finance/radon/docs/strategies.md).
+- Verification: `open reports/spotgamma-paid-api-delta-report-2026-05-28.html` completed; `wc -c` reports 26,316 bytes; `rg` confirmed the report title, hard conclusion, source notes, and API-status sections exist.
+
+## Session: Refactor Mobile And Touchscreen UI (2026-05-28)
+
+### Goal
+Fix the reported mobile and touchscreen UI regressions across Radon Terminal: compact filters/search inputs, touch-accessible dropdowns, mobile-friendly ticker/detail views, collapsible dashboard sections, swipable news modal, non-horizontal-scrolling scanner/flow/CTA tables, operator navigation access, improved timeframe controls, and streamlined GEX/CTA mobile presentations.
+
+### Dependency Graph
+- T1 (Map affected web surfaces, existing responsive patterns, and available test coverage) depends_on: []
+- T2 (Patch shared mobile controls: filter/search sizing, placeholder behavior, touch targets, dropdown pointer/touch access, bottom navigation operator entry) depends_on: [T1]
+- T3 (Patch mobile positions, ticker detail, dashboard collapsible sections, and news lightbox swipe/navigation layout) depends_on: [T1, T2]
+- T4 (Patch scanner and flow analysis responsive table/card layouts) depends_on: [T1, T2]
+- T5 (Patch regime VCG timeframe default/style, GEX streamlined mobile layout, and CTA streamlined mobile layout) depends_on: [T1, T2]
+- T6 (Add focused regression coverage for mobile/touch behavior and responsive layout contracts) depends_on: [T2, T3, T4, T5]
+- T7 (Run focused tests, Playwright visual checks on mobile/tablet, then full JS verification; document results) depends_on: [T6]
+
+### Checklist
+- [x] T1 Map affected web surfaces, existing responsive patterns, and available test coverage
+- [x] T2 Patch shared mobile controls: filter/search sizing, placeholder behavior, touch targets, dropdown pointer/touch access, bottom navigation operator entry
+- [x] T3 Patch mobile positions, ticker detail, dashboard collapsible sections, and news lightbox swipe/navigation layout
+- [x] T4 Patch scanner and flow analysis responsive table/card layouts
+- [x] T5 Patch regime VCG timeframe default/style, GEX streamlined mobile layout, and CTA streamlined mobile layout
+- [x] T6 Add focused regression coverage for mobile/touch behavior and responsive layout contracts
+- [x] T7 Run focused tests, Playwright visual checks on mobile/tablet, then full JS verification; document results
+
+### Review
+- Implemented:
+  - Compact mobile table/search controls and touch-sized select/dropdown targets, including options-chain tablet controls.
+  - Added Operator to the mobile drawer.
+  - Dashboard sections are collapsible; mobile order is Portfolio, Live Market Feed, Orders, Opportunities.
+  - News lightbox supports swipe navigation and moves arrow controls away from article content on mobile.
+  - Ticker detail stacks hero/chart/tabs for mobile.
+  - Scanner and flow analysis use mobile card layouts instead of horizontally scrolling tables.
+  - CTA uses mobile cards instead of the wide percentile table.
+  - VCG defaults to 1M and preserves user-selected range; GEX/CTA mobile layouts are more compact.
+  - Playwright authless mode now bypasses client Clerk handshake for test runs while preserving websocket unit-test behavior.
+- Focused verification:
+  - `npx vitest run tests/newsfeed-lightbox.test.tsx tests/vcg-history-chart.test.tsx tests/gex-panel.test.tsx tests/workspace-sections-table-search-headers.test.ts tests/cta-page.test.ts tests/ib-status-context.test.ts --config ../vitest.config.ts` passed: 83 tests.
+  - `npm run lint -- ...changed files...` passed with 7 existing warnings in unrelated files.
+  - `PLAYWRIGHT_PORT=3000 RADON_AUTHLESS_TEST=1 NEXT_PUBLIC_RADON_AUTHLESS_TEST=1 npx playwright test e2e/mobile-shell.spec.ts --config playwright.no-server.config.ts --project=mobile --timeout=20000` passed: 7 tests.
+  - `PLAYWRIGHT_PORT=3000 RADON_AUTHLESS_TEST=1 NEXT_PUBLIC_RADON_AUTHLESS_TEST=1 npx playwright test e2e/mobile-charts.spec.ts --config playwright.no-server.config.ts --project=mobile --timeout=30000` passed: 4 tests.
+  - `PLAYWRIGHT_PORT=3000 RADON_AUTHLESS_TEST=1 NEXT_PUBLIC_RADON_AUTHLESS_TEST=1 npx playwright test e2e/flow-analysis-ticker.spec.ts e2e/cta-page.spec.ts --config playwright.no-server.config.ts --project=chromium --timeout=30000` passed: 14 tests.
+  - Mobile visual/overflow smoke checked `/dashboard`, `/portfolio`, `/scanner`, `/flow-analysis`, `/cta`, `/regime/vcg`, `/regime/gex`, and `/VIX`; every route reported `scrollWidth=393`, `clientWidth=393`, `bodyMobile=true`. Screenshots saved to `/tmp/radon-mobile-*.png`.
+- Baseline blockers:
+  - `npm run typecheck` fails on pre-existing unrelated test typing errors across e2e/test fixtures.
+  - Full `npm test` remains red on pre-existing unrelated baseline clusters: regime live value tests, radon API init options, previous-close API fallback tests, inactive sync hooks, websocket stability/keepalive, localStorage mocks, and jsdom missing scroll APIs. Focused changed-surface tests are green.
+
+## Session: Split Codex Instructions Into Scoped AGENTS Files (2026-05-28)
+
+### Goal
+Reduce always-loaded Codex instruction tokens by replacing the large root `AGENTS.md` with a concise global file and moving subsystem-specific rules into scoped `AGENTS.md` files next to their matching `CLAUDE.md` files.
+
+### Dependency Graph
+- T1 (Identify root vs scoped instruction boundaries from the existing `.pi/AGENTS.md` and all `CLAUDE.md` files) depends_on: []
+- T2 (Rewrite root `.pi/AGENTS.md` as concise global guidance with pointers to scoped files) depends_on: [T1]
+- T3 (Create scoped `AGENTS.md` files for `web`, `scripts`, `scripts/api`, `scripts/monitor_daemon`, `scripts/newsfeed`, and `scripts/watchdog`) depends_on: [T2]
+- T4 (Verify every `CLAUDE.md` scope has a matching `AGENTS.md` and review diff/token reduction) depends_on: [T3]
+- T5 (Document review results and summarize the new loading model) depends_on: [T4]
+
+### Checklist
+- [x] T1 Identify root vs scoped instruction boundaries from the existing `.pi/AGENTS.md` and all `CLAUDE.md` files
+- [x] T2 Rewrite root `.pi/AGENTS.md` as concise global guidance with pointers to scoped files
+- [x] T3 Create scoped `AGENTS.md` files for `web`, `scripts`, `scripts/api`, `scripts/monitor_daemon`, `scripts/newsfeed`, and `scripts/watchdog`
+- [x] T4 Verify every `CLAUDE.md` scope has a matching `AGENTS.md` and review diff/token reduction
+- [x] T5 Document review results and summarize the new loading model
+
+### Review
+- Root `AGENTS.md` remains a symlink to `.pi/AGENTS.md`, now reduced from 804 lines to ~90 lines of global guidance.
+- Added scoped Codex instruction files: `web/AGENTS.md`, `scripts/AGENTS.md`, `scripts/api/AGENTS.md`, `scripts/monitor_daemon/AGENTS.md`, `scripts/newsfeed/AGENTS.md`, and `scripts/watchdog/AGENTS.md`.
+- The scoped files mirror the existing Claude loading boundaries so Codex can pull detailed instructions only when working under the matching directory.
+- Verification: `find` confirms every scoped `CLAUDE.md` now has a same-directory `AGENTS.md`; total scoped instruction surface is 379 lines, but only the concise root should be always loaded.
+
+## Session: Align Codex Instructions With Claude Docs (2026-05-28)
+
+### Goal
+Analyze the Radon repository instructions, memories, task backlog, and every `CLAUDE.md` file, then update `AGENTS.md` so Codex has the same current operating model and scoped subsystem rules going forward.
+
+### Dependency Graph
+- T1 (Inventory repository instruction surfaces, memory files, task files, and all `CLAUDE.md` files) depends_on: []
+- T2 (Summarize what Radon is and extract Claude-only guidance that is stale or missing from `AGENTS.md`) depends_on: [T1]
+- T3 (Patch `AGENTS.md` with Codex-native guidance consistent with root and subsystem `CLAUDE.md` files) depends_on: [T2]
+- T4 (Verify the documentation-only change by reviewing the diff and confirming every `CLAUDE.md` was accounted for) depends_on: [T3]
+- T5 (Document review results in this task entry and report the project summary in 100 words or less) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inventory repository instruction surfaces, memory files, task files, and all `CLAUDE.md` files
+- [x] T2 Summarize what Radon is and extract Claude-only guidance that is stale or missing from `AGENTS.md`
+- [x] T3 Patch `AGENTS.md` with Codex-native guidance consistent with root and subsystem `CLAUDE.md` files
+- [x] T4 Verify the documentation-only change by reviewing the diff and confirming every `CLAUDE.md` was accounted for
+- [x] T5 Document review results in this task entry and report the project summary in 100 words or less
+
+### Review
+- Project summary: Radon is a market-structure reconstruction and operator workstation for finding, sizing, monitoring, and executing convex options trades from IB, Unusual Whales, dark-pool/OTC flow, OI changes, vol/regime signals, news, and live portfolio state.
+- Read and accounted for all `CLAUDE.md` files: root, `web/`, `scripts/`, `scripts/api/`, `scripts/monitor_daemon/`, `scripts/newsfeed/`, and `scripts/watchdog/`.
+- Read task and memory surfaces under `tasks/` and `context/memory/`, including active backlog and persistent facts.
+- Updated `AGENTS.md` via the root symlink to `.pi/AGENTS.md` for Claude parity: scoped instruction table, behavioral rules, disabled naked-short gate, corrected data-source priority, order-risk chokepoint, Next cache/theme/auth contracts, web calculation invariants, FastAPI/IB 2FA and subprocess rules, direct-to-cloud Turso architecture, order placement contract, updated client ID ranges, monitor daemon rules, service-health/watchdog rules, and newsfeed scraper rules.
+- Verification: reviewed `git diff` for `AGENTS.md`/`tasks/todo.md`; confirmed `find` sees exactly 7 `CLAUDE.md` files and all 7 are listed in `AGENTS.md`.
+
 ## Session: Fix IB Sync Entry Cost With Journal Lot-Matched Basis (2026-05-21)
 
 ### Goal

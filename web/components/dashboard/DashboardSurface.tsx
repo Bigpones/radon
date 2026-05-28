@@ -1,5 +1,7 @@
 "use client";
 
+import { useState, type ReactNode } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import DashboardNewsFeed from "@/components/DashboardNewsFeed";
 import { PortfolioSnapshotCard } from "./PortfolioSnapshotCard";
 import { OrdersSnapshotCard } from "./OrdersSnapshotCard";
@@ -11,6 +13,44 @@ type DashboardSurfaceProps = {
   orders: OrdersData | null;
   realizedPnl?: number;
 };
+
+function DashboardSection({
+  id,
+  label,
+  count,
+  children,
+}: {
+  id: string;
+  label: string;
+  count?: string;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <section className={`dashboard-section dashboard-section--${id}`} data-testid={`dashboard-section-${id}`}>
+      <button
+        type="button"
+        className="dashboard-section__toggle"
+        aria-expanded={open}
+        aria-controls={`dashboard-section-body-${id}`}
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        <span className="dashboard-section__title">{label}</span>
+        <span className="dashboard-section__meta">
+          {count ? <span>{count}</span> : null}
+          {open ? <ChevronDown size={16} aria-hidden /> : <ChevronRight size={16} aria-hidden />}
+        </span>
+      </button>
+      <div
+        id={`dashboard-section-body-${id}`}
+        className="dashboard-section__body"
+        hidden={!open}
+      >
+        {children}
+      </div>
+    </section>
+  );
+}
 
 /**
  * DashboardSurface — actionable trading dashboard. Two equal columns:
@@ -36,12 +76,20 @@ export default function DashboardSurface({
   return (
     <div className="dashboard-surface">
       <div className="dashboard-surface__main">
+        <DashboardSection id="portfolio" label="Portfolio" count="01">
         <PortfolioSnapshotCard portfolio={portfolio} realizedPnl={realizedPnl} />
-        <OrdersSnapshotCard orders={orders} />
-        <OpportunitiesCard />
+        </DashboardSection>
+        <DashboardSection id="orders" label="Working & Filled" count="02">
+          <OrdersSnapshotCard orders={orders} />
+        </DashboardSection>
+        <DashboardSection id="opportunities" label="Trading Candidates" count="04">
+          <OpportunitiesCard />
+        </DashboardSection>
       </div>
       <aside className="dashboard-surface__rail" aria-label="Newsfeed">
-        <DashboardNewsFeed />
+        <DashboardSection id="news" label="Live Market Feed" count="03">
+          <DashboardNewsFeed />
+        </DashboardSection>
       </aside>
     </div>
   );

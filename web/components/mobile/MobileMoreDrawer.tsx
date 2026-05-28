@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
-import { X, BarChart3, Search, LineChart, Wrench, Shield, Activity } from "lucide-react";
+import { X, BarChart3, Search, LineChart, Wrench, Shield, Activity, Settings2 } from "lucide-react";
 import { useClerk, useUser } from "@clerk/nextjs";
 
 type DrawerLink = {
@@ -18,6 +18,7 @@ const OVERFLOW_LINKS: DrawerLink[] = [
   { label: "Journal", href: "/journal", icon: Wrench },
   { label: "Regime", href: "/regime/cri", icon: Shield },
   { label: "CTA", href: "/cta", icon: Activity },
+  { label: "Operator", href: "/admin", icon: Settings2 },
 ];
 
 type MobileMoreDrawerProps = {
@@ -28,8 +29,57 @@ type MobileMoreDrawerProps = {
 };
 
 export default function MobileMoreDrawer({ open, onClose, ibConnected = true, lastSync }: MobileMoreDrawerProps) {
+  if (
+    process.env.NEXT_PUBLIC_RADON_AUTHLESS_TEST === "1" ||
+    process.env.RADON_AUTHLESS_TEST === "1"
+  ) {
+    return (
+      <MobileMoreDrawerView
+        open={open}
+        onClose={onClose}
+        ibConnected={ibConnected}
+        lastSync={lastSync}
+        userEmail="test@radon.local"
+        onSignOut={() => undefined}
+      />
+    );
+  }
+  return (
+    <AuthenticatedMobileMoreDrawer
+      open={open}
+      onClose={onClose}
+      ibConnected={ibConnected}
+      lastSync={lastSync}
+    />
+  );
+}
+
+function AuthenticatedMobileMoreDrawer({ open, onClose, ibConnected = true, lastSync }: MobileMoreDrawerProps) {
   const { signOut } = useClerk();
   const { user } = useUser();
+  return (
+    <MobileMoreDrawerView
+      open={open}
+      onClose={onClose}
+      ibConnected={ibConnected}
+      lastSync={lastSync}
+      userEmail={user?.primaryEmailAddress?.emailAddress ?? user?.username ?? ""}
+      onSignOut={() => signOut()}
+    />
+  );
+}
+
+function MobileMoreDrawerView({
+  open,
+  onClose,
+  ibConnected = true,
+  lastSync,
+  userEmail,
+  onSignOut,
+}: MobileMoreDrawerProps & {
+  userEmail?: string;
+  onSignOut: () => void;
+}) {
   const syncTime = lastSync ? new Date(lastSync).toLocaleTimeString() : "—";
 
   useEffect(() => {
@@ -98,13 +148,13 @@ export default function MobileMoreDrawer({ open, onClose, ibConnected = true, la
             <span>Last sync</span>
             <span className="mobile-drawer__status-value">{syncTime}</span>
           </div>
-          {user ? (
+          {userEmail ? (
             <div className="mobile-drawer__user">
-              <span className="mobile-drawer__user-email">{user.primaryEmailAddress?.emailAddress ?? user.username ?? ""}</span>
+              <span className="mobile-drawer__user-email">{userEmail}</span>
               <button
                 type="button"
                 className="mobile-drawer__signout"
-                onClick={() => signOut()}
+                onClick={onSignOut}
                 data-testid="mobile-drawer-signout"
               >
                 Sign out

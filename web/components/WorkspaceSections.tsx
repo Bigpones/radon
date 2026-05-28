@@ -894,6 +894,48 @@ function FlowTable({ rows, lastColumn }: { rows: FlowAnalysisPosition[]; lastCol
   );
 }
 
+function FlowMobileCards({ rows, lastColumn }: { rows: FlowAnalysisPosition[]; lastColumn: string }) {
+  const { sorted } = useSort(rows, flowPosExtract);
+  return (
+    <div className="mobile-signal-list" data-testid="mobile-flow-list">
+      {sorted.map((item) => (
+        <article className="mobile-signal-card" key={`${item.ticker}-${item.position}`}>
+          <div className="mobile-signal-card__head">
+            <TickerLink ticker={item.ticker} />
+            <span className={`pill ${item.flow_class}`}>{item.flow_label}</span>
+          </div>
+          <div className="mobile-signal-card__body">
+            <div>
+              <span className="mobile-signal-card__label">Position</span>
+              <span>{item.position}</span>
+            </div>
+            <div>
+              <span className="mobile-signal-card__label">Strength</span>
+              <span>{item.strength}</span>
+            </div>
+          </div>
+          <div className="mobile-signal-card__note">
+            <span className="mobile-signal-card__label">{lastColumn}</span>
+            <span>{item.note}</span>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function ResponsiveFlowTable({ rows, lastColumn }: { rows: FlowAnalysisPosition[]; lastColumn: string }) {
+  const { isMobile, hasMounted } = useViewport();
+  if (hasMounted && isMobile) {
+    return <FlowMobileCards rows={rows} lastColumn={lastColumn} />;
+  }
+  return (
+    <div className="table-wrap">
+      <FlowTable rows={rows} lastColumn={lastColumn} />
+    </div>
+  );
+}
+
 function FlowSections({ tickerParam }: { tickerParam?: string }) {
   if (tickerParam) {
     return (
@@ -967,7 +1009,7 @@ function FlowSectionsBody() {
         </div>
         <div className="section-body">
           {supportsArr.length > 0 ? (
-            <FlowTable rows={supportsArr} lastColumn="Signal" />
+            <ResponsiveFlowTable rows={supportsArr} lastColumn="Signal" />
           ) : (
             <div className="alert-item">{syncing ? "Scanning portfolio flow..." : "No supporting flow detected"}</div>
           )}
@@ -985,7 +1027,7 @@ function FlowSectionsBody() {
         </div>
         <div className="section-body">
           {againstArr.length > 0 ? (
-            <FlowTable rows={againstArr} lastColumn="Concern" />
+            <ResponsiveFlowTable rows={againstArr} lastColumn="Concern" />
           ) : (
             <div className="alert-item">No contradicting flow detected</div>
           )}
@@ -1003,7 +1045,7 @@ function FlowSectionsBody() {
         </div>
         <div className="section-body">
           {neutralArr.length > 0 ? (
-            <FlowTable rows={neutralArr} lastColumn="Note" />
+            <ResponsiveFlowTable rows={neutralArr} lastColumn="Note" />
           ) : (
             <div className="alert-item">No neutral positions</div>
           )}
@@ -1021,7 +1063,7 @@ function FlowSectionsBody() {
         </div>
         <div className="section-body">
           {watchArr.length > 0 ? (
-            <FlowTable rows={watchArr} lastColumn="Note" />
+            <ResponsiveFlowTable rows={watchArr} lastColumn="Note" />
           ) : (
             <div className="alert-item">No watch items</div>
           )}
@@ -1118,7 +1160,7 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
               Defined Risk Positions
               <InfoTooltip text={SECTION_TOOLTIPS["Defined Risk Positions"]} />
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <div className="section-header-actions">
               <ColumnsToggle<PositionToggleableColumnKey>
                 columns={definedColEntries}
                 visible={definedCols.visible}
@@ -1149,7 +1191,7 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
               Undefined Risk Positions
               <InfoTooltip text={SECTION_TOOLTIPS["Undefined Risk Positions"]} />
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <div className="section-header-actions">
               <ColumnsToggle<PositionToggleableColumnKey>
                 columns={undefinedColEntries}
                 visible={undefinedCols.visible}
@@ -1180,7 +1222,7 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
               Equity Positions
               <InfoTooltip text={SECTION_TOOLTIPS["Equity Positions"]} />
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <div className="section-header-actions">
               <ColumnsToggle<PositionToggleableColumnKey>
                 columns={equityColEntries}
                 visible={equityCols.visible}
@@ -1234,6 +1276,7 @@ function ScannerSections() {
   const { data, syncing, error, lastSync } = useScanner(true);
   const signals = data?.top_signals ?? [];
   const { sorted, sort, toggle } = useSort(signals, scannerSigExtract);
+  const { isMobile, hasMounted } = useViewport();
 
   const signalClass = (signal: string) => {
     if (signal === "STRONG") return "bullish";
@@ -1271,7 +1314,43 @@ function ScannerSections() {
         {signals.length === 0 && !syncing && !error && (
           <div className="section-body"><div className="alert-item">No scanner signals. Waiting for initial scan...</div></div>
         )}
-        {signals.length > 0 && (
+        {signals.length > 0 && hasMounted && isMobile && (
+          <div className="section-body">
+            <div className="mobile-signal-list" data-testid="mobile-scanner-list">
+              {sorted.map((row) => (
+                <article className="mobile-signal-card" key={`scanner-mobile-${row.ticker}`}>
+                  <div className="mobile-signal-card__head">
+                    <TickerLink ticker={row.ticker} />
+                    <span className={signalClass(row.signal)}>{row.signal}</span>
+                  </div>
+                  <div className="mobile-signal-card__body">
+                    <div>
+                      <span className="mobile-signal-card__label">Direction</span>
+                      <span className={`pill ${dirClass(row.direction)}`}>{row.direction}</span>
+                    </div>
+                    <div>
+                      <span className="mobile-signal-card__label">Score</span>
+                      <span>{row.score.toFixed(1)}</span>
+                    </div>
+                    <div>
+                      <span className="mobile-signal-card__label">Strength</span>
+                      <span>{row.strength.toFixed(1)}</span>
+                    </div>
+                    <div>
+                      <span className="mobile-signal-card__label">Buy Ratio</span>
+                      <span>{row.buy_ratio != null ? `${(row.buy_ratio * 100).toFixed(1)}%` : "---"}</span>
+                    </div>
+                  </div>
+                  <div className="mobile-signal-card__foot">
+                    <span>{row.sustained_days > 0 ? `${row.sustained_days}d sustained` : "No sustained run"}</span>
+                    <span>{row.num_prints.toLocaleString()} prints</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+        )}
+        {signals.length > 0 && !(hasMounted && isMobile) && (
           <div className="section-body table-wrap">
             <table>
               <thead>
@@ -1514,7 +1593,7 @@ function JournalSections() {
             Trade Journal
             <InfoTooltip text={SECTION_TOOLTIPS["Trade Journal"]} />
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <div className="section-header-actions">
             <button
               className="btn-sync"
               onClick={handleSync}

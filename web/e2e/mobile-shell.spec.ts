@@ -43,6 +43,7 @@ test.describe("MobileShell — phase 1 foundation", () => {
     await expect(page.getByTestId("mobile-drawer-journal")).toHaveAttribute("href", "/journal");
     await expect(page.getByTestId("mobile-drawer-performance")).toHaveAttribute("href", "/performance");
     await expect(page.getByTestId("mobile-drawer-discover")).toHaveAttribute("href", "/discover");
+    await expect(page.getByTestId("mobile-drawer-operator")).toHaveAttribute("href", "/admin");
 
     await page.getByTestId("mobile-drawer-close").click({ force: true });
     await expect(page.getByTestId("mobile-more-drawer")).toBeHidden();
@@ -50,6 +51,7 @@ test.describe("MobileShell — phase 1 foundation", () => {
 
   test("desktop sidebar is hidden on mobile via body[data-mobile=true]", async ({ page }) => {
     await page.goto("/dashboard");
+    await expect(page.getByTestId("mobile-tab-bar")).toBeVisible();
 
     const dataMobile = await page.evaluate(() => document.body.dataset.mobile);
     expect(dataMobile).toBe("true");

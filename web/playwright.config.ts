@@ -35,6 +35,7 @@ export default defineConfig({
     env: {
       ...process.env,
       RADON_AUTHLESS_TEST: "1",
+      NEXT_PUBLIC_RADON_AUTHLESS_TEST: "1",
     },
   },
 });

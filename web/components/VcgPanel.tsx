@@ -139,22 +139,25 @@ export default function VcgPanel({ marketState }: VcgPanelProps) {
   const { data, loading, error, lastSync } = useVcg(marketState ?? null);
   const [sortCol, setSortCol] = useState<VcgSortCol | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-  // Chart range preset (1M / 3M / 6M / 1Y / All). Default adapts to
-  // available history depth so a short backfill doesn't ship with a
-  // "1Y" chip selected on 3 months of data.
+  // Chart range preset (1M / 3M / 6M / 1Y / All). Mobile and desktop
+  // should land on the current regime first, not a year-long backfill.
   const historyLength = data?.history?.length ?? 0;
   const [rangePreset, setRangePreset] = useState<RangePresetSlug>(() =>
-    defaultPresetForLength(historyLength),
+    historyLength >= 21 ? "1m" : defaultPresetForLength(historyLength),
   );
+  const [rangeTouched, setRangeTouched] = useState(false);
   // Re-clamp the active preset when history grows past the depth
   // threshold (e.g. backend backfill extends from 3M to 1Y).
   useEffect(() => {
-    const ideal = defaultPresetForLength(historyLength);
-    if (rangePreset === "all") return;
+    const ideal = historyLength >= 21 ? "1m" : defaultPresetForLength(historyLength);
+    if (rangeTouched) return;
+    if (rangePreset === "all" && historyLength < 21) return;
     if (presetSessions(rangePreset) > historyLength) {
       setRangePreset(ideal);
+    } else if (rangePreset === "all" && historyLength >= 21) {
+      setRangePreset("1m");
     }
-  }, [historyLength, rangePreset]);
+  }, [historyLength, rangePreset, rangeTouched]);
 
   function handleSort(col: VcgSortCol) {
     if (sortCol === col) {
@@ -463,7 +466,10 @@ export default function VcgPanel({ marketState }: VcgPanelProps) {
             </div>
             <HistoryRangeChips
               active={rangePreset}
-              onChange={setRangePreset}
+              onChange={(preset) => {
+                setRangeTouched(true);
+                setRangePreset(preset);
+              }}
               maxSessions={data.history.length}
               ariaLabel="VCG chart range"
               dataTestId="vcg-history-range-chips"

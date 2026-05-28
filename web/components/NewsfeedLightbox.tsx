@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import { ChevronLeft, ChevronRight, Link as LinkIcon, X } from "lucide-react";
@@ -50,6 +50,8 @@ export default function NewsfeedLightbox({
   // Portal mount target. Defer to first client effect so SSR doesn't reach
   // for `document`, and so jsdom in vitest gets a real Element handle.
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
 
   useEffect(() => {
     setPortalTarget(document.body);
@@ -90,6 +92,27 @@ export default function NewsfeedLightbox({
   const time = formatTime(post.isoTimestamp);
   const absolute = formatAbsolute(post.isoTimestamp);
 
+  function handleTouchStart(event: React.TouchEvent<HTMLDivElement>) {
+    const touch = event.touches[0];
+    touchStartX.current = touch.clientX;
+    touchStartY.current = touch.clientY;
+  }
+
+  function handleTouchEnd(event: React.TouchEvent<HTMLDivElement>) {
+    if (!onNavigate || touchStartX.current == null || touchStartY.current == null) return;
+    const touch = event.changedTouches[0];
+    const dx = touch.clientX - touchStartX.current;
+    const dy = touch.clientY - touchStartY.current;
+    touchStartX.current = null;
+    touchStartY.current = null;
+    if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy) * 1.25) return;
+    if (dx > 0 && canNavigatePrev) {
+      onNavigate(-1);
+    } else if (dx < 0 && canNavigateNext) {
+      onNavigate(1);
+    }
+  }
+
   // Portal to body so the lightbox escapes the right-rail's stacking context
   // cleanly. Without this the dashboard's grid layers + scroll containers
   // can clip the scrim and let chrome bleed through at the edges.
@@ -129,7 +152,11 @@ export default function NewsfeedLightbox({
           <ChevronRight size={20} />
         </button>
       ) : null}
-      <div className="newsfeed-lightbox__panel">
+      <div
+        className="newsfeed-lightbox__panel"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
         <button
           type="button"
           className="newsfeed-lightbox__close"
