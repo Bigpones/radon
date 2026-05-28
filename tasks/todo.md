@@ -1,5 +1,29 @@
 # TODO
 
+## Session: Fix Mobile Touch Newsfeed Lightbox Controls (2026-05-28)
+
+### Goal
+Stop the mobile touch newsfeed lightbox close button from occluding chart images and hide prev/next chevrons only on coarse-pointer mobile viewports.
+
+### Dependency Graph
+- T1 (Reproduce the screenshot geometry against the lightbox CSS and identify whether the issue is React structure or responsive positioning) depends_on: []
+- T2 (Move the close control outside the animated panel transform and scope touch-only chevron hiding to coarse-pointer mobile CSS) depends_on: [T1]
+- T3 (Add regression coverage and verify touch-mobile plus narrow mouse behavior) depends_on: [T2]
+
+### Checklist
+- [x] T1 Reproduce the screenshot geometry against the lightbox CSS and identify whether the issue is React structure or responsive positioning
+- [x] T2 Move the close control outside the animated panel transform and scope touch-only chevron hiding to coarse-pointer mobile CSS
+- [x] T3 Add regression coverage and verify touch-mobile plus narrow mouse behavior
+
+### Review
+- Fixed the close button by wrapping the animated panel in `newsfeed-lightbox__frame` and keeping the close control as a sibling, so the mobile fixed positioning is no longer trapped by the panel transform.
+- Added `@media (max-width: 900px) and (pointer: coarse)` rules that hide prev/next chevrons only for touch mobile, keep them visible for narrow mouse/fine-pointer viewports, and remove footer padding reserved for the hidden arrows.
+- Added `web/tests/newsfeed-lightbox-mobile-css.test.ts` to pin the coarse-pointer-only CSS contract.
+- Verification:
+  - Playwright touch geometry check: close button no longer intersects media/image; prev/next are hidden on coarse-pointer mobile and visible on narrow mouse viewport.
+  - `npx vitest run tests/newsfeed-lightbox.test.tsx tests/newsfeed-lightbox-mobile-css.test.ts --config ../vitest.config.ts` passed: 14 tests.
+  - `npx eslint components/NewsfeedLightbox.tsx tests/newsfeed-lightbox-mobile-css.test.ts` passed with 0 errors; ESLint reported the new CSS-contract test is ignored by the current ignore pattern.
+
 ## Session: Scope MenthorQ Ticker Enhancement (2026-05-28)
 
 ### Goal

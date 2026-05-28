@@ -3,6 +3,7 @@
 ## 2026-05-28
 
 - When the user asks whether the work was committed and pushed, stop implementation churn and immediately verify `git status`, update task docs, commit the intended changes, push, and report the exact commit hash plus any verification blockers.
+- For mobile lightbox controls, validate the actual coarse-pointer viewport. Narrow desktop CSS is not enough: touch-only affordances like hidden chevrons and fixed close buttons must be scoped with `(pointer: coarse)` so mouse users keep visible navigation.
 
 ## 2026-03-29
 

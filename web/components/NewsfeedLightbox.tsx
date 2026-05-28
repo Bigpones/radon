@@ -152,11 +152,7 @@ export default function NewsfeedLightbox({
           <ChevronRight size={20} />
         </button>
       ) : null}
-      <div
-        className="newsfeed-lightbox__panel"
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-      >
+      <div className="newsfeed-lightbox__frame">
         <button
           type="button"
           className="newsfeed-lightbox__close"
@@ -167,61 +163,67 @@ export default function NewsfeedLightbox({
           <X size={16} />
         </button>
 
-        <div className="newsfeed-lightbox__media">
-          <Image
-            src={imageUrl}
-            alt={post.title}
-            width={1600}
-            height={900}
-            sizes="(max-width: 900px) 100vw, 60vw"
-            className="newsfeed-lightbox__image"
-            priority
-          />
+        <div
+          className="newsfeed-lightbox__panel"
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
+          <div className="newsfeed-lightbox__media">
+            <Image
+              src={imageUrl}
+              alt={post.title}
+              width={1600}
+              height={900}
+              sizes="(max-width: 900px) 100vw, 60vw"
+              className="newsfeed-lightbox__image"
+              priority
+            />
+          </div>
+
+          <article className="newsfeed-lightbox__copy">
+            <header className="newsfeed-lightbox__head">
+              <p className="newsfeed-lightbox__kicker">
+                Live Market Analysis · {relative}
+                {time ? ` at ${time}` : ""}
+              </p>
+              <h2 className="newsfeed-lightbox__title">{post.title}</h2>
+            </header>
+
+            {post.content ? (
+              <p className="newsfeed-lightbox__body">{post.content}</p>
+            ) : null}
+
+            {tags.length > 0 ? (
+              <div className="newsfeed-lightbox__tags">
+                {tags.map((tag) => (
+                  <span key={tag} className="newsfeed-lightbox__tag">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+
+            <footer className="newsfeed-lightbox__footer">
+              <a
+                className="newsfeed-lightbox__source"
+                href={post.href}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <LinkIcon size={12} />
+                <span>Open original</span>
+              </a>
+              <span className="newsfeed-lightbox__timestamp" title={absolute}>
+                {absolute}
+              </span>
+            </footer>
+            {onNavigate && (canNavigatePrev || canNavigateNext) ? (
+              <p className="newsfeed-lightbox__hint" aria-hidden>
+                ← / → to cycle posts · Esc to close
+              </p>
+            ) : null}
+          </article>
         </div>
-
-        <article className="newsfeed-lightbox__copy">
-          <header className="newsfeed-lightbox__head">
-            <p className="newsfeed-lightbox__kicker">
-              Live Market Analysis · {relative}
-              {time ? ` at ${time}` : ""}
-            </p>
-            <h2 className="newsfeed-lightbox__title">{post.title}</h2>
-          </header>
-
-          {post.content ? (
-            <p className="newsfeed-lightbox__body">{post.content}</p>
-          ) : null}
-
-          {tags.length > 0 ? (
-            <div className="newsfeed-lightbox__tags">
-              {tags.map((tag) => (
-                <span key={tag} className="newsfeed-lightbox__tag">
-                  {tag}
-                </span>
-              ))}
-            </div>
-          ) : null}
-
-          <footer className="newsfeed-lightbox__footer">
-            <a
-              className="newsfeed-lightbox__source"
-              href={post.href}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <LinkIcon size={12} />
-              <span>Open original</span>
-            </a>
-            <span className="newsfeed-lightbox__timestamp" title={absolute}>
-              {absolute}
-            </span>
-          </footer>
-          {onNavigate && (canNavigatePrev || canNavigateNext) ? (
-            <p className="newsfeed-lightbox__hint" aria-hidden>
-              ← / → to cycle posts · Esc to close
-            </p>
-          ) : null}
-        </article>
       </div>
     </div>,
     portalTarget,

@@ -2751,18 +2751,24 @@ td.last-price-cell {
   padding: 0;
 }
 
-.newsfeed-lightbox__panel {
+.newsfeed-lightbox__frame {
   position: relative;
   z-index: 1;
+  width: 100%;
+  max-width: min(1280px, 100%);
+  max-height: min(820px, 100%);
+}
+
+.newsfeed-lightbox__panel {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
   gap: 0;
   background: var(--bg-panel);
   border: 1px solid color-mix(in srgb, var(--signal-core) 22%, var(--line-grid));
   border-radius: 4px;
-  max-width: min(1280px, 100%);
-  max-height: min(820px, 100%);
   width: 100%;
+  max-height: inherit;
   overflow: hidden;
   /* Layered shadow: tight crisp bezel, wide soft ambient void, signal-core halo. */
   box-shadow:
@@ -3066,6 +3072,32 @@ td.last-price-cell {
   }
   .newsfeed-lightbox__hint {
     display: none;
+  }
+}
+
+@media (max-width: 900px) and (pointer: coarse) {
+  .newsfeed-lightbox {
+    padding:
+      max(16px, env(safe-area-inset-top))
+      max(16px, env(safe-area-inset-right))
+      max(16px, env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
+  }
+
+  .newsfeed-lightbox__close {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .newsfeed-lightbox__nav {
+    display: none;
+  }
+
+  .newsfeed-lightbox__footer {
+    padding-right: 0;
   }
 }
 
