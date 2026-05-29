@@ -1,5 +1,28 @@
 # TODO
 
+## Session: Fix Desktop Touchscreen Dropdown Targets (2026-05-28)
+
+### Goal
+Make dropdowns and dropdown-like controls accessible on desktop touchscreen / hybrid-pointer devices, especially options-chain controls.
+
+### Dependency Graph
+- T1 (Inspect existing dropdown/touch-target CSS and identify why desktop touchscreens miss it) depends_on: []
+- T2 (Patch shared dropdown/touch target media query to include hybrid devices with `any-pointer: coarse`) depends_on: [T1]
+- T3 (Add regression coverage for desktop touchscreen media-query contract and verify focused tests) depends_on: [T2]
+
+### Checklist
+- [x] T1 Inspect existing dropdown/touch-target CSS and identify why desktop touchscreens miss it
+- [x] T2 Patch shared dropdown/touch target media query to include hybrid devices with `any-pointer: coarse`
+- [x] T3 Add regression coverage for desktop touchscreen media-query contract and verify focused tests
+
+### Review
+- Root cause: desktop touchscreen / hybrid devices can have a fine primary pointer while still supporting touch. The existing dropdown target rule only covered `pointer: coarse` and `max-width: 1024px`, so large desktop touchscreen viewports could miss the 44px/touch-action treatment.
+- Fixed the shared dropdown/touch target media query to include `any-pointer: coarse`, and tightened the rules with `padding-block: 8px`, `pointer-events: auto`, `touch-action: manipulation`, and tap-highlight suppression for native selects, chain expiry selects, futures selects, filter selects, chain side buttons, column dropdown buttons/items, and chain clickable cells.
+- Added `web/tests/desktop-touch-dropdown-css.test.ts` to pin the hybrid touchscreen media-query contract.
+- Verification:
+  - `npx vitest run tests/desktop-touch-dropdown-css.test.ts --config ../vitest.config.ts` passed: 3 tests.
+  - Desktop-width Playwright touch-emulation CSS check at `1366x900` confirmed select/button/menu item heights are 44px and touch-action/pointer-events are active.
+
 ## Session: Fix Mobile Touch Newsfeed Lightbox Controls (2026-05-28)
 
 ### Goal

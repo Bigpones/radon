@@ -9041,24 +9041,31 @@ body[data-mobile="true"] .section-header-actions .pill {
   flex-shrink: 0;
 }
 
-@media (pointer: coarse), (max-width: 1024px) {
+@media (any-pointer: coarse), (pointer: coarse), (max-width: 1024px) {
   select,
   .chain-expiry-select,
   .futures-form-select,
   .filter-select {
     min-height: 44px;
     font-size: 16px;
+    padding-block: 8px;
+    pointer-events: auto;
     touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
   .chain-side-toggle-btn,
   .columns-toggle-btn,
   .columns-toggle-item {
     min-height: 44px;
+    pointer-events: auto;
     touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
   .chain-clickable {
     cursor: pointer;
+    pointer-events: auto;
     touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
