@@ -31,8 +31,8 @@ def reset_route_cache(monkeypatch):
     tests). Same shim every other server test uses.
     """
     from scripts.api import server, auth
-    monkeypatch.setattr(auth, "is_local_or_tailnet", lambda host: True)
-    monkeypatch.setattr(server, "is_local_or_tailnet", lambda host: True)
+    monkeypatch.setattr(auth, "is_trusted_local_request", lambda request: True)
+    monkeypatch.setattr(server, "is_trusted_local_request", lambda request: True)
     server._llm_token_index_cache["data"] = None
     server._llm_token_index_cache["fetched_at"] = 0.0
     server._llm_token_index_cache["days"] = 0

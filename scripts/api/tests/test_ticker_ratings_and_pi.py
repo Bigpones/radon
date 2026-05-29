@@ -25,8 +25,8 @@ def localhost_bypass(monkeypatch):
     """TestClient.host defaults to 'testclient' — coerce auth into treating
     us as a localhost peer so the routes are reachable in tests."""
     from scripts.api import server, auth
-    monkeypatch.setattr(auth, "is_local_or_tailnet", lambda host: True)
-    monkeypatch.setattr(server, "is_local_or_tailnet", lambda host: True)
+    monkeypatch.setattr(auth, "is_trusted_local_request", lambda request: True)
+    monkeypatch.setattr(server, "is_trusted_local_request", lambda request: True)
     yield
 
 

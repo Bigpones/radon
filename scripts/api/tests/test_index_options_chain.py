@@ -20,8 +20,8 @@ if str(SCRIPTS_DIR) not in sys.path:
 @pytest.fixture(autouse=True)
 def localhost_bypass(monkeypatch):
     from scripts.api import server, auth
-    monkeypatch.setattr(auth, "is_local_or_tailnet", lambda host: True)
-    monkeypatch.setattr(server, "is_local_or_tailnet", lambda host: True)
+    monkeypatch.setattr(auth, "is_trusted_local_request", lambda request: True)
+    monkeypatch.setattr(server, "is_trusted_local_request", lambda request: True)
     yield
 
 

@@ -81,6 +81,7 @@ from api import auth as auth_mod
 from api.auth import (
     API_KEY_ALLOWED_PATHS,
     is_local_or_tailnet,
+    is_trusted_local_request,
     verify_api_key,
     verify_clerk_jwt,
 )
@@ -107,13 +108,15 @@ _ISSUER = "https://clerk.radon.test"
 class _FakeRequest:
     """Minimal stand-in for starlette Request: .client.host, .headers, .url.path."""
 
-    def __init__(self, host=None, auth_header=None, path="/", api_key=None):
+    def __init__(self, host=None, auth_header=None, path="/", api_key=None, extra_headers=None):
         self.client = SimpleNamespace(host=host) if host is not None else None
         headers = {}
         if auth_header is not None:
             headers["Authorization"] = auth_header
         if api_key is not None:
             headers["X-API-Key"] = api_key
+        if extra_headers:
+            headers.update(extra_headers)
         self.headers = headers
         self.url = SimpleNamespace(path=path)
 
@@ -165,6 +168,48 @@ class TestIsLocalOrTailnet:
         assert is_local_or_tailnet("not-an-ip") is False
 
 
+class TestIsTrustedLocalRequest:
+    """The server-to-server bypass must apply ONLY to genuine local/tailnet
+    calls — never to traffic that entered through the public reverse proxy.
+
+    Caddy's `handle_path /api/ib/*` reverse-proxies app.radon.run into FastAPI
+    from loopback, so without this gate `request.client.host` is 127.0.0.1 for
+    remote attackers and the entire admin/order/exec surface is unauthenticated
+    from the internet. A proxied request always carries forwarding headers
+    (Caddy sets X-Forwarded-For by default); a genuine Next.js->FastAPI or
+    Tailscale server-to-server call carries none.
+    """
+
+    def test_loopback_without_forwarding_is_trusted(self):
+        assert is_trusted_local_request(_FakeRequest(host="127.0.0.1")) is True
+
+    def test_tailnet_without_forwarding_is_trusted(self):
+        assert is_trusted_local_request(_FakeRequest(host="100.100.5.5")) is True
+
+    def test_loopback_with_x_forwarded_for_not_trusted(self):
+        req = _FakeRequest(host="127.0.0.1", extra_headers={"X-Forwarded-For": "8.8.8.8"})
+        assert is_trusted_local_request(req) is False
+
+    def test_loopback_with_lowercase_xff_not_trusted(self):
+        # starlette lowercases header names; the gate must be case-insensitive.
+        req = _FakeRequest(host="127.0.0.1", extra_headers={"x-forwarded-for": "8.8.8.8"})
+        assert is_trusted_local_request(req) is False
+
+    def test_loopback_with_forwarded_header_not_trusted(self):
+        req = _FakeRequest(host="127.0.0.1", extra_headers={"Forwarded": "for=8.8.8.8"})
+        assert is_trusted_local_request(req) is False
+
+    def test_tailnet_with_forwarding_not_trusted(self):
+        req = _FakeRequest(host="100.100.5.5", extra_headers={"X-Forwarded-For": "8.8.8.8"})
+        assert is_trusted_local_request(req) is False
+
+    def test_public_ip_not_trusted(self):
+        assert is_trusted_local_request(_FakeRequest(host="8.8.8.8")) is False
+
+    def test_no_client_not_trusted(self):
+        assert is_trusted_local_request(_FakeRequest(host=None)) is False
+
+
 class TestVerifyClerkJwt:
     """End-to-end JWT validation with real signing/verification.
 
@@ -192,6 +237,28 @@ class TestVerifyClerkJwt:
         req = _FakeRequest(host="100.100.5.5")
         result = await verify_clerk_jwt(req)
         assert result["local"] is True
+
+    @pytest.mark.asyncio
+    async def test_proxied_loopback_no_token_requires_jwt(self):
+        # Caddy-proxied request: client.host is loopback but X-Forwarded-For is
+        # present, so the bypass must NOT apply — no token => 401, not bypass.
+        req = _FakeRequest(host="127.0.0.1", extra_headers={"X-Forwarded-For": "8.8.8.8"})
+        with pytest.raises(HTTPException) as exc:
+            await verify_clerk_jwt(req)
+        assert exc.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_proxied_loopback_with_valid_token_authenticates(self):
+        # The legitimate browser caller (/api/ib/ws-ticket) sends a real Clerk
+        # token; once the bypass is denied it must validate normally.
+        req = _FakeRequest(
+            host="127.0.0.1",
+            auth_header="Bearer " + _make_token(sub="user_ok"),
+            extra_headers={"X-Forwarded-For": "8.8.8.8"},
+        )
+        with self._patch_jwks(), self._env(allowed="user_ok"):
+            payload = await verify_clerk_jwt(req)
+        assert payload["sub"] == "user_ok"
 
     @pytest.mark.asyncio
     async def test_valid_allowlisted_token_returns_payload(self):

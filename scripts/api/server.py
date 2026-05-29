@@ -59,7 +59,7 @@ from api.ib_gateway import (
 from api import services as admin_services
 from clients.ib_client import DEFAULT_GATEWAY_PORT
 from api.pool_order_manage import pool_cancel_order, pool_modify_order
-from api.auth import verify_clerk_jwt, verify_api_key, is_local_or_tailnet
+from api.auth import verify_clerk_jwt, verify_api_key, is_trusted_local_request
 from api.ws_ticket import create_ticket, validate_ticket
 from api.routes.historical import router as historical_router
 
@@ -185,10 +185,10 @@ async def auth_middleware(request: Request, call_next):
     if not os.environ.get("CLERK_JWKS_URL"):
         return await call_next(request)
 
-    # Skip auth for server-to-server calls from localhost or tailnet
-    # (Next.js → FastAPI; cloud-thin laptop dev → Hetzner FastAPI over Tailscale)
-    client_host = request.client.host if request.client else None
-    if is_local_or_tailnet(client_host):
+    # Skip auth for genuine server-to-server calls from localhost or tailnet
+    # (Next.js → FastAPI; cloud-thin laptop dev → Hetzner FastAPI over Tailscale).
+    # Requests forwarded through the public reverse proxy are NOT trusted.
+    if is_trusted_local_request(request):
         return await call_next(request)
 
     # API key auth — scoped to historical/contract endpoints only
@@ -911,7 +911,15 @@ async def _fetch_risk_reversal_history(
 # ---------------------------------------------------------------------------
 
 @app.get("/health")
-async def health():
+async def health(request: Request):
+    # /health is auth-exempt and reachable from the public internet via Caddy's
+    # `handle_path /api/ib/*`. Untrusted (proxied/public) callers get liveness
+    # only — never IB auth/connection state, account IDs, restart backoff, or
+    # internal topology. Short-circuit BEFORE check_ib_gateway so an internet
+    # GET can't drive its pool-reconnect / heal side effects.
+    if not is_trusted_local_request(request):
+        return {"status": "ok"}
+
     pool_status = ib_pool.status() if ib_pool else None
     # Pass the pool itself so the auth-state transition handler can autorecover
     # from the documented "pool stuck after 2FA" failure mode without an
@@ -2317,4 +2325,10 @@ if __name__ == "__main__":
         port=8321,
         reload=True,
         reload_dirs=[str(SCRIPTS_DIR)],
+        # Trust X-Forwarded-* only from the local Caddy hop so request.client.host
+        # reflects the real remote IP for proxied traffic. The auth chokepoint
+        # (is_trusted_local_request) also denies the bypass on any forwarded
+        # request, so this is defense-in-depth — but it keeps logs/identity correct.
+        proxy_headers=True,
+        forwarded_allow_ips="127.0.0.1",
     )
