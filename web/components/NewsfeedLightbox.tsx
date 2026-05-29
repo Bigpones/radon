@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import { ChevronLeft, ChevronRight, Link as LinkIcon, X } from "lucide-react";
 import type { MarketEarPost } from "@/components/DashboardNewsFeed";
 import { formatAbsolute, formatRelative, formatTime } from "@/lib/newsfeedTime";
+import { useDialogChrome } from "@/lib/useDialogChrome";
 
 export type NewsfeedLightboxFocus = {
   post: MarketEarPost & { href: string; isoTimestamp: string };
@@ -47,15 +48,17 @@ export default function NewsfeedLightbox({
   canNavigatePrev = false,
   canNavigateNext = false,
 }: NewsfeedLightboxProps) {
-  // Portal mount target. Defer to first client effect so SSR doesn't reach
-  // for `document`, and so jsdom in vitest gets a real Element handle.
-  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
 
-  useEffect(() => {
-    setPortalTarget(document.body);
-  }, []);
+  // Scroll-lock, focus trap, and focus restore come from the shared chrome.
+  // Escape + the ←/→ arrow nav stay local (the hook opts out via
+  // closeOnEscape:false) because they preventDefault and forward navigation
+  // intent rather than simply closing.
+  const { portalTarget, panelRef } = useDialogChrome<HTMLDivElement>({
+    open: focus != null,
+    closeOnEscape: false,
+  });
 
   useEffect(() => {
     if (!focus) return;
@@ -76,11 +79,8 @@ export default function NewsfeedLightbox({
       }
     }
     document.addEventListener("keydown", onKey);
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = previousOverflow;
     };
   }, [focus, onDismiss, onNavigate, canNavigatePrev, canNavigateNext]);
 
@@ -119,6 +119,8 @@ export default function NewsfeedLightbox({
   return createPortal(
     <div
       className="newsfeed-lightbox"
+      ref={panelRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-label={post.title}

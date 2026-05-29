@@ -5,6 +5,7 @@ import { useRegime } from "@/lib/useRegime";
 import { MarketState } from "@/lib/useMarketHours";
 import { RegimeStrip, RegimeStripCell } from "@/components/RegimeStrip";
 import InternalsSkewChart from "@/components/InternalsSkewChart";
+import SpectralLoader from "@/components/SpectralLoader";
 
 type SpxSkewHistoryPoint = { date: string; spx_skew?: number | null; value?: number | null };
 type TimeframeWindow = "6M" | "1Y" | "2Y" | "5Y" | "ALL";
@@ -83,7 +84,9 @@ export default function InternalsPanel({ marketState }: { marketState?: MarketSt
   if (loading && !data) {
     return (
       <div className="regime-panel">
-        <div className="regime-empty">Loading internals...</div>
+        <div className="regime-empty">
+          <SpectralLoader label="Sampling skew internals" />
+        </div>
       </div>
     );
   }

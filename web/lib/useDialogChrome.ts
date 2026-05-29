@@ -99,13 +99,17 @@ export function useDialogChrome<T extends HTMLElement = HTMLElement>({
       }
     };
 
-    document.addEventListener("keydown", handleKeyDown);
+    // Listen on `window` (not `document`): a window listener catches both real
+    // Escape keypresses (which bubble target -> document -> window) and events
+    // dispatched directly on window, so it is a strict superset of a document
+    // listener. The previous bespoke BottomSheet handler bound to window.
+    window.addEventListener("keydown", handleKeyDown);
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     if (trapFocus) panelRef.current?.focus();
 
     return () => {
-      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = previousOverflow;
       if (trapFocus && previouslyFocused && typeof previouslyFocused.focus === "function") {
         previouslyFocused.focus();

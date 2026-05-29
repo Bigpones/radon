@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
+import { useDialogChrome } from "@/lib/useDialogChrome";
 
 type BottomSheetProps = {
   open: boolean;
@@ -22,19 +23,7 @@ export function BottomSheet({ open, onClose, title, children, footer, testId, ma
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const dragStartRef = useRef<{ y: number; offset: number } | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKey);
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", handleKey);
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [open, onClose]);
+  const { panelRef } = useDialogChrome<HTMLDivElement>({ open, onClose });
 
   if (!open) return null;
 
@@ -63,7 +52,7 @@ export function BottomSheet({ open, onClose, title, children, footer, testId, ma
   const sheetStyle: React.CSSProperties = maxHeight ? { maxHeight } : {};
 
   return (
-    <div className="mobile-sheet-root" role="dialog" aria-modal="true" data-testid={testId}>
+    <div className="mobile-sheet-root" ref={panelRef} tabIndex={-1} role="dialog" aria-modal="true" data-testid={testId}>
       <button
         type="button"
         className="mobile-sheet-backdrop"

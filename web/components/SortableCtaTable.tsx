@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
 import type { CtaRow } from "@/lib/useMenthorqCta";
 import { SECTION_TOOLTIPS } from "@/lib/sectionTooltips";
 import InfoTooltip from "./InfoTooltip";
 import { normalizeCtaPercentile } from "@/lib/ctaPercentiles";
 import { useViewport } from "@/lib/useViewport";
+import { useSort } from "@/lib/useSort";
+import SortTh from "./SortTh";
 
 /* ─── Props ──────────────────────────────────────────── */
 
@@ -73,7 +74,7 @@ const SECTION_LABELS: Record<string, string> = {
   currency: "CURRENCIES",
 };
 
-type NumericSortCol =
+type CtaSortKey =
   | "position_today"
   | "position_yesterday"
   | "position_1m_ago"
@@ -81,6 +82,10 @@ type NumericSortCol =
   | "percentile_3m"
   | "percentile_1y"
   | "z_score_3m";
+
+function ctaSortValue(row: CtaRow, key: CtaSortKey): number {
+  return row[key] as number;
+}
 
 /* ─── Flag helpers ───────────────────────────────────── */
 
@@ -118,51 +123,12 @@ function flagForRow(r: CtaRow): { kind: "short" | "long"; tooltip: string } | nu
   return null;
 }
 
-type SortDir = "asc" | "desc";
 
 /* ─── Component ──────────────────────────────────────── */
 
 export default function SortableCtaTable({ sectionKey, rows, callout }: SortableCtaTableProps) {
-  const [sortCol, setSortCol] = useState<NumericSortCol | null>(null);
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const { sorted, sort, toggle } = useSort<CtaRow, CtaSortKey>(rows, ctaSortValue);
   const { isMobile, hasMounted } = useViewport();
-
-  function handleSort(col: NumericSortCol) {
-    if (sortCol === col) {
-      if (sortDir === "desc") {
-        setSortDir("asc");
-      } else {
-        // asc → unsorted
-        setSortCol(null);
-        setSortDir("desc");
-      }
-    } else {
-      setSortCol(col);
-      setSortDir("desc");
-    }
-  }
-
-  const sorted = sortCol == null
-    ? rows
-    : [...rows].sort((a, b) => {
-        const av = a[sortCol] as number;
-        const bv = b[sortCol] as number;
-        return sortDir === "asc" ? av - bv : bv - av;
-      });
-
-  function indicator(col: NumericSortCol) {
-    if (sortCol !== col) return null;
-    return sortDir === "asc" ? " ▲" : " ▼";
-  }
-
-  function thStyle(col: NumericSortCol): React.CSSProperties {
-    return {
-      cursor: "pointer",
-      userSelect: "none",
-      color: sortCol === col ? "var(--text-primary)" : undefined,
-      whiteSpace: "nowrap",
-    };
-  }
 
   function renderMobileRows() {
     return (
@@ -267,27 +233,13 @@ export default function SortableCtaTable({ sectionKey, rows, callout }: Sortable
           <thead>
             <tr>
               <th className="cta-th-underlying">UNDERLYING</th>
-              <th className="cta-th-num" style={thStyle("position_today")} onClick={() => handleSort("position_today")}>
-                TODAY{indicator("position_today")}
-              </th>
-              <th className="cta-th-num" style={thStyle("position_yesterday")} onClick={() => handleSort("position_yesterday")}>
-                YDAY{indicator("position_yesterday")}
-              </th>
-              <th className="cta-th-num" style={thStyle("position_1m_ago")} onClick={() => handleSort("position_1m_ago")}>
-                1M AGO{indicator("position_1m_ago")}
-              </th>
-              <th className="cta-th-num" style={thStyle("percentile_1m")} onClick={() => handleSort("percentile_1m")}>
-                1M %ILE{indicator("percentile_1m")}
-              </th>
-              <th className="cta-th-num" style={thStyle("percentile_3m")} onClick={() => handleSort("percentile_3m")}>
-                3M %ILE{indicator("percentile_3m")}
-              </th>
-              <th className="cta-th-num" style={thStyle("percentile_1y")} onClick={() => handleSort("percentile_1y")}>
-                1Y %ILE{indicator("percentile_1y")}
-              </th>
-              <th className="cta-th-num" style={thStyle("z_score_3m")} onClick={() => handleSort("z_score_3m")}>
-                3M Z{indicator("z_score_3m")}
-              </th>
+              <SortTh<CtaSortKey> label="TODAY" sortKey="position_today" activeKey={sort.key} direction={sort.direction} onToggle={toggle} className="cta-th-num" />
+              <SortTh<CtaSortKey> label="YDAY" sortKey="position_yesterday" activeKey={sort.key} direction={sort.direction} onToggle={toggle} className="cta-th-num" />
+              <SortTh<CtaSortKey> label="1M AGO" sortKey="position_1m_ago" activeKey={sort.key} direction={sort.direction} onToggle={toggle} className="cta-th-num" />
+              <SortTh<CtaSortKey> label="1M %ILE" sortKey="percentile_1m" activeKey={sort.key} direction={sort.direction} onToggle={toggle} className="cta-th-num" />
+              <SortTh<CtaSortKey> label="3M %ILE" sortKey="percentile_3m" activeKey={sort.key} direction={sort.direction} onToggle={toggle} className="cta-th-num" />
+              <SortTh<CtaSortKey> label="1Y %ILE" sortKey="percentile_1y" activeKey={sort.key} direction={sort.direction} onToggle={toggle} className="cta-th-num" />
+              <SortTh<CtaSortKey> label="3M Z" sortKey="z_score_3m" activeKey={sort.key} direction={sort.direction} onToggle={toggle} className="cta-th-num" />
               <th style={{ width: "24px" }} aria-label="signal flag" />
             </tr>
           </thead>

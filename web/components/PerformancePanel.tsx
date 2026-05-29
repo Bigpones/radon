@@ -14,6 +14,7 @@ import { usePerformance } from "@/lib/usePerformance";
 import { MarketState } from "@/lib/useMarketHours";
 import ChartPanel from "./charts/ChartPanel";
 import MetricDefinitionModal from "./MetricDefinitionModal";
+import SpectralLoader from "./SpectralLoader";
 
 function fmtUsd(value: number): string {
   const abs = Math.abs(value);
@@ -361,7 +362,7 @@ export default function PerformancePanel({ portfolioLastSync = null, marketState
           <span className="pill neutral">LOADING</span>
         </div>
         <div className="section-body performance-empty">
-          Reconstructing YTD portfolio performance...
+          <SpectralLoader label="Reconstructing YTD portfolio performance" />
         </div>
       </div>
     );

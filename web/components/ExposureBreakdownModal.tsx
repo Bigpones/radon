@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Modal from "./Modal";
+import MetricBreakdownModal, { type MetricBreakdownColumn } from "./MetricBreakdownModal";
 import type { ExposureDataWithBreakdown, ExposureBreakdownRow } from "@/lib/exposureBreakdown";
 import {
   computeLeverageRatio,
@@ -108,72 +108,66 @@ export default function ExposureBreakdownModal({ metric, exposure, bankroll, net
     ? computeLeverageRatio(exposure.dollarDelta, netLiquidation)
     : null;
 
+  const columns: MetricBreakdownColumn[] = [
+    { header: "TICKER" },
+    { header: "STRUCTURE" },
+    { header: "SPOT" },
+    { header: "DELTA" },
+    { header: config.contributionLabel },
+    { header: "SRC" },
+  ];
+
   return (
-    <Modal
+    <MetricBreakdownModal
       open
       onClose={() => { setExpandedId(null); onClose(); }}
       title={config.title}
       className="exposure-breakdown-modal"
-    >
-      {/* Total value */}
-      <div className="eb-total">
-        <span className="eb-total-value">{config.formatValue(totalValue)}</span>
-        {metric === "netExposure" && (
-          <span className="eb-total-detail">
-            {fmtUsd(exposure.netLong)} long - {fmtUsd(exposure.netShort)} short / {fmtUsd(bankroll)} bankroll
-          </span>
-        )}
-      </div>
-
-      {/* Delta-adjusted leverage — only on Dollar Delta */}
-      {showLeverage && leverage && (
+      value={config.formatValue(totalValue)}
+      valueDetail={metric === "netExposure" ? (
+        <>
+          {fmtUsd(exposure.netLong)} long - {fmtUsd(exposure.netShort)} short / {fmtUsd(bankroll)} bankroll
+        </>
+      ) : undefined}
+      beforeFormula={showLeverage && leverage ? (
         <LeverageBlock
           dollarDelta={exposure.dollarDelta}
           netLiquidation={netLiquidation as number}
           leverage={leverage}
           hasApprox={exposure.rows.some((r) => r.deltaSource === "approx")}
         />
+      ) : undefined}
+      formula={config.formula}
+      hasRows={rows.length > 0}
+      emptyMessage="No positions contribute to this metric"
+      tableHead={(
+        <thead>
+          <tr>
+            {columns.map((col, i) => (
+              <th key={i} className={col.className}>{col.header}</th>
+            ))}
+          </tr>
+        </thead>
       )}
-
-      {/* Formula */}
-      <div className="eb-formula">
-        <code>{config.formula}</code>
-      </div>
-
-      {/* Per-position table */}
-      {rows.length > 0 ? (
-        <table className="eb-table">
-          <thead>
-            <tr>
-              <th>TICKER</th>
-              <th>STRUCTURE</th>
-              <th>SPOT</th>
-              <th>DELTA</th>
-              <th>{config.contributionLabel}</th>
-              <th>SRC</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => {
-              const isExpanded = expandedId === row.positionId;
-              const contribution = config.getContribution(row);
-              return (
-                <RowGroup
-                  key={row.positionId}
-                  row={row}
-                  contribution={contribution}
-                  isExpanded={isExpanded}
-                  onToggle={() => setExpandedId(isExpanded ? null : row.positionId)}
-                  formatContribution={metric === "netLong" || metric === "netShort" ? fmtUsd : fmtSignedUsd}
-                />
-              );
-            })}
-          </tbody>
-        </table>
-      ) : (
-        <div className="eb-empty">No positions contribute to this metric</div>
+      tableBody={(
+        <tbody>
+          {rows.map((row) => {
+            const isExpanded = expandedId === row.positionId;
+            const contribution = config.getContribution(row);
+            return (
+              <RowGroup
+                key={row.positionId}
+                row={row}
+                contribution={contribution}
+                isExpanded={isExpanded}
+                onToggle={() => setExpandedId(isExpanded ? null : row.positionId)}
+                formatContribution={metric === "netLong" || metric === "netShort" ? fmtUsd : fmtSignedUsd}
+              />
+            );
+          })}
+        </tbody>
       )}
-    </Modal>
+    />
   );
 }
 

@@ -2,13 +2,17 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
-import { X, BarChart3, Search, LineChart, Wrench, Shield, Activity, Settings2 } from "lucide-react";
+import { X, BarChart3, Search, LineChart, Wrench, Shield, Activity, Settings2, Sun, Moon } from "lucide-react";
 import { useClerk, useUser } from "@clerk/nextjs";
+import { useTheme } from "@/lib/ThemeContext";
+import { useIBStatusContext } from "@/lib/IBStatusContext";
 
 type DrawerLink = {
   label: string;
   href: string;
   icon: typeof BarChart3;
+  /** Hidden on mobile — routes to a desktop-only surface (AdminWorkspace guard dead-end). */
+  desktopOnly?: boolean;
 };
 
 const OVERFLOW_LINKS: DrawerLink[] = [
@@ -18,8 +22,10 @@ const OVERFLOW_LINKS: DrawerLink[] = [
   { label: "Journal", href: "/journal", icon: Wrench },
   { label: "Regime", href: "/regime/cri", icon: Shield },
   { label: "CTA", href: "/cta", icon: Activity },
-  { label: "Operator", href: "/admin", icon: Settings2 },
+  { label: "Operator", href: "/admin", icon: Settings2, desktopOnly: true },
 ];
+
+const BUILD_VERSION = process.env.NEXT_PUBLIC_BUILD_VERSION ?? null;
 
 type MobileMoreDrawerProps = {
   open: boolean;
@@ -80,6 +86,9 @@ function MobileMoreDrawerView({
   userEmail?: string;
   onSignOut: () => void;
 }) {
+  const { theme, toggleTheme } = useTheme();
+  const { displayStatus } = useIBStatusContext();
+  const feedConnected = displayStatus !== "relay_offline" && displayStatus !== "unreachable";
   const syncTime = lastSync ? new Date(lastSync).toLocaleTimeString() : "—";
 
   useEffect(() => {
@@ -120,7 +129,7 @@ function MobileMoreDrawerView({
         </div>
 
         <nav className="mobile-drawer__nav" aria-label="Overflow navigation">
-          {OVERFLOW_LINKS.map((link) => {
+          {OVERFLOW_LINKS.filter((link) => !link.desktopOnly).map((link) => {
             const Icon = link.icon;
             return (
               <Link
@@ -148,6 +157,28 @@ function MobileMoreDrawerView({
             <span>Last sync</span>
             <span className="mobile-drawer__status-value">{syncTime}</span>
           </div>
+          <div className="mobile-drawer__status">
+            <span>Data feed</span>
+            <span className={`mobile-drawer__status-pill ${feedConnected ? "mobile-drawer__status-pill--live" : "mobile-drawer__status-pill--offline"}`}>
+              {feedConnected ? "LIVE" : "OFFLINE"}
+            </span>
+          </div>
+          {BUILD_VERSION ? (
+            <div className="mobile-drawer__status">
+              <span>Build</span>
+              <span className="mobile-drawer__status-value">{BUILD_VERSION}</span>
+            </div>
+          ) : null}
+          <button
+            type="button"
+            className="mobile-drawer__link"
+            onClick={toggleTheme}
+            aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            data-testid="mobile-drawer-theme-toggle"
+          >
+            {theme === "dark" ? <Sun size={16} strokeWidth={2} aria-hidden /> : <Moon size={16} strokeWidth={2} aria-hidden />}
+            <span>{theme === "dark" ? "Light theme" : "Dark theme"}</span>
+          </button>
           {userEmail ? (
             <div className="mobile-drawer__user">
               <span className="mobile-drawer__user-email">{userEmail}</span>

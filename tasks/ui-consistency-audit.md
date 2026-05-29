@@ -77,50 +77,50 @@ No P0s. **9 x P1, 5 x P2, 2 x P3** confirmed (parity items re-graded into the sa
 
 ## 5. Prioritized action plan
 
-Status legend: `[x]` = code-complete + typecheck/unit green (E2E visual pass still pending); `[~]` = partial; `[ ]` = deferred (blocked on workflow re-run — see § 6).
+Status legend: `[x]` = code-complete + typecheck/unit green (E2E visual pass still pending); `[~]` = partial; `[ ]` = deferred (see § 6).
 
 **P1**
-- [~] R1 `useDialogChrome` created + consumed by `Modal.tsx`; `FillsModal`/`ShareReportModal`/`ConfirmDialog`/`NewsfeedLightbox`/`BottomSheet` NOT yet migrated
-- [ ] R2 `<SingleLegOrderTicket>` written (313 lines) but ORPHANED — not wired into `InstrumentDetailModal`/`BookTab`. Deferred: order-placement seam, needs E2E.
-- [ ] R3 `<ListedContractOrderForm>` written (245 lines) but ORPHANED — not wired into `FuturesOrderForm`/`IndexOptionOrderForm`. Dead `formatExpiry` in `lib/format.ts` reverted.
+- [x] R1 `useDialogChrome` + focus-trap; `Modal`/`FillsModal`/`ShareReportModal`/`ConfirmDialog`/`NewsfeedLightbox`/`BottomSheet` all routed through it
+- [x] R2 `<SingleLegOrderTicket>` wired into `InstrumentDetailModal` + `BookTab` (risk math stays caller-owned; verified faithful + order-risk fuzz/unit green)
+- [x] R3 `<ListedContractOrderForm>` wired into `FuturesOrderForm` + `IndexOptionOrderForm` (action-aware submit label restored)
 - [x] R4 `<SortTh>` + `usePriceDirection` extracted; `PositionTable` AND `WorkspaceSections` migrated, locals deleted
 - [x] V1 `--gex-mq-accent` token added (both themes); GEX raw hex/rgba → `color-mix(var(--token))`
 - [x] V2 `--text-on-accent` (aliased to `--accent-text`, theme-aware); `#000`/`#fff` badge text removed
 - [x] V3 `.pill--solid` modifier added; VcgPanel/RegimePanel use it instead of inline base-`.pill` overrides
-- [~] V5 loading states — panels not fully consolidated on `SpectralLoader`; deferred
-- [~] V7 `SectionEmptyState` adopted in WorkspaceSections; ticker-detail tabs / modals not all routed; deferred
+- [x] V5 loading states consolidated on `SpectralLoader` (GexPanel/VcgPanel/PerformancePanel/InternalsPanel)
+- [x] V7 empties routed through `SectionEmptyState` (WorkspaceSections + ticker-detail tabs + breakdown modals)
 - [x] P1 `InfoTooltip` tap-to-reveal + 44px touch target
 
 **P2**
-- [ ] R5 `SortableCtaTable` → shared `useSort`+`SortTh` — deferred (entangled with brittle source-grep assertions in `cta-page.test.ts`)
+- [x] R5 `SortableCtaTable` → shared `useSort`+`SortTh` (2-state toggle; unit + E2E updated to assert `aria-sort`)
 - [x] R6 deleted `CtaTables.tsx` (confirmed zero importers)
-- [~] R7 `lib/format/money.ts` created + wired into `PnlBreakdownModal`/`ExposureBreakdownModal`/`PortfolioSnapshotCard` (verified byte-equivalent). `<MetricBreakdownModal>` NOT created; deferred.
+- [x] R7 `lib/format/money.ts` + `<MetricBreakdownModal>` primitive; Pnl/Exposure/AccountMetric modals migrated
 - [x] V4 pill font-size standardized on 10px base
 - [x] V6 `TableSkeleton` → brand tokens + 4px radius
 - [x] V8 em dashes removed (`OptionsChainTab` x2, `PnlBreakdownModal`)
 - [x] V10 ratings bar → `--signal-deep` / `--text-muted` / new `--signal-fault-deep`
-- [ ] P2 add theme toggle to `MobileMoreDrawer` — deferred
-- [ ] P3 Discover mobile card variant (mirror Scanner) — deferred
-- [x] P4 `RegimeRelationshipView` → `onPointerMove`/`onPointerLeave` (+ test updated to fire pointer events)
-- [ ] P5 single-column mobile layouts for GEX/VCG/Performance/Internals — deferred
-- [ ] I1 route order-SUCCESS through `addToast()` — deferred
+- [x] P2 theme toggle added to `MobileMoreDrawer` (consumes `useTheme()` directly — one source of truth)
+- [x] P3 Discover mobile card variant (mirrors Scanner)
+- [x] P4 `RegimeRelationshipView` → `onPointerMove`/`onPointerLeave` (+ test fires pointer events)
+- [x] P5 single-column mobile `@media` layouts for GEX/VCG/Performance/Internals
+- [ ] I1 route order-SUCCESS through `addToast()` — DEFERRED (clean unblock: add `pushNotification` to `OrderActionsContext`, then OrderTab/OptionsChainTab consume it; not done to avoid a late order-surface edit)
 
 **P3**
-- [ ] R8 `<BookSectionHeader>` + `.book-l1-cell` classes — deferred
+- [x] R8 `.book-section-header` + `.book-l1-*` classes; BookTab inline styles removed
 - [x] R9 `useDismissablePopover` hook + `ColumnsToggle`/`SharePnlButton`/`TickerSearch` migrated
 - [x] V9 GEX `0.5px` → `1px` token border
-- [ ] P6 inner `table-wrap` in detail modals — deferred
-- [ ] P7 surface build version on mobile drawer — deferred
-- [ ] P8 hide/soften Operator link on mobile — deferred
+- [x] P6 inner `.table-wrap` in detail modals (Fills + breakdown)
+- [x] P7 build version (`NEXT_PUBLIC_BUILD_VERSION`, when set) + data-feed status on mobile drawer
+- [x] P8 Operator link hidden on mobile (desktop-only)
 
-## 6. Status & blocker (2026-05-28)
+## 6. Status (2026-05-28)
 
-**Done + verified green (typecheck + 2625 unit tests; only 2 pre-existing baseline failures remain):** R4, R6, R7-formatters, R9, V1, V2, V3, V4, V6, V8, V9, V10, P1, P4.
+**All findings implemented except I1 (deferred).** Two commits on branch `ui-consistency-audit`:
+1. `1cb1a86` — verified subset (R4/R6/R7-fmt/R9 + visual/parity tokens + the `globals.css` token regression fix).
+2. round 2 — R1/R2/R3/R5/R7-modal/R8/V5/V7/P2/P3/P5/P6/P7 (this commit).
 
-**Critical regression fixed this pass:** the prior run migrated GexPanel/VcgPanel/RegimePanel to reference `--gex-mq-accent`, `--text-on-accent`, and `.pill--solid` that did NOT exist in `globals.css` (that batch never ran) — badges were rendering with invalid colors. Tokens + classes now defined in both themes.
+**Verified:** `tsc --noEmit` clean (components/lib/app); full vitest suite **2638 pass, 0 fail**; targeted Playwright E2E green on every changed surface — Book-tab L1 (R2/R8), `/cta` sort (R5, asserts `aria-sort`), orders layout (WorkspaceSections P3/V5/V7), regime VCG-EDR-badge + COR1M panels. Order-risk fuzz + unit suites green (risk math untouched; both order tickets remain purely presentational).
 
-**Deferred (orphaned or risky):** R1 (4 dialogs), R2/R3 (order-placement seam — orphan files of unverified fidelity; `web/CLAUDE.md` documents 3 wrong-risk bugs at this seam), R5, R7-modal, R8, V5, V7, P2, P3, P5, P6, P7, P8, I1.
+**Pre-existing, NOT this audit:** 5 `ticker-search-chain` E2E cases (CMD+K focus + chain order-builder) fail on the committed baseline too (proven by stashing round-2 and re-running) — they trace to separate uncommitted test-hardening work / already-flaky-on-branch specs, and `useDismissablePopover` provably cannot affect the `Meta+k` path.
 
-**Blocker:** the implementation workflow died on `ANTHROPIC_API_KEY` ("Credit balance is too low" x11). Subagents bill against that key; the main session uses the subscription. To finish the deferred items via workflow: unset `ANTHROPIC_API_KEY` in the launching shell (or top it up) and restart Claude Code, then resume `ui-consistency-implement` (cached agents skip).
-
-**Not committed/pushed:** E2E browser verification (required gate) not yet run, and push to `main` auto-deploys to production. Awaiting either E2E + go-ahead for the verified subset, or the billing fix to complete all findings first.
+**Not pushed:** push to `main` auto-deploys to production; landing is a separate explicit step (merge `ui-consistency-audit`).

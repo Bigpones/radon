@@ -1,6 +1,6 @@
 "use client";
 
-import Modal from "./Modal";
+import MetricBreakdownModal from "./MetricBreakdownModal";
 
 type Props = {
   open: boolean;
@@ -11,16 +11,15 @@ type Props = {
 };
 
 export default function AccountMetricModal({ open, title, value, formula, onClose }: Props) {
-  if (!open) return null;
-
   return (
-    <Modal open onClose={onClose} title={title} className="account-metric-modal">
-      <div className="eb-total">
-        <span className="eb-total-value neutral">{value}</span>
-      </div>
-      <div className="eb-formula">
-        <code>{formula}</code>
-      </div>
-    </Modal>
+    <MetricBreakdownModal
+      open={open}
+      onClose={onClose}
+      title={title}
+      className="account-metric-modal"
+      value={value}
+      valueTone="neutral"
+      formula={formula}
+    />
   );
 }

@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Building2 } from "lucide-react";
 import type { PriceData, FundamentalsData } from "@/lib/pricesProtocol";
+import SectionEmptyState from "@/components/SectionEmptyState";
 
 type CompanyData = {
   uw_info: Record<string, unknown>;
@@ -80,7 +82,15 @@ export default function CompanyTab({ ticker, active, priceData, fundamentals }: 
     return <div className="tab-error">{error}</div>;
   }
   if (!data) {
-    return <div className="tab-empty">No data for {ticker}</div>;
+    return (
+      <div className="tab-empty">
+        <SectionEmptyState
+          icon={Building2}
+          headline={`No data for ${ticker}`}
+          variant="compact"
+        />
+      </div>
+    );
   }
 
   const info = data.uw_info;

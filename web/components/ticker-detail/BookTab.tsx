@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { OpenOrder, PortfolioData, PortfolioPosition } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { fmtPrice } from "@/lib/positionUtils";
-import OrderErrorBanner from "@/components/OrderErrorBanner";
+import SingleLegOrderTicket, { type SingleLegOrderAction } from "@/components/SingleLegOrderTicket";
 import { OrderRiskGate, type LinearOrderRiskInput } from "@/lib/order";
 import { isIndexSymbol, hasFuturesSupport, hasIndexOptionsSupport } from "@/lib/indexSymbols";
 import { FuturesOrderForm } from "@/components/ticker-detail/FuturesOrderForm";
@@ -23,8 +23,6 @@ type BookTabProps = {
    *  surfaces UNBOUNDED via the linear risk branch. */
   portfolio?: PortfolioData | null;
 };
-
-type OrderAction = "BUY" | "SELL";
 
 /* ─── L1 Order Book ─── */
 
@@ -47,19 +45,7 @@ function L1OrderBook({
 }) {
   return (
     <div className="book-l1">
-      <div
-        className="book-section-header"
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: "11px",
-          textTransform: "uppercase",
-          letterSpacing: "0.05em",
-          color: "var(--text-secondary)",
-          marginBottom: "8px",
-        }}
-      >
-        ORDER BOOK
-      </div>
+      <div className="book-section-header">ORDER BOOK</div>
       <div
         style={{
           display: "grid",
@@ -69,105 +55,34 @@ function L1OrderBook({
         }}
       >
         {/* Bid side */}
-        <div style={{ textAlign: "center" }}>
-          <div
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "10px",
-              textTransform: "uppercase",
-              color: "var(--text-secondary)",
-              marginBottom: "4px",
-            }}
-          >
-            BID
-          </div>
-          <div
-            className="positive"
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "16px",
-              fontWeight: 600,
-            }}
-          >
+        <div className="book-l1-cell">
+          <div className="book-l1-cell-label">BID</div>
+          <div className="positive book-l1-value">
             {bid != null ? fmtPrice(bid) : "---"}
           </div>
-          <div
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "11px",
-              color: "var(--text-secondary)",
-              marginTop: "2px",
-            }}
-          >
+          <div className="book-l1-cell-sub">
             {bidSize != null ? bidSize : "---"}
           </div>
         </div>
 
         {/* Spread */}
-        <div style={{ textAlign: "center" }}>
-          <div
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "10px",
-              textTransform: "uppercase",
-              color: "var(--text-secondary)",
-              marginBottom: "4px",
-            }}
-          >
-            SPREAD
-          </div>
-          <div
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "14px",
-              color: "var(--text-primary, #e2e8f0)",
-            }}
-          >
+        <div className="book-l1-cell">
+          <div className="book-l1-cell-label">SPREAD</div>
+          <div className="book-l1-value-spread">
             {spread != null ? spread.toFixed(2) : "---"}
           </div>
-          <div
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "10px",
-              color: "var(--text-secondary)",
-              marginTop: "2px",
-            }}
-          >
+          <div className="book-l1-cell-sub">
             {last != null ? `${lastLabel} ${fmtPrice(last)}` : ""}
           </div>
         </div>
 
         {/* Ask side */}
-        <div style={{ textAlign: "center" }}>
-          <div
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "10px",
-              textTransform: "uppercase",
-              color: "var(--text-secondary)",
-              marginBottom: "4px",
-            }}
-          >
-            ASK
-          </div>
-          <div
-            className="negative"
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "16px",
-              fontWeight: 600,
-            }}
-          >
+        <div className="book-l1-cell">
+          <div className="book-l1-cell-label">ASK</div>
+          <div className="negative book-l1-value">
             {ask != null ? fmtPrice(ask) : "---"}
           </div>
-          <div
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "11px",
-              color: "var(--text-secondary)",
-              marginTop: "2px",
-            }}
-          >
+          <div className="book-l1-cell-sub">
             {askSize != null ? askSize : "---"}
           </div>
         </div>
@@ -181,19 +96,7 @@ function L1OrderBook({
 function PositionSummary({ position }: { position: PortfolioPosition }) {
   return (
     <div style={{ marginTop: "16px" }}>
-      <div
-        className="book-section-header"
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: "11px",
-          textTransform: "uppercase",
-          letterSpacing: "0.05em",
-          color: "var(--text-secondary)",
-          marginBottom: "8px",
-        }}
-      >
-        POSITION
-      </div>
+      <div className="book-section-header">POSITION</div>
       <div className="instrument-summary-grid">
         <div className="pos-stat">
           <span className="pos-stat-label">DIRECTION</span>
@@ -235,19 +138,7 @@ function PositionSummary({ position }: { position: PortfolioPosition }) {
 function OpenOrdersList({ orders }: { orders: OpenOrder[] }) {
   return (
     <div style={{ marginTop: "16px" }}>
-      <div
-        className="book-section-header"
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: "11px",
-          textTransform: "uppercase",
-          letterSpacing: "0.05em",
-          color: "var(--text-secondary)",
-          marginBottom: "8px",
-        }}
-      >
-        OPEN ORDERS ({orders.length})
-      </div>
+      <div className="book-section-header">OPEN ORDERS ({orders.length})</div>
       {orders.map((o, i) => {
         const c = o.contract;
         const desc =
@@ -312,19 +203,14 @@ function StockOrderForm({
   ask: number | null;
   mid: number | null;
 }) {
-  const defaultAction: OrderAction = position != null ? "SELL" : "BUY";
-  const [action, setAction] = useState<OrderAction>(defaultAction);
+  const defaultAction: SingleLegOrderAction = position != null ? "SELL" : "BUY";
+  const [action, setAction] = useState<SingleLegOrderAction>(defaultAction);
   const [quantity, setQuantity] = useState(() => {
     if (position && position.structure_type === "Stock")
       return String(position.contracts);
     return "";
   });
   const [limitPrice, setLimitPrice] = useState("");
-  const [tif, setTif] = useState<"DAY" | "GTC">("DAY");
-  const [confirmStep, setConfirmStep] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
 
   const parsedQty = parseInt(quantity, 10);
   const parsedPrice = parseFloat(limitPrice);
@@ -404,221 +290,46 @@ function StockOrderForm({
     };
   }, [isValid, parsedQty, parsedPrice, action, ticker, heldLong, heldShort, avgCost]);
 
-  const handlePlace = useCallback(async () => {
-    if (!confirmStep) {
-      setConfirmStep(true);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      const res = await fetch("/api/orders/place", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "stock",
-          symbol: ticker,
-          action,
-          quantity: parsedQty,
-          limitPrice: parsedPrice,
-          tif,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        setError(json.error || "Order placement failed");
-      } else {
-        setSuccess(
-          `Order placed: ${action} ${parsedQty} ${ticker} @ ${fmtPrice(parsedPrice)}`
-        );
-        setConfirmStep(false);
-      }
-    } catch {
-      setError("Network error placing order");
-    } finally {
-      setLoading(false);
-    }
-  }, [confirmStep, ticker, action, parsedQty, parsedPrice, tif]);
-
   return (
-    <div className="order-form" style={{ marginTop: "16px" }}>
-      <div
-        className="book-section-header"
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: "11px",
-          textTransform: "uppercase",
-          letterSpacing: "0.05em",
-          color: "var(--text-secondary)",
-          marginBottom: "8px",
-        }}
-      >
-        STOCK ORDER
-      </div>
-
-      <div className="order-field">
-        <label className="order-label">Action</label>
-        <div className="order-action-buttons">
-          <button
-            className={`order-action-btn ${action === "BUY" ? "order-action-active order-action-buy" : ""}`}
-            onClick={() => {
-              setAction("BUY");
-              setConfirmStep(false);
-            }}
-          >
-            BUY
-          </button>
-          <button
-            className={`order-action-btn ${action === "SELL" ? "order-action-active order-action-sell" : ""}`}
-            onClick={() => {
-              setAction("SELL");
-              setConfirmStep(false);
-            }}
-          >
-            SELL
-          </button>
-        </div>
-      </div>
-
-      <div className="order-field">
-        <label className="order-label">Quantity</label>
-        <input
-          className="order-input"
-          type="number"
-          min="1"
-          step="1"
-          value={quantity}
-          onChange={(e) => {
-            setQuantity(e.target.value);
-            setConfirmStep(false);
-          }}
-          placeholder="Shares"
-        />
-      </div>
-
-      <div className="order-field">
-        <label className="order-label">Limit Price</label>
-        <div className="modify-price-input-row">
-          <span className="modify-price-prefix">$</span>
-          <input
-            className="modify-price-input"
-            type="number"
-            step="0.01"
-            min="0.01"
-            value={limitPrice}
-            onChange={(e) => {
-              setLimitPrice(e.target.value);
-              setConfirmStep(false);
-            }}
-            placeholder="0.00"
-          />
-        </div>
-        <div className="modify-quick-buttons">
-          <button
-            className="btn-quick"
-            disabled={bid == null}
-            onClick={() => {
-              if (bid != null) {
-                setLimitPrice(bid.toFixed(2));
-                setConfirmStep(false);
-              }
-            }}
-          >
-            BID
-          </button>
-          <button
-            className="btn-quick"
-            disabled={mid == null}
-            onClick={() => {
-              if (mid != null) {
-                setLimitPrice(mid.toFixed(2));
-                setConfirmStep(false);
-              }
-            }}
-          >
-            MID
-          </button>
-          <button
-            className="btn-quick"
-            disabled={ask == null}
-            onClick={() => {
-              if (ask != null) {
-                setLimitPrice(ask.toFixed(2));
-                setConfirmStep(false);
-              }
-            }}
-          >
-            ASK
-          </button>
-        </div>
-      </div>
-
-      <div className="order-field">
-        <label className="order-label">Time in Force</label>
-        <div className="order-action-buttons">
-          <button
-            className={`order-action-btn ${tif === "DAY" ? "order-action-active" : ""}`}
-            onClick={() => setTif("DAY")}
-          >
-            DAY
-          </button>
-          <button
-            className={`order-action-btn ${tif === "GTC" ? "order-action-active" : ""}`}
-            onClick={() => setTif("GTC")}
-          >
-            GTC
-          </button>
-        </div>
-      </div>
-
-      <OrderErrorBanner error={error} />
-      {success && <div className="order-success">{success}</div>}
-
-      {/* Order Summary (shown in confirm step). Linear-branch
-          chokepoint surfaces UNBOUNDED for naked short stock, close-out
-          P&L for SELL-against-held-LONG / BUY-against-held-SHORT. */}
-      {confirmStep && (
+    <SingleLegOrderTicket
+      defaultAction={defaultAction}
+      defaultTif="DAY"
+      quantity={quantity}
+      onQuantityChange={setQuantity}
+      quantityPlaceholder="Shares"
+      bid={bid}
+      mid={mid}
+      ask={ask}
+      showQuickButtonPrices={false}
+      isValid={isValid}
+      limitPrice={limitPrice}
+      onLimitPriceChange={setLimitPrice}
+      onActionChange={setAction}
+      style={{ marginTop: "16px" }}
+      header={<div className="book-section-header">STOCK ORDER</div>}
+      riskGate={
+        /* Order Summary (shown in confirm step). Linear-branch
+           chokepoint surfaces UNBOUNDED for naked short stock, close-out
+           P&L for SELL-against-held-LONG / BUY-against-held-SHORT. */
         <OrderRiskGate
           input={riskInput}
           portfolio={portfolio}
           surface="book-tab-stock"
           variant="info"
         />
-      )}
-
-      <div className="order-submit">
-        {confirmStep ? (
-          <div className="order-confirm-row">
-            <button
-              className="btn-secondary"
-              onClick={() => setConfirmStep(false)}
-              disabled={loading}
-            >
-              Back
-            </button>
-            <button
-              className={`btn-primary ${action === "SELL" ? "btn-danger" : ""}`}
-              onClick={handlePlace}
-              disabled={!isValid || loading}
-            >
-              {loading ? "Placing..." : "Confirm Order"}
-            </button>
-          </div>
-        ) : (
-          <button
-            className="btn-primary"
-            onClick={handlePlace}
-            disabled={!isValid || loading}
-            style={{ width: "100%" }}
-          >
-            Place Order
-          </button>
-        )}
-      </div>
-    </div>
+      }
+      buildPayload={({ action, quantity, limitPrice, tif }) => ({
+        type: "stock",
+        symbol: ticker,
+        action,
+        quantity,
+        limitPrice,
+        tif,
+      })}
+      buildSuccessMessage={({ action, quantity, limitPrice }) =>
+        `Order placed: ${action} ${quantity} ${ticker} @ ${fmtPrice(limitPrice)}`
+      }
+    />
   );
 }
 

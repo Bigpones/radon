@@ -2,6 +2,7 @@
 
 import { Share2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useDialogChrome } from "@/lib/useDialogChrome";
 
 type ShareResponse = {
   preview_path?: string;
@@ -47,16 +48,11 @@ export default function ShareReportModal({
     }
   }, [shareUrl]);
 
-  useEffect(() => {
-    if (!modalOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeModal();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [modalOpen, closeModal]);
+  const dialogOpen = modalOpen && shareUrl != null;
+  const { panelRef } = useDialogChrome<HTMLDivElement>({
+    open: dialogOpen,
+    onClose: closeModal,
+  });
 
   useEffect(() => {
     return () => {
@@ -166,7 +162,7 @@ export default function ShareReportModal({
           {shareError}
         </div>
       )}
-      {modalOpen && shareUrl && (
+      {dialogOpen && (
         <div
           className="cta-share-backdrop"
           onClick={closeModal}
@@ -176,6 +172,8 @@ export default function ShareReportModal({
         >
           <div
             className="cta-share-modal"
+            ref={panelRef}
+            tabIndex={-1}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="cta-share-header">

@@ -5300,6 +5300,14 @@ tr.leg-row td {
 /* ── Table wrap for horizontal scroll ── */
 .table-wrap { overflow-x: auto; }
 
+/* Horizontal-scroll affordance for wide tables inside a .modal-content
+   (which clips overflow-x). Wrap the table in this so it scrolls within
+   the modal body instead of overflowing the dialog. */
+.modal-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* ── PositionTable toolbar ── */
 .position-table-toolbar {
   display: flex;
@@ -5620,6 +5628,55 @@ tr {
 .instrument-detail-modal .modal-content { width: 480px; }
 
 .instrument-summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+
+/* ── Order Book (BookTab) ── */
+
+.book-section-header {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.book-l1-cell {
+  text-align: center;
+}
+
+.book-l1-cell-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.book-l1-value {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.book-l1-value-spread {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.book-l1-cell-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.book-l1-cell-sub-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
 
 .leg-clickable { cursor: pointer; transition: color 150ms ease-in-out; }
 .leg-clickable:hover { color: var(--text-primary); opacity: 1; text-decoration: underline; text-underline-offset: 2px; }
@@ -8176,6 +8233,29 @@ tr {
   .gex-mq-panel,
   .gex-history-section {
     margin-top: 8px;
+  }
+}
+
+/* Single-column panel metric grids on narrow phones (393px baseline).
+   GEX / VCG / Performance / Internals stay readable instead of cramming
+   2-6 columns into ~360px of usable width. */
+@media (max-width: 640px) {
+  .gex-metrics-row,
+  .gex-levels-row,
+  .gex-bottom-row {
+    grid-template-columns: 1fr;
+  }
+
+  .metrics-grid,
+  .metrics-grid-3,
+  .metrics-grid-5 {
+    grid-template-columns: 1fr;
+  }
+
+  .performance-grid-2,
+  .performance-meta-grid,
+  .performance-metric-list {
+    grid-template-columns: 1fr;
   }
 }
 

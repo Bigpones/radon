@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Newspaper } from "lucide-react";
+import SectionEmptyState from "@/components/SectionEmptyState";
 
 type NewsItem = {
   headline: string;
@@ -63,7 +64,15 @@ export default function NewsTab({ ticker, active }: NewsTabProps) {
   }
 
   if (fetched && news.length === 0) {
-    return <div className="tab-empty">No recent news for {ticker}</div>;
+    return (
+      <div className="tab-empty">
+        <SectionEmptyState
+          icon={Newspaper}
+          headline={`No recent news for ${ticker}`}
+          variant="compact"
+        />
+      </div>
+    );
   }
 
   return (

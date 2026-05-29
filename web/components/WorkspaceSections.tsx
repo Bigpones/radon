@@ -60,7 +60,7 @@ import PositionTable, {
   POSITION_COLUMN_DEFAULTS,
   type PositionToggleableColumnKey,
 } from "./PositionTable";
-import { TableSkeleton } from "@/components/ui/Skeleton";
+import SpectralLoader from "./SpectralLoader";
 import CancelOrderDialog from "./CancelOrderDialog";
 import ModifyOrderModal from "./ModifyOrderModal";
 import type { ModifyOrderRequest } from "@/lib/orderModify";
@@ -946,7 +946,7 @@ function FlowSectionsBody() {
           {againstArr.length > 0 ? (
             <ResponsiveFlowTable rows={againstArr} lastColumn="Concern" />
           ) : (
-            <div className="alert-item">No contradicting flow detected</div>
+            <SectionEmptyState icon={TrendingDown} headline="No contradicting flow detected" />
           )}
         </div>
       </div>
@@ -964,7 +964,7 @@ function FlowSectionsBody() {
           {neutralArr.length > 0 ? (
             <ResponsiveFlowTable rows={neutralArr} lastColumn="Note" />
           ) : (
-            <div className="alert-item">No neutral positions</div>
+            <SectionEmptyState icon={Circle} headline="No neutral positions" />
           )}
         </div>
       </div>
@@ -982,7 +982,7 @@ function FlowSectionsBody() {
           {watchArr.length > 0 ? (
             <ResponsiveFlowTable rows={watchArr} lastColumn="Note" />
           ) : (
-            <div className="alert-item">No watch items</div>
+            <SectionEmptyState icon={Bell} headline="No watch items" />
           )}
         </div>
       </div>
@@ -1229,7 +1229,13 @@ function ScannerSections() {
         </div>
         {error && <div className="section-body"><div className="alert-item bearish">{error}</div></div>}
         {signals.length === 0 && !syncing && !error && (
-          <div className="section-body"><div className="alert-item">No scanner signals. Waiting for initial scan...</div></div>
+          <div className="section-body">
+            <SectionEmptyState
+              icon={Sparkles}
+              headline="No scanner signals"
+              secondary="Waiting for initial scan..."
+            />
+          </div>
         )}
         {signals.length > 0 && hasMounted && isMobile && (
           <div className="section-body">
@@ -1336,6 +1342,7 @@ function DiscoverSections() {
   const { data, syncing, error, lastSync } = useDiscover(true);
   const candidates = data?.candidates ?? [];
   const { sorted, sort, toggle } = useSort<DiscoverCandidate, DiscoverSortKey>(candidates, discoverExtract, "score", "desc");
+  const { isMobile, hasMounted } = useViewport();
 
   const fmtPremium = (v: number) => {
     if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
@@ -1383,9 +1390,59 @@ function DiscoverSections() {
         </div>
         {error && <div className="section-body"><div className="alert-item bearish">{error}</div></div>}
         {candidates.length === 0 && !syncing && !error && (
-          <div className="section-body"><div className="alert-item">No candidates found. Waiting for initial scan...</div></div>
+          <div className="section-body">
+            <SectionEmptyState
+              icon={Search}
+              headline="No candidates found"
+              secondary="Waiting for initial scan..."
+            />
+          </div>
         )}
-        {candidates.length > 0 && (
+        {candidates.length > 0 && hasMounted && isMobile && (
+          <div className="section-body">
+            <div className="mobile-signal-list" data-testid="mobile-discover-list">
+              {sorted.map((c) => (
+                <article className="mobile-signal-card" key={`discover-mobile-${c.ticker}`}>
+                  <div className="mobile-signal-card__head">
+                    <TickerLink ticker={c.ticker} />
+                    <span className={scoreClass(c.score)}>{c.score.toFixed(1)}</span>
+                  </div>
+                  <div className="mobile-signal-card__body">
+                    <div>
+                      <span className="mobile-signal-card__label">DP Direction</span>
+                      <span className={dpClass(c.dp_direction)}>{c.dp_direction}</span>
+                    </div>
+                    <div>
+                      <span className="mobile-signal-card__label">DP Strength</span>
+                      <span>{c.dp_strength.toFixed(1)}</span>
+                    </div>
+                    <div>
+                      <span className="mobile-signal-card__label">Buy Ratio</span>
+                      <span>{(c.dp_buy_ratio * 100).toFixed(1)}%</span>
+                    </div>
+                    <div>
+                      <span className="mobile-signal-card__label">Options Bias</span>
+                      <span className={biasClass(c.options_bias)}>{c.options_bias}</span>
+                    </div>
+                    <div>
+                      <span className="mobile-signal-card__label">Alerts</span>
+                      <span>{c.alerts}</span>
+                    </div>
+                    <div>
+                      <span className="mobile-signal-card__label">Premium</span>
+                      <span>{fmtPremium(c.total_premium)}</span>
+                    </div>
+                  </div>
+                  <div className="mobile-signal-card__foot">
+                    <span>{c.sweeps} sweeps</span>
+                    <span>{c.sector || c.issue_type || "—"}</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+        )}
+        {candidates.length > 0 && !(hasMounted && isMobile) && (
           <div className="section-body table-wrap">
             <table>
               <thead>
@@ -1540,9 +1597,11 @@ function JournalSections() {
         </div>
         {error && <div className="section-body"><div className="alert-item bearish">{error}</div></div>}
         {syncError && <div className="section-body"><div className="alert-item bearish">IB Sync: {syncError}</div></div>}
-        {loading && <div className="section-body p-6"><TableSkeleton rows={4} columns={6} /></div>}
+        {loading && <div className="section-body p-6"><SpectralLoader label="Loading journal" /></div>}
         {!loading && trades.length === 0 && !error && (
-          <div className="section-body"><div className="alert-item">No trades in journal.</div></div>
+          <div className="section-body">
+            <SectionEmptyState icon={Wrench} headline="No trades in journal" />
+          </div>
         )}
         {trades.length > 0 && showMobileJournal && (
           <div className="section-body">
@@ -2007,7 +2066,7 @@ function OrdersSections({
           <span className="pill neutral">LOADING</span>
         </div>
         <div className="section-body p-6">
-          <TableSkeleton rows={5} columns={8} />
+          <SpectralLoader label="Loading orders" />
         </div>
       </div>
     );
@@ -2603,7 +2662,7 @@ export function HistoricalTradesSection() {
             testId="historical-trades-error"
           />
         )}
-        {loading && <div className="p-6"><TableSkeleton rows={5} columns={8} /></div>}
+        {loading && <div className="p-6"><SpectralLoader label="Loading historical trades" /></div>}
         {!loading && !error && totalCount === 0 && (
           <SectionEmptyState
             icon={History}

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { useDialogChrome } from "@/lib/useDialogChrome";
 
 type ConfirmDialogProps = {
   open: boolean;
@@ -16,10 +17,10 @@ type ConfirmDialogProps = {
 };
 
 /**
- * Minimal confirmation dialog tailored for operator actions. Mirrors the
- * existing Modal.tsx behaviour (escape + scroll lock + focus) so this stays
- * keyboard-accessible without pulling Modal's API surface into the admin
- * panel where the buttons are the primary affordance.
+ * Minimal confirmation dialog tailored for operator actions. Adopts the shared
+ * useDialogChrome contract (escape + scroll lock + focus trap + focus restore)
+ * so the cross-cutting behaviour lives in one place; the bespoke visuals and
+ * the confirm-button-as-primary-affordance focus default stay local.
  */
 export default function ConfirmDialog({
   open,
@@ -32,26 +33,19 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
-  const onCancelRef = useRef(onCancel);
-  onCancelRef.current = onCancel;
   const confirmBtnRef = useRef<HTMLButtonElement>(null);
+
+  const { portalTarget, panelRef } = useDialogChrome<HTMLDivElement>({
+    open,
+    onClose: onCancel,
+  });
 
   useEffect(() => {
     if (!open) return;
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancelRef.current();
-    };
-    document.addEventListener("keydown", handleKey);
-    document.body.style.overflow = "hidden";
     confirmBtnRef.current?.focus();
-    return () => {
-      document.removeEventListener("keydown", handleKey);
-      document.body.style.overflow = "";
-    };
   }, [open]);
 
-  if (!open) return null;
-  if (typeof document === "undefined") return null;
+  if (!open || !portalTarget) return null;
 
   return createPortal(
     <div
@@ -61,7 +55,7 @@ export default function ConfirmDialog({
       aria-label={title}
       data-testid="admin-confirm"
     >
-      <div className="admin-confirm-panel">
+      <div className="admin-confirm-panel" ref={panelRef} tabIndex={-1}>
         <h2 className="admin-confirm-title">{title}</h2>
         <p className="admin-confirm-body">{body}</p>
         <div className="admin-confirm-actions">
@@ -86,6 +80,6 @@ export default function ConfirmDialog({
         </div>
       </div>
     </div>,
-    document.body,
+    portalTarget,
   );
 }
