@@ -26,9 +26,11 @@ vi.mock("@/lib/OrderActionsContext", () => ({
     cancelledOrders: [],
     requestCancel: vi.fn(),
     requestModify: vi.fn(),
+    pushNotification: vi.fn(),
     drainNotifications: vi.fn(() => []),
     setOrdersUpdater: vi.fn(),
   }),
+  useOrderActionsOptional: () => ({ pushNotification: vi.fn() }),
 }));
 
 vi.mock("@/components/ModifyOrderModal", () => ({

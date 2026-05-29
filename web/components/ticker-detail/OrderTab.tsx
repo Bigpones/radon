@@ -5,7 +5,7 @@ import { AlertTriangle, Loader2 } from "lucide-react";
 import type { OpenOrder, PortfolioData, PortfolioPosition } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { optionKey } from "@/lib/pricesProtocol";
-import { useOrderActions } from "@/lib/OrderActionsContext";
+import { useOrderActions, useOrderActionsOptional } from "@/lib/OrderActionsContext";
 import { fmtPrice, legPriceKey, resolveEntryCost } from "@/lib/positionUtils";
 import { computeLegImpliedValue } from "@/lib/impliedValue";
 import { useRiskFreeRate } from "@/lib/useRiskFreeRate";
@@ -286,7 +286,7 @@ function NewOrderForm({
   const [confirmStep, setConfirmStep] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const orderActions = useOrderActionsOptional();
 
   const parsedQty = parseInt(quantity, 10);
   const parsedPrice = parseFloat(limitPrice);
@@ -401,7 +401,6 @@ function NewOrderForm({
 
     setLoading(true);
     setError(null);
-    setSuccess(null);
 
     try {
       const payload = buildSingleLegOrderPayload({
@@ -431,7 +430,7 @@ function NewOrderForm({
       if (!res.ok) {
         setError(json.error || "Order placement failed");
       } else {
-        setSuccess(`Order placed: ${action} ${parsedQty} ${ticker} @ ${fmtPrice(parsedPrice)}`);
+        orderActions?.pushNotification({ type: "success", message: `Order placed: ${action} ${parsedQty} ${ticker} @ ${fmtPrice(parsedPrice)}` });
         setConfirmStep(false);
         onOrderPlaced?.();
       }
@@ -512,7 +511,6 @@ function NewOrderForm({
       )}
 
       <OrderErrorBanner error={error} />
-      {success && <div className="order-success">{success}</div>}
 
       {/* Order Summary (shown in confirm step). Owned by `<OrderRiskGate>`. */}
       {confirmStep && (
@@ -569,7 +567,7 @@ function ComboOrderForm({
   const [confirmStep, setConfirmStep] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const orderActions = useOrderActionsOptional();
 
   // Combo leg actions define the SPREAD STRUCTURE, not the trade direction.
   // IB reverses all leg actions when Order.action = SELL.
@@ -651,7 +649,6 @@ function ComboOrderForm({
 
     setLoading(true);
     setError(null);
-    setSuccess(null);
 
     try {
       const legs = legsWithActions.map((leg) => ({
@@ -696,7 +693,7 @@ function ComboOrderForm({
       if (!res.ok) {
         setError(json.error || "Order placement failed");
       } else {
-        setSuccess(`Combo order placed: ${action} ${parsedQty}x ${position.structure} @ ${fmtSignedPrice(parsedPrice)}`);
+        orderActions?.pushNotification({ type: "success", message: `Combo order placed: ${action} ${parsedQty}x ${position.structure} @ ${fmtSignedPrice(parsedPrice)}` });
         setConfirmStep(false);
         onOrderPlaced?.();
       }
@@ -884,7 +881,6 @@ function ComboOrderForm({
       )}
 
       <OrderErrorBanner error={error} />
-      {success && <div className="order-success">{success}</div>}
 
       {/* Order Summary (shown in confirm step). Owned by `<OrderRiskGate>`. */}
       {confirmStep && (

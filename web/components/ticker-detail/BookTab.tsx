@@ -6,6 +6,7 @@ import type { PriceData } from "@/lib/pricesProtocol";
 import { fmtPrice } from "@/lib/positionUtils";
 import SingleLegOrderTicket, { type SingleLegOrderAction } from "@/components/SingleLegOrderTicket";
 import { OrderRiskGate, type LinearOrderRiskInput } from "@/lib/order";
+import { useOrderActionsOptional } from "@/lib/OrderActionsContext";
 import { isIndexSymbol, hasFuturesSupport, hasIndexOptionsSupport } from "@/lib/indexSymbols";
 import { FuturesOrderForm } from "@/components/ticker-detail/FuturesOrderForm";
 import { IndexOptionOrderForm } from "@/components/ticker-detail/IndexOptionOrderForm";
@@ -203,6 +204,7 @@ function StockOrderForm({
   ask: number | null;
   mid: number | null;
 }) {
+  const orderActions = useOrderActionsOptional();
   const defaultAction: SingleLegOrderAction = position != null ? "SELL" : "BUY";
   const [action, setAction] = useState<SingleLegOrderAction>(defaultAction);
   const [quantity, setQuantity] = useState(() => {
@@ -329,6 +331,8 @@ function StockOrderForm({
       buildSuccessMessage={({ action, quantity, limitPrice }) =>
         `Order placed: ${action} ${quantity} ${ticker} @ ${fmtPrice(limitPrice)}`
       }
+      onSuccessToast={(message) => orderActions?.pushNotification({ type: "success", message })}
+      suppressInlineSuccess
     />
   );
 }

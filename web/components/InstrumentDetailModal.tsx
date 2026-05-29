@@ -8,6 +8,7 @@ import Modal from "./Modal";
 import SingleLegOrderTicket, { type SingleLegOrderAction } from "./SingleLegOrderTicket";
 import { InstrumentOrderQuoteTelemetry } from "./QuoteTelemetry";
 import { OrderRiskGate, type OrderRiskInput } from "@/lib/order";
+import { useOrderActionsOptional } from "@/lib/OrderActionsContext";
 import type { PortfolioData } from "@/lib/types";
 
 export type InstrumentDetailProps = {
@@ -122,6 +123,7 @@ function LegOrderForm({
   onQuantityChange: (value: string) => void;
   portfolio: PortfolioData | null;
 }) {
+  const orderActions = useOrderActionsOptional();
   const bid = priceData?.bid ?? null;
   const ask = priceData?.ask ?? null;
   const mid = bid != null && ask != null ? (bid + ask) / 2 : null;
@@ -228,6 +230,8 @@ function LegOrderForm({
       buildSuccessMessage={({ action, quantity, limitPrice }) =>
         `Order placed: ${action} ${quantity}x ${ticker} ${strikeStr}${right} @ ${fmtPrice(limitPrice)}`
       }
+      onSuccessToast={(message) => orderActions?.pushNotification({ type: "success", message })}
+      suppressInlineSuccess
     />
   );
 }

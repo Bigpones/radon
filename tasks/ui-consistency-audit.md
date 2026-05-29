@@ -103,7 +103,7 @@ Status legend: `[x]` = code-complete + typecheck/unit green (E2E visual pass sti
 - [x] P3 Discover mobile card variant (mirrors Scanner)
 - [x] P4 `RegimeRelationshipView` → `onPointerMove`/`onPointerLeave` (+ test fires pointer events)
 - [x] P5 single-column mobile `@media` layouts for GEX/VCG/Performance/Internals
-- [ ] I1 route order-SUCCESS through `addToast()` — DEFERRED (clean unblock: add `pushNotification` to `OrderActionsContext`, then OrderTab/OptionsChainTab consume it; not done to avoid a late order-surface edit)
+- [x] I1 order-SUCCESS routed through the toast system. `OrderActionsContext` exposes `pushNotification` + a non-throwing `useOrderActionsOptional`; OrderTab (single + combo), OptionsChainTab, and the `SingleLegOrderTicket` surfaces (InstrumentDetailModal, BookTab) push a success toast instead of an inline `.order-success`. IB rejection errors stay inline in `OrderErrorBanner`.
 
 **P3**
 - [x] R8 `.book-section-header` + `.book-l1-*` classes; BookTab inline styles removed
@@ -115,7 +115,7 @@ Status legend: `[x]` = code-complete + typecheck/unit green (E2E visual pass sti
 
 ## 6. Status (2026-05-28)
 
-**All findings implemented except I1 (deferred).** Two commits on branch `ui-consistency-audit`:
+**All findings implemented (I1 completed 2026-05-29).** Shipped to production via the `ui-consistency-audit` branch + follow-on commits to `main`:
 1. `1cb1a86` — verified subset (R4/R6/R7-fmt/R9 + visual/parity tokens + the `globals.css` token regression fix).
 2. round 2 — R1/R2/R3/R5/R7-modal/R8/V5/V7/P2/P3/P5/P6/P7 (this commit).
 

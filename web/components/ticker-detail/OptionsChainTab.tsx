@@ -6,6 +6,7 @@ import { optionKey, normalizeOptionExpiry } from "@/lib/pricesProtocol";
 import type { PortfolioData, PortfolioPosition } from "@/lib/types";
 import { fmtPrice } from "@/lib/positionUtils";
 import OrderErrorBanner from "@/components/OrderErrorBanner";
+import { useOrderActionsOptional } from "@/lib/OrderActionsContext";
 import { useTickerDetail } from "@/lib/TickerDetailContext";
 import { useChainPrefetch } from "@/lib/useChainPrefetch";
 import { useChainUrlState, parseSideParam, parseStrikesParam, type SideFilter } from "@/lib/useChainUrlState";
@@ -242,7 +243,7 @@ function OrderBuilder({
   const [priceManuallySet, setPriceManuallySet] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const orderActions = useOrderActionsOptional();
   const [confirmStep, setConfirmStep] = useState(false);
 
   const isCombo = legs.length > 1;
@@ -377,7 +378,6 @@ function OrderBuilder({
 
     setLoading(true);
     setError(null);
-    setSuccess(null);
 
     try {
       const isCombo = legs.length > 1;
@@ -422,7 +422,7 @@ function OrderBuilder({
       if (!res.ok) {
         setError(json.error || "Order placement failed");
       } else {
-        setSuccess(`Order placed: ${structure || "Option"} on ${ticker}`);
+        orderActions?.pushNotification({ type: "success", message: `Order placed: ${structure || "Option"} on ${ticker}` });
         setConfirmStep(false);
       }
     } catch {
@@ -501,7 +501,6 @@ function OrderBuilder({
             setLimitPrice("");
             setPriceManuallySet(false);
             setError(null);
-            setSuccess(null);
           }}
           style={{ fontSize: "10px", padding: "2px 8px" }}
         >
@@ -789,7 +788,6 @@ function OrderBuilder({
       </div>
 
       <OrderErrorBanner error={error} />
-      {success && <div className="order-success">{success}</div>}
 
       {/* Order Summary (shown in confirm step). Risk math is owned entirely
           by `<OrderRiskGate>` — it consumes `riskInput` + `portfolio`, runs
