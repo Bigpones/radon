@@ -36,8 +36,9 @@ Code: `scripts/api/ib_gateway.py:restart_ib_gateway`, `scripts/ib_watchdog.py:ru
 
 All FastAPI routes JWT-protected by default.
 
-- **Localhost bypass:** `client.host in {127.0.0.1, ::1}` → auth skipped. Covers Next.js → FastAPI. `scripts/api/auth.py:51-54`.
-- **Auth-exempt unconditionally:** `/health`, `/ws-ticket/validate`, `/docs`, `/openapi.json`, all `*/share` routes.
+- **Local/tailnet bypass:** `is_trusted_local_request(request)` = loopback/tailnet peer **AND** not forwarded. A request carrying reverse-proxy headers (Caddy sets `X-Forwarded-For`) is NOT trusted even from 127.0.0.1, so the public `handle_path /api/ib/*` route can't inherit the bypass. Both the middleware and `verify_clerk_jwt` use it. `scripts/api/auth.py`. See `feedback_health_endpoint_public_leak_and_trust_chokepoint.md`.
+- **Auth-exempt unconditionally:** `/health`, `/ws-ticket/validate`, `/docs`, `/openapi.json`, all `*/share` routes. **`/health` is trust-scoped:** untrusted (public/proxied) callers get `{"status":"ok"}` only — never account IDs / IB state / topology — and short-circuit before `check_ib_gateway()`. Trusted local/tailnet callers get the full payload.
+- **`/health/lite`** — side-effect-free, account-free coarse IB state (`auth_state`/`service_state`/`upstream_dead`/`port_listening`) for high-frequency pollers (the standalone health daemon). Calls `check_ib_gateway(pool=None)` so it NEVER triggers `reconnect_all`/heal — the 2FA-recovery heartbeat stays on `/health`. **NOT auth-exempt** (loopback daemon covered by bypass; public → 401); never add it to `AUTH_EXEMPT_PATHS`.
 - WebSocket auth via `scripts/api/ws_ticket.py` — 30s TTL.
 
 Don't return 4xx for legitimate empty/pending states; use 200 + payload flag (e.g., `missing: true`). 4xx noise in the browser console + Next.js logs masks real errors. See `feedback_http_status_for_real_errors.md`.

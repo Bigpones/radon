@@ -94,3 +94,80 @@ class TestHealthPayloadScoping:
         result = await server.health(req)
 
         assert result["ib_gateway"]["auth_state"] == "awaiting_2fa"
+
+
+class TestHealthLite:
+    """/health/lite is the side-effect-free, account-free coarse IB-state
+    contract for high-frequency pollers (the standalone health daemon). It must
+    call check_ib_gateway with pool=None so it never triggers reconnect_all/heal
+    (that recovery heartbeat stays on /health), and it must never return account
+    IDs, ports, restart backoff, or pool/topology detail.
+    """
+
+    @pytest.mark.asyncio
+    async def test_lite_is_side_effect_free(self, monkeypatch):
+        captured = {}
+
+        async def _gw(pool_status=None, pool=None):
+            captured["pool"] = pool
+            captured["pool_status"] = pool_status
+            return {"auth_state": "authenticated", "service_state": "healthy", "upstream_dead": False,
+                    "port_listening": True, "managed_accounts": ["U1234567"]}
+
+        monkeypatch.setattr(server, "check_ib_gateway", _gw)
+        monkeypatch.setattr(server, "ib_pool", SimpleNamespace(status=lambda: {"sync": {"connected": True}}))
+
+        await server.health_lite()
+
+        # pool MUST be None — no reconnect_all / heal on the lite poll path.
+        assert captured["pool"] is None
+        # pool_status is still passed so auth_state can be derived in-memory.
+        assert captured["pool_status"] == {"sync": {"connected": True}}
+
+    @pytest.mark.asyncio
+    async def test_lite_payload_is_coarse_and_account_free(self, monkeypatch):
+        async def _gw(pool_status=None, pool=None):
+            return {"auth_state": "awaiting_2fa", "service_state": "healthy", "upstream_dead": False,
+                    "port_listening": True, "managed_accounts": ["U1234567"], "host": "127.0.0.1",
+                    "port": 4001, "restart_backoff": {"attempt": 2}, "container_state": "running"}
+
+        monkeypatch.setattr(server, "check_ib_gateway", _gw)
+        monkeypatch.setattr(server, "ib_pool", SimpleNamespace(status=lambda: {}))
+
+        result = await server.health_lite()
+
+        assert result == {
+            "status": "ok",
+            "auth_state": "awaiting_2fa",
+            "service_state": "healthy",
+            "upstream_dead": False,
+            "port_listening": True,
+        }
+        for leaked in ("managed_accounts", "host", "port", "restart_backoff", "container_state", "ib_pool"):
+            assert leaked not in result, leaked
+
+    @pytest.mark.asyncio
+    async def test_lite_tolerates_missing_fields(self, monkeypatch):
+        async def _gw(pool_status=None, pool=None):
+            return {}  # cloud cold-start can omit everything
+
+        monkeypatch.setattr(server, "check_ib_gateway", _gw)
+        monkeypatch.setattr(server, "ib_pool", None)
+
+        result = await server.health_lite()
+
+        assert result == {
+            "status": "ok",
+            "auth_state": "unknown",
+            "service_state": "unknown",
+            "upstream_dead": False,
+            "port_listening": False,
+        }
+
+    def test_lite_is_not_auth_exempt(self):
+        # Regression pin: /health/lite must NOT be auth-exempt, or it would be
+        # world-readable via Caddy /api/ib/health/lite. /health stays exempt
+        # (pure liveness). See feedback_health_endpoint_public_leak_and_trust_chokepoint.
+        from scripts.api.server import AUTH_EXEMPT_PATHS
+        assert "/health/lite" not in AUTH_EXEMPT_PATHS
+        assert "/health" in AUTH_EXEMPT_PATHS

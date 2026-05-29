@@ -934,6 +934,32 @@ async def health(request: Request):
     }
 
 
+@app.get("/health/lite")
+async def health_lite():
+    """Side-effect-free, account-free coarse IB state for high-frequency pollers
+    (the standalone health daemon).
+
+    Unlike /health, this passes pool=None: it must NEVER trigger
+    handle_auth_state_transition / pool.reconnect_all(). The 2FA-recovery
+    heartbeat deliberately stays on /health (driven by the operator's 15s admin
+    poll); a frequently-polling daemon hitting a mutating endpoint would perturb
+    the very recovery it observes. The payload is coarse on purpose — never
+    managed_accounts (IBKR account IDs), ports, restart backoff, or topology.
+
+    NOT in AUTH_EXEMPT_PATHS: the in-box daemon reaches it from loopback (covered
+    by the bypass); public callers via Caddy /api/ib/health/lite get 401.
+    """
+    pool_status = ib_pool.status() if ib_pool else None
+    gw = await check_ib_gateway(pool_status=pool_status, pool=None)
+    return {
+        "status": "ok",
+        "auth_state": gw.get("auth_state", "unknown"),
+        "service_state": gw.get("service_state", "unknown"),
+        "upstream_dead": gw.get("upstream_dead", False),
+        "port_listening": gw.get("port_listening", False),
+    }
+
+
 @app.post("/ws-ticket")
 async def get_ws_ticket(payload: dict = Depends(verify_clerk_jwt)):
     """Issue a short-lived ticket for WebSocket authentication."""
