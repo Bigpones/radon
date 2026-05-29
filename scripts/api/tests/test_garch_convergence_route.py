@@ -30,9 +30,18 @@ def localhost_bypass(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def reset_cooldown(monkeypatch):
-    """Reset cooldown state between tests so each gets a clean attempt."""
+    """Force each test past the scan cooldown so the subprocess path runs.
+
+    The route gates on ``monotonic() - _garch_last_scan < GARCH_COOLDOWN_S``.
+    Seeding ``_garch_last_scan = 0.0`` only clears the cooldown when
+    ``monotonic()`` is already larger than the cooldown — true on a long-uptime
+    dev box but NOT on a freshly-booted CI runner where ``monotonic()`` is a few
+    seconds, which left the cooldown active and short-circuited the scan (the
+    subprocess mock was never called, so ``run_mock.call_args`` was None). Seed
+    far in the past so the cooldown is always elapsed regardless of uptime.
+    """
     from scripts.api import server
-    monkeypatch.setattr(server, "_garch_last_scan", 0.0)
+    monkeypatch.setattr(server, "_garch_last_scan", -1e9)
     monkeypatch.setattr(server, "_garch_scan_lock", None)
     yield
 

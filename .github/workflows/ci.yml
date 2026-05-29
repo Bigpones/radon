@@ -21,21 +21,24 @@ jobs:
     env:
       NODE_ENV: test
       ASSISTANT_MOCK: "1"
-    defaults:
-      run:
-        working-directory: web
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      # bun is canonical for JS deps in this repo (bun.lock); deps live in web/.
+      # The repo has TWO bun projects: the root one provides vitest + the
+      # cross-cutting vitest.config.ts (which imports `vitest/config`), and
+      # web/ provides the app modules the tests import (@/lib, react, ...).
+      # Install BOTH or the root config fails to load with ERR_MODULE_NOT_FOUND.
       - run: bun install --frozen-lockfile
-      # Run the FULL vitest config (lib/tools + site/lib + web/tests), NOT
-      # `bun run test` — that script restricts to web/tests and silently skips
-      # ~9 files / ~68 tests (incl. site/lib/theme). The config root is the
-      # repo root, so include globs resolve regardless of this cwd.
-      - run: bunx vitest run --config ../vitest.config.ts
+      - run: bun install --frozen-lockfile
+        working-directory: web
+      # Run the FULL vitest config from the repo root (lib/tools + site/lib +
+      # web/tests), NOT `bun run test` — that script restricts to web/tests and
+      # silently skips ~9 files / ~68 tests (incl. site/lib/theme). vitest + the
+      # config resolve from root node_modules; web/tests files resolve their
+      # imports from web/node_modules.
+      - run: bunx vitest run --config vitest.config.ts
 
   py-tests:
     name: pytest (unit, no integration)

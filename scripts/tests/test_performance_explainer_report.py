@@ -1,4 +1,7 @@
+import pytest
+
 from performance_explainer_report import (
+    DATA_PATH,
     build_html,
     chart_family_contract,
     chart_role_color,
@@ -21,6 +24,12 @@ def test_chart_family_contract_comes_from_shared_chart_system():
 
 
 def test_build_html_mentions_shared_chart_contract():
+    # load_payload() reads data/performance.json, a runtime cache that is
+    # gitignored (data/*.json) and therefore absent in CI. Skip rather than
+    # fail when it has not been generated; build_html is exercised against the
+    # real cache on a dev box where a scan has run.
+    if not DATA_PATH.exists():
+        pytest.skip("requires data/performance.json runtime cache (run a performance scan first)")
     payload = load_payload()
     chart_system = load_chart_system()
 
