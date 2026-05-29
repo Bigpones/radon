@@ -123,6 +123,12 @@ describe("Ticker chain position focus", () => {
     } else {
       vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => {});
     }
+    // jsdom does not implement Element.prototype.scrollTo — the chain auto-scroll
+    // (OptionsChainTab) calls wrapper.scrollTo({ behavior: "smooth" }).
+    Object.defineProperty(Element.prototype, "scrollTo", {
+      configurable: true,
+      value: vi.fn(),
+    });
 
     fetchMock.mockImplementation((input) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : String(input.url);

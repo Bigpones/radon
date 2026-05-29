@@ -22,9 +22,14 @@ def _load_ib_client_module(module_name: str):
 def test_ib_client_default_host_reads_env():
     """After reloading ib_client with IB_GATEWAY_HOST set, DEFAULT_HOST must reflect it."""
     with patch.dict(os.environ, {"IB_GATEWAY_HOST": "test-cloud-host", "IB_GATEWAY_PORT": "9999"}):
-        ib_client = _load_ib_client_module("tests._isolated_ib_client_env_set")
-        assert ib_client.DEFAULT_HOST == "test-cloud-host"
-        assert ib_client.DEFAULT_GATEWAY_PORT == 9999
+        # No-op load_dotenv so an on-disk .env.ib-mode (override=True) can't
+        # clobber the patched env — the sibling tests already do this.
+        import dotenv
+
+        with patch.object(dotenv, "load_dotenv", return_value=False):
+            ib_client = _load_ib_client_module("tests._isolated_ib_client_env_set")
+            assert ib_client.DEFAULT_HOST == "test-cloud-host"
+            assert ib_client.DEFAULT_GATEWAY_PORT == 9999
 
 
 def test_ib_client_default_host_fallback():

@@ -180,17 +180,22 @@ describe("GET /api/menthorq/cta", () => {
 
 describe("GET /api/performance", () => {
   it("returns 200 with cached payload when available (fresh)", async () => {
+    // Timestamps MUST track the current ET session. A hardcoded date rots:
+    // once it falls behind today's trading session, the route enters the
+    // /portfolio/sync branch and hangs forever on the never-resolving
+    // radonFetch mock (see beforeEach). Matching cache + portfolio to "now"
+    // keeps the route on the genuine fresh-cache path it's meant to assert.
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const nowEtDate = now.toLocaleDateString("sv", { timeZone: "America/New_York" });
     mockGetDb.mockReturnValue(
       dbStub([
         {
-          payload: JSON.stringify({
-            last_sync: "2026-05-22T10:00:00Z",
-            as_of: "2026-05-22T10:00:00Z",
-          }),
+          payload: JSON.stringify({ last_sync: nowIso, as_of: nowEtDate }),
         },
       ]),
     );
-    mockReadFile.mockResolvedValue(JSON.stringify({ last_sync: "2026-05-22T10:00:00Z" }));
+    mockReadFile.mockResolvedValue(JSON.stringify({ last_sync: nowIso }));
     mockStat.mockResolvedValue({ mtimeMs: Date.now() }); // fresh
     const { GET } = await import("../app/api/performance/route");
     const res = await GET();

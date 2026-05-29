@@ -40,6 +40,18 @@ beforeEach(() => {
   fetchMock.mockReset();
   // @ts-expect-error — overriding global fetch for test
   global.fetch = fetchMock;
+  // jsdom doesn't implement Element.prototype.scrollIntoView. The feed
+  // scrolls to top on page change via a deferred effect that fires AFTER the
+  // assertion resolves — the resulting throw is an uncaught exception that
+  // doesn't fail the test but makes the whole vitest run exit non-zero.
+  if (!("scrollIntoView" in Element.prototype)) {
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn(),
+    });
+  } else {
+    vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+  }
 });
 
 afterEach(() => {

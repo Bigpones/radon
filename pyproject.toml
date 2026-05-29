@@ -10,6 +10,16 @@ ignore = ["E501"]  # line length handled separately
 known-first-party = ["utils", "trade_blotter"]
 
 [tool.pytest.ini_options]
+# Pin import roots so collection is cwd-independent. Without this, running
+# pytest from inside scripts/ (or a CI job that cd's there) silently loses
+# modules that resolve `import ib_sync` / `from api.*` / `trade_blotter`.
+# Do NOT add `testpaths` — it would orphan scripts/test_ib_realtime.py and
+# scripts/trade_blotter/test_*.py (29 tests). Keep collection broad.
+pythonpath = [".", "scripts", "scripts/trade_blotter"]
+# Skip live integration tests by default — they hit real MenthorQ over the
+# network (90 tests, ~600s, require credentials). The fast unit suite runs in
+# ~14s. Opt back in with `pytest -m integration` on a credentialed host.
+addopts = "-m 'not integration'"
 markers = [
     "integration: live tests hitting real MenthorQ (requires credentials)",
 ]

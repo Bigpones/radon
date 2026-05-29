@@ -9,8 +9,8 @@ Service-health monitor + alert dispatcher. Loaded when cwd is under `scripts/wat
 Monitors every `scheduled` service in `web/lib/serviceHealthWindows.ts`, notifies via Pushover (P1 only) + always-on `service_health` row.
 
 - **`intraday`**: `vcg-scan`, `cri-scan`, `orders-sync`, `portfolio-sync` — 5 min cadence, Mon–Fri 13:00–21:00 UTC.
-- **`continuous`**: `newsfeed-scraper`, `replica-watchdog`, `fill-monitor`, `exit-orders`, `journal-sync` — 5 min, 24/7.
-- **`daily`**: `cash-flow-sync`, `flex-token-check`, `cta-sync` — hourly, 24/7.
+- **`continuous`**: `newsfeed-scraper`, `replica-watchdog`, `fill-monitor`, `exit-orders`, `journal-sync`, `ib-watchdog` — 5 min, 24/7.
+- **`daily`**: `cash-flow-sync`, `flex-token-check`, `cta-sync`, `llm-token-index`, `leap-scan`, `garch-scan` — hourly, 24/7.
 - **`error`**: every scheduled service except `watchdog-alerts` itself (recursive-alert prevention) — 5 min, 24/7.
 
 ---

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { fileURLToPath } from "url";
@@ -12,21 +12,39 @@ const TEST_DIR = fileURLToPath(new URL(".", import.meta.url));
 const HOOK_PATH = join(TEST_DIR, "../lib/useSyncHook.ts");
 const hookSource = readFileSync(HOOK_PATH, "utf-8");
 
+// Freeze the wall clock: needsCurrentEtSessionRetry → isCriDataStale reads the
+// real Date.now()/isMarketOpenNow() internally for the intraday-TTL check (the
+// injected `now` only resolves today's ET date). Pinning time at 2026-03-12
+// 20:15Z (= 16:15 ET, a Thursday) makes both the ET-session comparison and the
+// 60s freshness TTL deterministic. A date-only fixture would short-circuit the
+// function (returns true on missing scan_time), so the fixtures carry scan_time.
+const FROZEN_NOW = new Date("2026-03-12T20:15:00.000Z");
+
 describe("Regime close-transition retry contract", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(FROZEN_NOW);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("keeps retrying when the CRI payload still points to the prior ET session", () => {
     expect(
       needsCurrentEtSessionRetry(
-        { date: "2026-03-11" },
-        new Date("2026-03-12T20:15:00.000Z"),
+        { date: "2026-03-11", scan_time: "2026-03-11T20:00:00", market_open: false },
+        FROZEN_NOW,
       ),
     ).toBe(true);
   });
 
-  it("stops retrying once the payload matches today's ET session", () => {
+  it("stops retrying once the payload matches today's ET session and is fresh", () => {
+    // scan_time 30s before frozen now → inside the 60s intraday TTL, and the
+    // ET session date matches today → no retry needed.
     expect(
       needsCurrentEtSessionRetry(
-        { date: "2026-03-12" },
-        new Date("2026-03-12T20:15:00.000Z"),
+        { date: "2026-03-12", scan_time: "2026-03-12T20:14:30", market_open: true },
+        FROZEN_NOW,
       ),
     ).toBe(false);
   });

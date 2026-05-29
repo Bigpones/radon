@@ -1,0 +1,72 @@
+name: CI (test gate + deploy)
+
+# Tests run on every PR and every push to main. The deploy job is GATED on
+# both test jobs — `git push origin main` only reaches the VPS if the full
+# Vitest + pytest suites are green. Deploy lives in THIS file because GitHub
+# Actions `needs:` cannot reference jobs in another workflow file.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same ref so a rapid push doesn't deploy twice.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web-tests:
+    name: Vitest (full config)
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      ASSISTANT_MOCK: "1"
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      # bun is canonical for JS deps in this repo (bun.lock); deps live in web/.
+      - run: bun install --frozen-lockfile
+      # Run the FULL vitest config (lib/tools + site/lib + web/tests), NOT
+      # `bun run test` — that script restricts to web/tests and silently skips
+      # ~9 files / ~68 tests (incl. site/lib/theme). The config root is the
+      # repo root, so include globs resolve regardless of this cwd.
+      - run: bunx vitest run --config ../vitest.config.ts
+
+  py-tests:
+    name: pytest (unit, no integration)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r scripts/requirements-api.txt
+          pip install pytest pytest-asyncio
+      # Run from the repo ROOT — pyproject.toml pins pythonpath so `import
+      # ib_sync` / `from api.*` / trade_blotter all resolve. addopts already
+      # applies `-m 'not integration'`, so the live MenthorQ suite is skipped.
+      - run: python -m pytest scripts/tests scripts/api/tests
+
+  deploy:
+    name: Deploy to VPS
+    needs: [web-tests, py-tests]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: radon
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd ~/radon-cloud
+            bash scripts/deploy.sh

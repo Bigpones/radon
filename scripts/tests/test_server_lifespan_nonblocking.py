@@ -59,7 +59,13 @@ async def test_lifespan_yields_before_ib_pool_finishes_connecting():
 
         async def enter_lifespan() -> None:
             async with lifespan(app):
-                pass
+                # Yield control once so the background connect task created
+                # during startup gets a turn and reaches its first await
+                # (registering the connect_all() call). Without this, the
+                # context-manager body completes before the scheduled task
+                # ever runs. If lifespan AWAITED connect_all instead of
+                # backgrounding it, the 5s sleep would blow the 1s timeout.
+                await asyncio.sleep(0)
 
         await asyncio.wait_for(enter_lifespan(), timeout=1.0)
 

@@ -66,6 +66,21 @@ SCHEDULED_SERVICES: dict[str, FreshnessWindow] = {
     "cri-scan":         {"open": 35 * _MIN, "closed": 1 * _DAY, "requires_ib": True},
     "vcg-scan":         {"open": 15 * _MIN, "closed": 1 * _DAY, "requires_ib": True},
     "cta-sync":         {"open": 25 * _HOUR, "closed": 72 * _HOUR, "requires_ib": False},
+    # Daily-cadence writers (mirror web/lib/serviceHealthWindows.ts):
+    #  * llm-token-index — radon-llm-index.timer, once/UTC-day 06:30; pulls
+    #    Artificial Analysis only, no IB. 25h window covers cadence + drift.
+    #  * leap-scan       — radon-leap.timer, once daily 14:00 UTC + on-demand;
+    #    UW-only. 26h open covers a weekend, 3d closed the long gap.
+    #  * garch-scan      — on-demand dashboard refresh (+ optional timer, not
+    #    yet shipped); UW-only. Same daily windows as leap-scan.
+    "llm-token-index":  {"open": 25 * _HOUR, "closed": 25 * _HOUR, "requires_ib": False},
+    "leap-scan":        {"open": 26 * _HOUR, "closed": 3 * _DAY, "requires_ib": False},
+    "garch-scan":       {"open": 26 * _HOUR, "closed": 3 * _DAY, "requires_ib": False},
+    # ib-watchdog polls FastAPI /health every 60s and heartbeats a row each
+    # cycle; 5-min window catches a dead watchdog process within minutes.
+    # It MONITORS IB but does not depend on IB being healthy to run, so
+    # requires_ib=False (suppressing it during an IB outage would defeat it).
+    "ib-watchdog":      {"open": 5 * _MIN, "closed": 5 * _MIN, "requires_ib": False},
     # Event-driven writer — only records a row when it heals. Match
     # the 24h window from web/lib/serviceHealthWindows.ts so the dash
     # banner and the watchdog agree on what "stale" means here.
@@ -91,11 +106,18 @@ BUCKETS: dict[str, list[str]] = {
         "fill-monitor",
         "exit-orders",
         "journal-sync",
+        # Always-on heartbeat (writes service_health every 60s cycle).
+        "ib-watchdog",
     ],
     "daily": [
         "cash-flow-sync",
         "flex-token-check",
         "cta-sync",
+        # Once-per-day writers — hourly check surfaces a delay within 1h
+        # of the window expiring.
+        "llm-token-index",
+        "leap-scan",
+        "garch-scan",
     ],
     # Every scheduled service EXCEPT watchdog-alerts. Including
     # watchdog-alerts here would create a recursive alerting loop:

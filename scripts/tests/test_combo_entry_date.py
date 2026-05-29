@@ -231,7 +231,10 @@ class TestComboEntryDateResolution(unittest.TestCase):
         same-day branch missed it, the close-based daily P&L kicked in, and
         Today P&L showed wildly wrong numbers."""
         from datetime import datetime
-        today = datetime.now().strftime("%Y-%m-%d")
+        from zoneinfo import ZoneInfo
+        # ET trading day — must match ib_sync.convert_to_portfolio_format (uses
+        # America/New_York), else this fails on hosts west of ET after ET midnight.
+        today = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
 
         with tempfile.TemporaryDirectory() as tmpdir:
             data_dir = Path(tmpdir)
@@ -310,7 +313,10 @@ class TestComboEntryDateResolution(unittest.TestCase):
         position appearing in the current sync must be considered new today
         (so the same-day P&L branch fires correctly), not 'unknown'."""
         from datetime import datetime
-        today = datetime.now().strftime("%Y-%m-%d")
+        from zoneinfo import ZoneInfo
+        # ET trading day — must match ib_sync.convert_to_portfolio_format (uses
+        # America/New_York), else this fails on hosts west of ET after ET midnight.
+        today = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
 
         with tempfile.TemporaryDirectory() as tmpdir:
             data_dir = Path(tmpdir)
@@ -408,7 +414,9 @@ class TestComboEntryDateResolution(unittest.TestCase):
             # No fill_dates passed → defaults to today (per "brand-new
             # position must trigger same-day P&L" invariant).
             from datetime import datetime
-            today = datetime.now().strftime("%Y-%m-%d")
+            from zoneinfo import ZoneInfo
+            # ET trading day — must match ib_sync (America/New_York).
+            today = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
             self.assertEqual(result["positions"][0]["entry_date"], today)
 
 

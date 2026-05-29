@@ -73,7 +73,9 @@ describe("radonFetch — success", () => {
     const [, opts] = mockFetch.mock.calls[0];
     expect(opts.method).toBe("POST");
     expect(opts.cache).toBe("no-store");
-    expect(opts.headers).toEqual({ "Content-Type": "application/json" });
+    // radonFetch normalizes init.headers into a Headers instance (so it can
+    // inject Authorization), so assert via the Headers API, not deep-equal.
+    expect(new Headers(opts.headers).get("Content-Type")).toBe("application/json");
     expect(opts.body).toContain("AAPL");
   });
 

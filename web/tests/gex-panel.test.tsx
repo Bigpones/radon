@@ -118,7 +118,8 @@ describe("GexPanel", () => {
   it("renders loading state", () => {
     mockUseGex.mockReturnValue({ data: null, loading: true, error: null, lastSync: null, syncing: false, syncNow: vi.fn() });
     const { container } = render(<GexPanel />);
-    expect(container.textContent).toContain("Loading GEX scan");
+    // Loading copy is owned by <SpectralLoader label=...> in GexPanel.
+    expect(container.textContent).toContain("Sampling gamma exposure by strike");
   });
 
   it("renders empty state when no data", () => {

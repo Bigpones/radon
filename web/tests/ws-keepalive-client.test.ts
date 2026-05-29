@@ -41,6 +41,12 @@ let wsInstances: MockWebSocket[] = [];
 function latestWs(): MockWebSocket { return wsInstances[wsInstances.length - 1]; }
 function sentMessages(ws: MockWebSocket) { return ws.sent.map(s => JSON.parse(s)); }
 
+// usePrices builds its socket on a microtask (awaits the WS-ticket auth URL),
+// so drain microtasks after render before reading latestWs().
+async function flush() {
+  await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+}
+
 const ibWrapper = ({ children }: { children: ReactNode }) =>
   React.createElement(IBStatusProvider, null, children);
 
@@ -54,8 +60,9 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("usePrices ping/pong", () => {
-  it("responds to ping message with pong", () => {
+  it("responds to ping message with pong", async () => {
     renderHook(() => usePrices({ symbols: ["AAPL"], enabled: true }));
+    await flush();
     const ws = latestWs();
     act(() => ws.simulateOpen());
     act(() => ws.simulateMessage({ type: "ping" }));
@@ -64,8 +71,9 @@ describe("usePrices ping/pong", () => {
     expect(pongs).toHaveLength(1);
   });
 
-  it("force-reconnects after 60s of silence", () => {
+  it("force-reconnects after 60s of silence", async () => {
     renderHook(() => usePrices({ symbols: ["AAPL"], enabled: true }));
+    await flush();
     const ws = latestWs();
     act(() => ws.simulateOpen());
 

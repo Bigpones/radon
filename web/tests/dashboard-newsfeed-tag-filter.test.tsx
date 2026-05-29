@@ -52,6 +52,17 @@ beforeEach(() => {
   replaceMock.mockReset();
   searchParamsString = "";
   global.fetch = fetchMock as unknown as typeof fetch;
+  // jsdom lacks Element.prototype.scrollIntoView; the feed's deferred
+  // scroll-to-top throws an uncaught exception (post-assertion) that makes
+  // the whole vitest run exit non-zero without failing this test.
+  if (!("scrollIntoView" in Element.prototype)) {
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn(),
+    });
+  } else {
+    vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+  }
 });
 
 afterEach(() => {

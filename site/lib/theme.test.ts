@@ -42,6 +42,8 @@ describe("site theme helpers", () => {
     expect(getNextTheme("dark")).toBe("light");
     expect(getNextTheme("light")).toBe("dark");
     expect(siteThemeMetaColor.dark).toBe("#0a0f14");
-    expect(siteThemeMetaColor.light).toBe("#edf3ee");
+    // Must match the rendered light-theme background — site/app/globals.css
+    // sets --color-canvas / body background to #FFFFFF (brand audit da00dfd).
+    expect(siteThemeMetaColor.light).toBe("#FFFFFF");
   });
 });
