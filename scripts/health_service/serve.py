@@ -1,0 +1,186 @@
+"""Standalone Radon health daemon HTTP server.
+
+Runs as radon-health.service with NO dependency edge to radon-ib-gateway (or any
+radon-* unit), so the documented cascade-stop
+(feedback_systemd_cascade_stop_no_autorecover.md) can never take it down. It
+probes every service from the OUTSIDE and never imports the trading stack.
+
+Routes:
+  GET /healthz  -> zero-I/O static 200 (the never-502 liveness pin)
+  GET /status   -> isolated live probes + cached systemctl unit states; ALWAYS
+                   200, degraded sources are body fields
+"""
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+try:
+    from . import probes
+except ImportError:  # pragma: no cover - loose-module fallback
+    import probes  # type: ignore
+
+
+# --- config (env-overridable; defaults match the Hetzner VPS) ---
+BIND = os.environ.get("RADON_HEALTH_BIND", "127.0.0.1")
+PORT = int(os.environ.get("RADON_HEALTH_PORT", "8330"))
+FASTAPI_LITE_URL = os.environ.get("RADON_HEALTH_FASTAPI_URL", "http://127.0.0.1:8321/health/lite")
+RELAY = (os.environ.get("RADON_HEALTH_RELAY_HOST", "127.0.0.1"), int(os.environ.get("RADON_HEALTH_RELAY_PORT", "8765")))
+NEXTJS = (os.environ.get("RADON_HEALTH_NEXTJS_HOST", "127.0.0.1"), int(os.environ.get("RADON_HEALTH_NEXTJS_PORT", "3000")))
+IB_GATEWAY = (os.environ.get("RADON_HEALTH_IB_HOST", "127.0.0.1"), int(os.environ.get("RADON_HEALTH_IB_PORT", "4001")))
+UNITS = os.environ.get(
+    "RADON_HEALTH_UNITS",
+    "radon-api.service radon-relay.service radon-monitor.service "
+    "radon-nextjs.service radon-ib-gateway.service radon-newsfeed.service",
+).split()
+UNIT_REFRESH_SECS = float(os.environ.get("RADON_HEALTH_UNIT_REFRESH", "5"))
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def run_probes() -> dict:
+    """Probe every service concurrently with bounded timeouts. Each probe is
+    isolated — one failure becomes a labelled state, never an exception that
+    fails the whole response."""
+    tasks = {
+        "radon-api": lambda: probes.probe_http_json(FASTAPI_LITE_URL, timeout=2.0),
+        "radon-relay": lambda: probes.probe_tcp(*RELAY),
+        "radon-nextjs": lambda: probes.probe_tcp(*NEXTJS),
+        "ib-gateway": lambda: probes.probe_tcp(*IB_GATEWAY),
+    }
+    results: dict = {}
+    with ThreadPoolExecutor(max_workers=len(tasks)) as ex:
+        futures = {name: ex.submit(fn) for name, fn in tasks.items()}
+        for name, fut in futures.items():
+            try:
+                results[name] = fut.result(timeout=6)
+            except Exception:
+                results[name] = {"state": "unknown", "detail": "probe_error"}
+    return results
+
+
+class UnitStateCache:
+    """Polls `systemctl show` on a background thread, NEVER on the request hot
+    path — forking under an OOM/disk-full incident is exactly when you can't
+    afford it. On failure it keeps the last value; staleness is exposed as age.
+    """
+
+    def __init__(self, units, interval: float = UNIT_REFRESH_SECS, timeout: float = 3.0):
+        self._units = list(units)
+        self._interval = interval
+        self._timeout = timeout
+        self._lock = threading.Lock()
+        self._value: dict = {}
+        self._updated = None
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._loop, name="unit-state-cache", daemon=True)
+
+    def start(self):
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+
+    def _loop(self):
+        while not self._stop.is_set():
+            self.refresh_once()
+            self._stop.wait(self._interval)
+
+    def refresh_once(self):
+        if not self._units:
+            return
+        try:
+            out = subprocess.run(
+                ["systemctl", "show", *self._units,
+                 "-p", "Id", "-p", "ActiveState", "-p", "SubState", "-p", "Result"],
+                capture_output=True, text=True, timeout=self._timeout,
+            )
+            parsed = probes.parse_unit_states(out.stdout)
+            with self._lock:
+                self._value = parsed
+                self._updated = time.time()
+        except Exception:
+            pass  # keep last value; age reflects staleness
+
+    def snapshot(self):
+        with self._lock:
+            age = None if self._updated is None else round(time.time() - self._updated, 1)
+            return dict(self._value), age
+
+
+def healthz_response():
+    """Zero-I/O liveness pin. Structurally cannot 502 while the daemon serves."""
+    return 200, {"ok": True}
+
+
+def status_response(run_probes_fn, unit_cache, now_fn=_now_iso):
+    """Always returns 200. A probe sweep that raises degrades health_service to
+    'degraded' rather than failing the response."""
+    health = "ok"
+    try:
+        probe_results = run_probes_fn()
+    except Exception:
+        probe_results, health = {}, "degraded"
+    try:
+        units, age = unit_cache.snapshot()
+    except Exception:
+        units, age = {}, None
+    return 200, probes.build_status(probe_results, units, now_fn(),
+                                    health_service=health, units_age_secs=age)
+
+
+class _Handler(BaseHTTPRequestHandler):
+    def _write(self, status, payload):
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        raw = self.path.split("?", 1)[0]
+        path = raw.rstrip("/") or "/"
+        if path == "/healthz":
+            self._write(*healthz_response())
+        elif path == "/status":
+            try:
+                self._write(*status_response(run_probes, self.server.unit_cache))
+            except Exception:
+                self._write(200, {"health_service": "degraded", "error": "status_render_failed"})
+        else:
+            self._write(404, {"error": "not_found"})
+
+    def log_message(self, *args):  # quiet — journald only gets real errors
+        pass
+
+
+def build_server(bind: str = BIND, port: int = PORT, units=UNITS):
+    cache = UnitStateCache(units)
+    server = ThreadingHTTPServer((bind, port), _Handler)
+    server.unit_cache = cache  # type: ignore[attr-defined]
+    return server, cache
+
+
+def main():
+    server, cache = build_server()
+    cache.refresh_once()  # warm the unit cache before accepting traffic
+    cache.start()
+    try:
+        server.serve_forever()
+    finally:
+        cache.stop()
+        server.server_close()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,126 @@
+"""Pure probe + parsing logic for the standalone health daemon.
+
+stdlib-only by contract (see package docstring). Functions here are
+side-effect-free and individually testable; the HTTP/server wiring lives in
+serve.py.
+"""
+from __future__ import annotations
+
+import errno
+import json
+import socket
+import urllib.error
+import urllib.request
+
+
+# Three-valued state vocabulary used everywhere:
+#   "up"      — confirmed reachable / running
+#   "down"    — confirmed absent (peer refused, unit failed/inactive)
+#   "unknown" — could not determine (timeout, unreachable, probe error) — NOT
+#               proof of death; a bounded-probe timeout must never read as down
+#   "starting"— unit is activating/reloading
+def classify_conn_error(exc) -> str:
+    """Map a connection failure to 'down' (refused) or 'unknown' (everything
+    else, including timeouts — a timeout is not proof the service is dead)."""
+    if isinstance(exc, (socket.timeout, TimeoutError)):
+        return "unknown"
+    if isinstance(exc, ConnectionRefusedError):
+        return "down"
+    if getattr(exc, "errno", None) == errno.ECONNREFUSED:
+        return "down"
+    return "unknown"
+
+
+def probe_tcp(host: str, port: int, timeout: float = 1.5) -> dict:
+    """Liveness-only TCP connect probe. {state, [detail]}.
+
+    A successful connect proves the port is bound, NOT that the process behind
+    it is serving — relay/Next.js are liveness-only by design here.
+    """
+    try:
+        with socket.create_connection((host, int(port)), timeout=timeout):
+            return {"state": "up"}
+    except OSError as exc:
+        return {"state": classify_conn_error(exc), "detail": exc.__class__.__name__}
+
+
+def probe_http_json(url: str, timeout: float = 2.0, max_bytes: int = 65536) -> dict:
+    """GET a JSON endpoint with a bounded timeout.
+
+    2xx -> {state:'up', http_status, payload}; HTTP error -> 'down'; connection
+    refused -> 'down'; timeout/unreachable -> 'unknown'.
+    """
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            raw = resp.read(max_bytes)
+            try:
+                payload = json.loads(raw.decode("utf-8")) if raw else {}
+            except ValueError:
+                payload = {}
+            return {"state": "up", "http_status": getattr(resp, "status", 200), "payload": payload}
+    except urllib.error.HTTPError as exc:
+        return {"state": "down", "http_status": exc.code, "detail": "http_error"}
+    except urllib.error.URLError as exc:
+        reason = exc.reason
+        if isinstance(reason, OSError):
+            return {"state": classify_conn_error(reason), "detail": reason.__class__.__name__}
+        if "timed out" in str(reason).lower():
+            return {"state": "unknown", "detail": "timeout"}
+        return {"state": "unknown", "detail": str(reason)[:80]}
+    except (socket.timeout, TimeoutError):
+        return {"state": "unknown", "detail": "timeout"}
+    except OSError as exc:
+        return {"state": classify_conn_error(exc), "detail": exc.__class__.__name__}
+
+
+def unit_coarse_state(active_state: str, sub_state: str) -> str:
+    """Collapse systemd ActiveState/SubState into the three-valued vocabulary."""
+    if active_state == "active" and sub_state == "running":
+        return "up"
+    if active_state == "failed":
+        return "down"
+    if active_state in ("activating", "reloading"):
+        return "starting"
+    if active_state in ("inactive", "deactivating"):
+        return "down"
+    return "unknown"
+
+
+def parse_unit_states(raw: str) -> dict:
+    """Parse `systemctl show <units> -p Id -p ActiveState -p SubState -p Result`.
+
+    systemd separates each unit's property block with a blank line. Returns
+    {unit_id: {active_state, sub_state, result, state}}.
+    """
+    units: dict = {}
+    for block in (raw or "").strip().split("\n\n"):
+        props: dict = {}
+        for line in block.splitlines():
+            key, sep, val = line.partition("=")
+            if sep:
+                props[key.strip()] = val.strip()
+        uid = props.get("Id")
+        if not uid:
+            continue
+        active = props.get("ActiveState", "")
+        sub = props.get("SubState", "")
+        units[uid] = {
+            "active_state": active,
+            "sub_state": sub,
+            "result": props.get("Result", ""),
+            "state": unit_coarse_state(active, sub),
+        }
+    return units
+
+
+def build_status(probes: dict, units: dict, generated_at: str,
+                 health_service: str = "ok", units_age_secs=None) -> dict:
+    """Assemble the always-200 /status body. Degraded sources are fields, never
+    error codes (per feedback_http_status_for_real_errors.md)."""
+    return {
+        "health_service": health_service,
+        "generated_at": generated_at,
+        "probes": probes,
+        "units": units,
+        "units_age_secs": units_age_secs,
+    }

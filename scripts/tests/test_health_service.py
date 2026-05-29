@@ -1,0 +1,274 @@
+"""Tests for the standalone health daemon (scripts/health_service).
+
+Covers the pure probe/parse/assembly logic plus a real-socket smoke test of the
+HTTP wiring. Deliberately uses real localhost sockets/servers rather than mocks
+so the stdlib probe behaviour is genuinely exercised.
+"""
+import json
+import os
+import socket
+import subprocess
+import sys
+import threading
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+import pytest
+
+from health_service import probes, serve
+
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
+
+
+# --- isolation contract: the daemon must share NO code with the trading stack ---
+
+class TestStdlibOnlyIsolation:
+    """The daemon's reason for existing is zero shared fate. Importing it must
+    pull in NONE of the trading stack — if a future edit adds `from scripts.api
+    ...` or an ib_insync/uvicorn import, this fails loudly."""
+
+    def test_import_pulls_in_no_trading_stack(self):
+        forbidden_roots = {"ib_insync", "uvicorn", "fastapi", "starlette",
+                           "libsql", "libsql_experimental", "ibapi", "eventkit"}
+        code = (
+            "import sys; import health_service.serve;\n"
+            "bad = sorted(m for m in sys.modules\n"
+            "  if m.split('.')[0] in %r\n"
+            "  or m.startswith('scripts.api') or m.startswith('api.')\n"
+            "  or m == 'scripts.db' or m.startswith('scripts.db'));\n"
+            "print(','.join(bad)); sys.exit(1 if bad else 0)" % (forbidden_roots,)
+        )
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(["scripts", "."])}
+        r = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                           text=True, env=env, cwd=_REPO_ROOT, timeout=30)
+        assert r.returncode == 0, f"daemon imported trading-stack modules: {r.stdout.strip()} / {r.stderr.strip()}"
+
+
+# --- classify_conn_error ---
+
+class TestClassifyConnError:
+    def test_refused_is_down(self):
+        assert probes.classify_conn_error(ConnectionRefusedError()) == "down"
+
+    def test_errno_refused_is_down(self):
+        import errno
+        exc = OSError()
+        exc.errno = errno.ECONNREFUSED
+        assert probes.classify_conn_error(exc) == "down"
+
+    def test_timeout_is_unknown(self):
+        assert probes.classify_conn_error(socket.timeout()) == "unknown"
+        assert probes.classify_conn_error(TimeoutError()) == "unknown"
+
+    def test_other_oserror_is_unknown(self):
+        assert probes.classify_conn_error(OSError("no route")) == "unknown"
+
+
+# --- probe_tcp (real sockets) ---
+
+class TestProbeTcp:
+    def test_open_port_is_up(self):
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        port = srv.getsockname()[1]
+        try:
+            assert probes.probe_tcp("127.0.0.1", port, timeout=1.0)["state"] == "up"
+        finally:
+            srv.close()
+
+    def test_closed_port_is_down(self):
+        # Bind to claim a port, then close it so a connect is refused.
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.bind(("127.0.0.1", 0))
+        port = srv.getsockname()[1]
+        srv.close()
+        assert probes.probe_tcp("127.0.0.1", port, timeout=1.0)["state"] == "down"
+
+
+# --- probe_http_json (real local server) ---
+
+class _JsonHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/ok":
+            body = json.dumps({"status": "ok", "auth_state": "authenticated"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(503)
+            self.end_headers()
+            self.wfile.write(b"down")
+
+    def log_message(self, *a):
+        pass
+
+
+@pytest.fixture
+def json_server():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _JsonHandler)
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    try:
+        yield server.server_address[1]
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+class TestProbeHttpJson:
+    def test_200_returns_up_with_payload(self, json_server):
+        res = probes.probe_http_json(f"http://127.0.0.1:{json_server}/ok", timeout=2.0)
+        assert res["state"] == "up"
+        assert res["http_status"] == 200
+        assert res["payload"]["auth_state"] == "authenticated"
+
+    def test_5xx_returns_down(self, json_server):
+        res = probes.probe_http_json(f"http://127.0.0.1:{json_server}/bad", timeout=2.0)
+        assert res["state"] == "down"
+        assert res["http_status"] == 503
+
+    def test_refused_returns_down(self):
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.bind(("127.0.0.1", 0))
+        port = srv.getsockname()[1]
+        srv.close()
+        res = probes.probe_http_json(f"http://127.0.0.1:{port}/x", timeout=1.0)
+        assert res["state"] == "down"
+
+
+# --- unit state parsing ---
+
+class TestUnitCoarseState:
+    def test_active_running_is_up(self):
+        assert probes.unit_coarse_state("active", "running") == "up"
+
+    def test_failed_is_down(self):
+        assert probes.unit_coarse_state("failed", "failed") == "down"
+
+    def test_inactive_is_down(self):
+        assert probes.unit_coarse_state("inactive", "dead") == "down"
+
+    def test_activating_is_starting(self):
+        assert probes.unit_coarse_state("activating", "start") == "starting"
+
+    def test_unknown_default(self):
+        assert probes.unit_coarse_state("weird", "state") == "unknown"
+
+
+class TestParseUnitStates:
+    RAW = (
+        "Id=radon-api.service\nActiveState=active\nSubState=running\nResult=success\n"
+        "\n"
+        "Id=radon-relay.service\nActiveState=failed\nSubState=failed\nResult=exit-code\n"
+    )
+
+    def test_parses_multiple_blocks(self):
+        units = probes.parse_unit_states(self.RAW)
+        assert set(units) == {"radon-api.service", "radon-relay.service"}
+        assert units["radon-api.service"]["state"] == "up"
+        assert units["radon-relay.service"]["state"] == "down"
+        assert units["radon-relay.service"]["result"] == "exit-code"
+
+    def test_empty_input(self):
+        assert probes.parse_unit_states("") == {}
+
+    def test_block_without_id_skipped(self):
+        assert probes.parse_unit_states("ActiveState=active\nSubState=running") == {}
+
+
+# --- status assembly + handlers ---
+
+class TestHealthzResponse:
+    def test_static_200(self):
+        assert serve.healthz_response() == (200, {"ok": True})
+
+
+class _FakeCache:
+    def __init__(self, value, age):
+        self._v, self._a = value, age
+
+    def snapshot(self):
+        return dict(self._v), self._a
+
+
+class TestStatusResponse:
+    def test_always_200_with_probes_and_units(self):
+        status, body = serve.status_response(
+            run_probes_fn=lambda: {"radon-api": {"state": "up"}},
+            unit_cache=_FakeCache({"radon-api.service": {"state": "up"}}, 1.2),
+            now_fn=lambda: "2026-05-29T00:00:00+00:00",
+        )
+        assert status == 200
+        assert body["health_service"] == "ok"
+        assert body["probes"]["radon-api"]["state"] == "up"
+        assert body["units"]["radon-api.service"]["state"] == "up"
+        assert body["units_age_secs"] == 1.2
+
+    def test_probe_sweep_exception_degrades_but_still_200(self):
+        def _boom():
+            raise RuntimeError("probe sweep blew up")
+
+        status, body = serve.status_response(
+            run_probes_fn=_boom,
+            unit_cache=_FakeCache({}, None),
+            now_fn=lambda: "t",
+        )
+        assert status == 200
+        assert body["health_service"] == "degraded"
+        assert body["probes"] == {}
+
+
+class TestUnitStateCacheRefresh:
+    def test_refresh_swallows_subprocess_failure(self, monkeypatch):
+        # systemctl absent (e.g. on the test mac) must not raise — keep last value.
+        cache = serve.UnitStateCache(["radon-api.service"])
+        cache.refresh_once()  # no systemctl on darwin -> swallowed
+        value, age = cache.snapshot()
+        assert value == {}  # never populated, but no exception
+
+    def test_empty_units_is_noop(self):
+        cache = serve.UnitStateCache([])
+        cache.refresh_once()
+        assert cache.snapshot() == ({}, None)
+
+
+# --- HTTP wiring smoke test (real ephemeral server) ---
+
+class TestServerSmoke:
+    @pytest.fixture
+    def running(self):
+        server, cache = serve.build_server(bind="127.0.0.1", port=0, units=[])
+        t = threading.Thread(target=server.serve_forever, daemon=True)
+        t.start()
+        port = server.server_address[1]
+        try:
+            yield port
+        finally:
+            server.shutdown()
+            cache.stop()
+            server.server_close()
+
+    def _get(self, port, path):
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=8) as r:
+            return r.status, json.loads(r.read().decode())
+
+    def test_healthz_is_200(self, running):
+        status, body = self._get(running, "/healthz")
+        assert status == 200 and body == {"ok": True}
+
+    def test_status_is_200(self, running):
+        status, body = self._get(running, "/status")
+        assert status == 200
+        assert "probes" in body and "units" in body
+        assert body["health_service"] in ("ok", "degraded")
+
+    def test_unknown_path_404(self, running):
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            self._get(running, "/nope")
+        assert exc.value.code == 404
+
+
+import urllib.error  # noqa: E402  (used in the 404 assertion above)
