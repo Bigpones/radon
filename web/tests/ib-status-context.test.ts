@@ -6,8 +6,56 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import React from "react";
-import { IBStatusProvider, useIBStatusContext } from "../lib/IBStatusContext";
+import { IBStatusProvider, useIBStatusContext, parseIbHealth } from "../lib/IBStatusContext";
 import type { ReactNode } from "react";
+
+describe("parseIbHealth — normalises both health sources", () => {
+  it("reads /edge-health/status when radon-api probe is up", () => {
+    const payload = {
+      probes: {
+        "radon-api": {
+          state: "up",
+          payload: { auth_state: "authenticated", service_state: "healthy", upstream_dead: false },
+        },
+        "radon-relay": { state: "up" },
+      },
+    };
+    expect(parseIbHealth(payload)).toEqual({
+      authState: "authenticated",
+      serviceState: "healthy",
+      upstreamDead: false,
+    });
+  });
+
+  it("returns unreachable when the edge daemon reports radon-api down", () => {
+    const payload = { probes: { "radon-api": { state: "down", detail: "ConnectionRefusedError" } } };
+    expect(parseIbHealth(payload)).toEqual({
+      authState: "unreachable",
+      serviceState: null,
+      upstreamDead: null,
+    });
+  });
+
+  it("returns null (caller falls back) when the radon-api probe is indeterminate", () => {
+    const payload = { probes: { "radon-api": { state: "unknown", detail: "http timeout" } } };
+    expect(parseIbHealth(payload)).toBeNull();
+  });
+
+  it("reads the flat /api/admin/health shape", () => {
+    const payload = { ib_gateway: { auth_state: "awaiting_2fa", service_state: "healthy", upstream_dead: false } };
+    expect(parseIbHealth(payload)).toEqual({
+      authState: "awaiting_2fa",
+      serviceState: "healthy",
+      upstreamDead: false,
+    });
+  });
+
+  it("returns null for empty / unrecognised payloads", () => {
+    expect(parseIbHealth(null)).toBeNull();
+    expect(parseIbHealth(undefined)).toBeNull();
+    expect(parseIbHealth({})).toBeNull();
+  });
+});
 
 /* ---------- MockWebSocket ---------- */
 class MockWebSocket {

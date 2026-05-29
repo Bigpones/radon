@@ -104,6 +104,33 @@ def _next_test_order_ids() -> tuple[int, int]:
     return order_id, perm_id
 
 
+IB_HEARTBEAT_INTERVAL_SECS = 15
+
+
+async def _ib_recovery_heartbeat_tick() -> None:
+    """Drive check_ib_gateway WITH the pool once, so the documented
+    awaiting_2fa -> authenticated pool recovery (pool.reconnect_all) fires
+    server-side, independent of any browser poll.
+
+    The status consumers now read the read-only /edge-health surface (which
+    probes /health/lite with pool=None and has NO side effects), so this loop is
+    the sole FAST driver of recovery; the every-minute watchdog /health curl is
+    the slower backstop. See feedback_ib_pool_stuck_after_2fa.md.
+    """
+    if ib_pool is None:
+        return
+    try:
+        await check_ib_gateway(pool_status=ib_pool.status(), pool=ib_pool)
+    except Exception:
+        logger.exception("IB recovery heartbeat tick failed")
+
+
+async def _ib_recovery_heartbeat_loop(interval: float = IB_HEARTBEAT_INTERVAL_SECS) -> None:
+    while True:
+        await asyncio.sleep(interval)
+        await _ib_recovery_heartbeat_tick()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Start IB pool and UW client on startup, tear down on shutdown."""
@@ -139,6 +166,11 @@ async def lifespan(app: FastAPI):
             logger.exception("IB pool background connect failed")
 
     asyncio.create_task(_connect_ib_pool())
+
+    # Server-side 2FA-recovery heartbeat. Consumers now poll the read-only
+    # /edge-health surface, so the mutating recovery path can no longer ride a
+    # browser /health poll — drive it here on a fixed cadence instead.
+    asyncio.create_task(_ib_recovery_heartbeat_loop())
 
     # UW client — just verify token exists
     uw_available = bool(os.environ.get("UW_TOKEN"))

@@ -123,6 +123,47 @@ function deriveDisplayStatus(args: {
   return "ib_offline";
 }
 
+type IbHealthFields = {
+  authState: IBAuthState | null;
+  serviceState: IBServiceState | null;
+  upstreamDead: boolean | null;
+};
+
+// The isolated daemon's /edge-health/status nests IB state under the radon-api
+// probe; the rich /api/admin/health proxy returns it flat under ib_gateway.
+type EdgeHealthPayload = {
+  probes?: Record<string, { state?: string; payload?: HealthPayload["ib_gateway"] }>;
+};
+
+function readGatewayFields(gw: NonNullable<HealthPayload["ib_gateway"]>): IbHealthFields {
+  return {
+    authState: gw.auth_state ?? null,
+    serviceState: gw.service_state ?? null,
+    upstreamDead: typeof gw.upstream_dead === "boolean" ? gw.upstream_dead : null,
+  };
+}
+
+// Normalise either health-source shape into the three IB fields the chip needs.
+// Returns null when the source can't determine IB state, so the caller falls
+// back (e.g. /edge-health reports the radon-api probe as "unknown" on a probe
+// timeout — that's indeterminate, not "down").
+export function parseIbHealth(
+  payload: (HealthPayload & EdgeHealthPayload) | null | undefined,
+): IbHealthFields | null {
+  if (!payload) return null;
+  const probe = payload.probes?.["radon-api"];
+  if (probe) {
+    if (probe.state === "up" && probe.payload) return readGatewayFields(probe.payload);
+    if (probe.state === "down") {
+      // The isolated daemon confirms radon-api is unreachable.
+      return { authState: "unreachable", serviceState: null, upstreamDead: null };
+    }
+    return null; // indeterminate ("unknown") — let the caller fall back
+  }
+  if (payload.ib_gateway) return readGatewayFields(payload.ib_gateway);
+  return null;
+}
+
 /* ─── Provider ────────────────────────────────────────── */
 
 export function IBStatusProvider({ children }: { children: ReactNode }) {
@@ -340,35 +381,46 @@ function IBStatusCoreProvider({
     };
   }, [connect, clearReconnectTimer, clearStalenessTimer]);
 
-  // Poll /api/admin/health (proxy to FastAPI /health) for the authoritative
-  // IB state. This is the only signal that catches the "TCP socket alive but
-  // session sitting at 2FA prompt" case — the relay WS reports ib_connected
-  // based on its long-held ib_insync socket which stays "open" through such
-  // half-open scenarios and is structurally unable to distinguish them.
+  // Poll the authoritative IB state — the only signal that catches the "TCP
+  // socket alive but session sitting at 2FA prompt" case, which the relay WS
+  // (long-held ib_insync socket) structurally can't distinguish.
+  //
+  // In production we read the ISOLATED edge surface: /edge-health/status is
+  // served Caddy -> standalone health daemon, so the chip keeps reporting even
+  // when radon-api / Next.js are down. Dev has no Caddy, so we use the rich
+  // /api/admin/health proxy, which is also the prod safety-net fallback. Both
+  // reads are side-effect-free now; the 2FA pool-recovery heartbeat runs
+  // server-side in FastAPI, not on this poll.
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
-    const poll = async () => {
+    const fetchParsed = async (url: string): Promise<IbHealthFields | null> => {
       try {
-        const res = await fetch("/api/admin/health", { cache: "no-store" });
-        if (!res.ok) throw new Error(`health ${res.status}`);
-        const payload = (await res.json()) as HealthPayload;
-        if (cancelled) return;
-        const gw = payload.ib_gateway ?? {};
-        setAuthState(gw.auth_state ?? null);
-        setServiceState(gw.service_state ?? null);
-        setUpstreamDead(typeof gw.upstream_dead === "boolean" ? gw.upstream_dead : null);
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) return null;
+        return parseIbHealth((await res.json()) as HealthPayload & EdgeHealthPayload);
       } catch {
-        // Don't clear cached values on transient fetch failure — surface as
-        // null only if we never had a response. A 502 here is itself a signal,
-        // but treating it as "unreachable" requires knowing the cause; the
-        // safer move is to leave previous state and let the next poll resolve.
-        if (cancelled) return;
-        setAuthState((prev) => prev);
-      } finally {
-        if (!cancelled) timer = setTimeout(poll, HEALTH_POLL_MS);
+        return null;
       }
+    };
+
+    const poll = async () => {
+      const isLocal = /^(localhost|127\.0\.0\.1|\[::1\])/.test(window.location.hostname);
+      const primary = isLocal ? "/api/admin/health" : "/edge-health/status";
+      const fallback = "/api/admin/health";
+
+      let parsed = await fetchParsed(primary);
+      if (!parsed && primary !== fallback) parsed = await fetchParsed(fallback);
+
+      // Keep previous cached state on a total failure — a transient blip
+      // shouldn't flip the chip; the next poll resolves it.
+      if (!cancelled && parsed) {
+        setAuthState(parsed.authState);
+        setServiceState(parsed.serviceState);
+        setUpstreamDead(parsed.upstreamDead);
+      }
+      if (!cancelled) timer = setTimeout(poll, HEALTH_POLL_MS);
     };
 
     poll();

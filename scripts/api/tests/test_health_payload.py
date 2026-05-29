@@ -171,3 +171,51 @@ class TestHealthLite:
         from scripts.api.server import AUTH_EXEMPT_PATHS
         assert "/health/lite" not in AUTH_EXEMPT_PATHS
         assert "/health" in AUTH_EXEMPT_PATHS
+
+
+class TestIbRecoveryHeartbeat:
+    """The server-side recovery heartbeat must drive check_ib_gateway WITH the
+    pool (so awaiting_2fa->authenticated reconnect_all fires) once the browser
+    consumers move to the read-only /edge-health surface."""
+
+    @pytest.mark.asyncio
+    async def test_tick_drives_check_with_pool(self, monkeypatch):
+        captured = {}
+
+        async def _gw(pool_status=None, pool=None):
+            captured["pool"] = pool
+            captured["status"] = pool_status
+            return {}
+
+        fake_pool = SimpleNamespace(status=lambda: {"sync": {"connected": True}})
+        monkeypatch.setattr(server, "check_ib_gateway", _gw)
+        monkeypatch.setattr(server, "ib_pool", fake_pool)
+
+        await server._ib_recovery_heartbeat_tick()
+
+        assert captured["pool"] is fake_pool  # WITH pool => recovery path runs
+        assert captured["status"] == {"sync": {"connected": True}}
+
+    @pytest.mark.asyncio
+    async def test_tick_noop_without_pool(self, monkeypatch):
+        called = {"n": 0}
+
+        async def _gw(**kwargs):
+            called["n"] += 1
+            return {}
+
+        monkeypatch.setattr(server, "check_ib_gateway", _gw)
+        monkeypatch.setattr(server, "ib_pool", None)
+
+        await server._ib_recovery_heartbeat_tick()
+        assert called["n"] == 0
+
+    @pytest.mark.asyncio
+    async def test_tick_swallows_exceptions(self, monkeypatch):
+        async def _boom(**kwargs):
+            raise RuntimeError("gateway probe failed")
+
+        monkeypatch.setattr(server, "check_ib_gateway", _boom)
+        monkeypatch.setattr(server, "ib_pool", SimpleNamespace(status=lambda: {}))
+
+        await server._ib_recovery_heartbeat_tick()  # must not raise
