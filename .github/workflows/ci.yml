@@ -38,7 +38,17 @@ jobs:
       # silently skips ~9 files / ~68 tests (incl. site/lib/theme). vitest + the
       # config resolve from root node_modules; web/tests files resolve their
       # imports from web/node_modules.
-      - run: bunx vitest run --config vitest.config.ts
+      #
+      # Exclude the integration tests: these spawn `python3.13` and/or read
+      # gitignored data/*.json runtime caches, so they can't run in this
+      # Bun-only, data-less unit job (this mirrors pytest's `-m 'not
+      # integration'`). They still run locally where Python + data exist.
+      - run: >-
+          bunx vitest run --config vitest.config.ts
+          --exclude '**/web/tests/integration.test.ts'
+          --exclude '**/lib/tools/__tests__/kelly.test.ts'
+          --exclude '**/lib/tools/__tests__/runner.test.ts'
+          --exclude '**/lib/tools/__tests__/data-reader.test.ts'
 
   py-tests:
     name: pytest (unit, no integration)
