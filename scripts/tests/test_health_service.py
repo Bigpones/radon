@@ -222,12 +222,15 @@ class TestStatusResponse:
 
 
 class TestUnitStateCacheRefresh:
-    def test_refresh_swallows_subprocess_failure(self, monkeypatch):
-        # systemctl absent (e.g. on the test mac) must not raise — keep last value.
-        cache = serve.UnitStateCache(["radon-api.service"])
-        cache.refresh_once()  # no systemctl on darwin -> swallowed
+    def test_refresh_never_raises_cross_platform(self):
+        # Platform-agnostic: on macOS systemctl is absent (FileNotFoundError,
+        # swallowed → {}); on Linux CI `systemctl show <unknown-unit>` returns
+        # inactive/dead props. Either way refresh_once must NOT raise and
+        # snapshot must return a dict — we don't assert emptiness.
+        cache = serve.UnitStateCache(["radon-nonexistent-xyztest.service"])
+        cache.refresh_once()
         value, age = cache.snapshot()
-        assert value == {}  # never populated, but no exception
+        assert isinstance(value, dict)
 
     def test_empty_units_is_noop(self):
         cache = serve.UnitStateCache([])
