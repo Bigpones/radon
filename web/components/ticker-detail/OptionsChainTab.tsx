@@ -8,6 +8,7 @@ import { fmtPrice } from "@/lib/positionUtils";
 import OrderErrorBanner from "@/components/OrderErrorBanner";
 import { useTickerDetail } from "@/lib/TickerDetailContext";
 import { useChainPrefetch } from "@/lib/useChainPrefetch";
+import { useChainUrlState, parseSideParam, parseStrikesParam, type SideFilter } from "@/lib/useChainUrlState";
 import { computeLegImpliedValue } from "@/lib/impliedValue";
 import { useRiskFreeRate } from "@/lib/useRiskFreeRate";
 import {
@@ -855,8 +856,11 @@ export default function OptionsChainTab({
   const [loadingStrikes, setLoadingStrikes] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [orderLegs, setOrderLegs] = useState<OrderLeg[]>([]);
-  const [strikesPerSide, setStrikesPerSide] = useState(15);
-  const [sideFilter, setSideFilter] = useState<"both" | "calls" | "puts">("both");
+  // Filter state is deep-linked into the URL (?expiry=&side=&strikes=) — seed
+  // from the URL on mount, write back on change. See useChainUrlState.
+  const chainUrl = useChainUrlState();
+  const [strikesPerSide, setStrikesPerSide] = useState(() => chainUrl.initialStrikes);
+  const [sideFilter, setSideFilter] = useState<SideFilter>(() => chainUrl.initialSide);
   const { isMobile, hasMounted } = useViewport();
   const showMobileChain = isMobile && hasMounted;
   const riskFreeRate = useRiskFreeRate();
@@ -911,15 +915,43 @@ export default function OptionsChainTab({
     if (expirations.length === 0) return;
     if (focusPositionRequested && !focusedExpiry) return;
 
-    const nextExpiry = focusedExpiry && expirations.includes(focusedExpiry)
-      ? focusedExpiry
-      : expirations.find((expiry) => daysToExpiry(expiry) >= 7) ?? expirations[0] ?? null;
+    // Priority: explicit URL deep-link > focused position > first >=7 DTE > first.
+    // URL expiry arrives dashed (2026-07-17); compare in compact internal form.
+    const urlExpiryCompact = chainUrl.urlExpiry ? normalizeOptionExpiry(chainUrl.urlExpiry) : null;
+    const nextExpiry =
+      (urlExpiryCompact && expirations.includes(urlExpiryCompact) ? urlExpiryCompact : null) ??
+      (focusedExpiry && expirations.includes(focusedExpiry) ? focusedExpiry : null) ??
+      expirations.find((expiry) => daysToExpiry(expiry) >= 7) ??
+      expirations[0] ??
+      null;
 
     if (nextExpiry) {
       setSelectedExpiry(nextExpiry);
     }
     initialFocusAppliedRef.current = true;
-  }, [expirations, focusedExpiry]);
+  }, [expirations, focusedExpiry, chainUrl.urlExpiry]);
+
+  // Write filter state → URL after commit (preserves tab + other params).
+  // Gated until the initial expiry has been resolved so we don't strip a
+  // deep-linked ?expiry before it's been validated against the expiry list.
+  useEffect(() => {
+    if (!initialFocusAppliedRef.current) return;
+    chainUrl.syncUrl({ selectedExpiry, side: sideFilter, strikes: strikesPerSide });
+    // Depend on the memoized `chainUrl.syncUrl`, NOT the whole `chainUrl` object
+    // (recreated every render — would run this effect each render). syncUrl is
+    // stable except when the URL/router actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedExpiry, sideFilter, strikesPerSide, chainUrl.syncUrl]);
+
+  // Reconcile from external URL changes (back/forward, manual edit) for the
+  // mount-seeded filters, mirroring useNewsfeedTagFilter. setState to the same
+  // value is a no-op, so this never loops with the write effect above.
+  useEffect(() => {
+    setSideFilter(parseSideParam(chainUrl.sideParamRaw));
+  }, [chainUrl.sideParamRaw]);
+  useEffect(() => {
+    setStrikesPerSide(parseStrikesParam(chainUrl.strikesParamRaw));
+  }, [chainUrl.strikesParamRaw]);
 
   // Fetch strikes when expiry changes — check prefetch cache first
   useEffect(() => {

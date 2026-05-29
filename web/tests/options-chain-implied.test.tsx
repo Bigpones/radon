@@ -18,6 +18,14 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
 
+// OptionsChainTab deep-links its filters via useChainUrlState (next/navigation).
+// Provide a no-op router so useRouter() doesn't throw "app router not mounted".
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(""),
+  usePathname: () => "/test",
+  useRouter: () => ({ replace: vi.fn(), push: vi.fn(), prefetch: vi.fn(), back: vi.fn(), forward: vi.fn(), refresh: vi.fn() }),
+}));
+
 import OptionsChainTab from "../components/ticker-detail/OptionsChainTab";
 import { TickerDetailProvider } from "../lib/TickerDetailContext";
 import { bsCall, bsPut } from "../lib/blackScholes";

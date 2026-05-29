@@ -9,6 +9,15 @@ import { TickerDetailProvider } from "../lib/TickerDetailContext";
 import type { OrdersData, PortfolioData } from "../lib/types";
 import type { PriceData } from "../lib/pricesProtocol";
 
+// OptionsChainTab deep-links its filters via useChainUrlState (next/navigation).
+// Empty search params here means no ?expiry override, so the focused-position
+// expiry still wins — exactly what this test asserts.
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(""),
+  usePathname: () => "/PLTR",
+  useRouter: () => ({ replace: vi.fn(), push: vi.fn(), prefetch: vi.fn(), back: vi.fn(), forward: vi.fn(), refresh: vi.fn() }),
+}));
+
 vi.mock("../components/PriceChart", () => ({
   default: () => React.createElement("div", { "data-testid": "price-chart" }),
 }));
