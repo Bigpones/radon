@@ -519,8 +519,8 @@ export default function RegimeRelationshipView({
           <div
             className="regime-relationship-chart-shell"
             data-testid="regime-spread-chart-shell"
-            onMouseMove={handleSpreadHover}
-            onMouseLeave={() => setSpreadHover(null)}
+            onPointerMove={handleSpreadHover}
+            onPointerLeave={() => setSpreadHover(null)}
           >
             <svg
               ref={spreadSvgRef}
@@ -635,7 +635,7 @@ export default function RegimeRelationshipView({
                   pointerEvents="all"
                   className="regime-relationship-chart-overlay"
                   data-testid="regime-spread-chart-overlay"
-                  onMouseMove={handleSpreadHover}
+                  onPointerMove={handleSpreadHover}
                 />
               </g>
             </svg>
@@ -932,8 +932,8 @@ export default function RegimeRelationshipView({
           <div
             className="regime-relationship-chart-shell"
             data-testid="regime-zscore-chart-shell"
-            onMouseMove={handleZScoreHover}
-            onMouseLeave={() => setZScoreHover(null)}
+            onPointerMove={handleZScoreHover}
+            onPointerLeave={() => setZScoreHover(null)}
           >
             <svg
               ref={zScoreSvgRef}
@@ -1041,7 +1041,7 @@ export default function RegimeRelationshipView({
                   pointerEvents="all"
                   className="regime-relationship-chart-overlay"
                   data-testid="regime-zscore-chart-overlay"
-                  onMouseMove={handleZScoreHover}
+                  onPointerMove={handleZScoreHover}
                 />
               </g>
             </svg>

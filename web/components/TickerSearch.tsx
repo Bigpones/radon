@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { createReconnectStrategy, type ReconnectState } from "@/lib/reconnectStrategy";
+import { useDismissablePopover } from "@/lib/useDismissablePopover";
 
 type SearchResult = {
   conId: number;
@@ -253,22 +254,13 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
     );
 
     /* ------------------------------------------------------------------ */
-    /*  Click outside                                                      */
+    /*  Click outside / Escape                                             */
     /* ------------------------------------------------------------------ */
-    useEffect(() => {
-      function handleClickOutside(e: MouseEvent) {
-        if (
-          containerRef.current &&
-          !containerRef.current.contains(e.target as Node)
-        ) {
-          setIsOpen(false);
-          setActiveIndex(-1);
-        }
-      }
-      document.addEventListener("mousedown", handleClickOutside);
-      return () =>
-        document.removeEventListener("mousedown", handleClickOutside);
+    const dismissDropdown = useCallback(() => {
+      setIsOpen(false);
+      setActiveIndex(-1);
     }, []);
+    useDismissablePopover(containerRef, dismissDropdown);
 
     /* ------------------------------------------------------------------ */
     /*  Scroll active item into view                                       */

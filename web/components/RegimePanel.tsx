@@ -335,7 +335,7 @@ export default function RegimePanel({
           <span className="regime-hero-max">/100</span>
         </div>
         <div className="regime-hero-meta">
-          <span className="regime-level-badge" style={{ background: color, color: cri.level === "LOW" ? "#000" : "#fff" }}>
+          <span className="regime-level-badge pill--solid" style={{ background: color, color: "var(--text-on-accent)" }}>
             {cri.level}
           </span>
           <span className="regime-live-dot" style={{ background: effectiveHasLive ? "var(--positive)" : "var(--text-muted)" }} />

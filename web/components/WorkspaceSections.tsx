@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  ChevronUp,
   Circle,
   ClipboardList,
   ArrowDown,
@@ -33,9 +32,11 @@ import { useScanner } from "@/lib/useScanner";
 import { useBlotter } from "@/lib/useBlotter";
 import { formatTradeDate } from "@/lib/blotter/formatTradeDate";
 import CashFlowsSection from "@/components/CashFlowsSection";
-import { useSort, type SortDirection } from "@/lib/useSort";
+import { useSort } from "@/lib/useSort";
 import { useTableFilter } from "@/lib/useTableFilter";
 import TableSearch from "./TableSearch";
+import SortTh from "./SortTh";
+import { usePriceDirection } from "@/lib/usePriceDirection";
 import { fmtPrice, fmtUsd, legPriceKey } from "@/lib/positionUtils";
 import {
   buildOpenOrderDisplayRows,
@@ -752,90 +753,6 @@ function blotterShareData(t: BlotterTrade): SharePnlData {
     exitTime,
     time: lastExec?.time ? new Date(lastExec.time).toLocaleString() : "",
   };
-}
-
-/* ─── Sortable header cell ──────────────────────────────── */
-
-function SortTh<K extends string>({
-  label,
-  sortKey,
-  activeKey,
-  direction,
-  onToggle,
-  className,
-}: {
-  label: string;
-  sortKey: K;
-  activeKey: K | null;
-  direction: SortDirection;
-  onToggle: (key: K) => void;
-  className?: string;
-}) {
-  const active = activeKey === sortKey;
-  const ariaSort = active ? (direction === "asc" ? "ascending" : "descending") : undefined;
-  return (
-    <th
-      className={`sortable-th ${className ?? ""} ${active ? "sort-active" : ""}`}
-      onClick={() => onToggle(sortKey)}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(sortKey); } }}
-      tabIndex={0}
-      role="columnheader"
-      aria-sort={ariaSort}
-    >
-      <span className="sort-label">
-        {label}
-        <span className="sort-icon">
-          {active ? (
-            direction === "asc" ? <ChevronUp size={10} /> : <ChevronDown size={10} />
-          ) : (
-            <ChevronDown size={10} className="sort-icon-idle" />
-          )}
-        </span>
-      </span>
-    </th>
-  );
-}
-
-/* ─── Price direction hook (local, used by OrderPriceCell) ── */
-
-function usePriceDirection(price: number | null): {
-  direction: "up" | "down" | null;
-  flashDirection: "up" | "down" | null;
-} {
-  const [direction, setDirection] = useState<"up" | "down" | null>(null);
-  const [flashDirection, setFlashDirection] = useState<"up" | "down" | null>(null);
-  const previousPrice = useRef<number | null>(null);
-
-  useEffect(() => {
-    const previous = previousPrice.current;
-
-    if (previous == null || price == null) {
-      setDirection(null);
-      setFlashDirection(null);
-      previousPrice.current = price;
-      return undefined;
-    }
-
-    if (price > previous) {
-      setDirection("up");
-      setFlashDirection("up");
-    } else if (price < previous) {
-      setDirection("down");
-      setFlashDirection("down");
-    } else {
-      setFlashDirection(null);
-    }
-
-    previousPrice.current = price;
-
-    if (price !== previous) {
-      const timer = setTimeout(() => setFlashDirection(null), 2500);
-      return () => clearTimeout(timer);
-    }
-    return undefined;
-  }, [price]);
-
-  return { direction, flashDirection };
 }
 
 /* ─── Flow tables ───────────────────────────────────────── */

@@ -154,7 +154,7 @@ describe("Correlation Risk Premium brush + hover", () => {
       toJSON: () => ({}),
     });
 
-    fireEvent.mouseMove(overlay, { clientX: 400, clientY: 100 });
+    fireEvent.pointerMove(overlay, { clientX: 400, clientY: 100 });
 
     const tooltip = screen.getByTestId("regime-spread-hover-tooltip");
     expect(tooltip).toBeTruthy();

@@ -223,31 +223,31 @@ export default function VcgPanel({ marketState }: VcgPanelProps) {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
             {/* Regime badge */}
-            <span className="pill" style={{ background: regimeBadgeColor(sig.regime), color: "#fff", fontSize: "9px" }}>
+            <span className="pill pill--solid" style={{ background: regimeBadgeColor(sig.regime) }}>
               {sig.regime}
             </span>
             {/* RISK-OFF */}
             {sig.ro === 1 && (
-              <span className="pill" style={{ background: "var(--fault)", color: "#fff", fontSize: "9px" }}>
+              <span className="pill pill--solid" style={{ background: "var(--fault)" }}>
                 <AlertTriangle size={10} style={{ marginRight: "3px" }} />
                 RISK-OFF
               </span>
             )}
             {/* EDR (only when not already RISK-OFF) */}
             {sig.edr === 1 && sig.ro !== 1 && (
-              <span className="pill" style={{ background: "var(--warning)", color: "#000", fontSize: "9px", fontWeight: 700 }}>
+              <span className="pill pill--solid" style={{ background: "var(--warning)", fontWeight: 700 }}>
                 EDR
               </span>
             )}
             {/* Tier badge */}
             {sig.tier != null && (
-              <span className="pill" style={{ background: tierColor(sig.tier), color: "#fff", fontSize: "9px" }}>
+              <span className="pill pill--solid" style={{ background: tierColor(sig.tier) }}>
                 T{sig.tier}
               </span>
             )}
             {/* Bounce */}
             {sig.bounce === 1 && (
-              <span className="pill" style={{ background: "var(--signal-core)", color: "#000", fontSize: "9px", fontWeight: 700 }}>
+              <span className="pill pill--solid" style={{ background: "var(--signal-core)", fontWeight: 700 }}>
                 <TrendingUp size={10} style={{ marginRight: "3px" }} />
                 BOUNCE
               </span>
@@ -312,12 +312,8 @@ export default function VcgPanel({ marketState }: VcgPanelProps) {
           </div>
           {/* Overall signal pill */}
           <span
-            className="pill"
-            style={{
-              background: interpColor,
-              color: sig.interpretation === "NORMAL" || sig.interpretation === "BOUNCE" ? "#000" : "#fff",
-              fontSize: "9px",
-            }}
+            className="pill pill--solid"
+            style={{ background: interpColor }}
           >
             {interpretationLabel(sig.interpretation)}
           </span>

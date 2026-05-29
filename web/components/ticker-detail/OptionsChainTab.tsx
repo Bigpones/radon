@@ -490,7 +490,7 @@ function OrderBuilder({
             color: "var(--text-secondary)",
           }}
         >
-          ORDER BUILDER {structure ? `— ${structure}` : ""}
+          ORDER BUILDER {structure ? `: ${structure}` : ""}
         </span>
         <button
           className="btn-secondary"
@@ -564,7 +564,7 @@ function OrderBuilder({
           }}
         >
           <div style={{ letterSpacing: "0.04em", marginBottom: 2 }}>
-            HEADS-UP — BEARISH RISK REVERSAL ROUTING
+            HEADS-UP: BEARISH RISK REVERSAL ROUTING
           </div>
           <div>
             IB Smart sometimes silently drops this combo. If the order

@@ -8,6 +8,7 @@ import { MarketState } from "@/lib/useMarketHours";
 import InfoTooltip from "./InfoTooltip";
 import ShareReportModal from "./ShareReportModal";
 import GexLaplaceContour from "./instruments/GexLaplaceContour";
+import SpectralLoader from "./SpectralLoader";
 
 type GexPanelProps = {
   marketState?: MarketState;
@@ -61,9 +62,9 @@ function levelColor(gamma: number | undefined): string {
 
 function SourceBadge({ source }: { source: "uw" | "mq" | "both" }) {
   const styles: Record<string, React.CSSProperties> = {
-    uw:   { background: "rgba(15,110,86,0.18)",  color: "var(--signal-core)",  border: "0.5px solid rgba(15,110,86,0.4)" },
-    mq:   { background: "rgba(56,138,221,0.15)", color: "#85b7eb",             border: "0.5px solid rgba(56,138,221,0.35)" },
-    both: { background: "rgba(93,202,165,0.12)", color: "var(--signal-core)",  border: "0.5px solid rgba(93,202,165,0.3)" },
+    uw:   { background: "color-mix(in srgb, var(--signal-core) 18%, transparent)",  color: "var(--signal-core)",  border: "1px solid color-mix(in srgb, var(--signal-core) 40%, transparent)" },
+    mq:   { background: "color-mix(in srgb, var(--gex-mq-accent) 15%, transparent)", color: "var(--gex-mq-accent)", border: "1px solid color-mix(in srgb, var(--gex-mq-accent) 35%, transparent)" },
+    both: { background: "color-mix(in srgb, var(--signal-core) 12%, transparent)", color: "var(--signal-core)",  border: "1px solid color-mix(in srgb, var(--signal-core) 30%, transparent)" },
   };
   const labels = { uw: "UW", mq: "MQ", both: "UW+MQ" };
   return (
@@ -243,7 +244,7 @@ function MqLevelsPanel({ mq, sourceDelta }: { mq: MqLevels; sourceDelta: SourceD
         {sign}{e.delta.toFixed(1)} &nbsp;
         <span style={{ color: "var(--signal-core)", fontSize: 9 }}>{e.uw.toFixed(0)}</span>
         <span style={{ color: "var(--text-muted)", fontSize: 9 }}> vs </span>
-        <span style={{ color: "#85b7eb", fontSize: 9 }}>{e.mq.toFixed(0)}</span>
+        <span style={{ color: "var(--gex-mq-accent)", fontSize: 9 }}>{e.mq.toFixed(0)}</span>
       </span>
     );
   }
@@ -278,7 +279,7 @@ function MqLevelsPanel({ mq, sourceDelta }: { mq: MqLevels; sourceDelta: SourceD
             ].map(({ label, val }) => (
               <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 5, fontFamily: "var(--font-mono)" }}>
                 <span style={{ color: "var(--text-secondary)", fontSize: 10 }}>{label}</span>
-                <span style={{ color: "#85b7eb", fontWeight: 500 }}>{val != null ? fmtPrice(val) : "—"}</span>
+                <span style={{ color: "var(--gex-mq-accent)", fontWeight: 500 }}>{val != null ? fmtPrice(val) : "—"}</span>
               </div>
             ))}
             {mq.top_gex_strikes.length > 0 && (
@@ -287,8 +288,8 @@ function MqLevelsPanel({ mq, sourceDelta }: { mq: MqLevels; sourceDelta: SourceD
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {mq.top_gex_strikes.map((s) => (
                     <span key={s} style={{
-                      background: "rgba(56,138,221,0.12)", color: "#85b7eb",
-                      border: "0.5px solid rgba(56,138,221,0.3)",
+                      background: "color-mix(in srgb, var(--gex-mq-accent) 12%, transparent)", color: "var(--gex-mq-accent)",
+                      border: "1px solid color-mix(in srgb, var(--gex-mq-accent) 30%, transparent)",
                       fontSize: 10, padding: "1px 6px", borderRadius: 2, fontFamily: "var(--font-mono)",
                     }}>
                       {fmtPrice(s)}
@@ -328,7 +329,7 @@ function MqLevelsPanel({ mq, sourceDelta }: { mq: MqLevels; sourceDelta: SourceD
                 {mq.iv30d != null && (
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 4, fontFamily: "var(--font-mono)" }}>
                     <span style={{ color: "var(--text-secondary)", fontSize: 10 }}>IV 30D</span>
-                    <span style={{ color: "#85b7eb", fontWeight: 500 }}>{(mq.iv30d * 100).toFixed(2)}%</span>
+                    <span style={{ color: "var(--gex-mq-accent)", fontWeight: 500 }}>{(mq.iv30d * 100).toFixed(2)}%</span>
                   </div>
                 )}
                 {mq.hv30 != null && (
@@ -451,10 +452,8 @@ export default function GexPanel({ marketState }: GexPanelProps) {
             Gamma Exposure Levels
           </div>
         </div>
-        <div className="section-body" style={{ padding: "24px", textAlign: "center" }}>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-muted)" }}>
-            Loading GEX scan...
-          </span>
+        <div className="section-body">
+          <SpectralLoader label="Sampling gamma exposure by strike" />
         </div>
       </div>
     );
@@ -532,7 +531,7 @@ export default function GexPanel({ marketState }: GexPanelProps) {
               className="gex-day-badge"
               style={{
                 background: daysAbove > 0 ? "var(--signal-deep)" : "var(--fault)",
-                color: "#fff",
+                color: "var(--text-on-accent)",
               }}
             >
               DAY {daysCount} {daysSide} GEX FLIP

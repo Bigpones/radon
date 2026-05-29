@@ -1,28 +1,12 @@
 "use client";
 
 import type { PortfolioData } from "@/lib/types";
+import { fmtMoney, fmtMoneySigned } from "@/lib/format/money";
 
 type Props = {
   portfolio: PortfolioData | null;
   realizedPnl?: number;
 };
-
-function fmtMoney(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return "—";
-  const abs = Math.abs(value);
-  const sign = value < 0 ? "−" : "";
-  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(2)}M`;
-  return `${sign}$${abs.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-}
-
-function fmtMoneySigned(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return "—";
-  const abs = Math.abs(value);
-  if (value === 0) return `$0`;
-  const sign = value < 0 ? "−" : "+";
-  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(2)}M`;
-  return `${sign}$${abs.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-}
 
 function pnlTone(value: number | null | undefined): "core" | "fault" | "neutral" {
   if (value == null || value === 0) return "neutral";

@@ -43,6 +43,12 @@
   --text-secondary: #94a3b8;
   --text-muted: #475569;
   --border-focus: var(--signal-core);
+  --gex-mq-accent: #85b7eb;
+  --signal-fault-deep: #9F1239;
+  /* Text drawn over a solid colored badge/accent fill. Mirrors --accent-text
+     so it inverts with the theme (dark glyphs on bright dark-theme fills,
+     white glyphs on the darker saturated light-theme fills). */
+  --text-on-accent: var(--accent-text);
 
   /* Legacy aliases — kept for backwards compatibility with existing
      selectors. New code should reference the canonical tokens above. */
@@ -94,6 +100,9 @@
   --text-secondary: #636363;
   --text-muted: #878787;
   --border-focus: var(--signal-core);
+  --gex-mq-accent: #2563EB;
+  --signal-fault-deep: #9F1239;
+  --text-on-accent: var(--accent-text);
 
   /* Legacy aliases — see [data-theme="dark"]. */
   --bg-base: var(--bg-canvas);
@@ -1934,6 +1943,14 @@ td.last-price-cell {
   border: 1px solid var(--border-dim);
   background: transparent;
   transition: border-color 150ms ease-in-out, color 150ms ease-in-out;
+}
+
+/* Solid-fill variant: background is supplied inline by the caller (a brand
+   token), text uses the theme-aware on-accent color, border drops out. Lets
+   status badges share the .pill shape/scale instead of forking styling. */
+.pill--solid {
+  color: var(--text-on-accent);
+  border-color: transparent;
 }
 
 .pill.accum {
@@ -5233,11 +5250,11 @@ tr.leg-row td {
 .ratings-bar-wrap { display: flex; flex-direction: column; gap: 4px; }
 .ratings-bar { display: flex; height: 24px; border: 1px solid var(--border-dim); overflow: hidden; }
 .ratings-bar-seg { display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 10px; font-weight: 500; min-width: 20px; }
-.ratings-strong-buy { background: #048A7A; color: #fff; }
+.ratings-strong-buy { background: var(--signal-deep); color: #fff; }
 .ratings-buy { background: var(--positive); color: #000; }
-.ratings-hold { background: #475569; color: #fff; }
+.ratings-hold { background: var(--text-muted); color: #fff; }
 .ratings-sell { background: var(--negative); color: #fff; }
-.ratings-strong-sell { background: #9F1239; color: #fff; }
+.ratings-strong-sell { background: var(--signal-fault-deep); color: #fff; }
 .ratings-bar-labels { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 8px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
 .ratings-targets { display: flex; flex-direction: column; gap: 8px; }
 .ratings-targets-title { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); }

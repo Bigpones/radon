@@ -9,6 +9,7 @@ import {
   formatLeveragePct,
   formatLeverageMultiplier,
 } from "@/lib/dollarDeltaLeverage";
+import { fmtUsd, fmtSignedUsd } from "@/lib/format/money";
 
 export type ExposureMetric = "netLong" | "netShort" | "dollarDelta" | "netExposure";
 
@@ -66,15 +67,6 @@ const METRIC_CONFIG: Record<ExposureMetric, {
     formatValue: (n) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`,
   },
 };
-
-function fmtUsd(n: number): string {
-  if (Math.abs(n) >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
-  return `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-}
-
-function fmtSignedUsd(n: number): string {
-  return `${n >= 0 ? "+" : ""}${fmtUsd(Math.abs(n))}${n < 0 ? "" : ""}`.replace("+-", "-");
-}
 
 function fmtNlvUsd(n: number): string {
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

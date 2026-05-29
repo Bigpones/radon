@@ -1,6 +1,7 @@
 "use client";
 
 import Modal from "./Modal";
+import { fmtSigned, fmtPct } from "@/lib/format/money";
 
 export type PnlBreakdownRow = {
   id: string | number;
@@ -25,15 +26,6 @@ type Props = {
   className?: string;
 };
 
-function fmtSigned(n: number, decimals = 0) {
-  const abs = Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
-  return `${n >= 0 ? "+" : "-"}$${abs}`;
-}
-
-function fmtPct(n: number) {
-  return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
-}
-
 export default function PnlBreakdownModal({
   open, title, formula, col1Header, col2Header, rows, total, totalLabel = "TOTAL", onClose, className = "",
 }: Props) {
@@ -56,7 +48,7 @@ export default function PnlBreakdownModal({
       </div>
 
       {rows.length === 0 ? (
-        <div className="eb-empty">No position data available — sync portfolio from IB</div>
+        <div className="eb-empty">No position data available. Sync portfolio from IB.</div>
       ) : (
         <table className="eb-table">
           <thead>

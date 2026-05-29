@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ChevronDown, Columns3 } from "lucide-react";
+import { useDismissablePopover } from "@/lib/useDismissablePopover";
 
 export type ColumnsToggleEntry<K extends string> = {
   key: K;
@@ -28,23 +29,8 @@ export function ColumnsToggle<K extends string>({ columns, visible, onToggle, on
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDocClick = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onEsc);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onEsc);
-    };
-  }, [open]);
+  const close = useCallback(() => setOpen(false), []);
+  useDismissablePopover(containerRef, close, open);
 
   const visibleCount = columns.filter((c) => visible[c.key]).length;
 
