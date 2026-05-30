@@ -450,3 +450,90 @@ class TestServerSmoke:
 
 
 import urllib.error  # noqa: E402  (used in the 404 assertion above)
+
+
+# --- external_probe (Tier-3 off-box) surfaced inline in /status ---
+
+class TestFetchExternalProbe:
+    def test_no_creds_is_none(self, monkeypatch):
+        monkeypatch.delenv("TURSO_DB_URL", raising=False)
+        monkeypatch.delenv("TURSO_AUTH_TOKEN", raising=False)
+        assert turso_http.fetch_external_probe(timeout=0.1) is None
+
+    def test_happy_path_returns_freshest_row(self, monkeypatch):
+        monkeypatch.setenv("TURSO_DB_URL", "libsql://radon-x.turso.io")
+        monkeypatch.setenv("TURSO_AUTH_TOKEN", "tok")
+
+        def _fake_post(origin, token, sql, timeout):
+            assert "external_probe" in sql
+            return {"results": [
+                {"type": "ok", "response": {"type": "execute", "result": {
+                    "cols": [{"name": c} for c in
+                             ("source", "ok", "http_status", "latency_ms", "checked_at", "detail")],
+                    "rows": [[
+                        {"type": "text", "value": "github-actions/edge"},
+                        {"type": "integer", "value": "1"},
+                        {"type": "integer", "value": "200"},
+                        {"type": "integer", "value": "142"},
+                        {"type": "text", "value": "2026-05-30T13:05:22Z"},
+                        {"type": "null"},
+                    ]],
+                }}},
+                {"type": "ok", "response": {"type": "close"}},
+            ]}
+
+        monkeypatch.setattr(turso_http, "_post_pipeline", _fake_post)
+        row = turso_http.fetch_external_probe(timeout=2.5)
+        assert row["source"] == "github-actions/edge"
+        assert row["ok"] == 1
+        assert row["latency_ms"] == 142
+        assert row["checked_at"] == "2026-05-30T13:05:22Z"
+        assert "age_secs" not in row  # external_probe uses checked_at
+
+    def test_no_rows_is_none(self, monkeypatch):
+        monkeypatch.setenv("TURSO_DB_URL", "libsql://radon-x.turso.io")
+        monkeypatch.setenv("TURSO_AUTH_TOKEN", "tok")
+        monkeypatch.setattr(turso_http, "_post_pipeline", lambda *a, **k: {
+            "results": [{"type": "ok", "response": {"type": "execute",
+                        "result": {"cols": [], "rows": []}}},
+                        {"type": "ok", "response": {"type": "close"}}]})
+        assert turso_http.fetch_external_probe(timeout=2.5) is None
+
+    def test_failure_is_none(self, monkeypatch):
+        monkeypatch.setenv("TURSO_DB_URL", "libsql://radon-x.turso.io")
+        monkeypatch.setenv("TURSO_AUTH_TOKEN", "tok")
+
+        def _boom(*a, **k):
+            raise TimeoutError("turso slow")
+
+        monkeypatch.setattr(turso_http, "_post_pipeline", _boom)
+        assert turso_http.fetch_external_probe(timeout=2.5) is None
+
+
+class TestExternalProbeInStatus:
+    def test_build_status_includes_external_probe(self):
+        body = probes.build_status({}, {}, "t", external_probe={
+            "source": "gh", "ok": 1, "latency_ms": 142, "checked_at": "x"})
+        assert body["external_probe"]["latency_ms"] == 142
+
+    def test_build_status_external_probe_defaults_none(self):
+        assert probes.build_status({}, {}, "t")["external_probe"] is None
+
+    def test_status_response_wires_external_probe(self):
+        class _EpCache:
+            def snapshot(self):
+                return {"source": "gh", "ok": 1, "latency_ms": 142, "checked_at": "x"}
+
+        status, body = serve.status_response(
+            run_probes_fn=lambda: {},
+            unit_cache=_FakeCache({}, None),
+            now_fn=lambda: "t",
+            external_probe_cache=_EpCache(),
+        )
+        assert status == 200
+        assert body["external_probe"]["latency_ms"] == 142
+
+    def test_status_response_external_probe_none_when_no_cache(self):
+        status, body = serve.status_response(
+            run_probes_fn=lambda: {}, unit_cache=_FakeCache({}, None), now_fn=lambda: "t")
+        assert body["external_probe"] is None

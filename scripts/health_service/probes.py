@@ -121,13 +121,14 @@ def parse_unit_states(raw: str) -> dict:
 
 def build_status(probes: dict, units: dict, generated_at: str,
                  health_service: str = "ok", units_age_secs=None,
-                 service_health=None) -> dict:
+                 service_health=None, external_probe=None) -> dict:
     """Assemble the always-200 /status body. Degraded sources are fields, never
     error codes (per feedback_http_status_for_real_errors.md).
 
     `service_health` is the Turso-table section (raw rows + per-row age); a
-    Turso outage degrades it to state 'unknown' without touching the response
-    code or the rest of the body.
+    Turso outage degrades it to state 'unknown'. `external_probe` is the freshest
+    Tier-3 off-box probe row (dict) or None when there is none / no creds. Both
+    degrade without touching the response code or the rest of the body.
     """
     return {
         "health_service": health_service,
@@ -138,4 +139,5 @@ def build_status(probes: dict, units: dict, generated_at: str,
         "service_health": service_health
         if service_health is not None
         else {"state": "unknown", "detail": "not_collected", "rows": []},
+        "external_probe": external_probe,
     }

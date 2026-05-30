@@ -38,6 +38,13 @@ _SERVICE_HEALTH_SQL = (
     "last_error, updated_at FROM service_health ORDER BY service"
 )
 
+# Freshest off-box probe row (Tier-3). external_probe is latest-per-source; we
+# surface the most recently-checked source for the admin Off-box tile.
+_EXTERNAL_PROBE_SQL = (
+    "SELECT source, ok, http_status, latency_ms, checked_at, detail "
+    "FROM external_probe ORDER BY checked_at DESC LIMIT 1"
+)
+
 
 def http_url_from_libsql(url: str) -> str:
     """Convert a libsql:// (or ws://) DB URL to the https:// HTTP-API origin.
@@ -189,30 +196,68 @@ def fetch_service_health(timeout: float = 2.5) -> dict:
         return {"state": "unknown", "detail": "fetch_error", "rows": []}
 
 
+def fetch_external_probe(timeout: float = 2.5):
+    """Read the freshest external_probe row (the Tier-3 off-box witness) over
+    stdlib HTTP. Returns a dict {source, ok, http_status, latency_ms, checked_at,
+    detail} or None (no creds / no row / any failure). NEVER raises."""
+    db_url, token = read_env()
+    http_origin = http_url_from_libsql(db_url)
+    if not http_origin or not token:
+        return None
+    try:
+        body = _post_pipeline(http_origin, token, _EXTERNAL_PROBE_SQL, timeout)
+        rows = _rows_from_pipeline(body)
+        if not rows:
+            return None
+        row = rows[0]
+        row.pop("age_secs", None)  # external_probe uses checked_at, not updated_at
+        return row
+    except Exception:  # noqa: BLE001 - off-box tile must never crash /status
+        return None
+
+
+_CACHE_UNSET = object()
+
+
 class ServiceHealthCache:
     """~5s TTL cache around fetch_service_health, mirroring UnitStateCache's
     keep-last-value-on-failure ethos. Fetched lazily on read (bounded), so a slow
     Turso never blocks the request hot path for more than `timeout` and otherwise
     serves the cached snapshot."""
 
-    def __init__(self, ttl: float = 5.0, timeout: float = 2.5, fetch_fn=fetch_service_health):
+    def __init__(self, ttl: float = 5.0, timeout: float = 2.5, fetch_fn=fetch_service_health,
+                 default=_CACHE_UNSET):
         self._ttl = ttl
         self._timeout = timeout
         self._fetch_fn = fetch_fn
-        self._value = {"state": "unknown", "detail": "uninitialized", "rows": []}
+        # service_health default is the "unknown" envelope; callers wrapping a
+        # differently-shaped fetch (e.g. fetch_external_probe -> dict|None) pass
+        # their own default.
+        self._default = (
+            {"state": "unknown", "detail": "uninitialized", "rows": []}
+            if default is _CACHE_UNSET
+            else default
+        )
+        self._value = self._default
         self._fetched_monotonic = None
         # ThreadingHTTPServer dispatches /status concurrently; serialize the
         # TTL-gated fetch so two requests can't race _value/_fetched_monotonic
         # or stampede Turso on a simultaneous cache-miss.
         self._lock = threading.Lock()
 
-    def snapshot(self) -> dict:
+    def snapshot(self):
         with self._lock:
             now = time.monotonic()
             if self._fetched_monotonic is None or (now - self._fetched_monotonic) >= self._ttl:
                 try:
                     self._value = self._fetch_fn(timeout=self._timeout)
                 except Exception:  # noqa: BLE001 - fetch_fn is contracted not to raise; belt + braces
-                    self._value = {"state": "unknown", "detail": "fetch_error", "rows": []}
+                    self._value = (
+                        {"state": "unknown", "detail": "fetch_error", "rows": []}
+                        if isinstance(self._default, dict)
+                        else self._default
+                    )
                 self._fetched_monotonic = now
-            return dict(self._value)
+            # Copy dict values so callers can't mutate the cache; pass other
+            # shapes (e.g. external_probe -> dict|None) through as-is.
+            return dict(self._value) if isinstance(self._value, dict) else self._value

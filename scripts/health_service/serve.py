@@ -124,11 +124,12 @@ def healthz_response():
     return 200, {"ok": True}
 
 
-def status_response(run_probes_fn, unit_cache, now_fn=_now_iso, service_health_cache=None):
+def status_response(run_probes_fn, unit_cache, now_fn=_now_iso, service_health_cache=None,
+                    external_probe_cache=None):
     """Always returns 200. A probe sweep that raises degrades health_service to
-    'degraded' rather than failing the response. The Turso service_health
-    section degrades to state 'unknown' on any failure and never affects the
-    response code."""
+    'degraded' rather than failing the response. The Turso service_health and
+    external_probe sections degrade to 'unknown'/None on any failure and never
+    affect the response code."""
     health = "ok"
     try:
         probe_results = run_probes_fn()
@@ -142,9 +143,13 @@ def status_response(run_probes_fn, unit_cache, now_fn=_now_iso, service_health_c
         sh = service_health_cache.snapshot() if service_health_cache is not None else None
     except Exception:
         sh = {"state": "unknown", "detail": "cache_error", "rows": []}
+    try:
+        ep = external_probe_cache.snapshot() if external_probe_cache is not None else None
+    except Exception:
+        ep = None
     return 200, probes.build_status(probe_results, units, now_fn(),
                                     health_service=health, units_age_secs=age,
-                                    service_health=sh)
+                                    service_health=sh, external_probe=ep)
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -168,6 +173,7 @@ class _Handler(BaseHTTPRequestHandler):
                     run_probes,
                     self.server.unit_cache,
                     service_health_cache=getattr(self.server, "service_health_cache", None),
+                    external_probe_cache=getattr(self.server, "external_probe_cache", None),
                 ))
             except Exception:
                 self._write(200, {"health_service": "degraded", "error": "status_render_failed"})
@@ -183,9 +189,14 @@ def build_server(bind: str = BIND, port: int = PORT, units=UNITS):
     sh_cache = turso_http.ServiceHealthCache(
         ttl=SERVICE_HEALTH_TTL, timeout=SERVICE_HEALTH_TIMEOUT,
     )
+    ep_cache = turso_http.ServiceHealthCache(
+        ttl=SERVICE_HEALTH_TTL, timeout=SERVICE_HEALTH_TIMEOUT,
+        fetch_fn=turso_http.fetch_external_probe, default=None,
+    )
     server = ThreadingHTTPServer((bind, port), _Handler)
     server.unit_cache = cache  # type: ignore[attr-defined]
     server.service_health_cache = sh_cache  # type: ignore[attr-defined]
+    server.external_probe_cache = ep_cache  # type: ignore[attr-defined]
     return server, cache
 
 
