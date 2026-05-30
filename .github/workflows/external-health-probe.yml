@@ -12,16 +12,13 @@ name: Tier-3 external health probe
 # /edge-health/status already aggregates those internal probes.
 
 on:
-  # ENABLE THE SCHEDULE ONLY AFTER the TURSO_DB_URL + TURSO_AUTH_TOKEN repo
-  # secrets are configured — otherwise every cron run fails (no creds to write
-  # Turso). Until then this is manual-only (workflow_dispatch) for smoke runs.
-  # To activate: uncomment the schedule block below.
-  #
-  # schedule:
-  #   # Every 5 min is GitHub's minimum cron granularity; runs are best-effort
-  #   # and routinely lag 5-15 min under load. The reader's staleness window
-  #   # (20 min) absorbs that jitter without flapping.
-  #   - cron: "*/5 * * * *"
+  # TURSO_DB_URL + TURSO_AUTH_TOKEN repo secrets are configured (verified by a
+  # manual smoke run landing a row in external_probe).
+  schedule:
+    # Every 5 min is GitHub's minimum cron granularity; runs are best-effort
+    # and routinely lag 5-15 min under load. The reader's staleness window
+    # (20 min) absorbs that jitter without flapping.
+    - cron: "*/5 * * * *"
   workflow_dispatch: {}
 
 # Never let two probes overlap; don't cancel an in-flight one (let it finish
