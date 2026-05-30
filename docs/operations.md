@@ -119,6 +119,7 @@ Hetzner host systemd is the production surface. Laptop dev uses launchd plists i
 | `radon-nextjs` | always-on | Next.js terminal at `app.radon.run` |
 | `radon-newsfeed` | 120s loop | Headless Playwright scraper for The Market Ear |
 | `radon-monitor` | 30s loop | Fills, exit orders, journal sync, cash flow handler |
+| `radon-health` | always-on | **Isolated** stdlib health daemon on `:8330` (see Health monitoring below). NO dependency on `radon-ib-gateway` — survives the cascade-stop. |
 | `radon-refresh.timer` | 60s | Schedules data-refresh sweeps |
 | `radon-vcg-refresh.timer` | Mon-Fri 13-21 UTC every 5 min | Autonomous VCG scan |
 | `radon-portfolio-sync.timer` | Mon-Fri 13-21 UTC every 60s | Autonomous portfolio sync |
@@ -127,7 +128,7 @@ Hetzner host systemd is the production surface. Laptop dev uses launchd plists i
 
 The autonomous timers retired Radon's previous "data only refreshes when a browser tab is open" failure mode. Some surfaces remain on-demand by design (`scanner`, `discover`, `flow-analysis`, `analyst-ratings`, `gex-scan`, `orders-read-compare`).
 
-**Operator CLI.** `/usr/local/bin/radon` wraps every loaded `radon-*` unit. Auto-enumerates via `systemctl list-units 'radon-*'`, so new timers don't require script edits.
+**Operator CLI.** `/usr/local/bin/radon` wraps every loaded `radon-*` unit **except `radon-health`**. Auto-enumerates via `systemctl list-units 'radon-*'` (then filters out `radon-health.service`), so new timers don't require script edits. `radon-health` is deliberately excluded so the health daemon keeps reporting while `radon stop|restart` cycles the trading stack — manage it explicitly with `systemctl restart radon-health`.
 
 ```bash
 radon stop      # stop IB + all radon-* units
@@ -137,6 +138,20 @@ radon status
 ```
 
 From the laptop: `ssh root@ib-gateway radon stop`. Installed by `radon-cloud/scripts/operator-radon.sh` via `setup-vps.sh:install_operator_cli()`.
+
+## Health monitoring (isolated daemon + edge surface)
+
+The health surface is **decoupled from the trading stack** so it keeps reporting precisely when the stack is down. Two layers plus an off-box witness:
+
+- **`radon-health.service`** (`scripts/health_service/`, stdlib-only) — a standalone daemon on `127.0.0.1:8330` with **no `Requires=`/`After=radon-ib-gateway`**, so the cascade-stop (stop `radon-ib-gateway` → clean-stops api/relay/monitor; `Restart=always` does NOT re-fire) cannot take it down. `Restart=always` + `StartLimitIntervalSec=60`/`StartLimitBurst=5` so a crash-loop parks as `failed`, not an invisible hot-loop. Imports **nothing** from the trading stack (enforced by a subprocess isolation test).
+  - `GET /healthz` — zero-I/O static `200` (liveness pin).
+  - `GET /status` — **always `200`**; concurrent live probes (`radon-api` via `/health/lite`, relay/Next.js/IB-gateway TCP) + cached `systemctl` unit states (`active(exited)` reads `up`) + the Turso `service_health` table (read over stdlib libSQL HTTP — no libsql import; degrades to `unknown` on any failure). Degraded sources are body fields, never error codes.
+- **Caddy edge** (`app.radon.run`): `GET /edge-health/ping` — static `respond "ok" 200`, the **never-502 floor** (depends only on Caddy). `GET /edge-health/status` → `reverse_proxy 127.0.0.1:8330`. **Caveat:** Caddy `handle_response` catches upstream 5xx, NOT dial failures, so `/edge-health/status` returns `502` when the daemon process is down — `/edge-health/ping` is the guaranteed floor.
+- **Off-box prober (Tier-3):** `.github/workflows/external-health-probe.yml` (GitHub Actions, `*/5`) hits the public edge from off the VPS and UPSERTs to the Turso `external_probe` table (`scripts/health_probe/`), so a whole-box outage is still recorded externally. `reader.py` is the dead-man's-switch (flags stale `external_probe` rows). Needs repo secrets `TURSO_DB_URL`/`TURSO_AUTH_TOKEN`.
+
+**Consumers:** the always-on IB status chip (`web/lib/IBStatusContext.tsx`) reads `/edge-health/status` in prod (falls back to `/api/admin/health` in dev / as a prod safety net). The admin panel stays on `/api/admin/health` (needs `managed_accounts`). The `/health` payload itself is **trust-scoped**: public/proxied callers get `{"status":"ok"}` only; account/state detail is local/tailnet only. See `scripts/api/CLAUDE.md` and `scripts/health_service/CLAUDE.md`.
+
+**Recovery heartbeat:** the `awaiting_2fa → authenticated` pool reconnect (`pool.reconnect_all`) is driven server-side by a FastAPI lifespan task (`_ib_recovery_heartbeat_loop`, 15s) — independent of any browser poll, since the chip is now a read-only consumer. The every-minute `radon-ib-watchdog` `/health` curl is the slower backstop.
 
 ## Service Health & Watchdogs
 

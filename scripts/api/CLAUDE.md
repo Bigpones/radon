@@ -86,6 +86,8 @@ After 2FA resolves, the FastAPI `ib_pool` can stay stuck disconnected even thoug
 
 The auto-heal handler clears stale `service_health` rows for `requires_ib=true` services on this transition (commit 5aea4ec).
 
+**Recovery heartbeat (commit 9a16f05).** The `awaiting_2fa → authenticated` `pool.reconnect_all()` recovery is driven server-side by a FastAPI lifespan task `_ib_recovery_heartbeat_loop` (15s, calls `check_ib_gateway(pool=ib_pool)`), NOT by a browser poll. This is required because the status consumers moved to the read-only `/edge-health` surface (`/health/lite`, `pool=None`, no side effects) — without this loop, recovery would only fire on the every-minute `radon-ib-watchdog` `/health` curl. Don't reintroduce browser-poll-driven recovery; keep the mutating `check_ib_gateway(pool=...)` on the server-side heartbeat + watchdog. The isolated health daemon (`scripts/health_service/`) consumes `/health/lite`, never the mutating `/health`.
+
 ---
 
 ## Pi / Ratings — No spawn() from Next.js
