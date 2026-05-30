@@ -7,7 +7,10 @@ import type {
   IbAuthState,
   PushLockState,
   RestartBackoffState,
+  ServiceAction,
+  UnitKind,
   UnitStatus,
+  UnitVerdict,
 } from "./adminTypes";
 
 export type AuthStateTone = "positive" | "warning" | "negative" | "neutral";
@@ -165,4 +168,149 @@ export function formatUptime(secs: number): string {
   const days = Math.floor(secs / 86_400);
   const hours = Math.floor((secs % 86_400) / 3600);
   return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+}
+
+// ---------------------------------------------------------------------------
+// Service verdict + kind (redesign): turn raw systemd active/sub state into a
+// single glanceable verdict so the operator never has to mentally translate
+// "inactive (dead) rc=0" into "this is fine".
+// ---------------------------------------------------------------------------
+
+/**
+ * The long-lived daemons of the radon-* stack. A STOPPED daemon reports no
+ * `uptime_secs`, so it can't be told from a never-run oneshot by uptime alone
+ * (that misreads an outage as "idle") — anchor on the documented set, and fall
+ * back to the uptime/oneshot heuristic for anything not enumerated.
+ */
+const DAEMON_UNITS: ReadonlySet<string> = new Set([
+  "radon-api.service",
+  "radon-relay.service",
+  "radon-monitor.service",
+  "radon-nextjs.service",
+  "radon-ib-gateway.service",
+  "radon-health.service",
+  "radon-newsfeed.service",
+]);
+
+/**
+ * Daemons run continuously; scheduled jobs are oneshots that settle at
+ * `inactive (dead)` and report a `last_exit_code`. For a daemon `inactive` is an
+ * outage; for a job it is normal.
+ */
+export function unitKind(unit: UnitStatus): UnitKind {
+  if (DAEMON_UNITS.has(unit.unit)) return "daemon";
+  if (typeof unit.uptime_secs === "number") return "daemon";
+  return "job";
+}
+
+/**
+ * Static cascade map: stopping a key carries down its dependents, which do NOT
+ * auto-restart (feedback_systemd_cascade_stop_no_autorecover). Builds the
+ * high-severity Stop dialog. The cascade is fixed + documented, so no API call.
+ */
+export const UNIT_DEPENDENTS: Record<string, string[]> = {
+  "radon-ib-gateway.service": [
+    "radon-api.service",
+    "radon-relay.service",
+    "radon-monitor.service",
+  ],
+};
+
+/** Dependents that would also stop, for a unit's Stop confirmation. */
+export function unitDependents(unit: string): string[] {
+  return UNIT_DEPENDENTS[unit] ?? [];
+}
+
+/**
+ * One-word verdict + brand tone for a unit. Puts unitTone()'s oneshot-rc logic
+ * on screen as a label instead of leaving it implicit in the dot.
+ */
+export function unitVerdict(unit: UnitStatus): UnitVerdict {
+  if (!unit.can_control) return { label: "Unknown", tone: "neutral" };
+  const active = unit.active_state;
+  const sub = unit.sub_state;
+  if (active === "activating" || active === "reloading") return { label: "Starting", tone: "warning" };
+  if (active === "deactivating") return { label: "Stopping", tone: "warning" };
+  if (active === "failed") return { label: "Failed", tone: "negative" };
+  if (active === "active") {
+    // active+running is a live daemon; active+exited is a oneshot that ran clean.
+    if (sub === "running" || unitKind(unit) === "daemon") return { label: "Running", tone: "positive" };
+    return { label: "Idle", tone: "positive" };
+  }
+  if (active === "inactive") {
+    if (unitKind(unit) === "job") {
+      if (unit.last_exit_code === 0) return { label: "Idle", tone: "positive" };
+      if (typeof unit.last_exit_code === "number") return { label: "Failed", tone: "negative" };
+      return { label: "Idle", tone: "neutral" }; // never run
+    }
+    return { label: "Stopped", tone: "negative" }; // a daemon being down IS an outage
+  }
+  return { label: "Unknown", tone: "neutral" };
+}
+
+/**
+ * Why a service control button is disabled, for a self-explaining tooltip
+ * (mirrors forcePushDisabledReason). Returns null when the button is enabled.
+ */
+export function serviceControlDisabledReason(opts: {
+  unit: UnitStatus;
+  action: ServiceAction;
+  supported: boolean;
+  pending: boolean;
+}): string | null {
+  if (!opts.supported) return "Read-only: this browser is not on the Hetzner VPS.";
+  if (!opts.unit.can_control) return "This unit is not in the controllable allowlist.";
+  if (opts.pending) return "Action in flight...";
+  if (opts.action === "start" && unitVerdict(opts.unit).label === "Running") return "Already running.";
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Detail humanization: some service_health writers persist structured JSON in
+// their detail/last_error field (e.g. replica-watchdog heartbeat blobs). The UI
+// must NEVER render a raw JSON string — turn it into a readable "key: value"
+// summary, and pass genuine human text through unchanged.
+// ---------------------------------------------------------------------------
+
+function humanizeKey(key: string): string {
+  return key.replace(/_/g, " ").trim();
+}
+
+function humanizeValue(value: unknown): string {
+  if (value === null) return "none";
+  if (typeof value === "boolean") return value ? "yes" : "no";
+  // ISO-8601 datetime -> deterministic UTC HH:MM:SS (avoids locale/TZ flakiness).
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value)) {
+    return `${value.slice(11, 19)} UTC`;
+  }
+  if (Array.isArray(value)) return value.map(humanizeValue).join(", ");
+  if (typeof value === "object") return humanizeJsonObject(value as Record<string, unknown>);
+  return String(value);
+}
+
+function humanizeJsonObject(obj: Record<string, unknown>): string {
+  return Object.entries(obj)
+    .map(([key, value]) => `${humanizeKey(key)}: ${humanizeValue(value)}`)
+    .join(" · "); // " · "
+}
+
+/**
+ * Render a service_health detail/last_error value as human-readable text.
+ * Empty -> "" (caller shows a placeholder). A JSON object/array -> a compact
+ * "key: value · key: value" summary. Anything else -> the trimmed string.
+ * Guarantees a raw JSON blob never reaches the UI.
+ */
+export function humanizeDetail(raw: string | null | undefined): string {
+  if (!raw) return "";
+  const text = raw.trim();
+  if (!text) return "";
+  if (text.startsWith("{") || text.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === "object") return humanizeValue(parsed);
+    } catch {
+      // Not valid JSON despite the leading brace — fall through to raw text.
+    }
+  }
+  return text;
 }

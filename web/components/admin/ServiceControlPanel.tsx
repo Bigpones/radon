@@ -6,7 +6,12 @@ import type {
   ServicesListResponse,
   UnitStatus,
 } from "@/lib/adminTypes";
-import { unitActivityLabel, unitTone } from "@/lib/adminFormat";
+import {
+  serviceControlDisabledReason,
+  unitActivityLabel,
+  unitDependents,
+  unitVerdict,
+} from "@/lib/adminFormat";
 import type { FlashTarget } from "./AdminWorkspace";
 import ConfirmDialog from "./ConfirmDialog";
 
@@ -18,15 +23,16 @@ type ServiceControlPanelProps = {
   flashTarget?: FlashTarget | null;
 };
 
-type PendingAction = {
-  unit: string;
-  action: ServiceAction;
-} | null;
+type PendingAction = { unit: string; action: ServiceAction } | null;
+
+// IB Gateway is managed in its own panel above; don't show it twice.
+const HIDDEN_FROM_TABLE = new Set(["radon-ib-gateway.service"]);
 
 /**
- * Renders every radon-* systemd unit + IB Gateway container service with a
- * stop / start / restart trio. Stop and restart are gated by a confirmation
- * modal; start is treated as low-risk and fires immediately on click.
+ * Service Control: every controllable radon-* systemd unit with a clear
+ * one-word status verdict and discoverable, safe start/stop/restart controls.
+ * Start fires immediately; Restart confirms lightly; Stop is high-severity
+ * (enumerates cascade dependents + type-to-confirm for units that have them).
  */
 export default function ServiceControlPanel({
   services,
@@ -49,20 +55,36 @@ export default function ServiceControlPanel({
   };
 
   const requestAction = (unit: string, action: ServiceAction) => {
-    if (action === "start") {
-      void runAction(unit, action);
-    } else {
-      setConfirm({ unit, action });
-    }
+    if (action === "start") void runAction(unit, action);
+    else setConfirm({ unit, action });
   };
 
   if (loading && !services) {
     return (
       <section className="admin-card" data-testid="services-card">
         <header className="admin-card-header">
-          <span className="admin-card-title">Radon services</span>
+          <span className="admin-card-title">Service Control</span>
         </header>
-        <p className="admin-card-empty">Loading services...</p>
+        <table className="admin-services-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Unit</th>
+              <th>Activity</th>
+              <th className="admin-col-controls">Controls</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <tr key={i} className="admin-skeleton-row">
+                <td><span className="admin-skeleton admin-skeleton-line" style={{ width: 80 }} /></td>
+                <td><span className="admin-skeleton admin-skeleton-line" style={{ width: 150 }} /></td>
+                <td><span className="admin-skeleton admin-skeleton-line" style={{ width: 90 }} /></td>
+                <td className="admin-col-controls"><span className="admin-skeleton admin-skeleton-line" style={{ width: 130, height: 22 }} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </section>
     );
   }
@@ -71,40 +93,36 @@ export default function ServiceControlPanel({
     return (
       <section className="admin-card" data-testid="services-card">
         <header className="admin-card-header">
-          <span className="admin-card-title">Radon services</span>
+          <span className="admin-card-title">Service Control</span>
         </header>
         <p className="admin-card-empty admin-card-error">{error}</p>
       </section>
     );
   }
 
-  const units = services?.units ?? [];
+  const supported = services?.supported ?? false;
+  const units = (services?.units ?? []).filter((u) => !HIDDEN_FROM_TABLE.has(u.unit));
+  const dependents = confirm?.action === "stop" ? unitDependents(confirm.unit) : [];
+  const stopNeedsTyped = dependents.length > 0;
 
   return (
     <section className="admin-card" data-testid="services-card">
       <header className="admin-card-header">
-        <span className="admin-card-title">Radon services</span>
-        <span
-          className={`admin-pill ${services?.supported ? "admin-pill-positive" : "admin-pill-neutral"}`}
-        >
-          {services?.supported ? "systemd" : "read-only"}
-        </span>
+        <span className="admin-card-title">Service Control</span>
       </header>
-
-      {!services?.supported && (
-        <p className="admin-card-note">
-          Service control is only available on the Hetzner deployment. This view
-          shows the canonical unit list for reference.
-        </p>
-      )}
+      <p className="admin-card-subhead">
+        {supported
+          ? "systemd units on the Hetzner VPS (the radon-* stack). Controls call systemctl via polkit."
+          : "Read-only: this browser is not on the Hetzner VPS, so controls are disabled."}
+      </p>
 
       <table className="admin-services-table">
         <thead>
           <tr>
+            <th>Status</th>
             <th>Unit</th>
-            <th>State</th>
-            <th>Sub</th>
-            <th>Actions</th>
+            <th>Activity</th>
+            <th className="admin-col-controls">Controls</th>
           </tr>
         </thead>
         <tbody>
@@ -112,7 +130,7 @@ export default function ServiceControlPanel({
             <ServiceRow
               key={unit.unit}
               unit={unit}
-              supported={services?.supported ?? false}
+              supported={supported}
               pending={pending}
               onRequest={requestAction}
               flashTarget={flashTarget}
@@ -121,18 +139,26 @@ export default function ServiceControlPanel({
         </tbody>
       </table>
 
+      <p className="admin-services-help">
+        Daemon stuck or pool disconnected after 2FA? Use Restart All Services. A
+        single scheduled job failed? Restart that row. IB session issues? See IB
+        Gateway above.
+      </p>
+
       <ConfirmDialog
         open={confirm !== null}
         title={confirm ? `${capitalize(confirm.action)} ${confirm.unit}?` : ""}
         body={
           confirm
             ? confirm.action === "stop"
-              ? `This will run systemctl stop ${confirm.unit}. Dependent units will also stop. Use 'Restart' if you want it to come back up.`
-              : `This will run systemctl restart ${confirm.unit}. Brief downtime while the unit restarts.`
+              ? `This runs systemctl stop ${confirm.unit}.`
+              : `This runs systemctl restart ${confirm.unit}. Brief downtime while it restarts.`
             : ""
         }
         confirmLabel={confirm ? capitalize(confirm.action) : ""}
         destructive={confirm?.action === "stop"}
+        affectedUnits={stopNeedsTyped ? dependents : undefined}
+        requireTyped={stopNeedsTyped ? confirm!.unit : undefined}
         pending={pending !== null}
         onConfirm={() => confirm && runAction(confirm.unit, confirm.action)}
         onCancel={() => setConfirm(null)}
@@ -158,11 +184,12 @@ function ServiceRow({
   onRequest: (unit: string, action: ServiceAction) => void;
   flashTarget: FlashTarget | null;
 }) {
-  const tone = unitTone(unit);
-  const disabled = !supported || !unit.can_control;
+  const verdict = unitVerdict(unit);
   const isUnitPending = pending?.unit === unit.unit;
   const activity = unitActivityLabel(unit);
   const flashClass = resolveFlashClass(unit.unit, flashTarget);
+  const rawState = `${unit.active_state} (${unit.sub_state})`;
+  const transitional = verdict.label === "Starting" || verdict.label === "Stopping";
 
   return (
     <tr
@@ -171,34 +198,48 @@ function ServiceRow({
       data-flash={flashClass ? "true" : undefined}
     >
       <td>
-        <div className="admin-unit-cell">
-          <span className={`admin-status-dot admin-status-dot-${tone}`} aria-hidden />
-          <span className="admin-unit-name">{unit.unit}</span>
+        <div className="admin-verdict-cell" title={rawState}>
+          <span
+            className={`admin-status-dot admin-status-dot-${verdict.tone}${transitional ? " admin-status-dot-pulse" : ""}`}
+            aria-hidden
+          />
+          <span className="admin-verdict-label">{verdict.label}</span>
         </div>
+      </td>
+      <td>
+        <div className="admin-unit-name">{unit.unit}</div>
         {unit.description && <div className="admin-unit-desc">{unit.description}</div>}
-        <div
-          className="admin-unit-activity"
-          data-testid={`service-activity-${unit.unit}`}
-        >
+      </td>
+      <td>
+        <div className="admin-unit-activity" data-testid={`service-activity-${unit.unit}`}>
           {activity}
         </div>
       </td>
-      <td>{unit.active_state}</td>
-      <td>{unit.sub_state}</td>
-      <td>
+      <td className="admin-col-controls">
         <div className="admin-row-actions">
-          {(["start", "restart", "stop"] as ServiceAction[]).map((action) => (
-            <button
-              key={action}
-              type="button"
-              className={`admin-btn admin-btn-sm ${action === "stop" ? "admin-btn-danger" : action === "restart" ? "admin-btn-primary" : "admin-btn-ghost"}`}
-              disabled={disabled || (isUnitPending && pending?.action === action)}
-              onClick={() => onRequest(unit.unit, action)}
-              data-testid={`service-${action}-${unit.unit}`}
-            >
-              {isUnitPending && pending?.action === action ? "..." : capitalize(action)}
-            </button>
-          ))}
+          {(["start", "restart", "stop"] as ServiceAction[]).map((action) => {
+            const reason = serviceControlDisabledReason({
+              unit,
+              action,
+              supported,
+              pending: isUnitPending && pending?.action === action,
+            });
+            const disabled = reason !== null;
+            const inFlight = isUnitPending && pending?.action === action;
+            return (
+              <button
+                key={action}
+                type="button"
+                className={`admin-btn admin-btn-sm ${action === "stop" ? "admin-btn-danger" : action === "restart" ? "admin-btn-primary" : "admin-btn-ghost"}`}
+                disabled={disabled}
+                title={reason ?? undefined}
+                onClick={() => onRequest(unit.unit, action)}
+                data-testid={`service-${action}-${unit.unit}`}
+              >
+                {inFlight ? "..." : capitalize(action)}
+              </button>
+            );
+          })}
         </div>
       </td>
     </tr>

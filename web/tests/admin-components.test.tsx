@@ -283,11 +283,24 @@ describe("<ServiceControlPanel />", () => {
     expect(screen.getByTestId("service-stop-radon-api.service")).toBeTruthy();
   });
 
-  it("start runs immediately (no confirmation)", async () => {
+  it("start runs immediately (no confirmation) on a stopped unit", async () => {
+    // Start is disabled for an already-Running unit (self-explaining tooltip),
+    // so exercise the real path: a stopped daemon whose Start is enabled.
     const onAction = vi.fn().mockResolvedValue(undefined);
     render(
       <ServiceControlPanel
-        services={services()}
+        services={services({
+          units: [
+            {
+              unit: "radon-api.service",
+              load_state: "loaded",
+              active_state: "inactive",
+              sub_state: "dead",
+              description: "Radon FastAPI",
+              can_control: true,
+            },
+          ],
+        })}
         loading={false}
         error={null}
         onAction={onAction}

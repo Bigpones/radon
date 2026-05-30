@@ -25,6 +25,10 @@ export default function IbGatewayCard({ health, loading, error }: IbGatewayCardP
   const backoff = gateway?.restart_backoff;
 
   const poolRows = useMemo(() => Object.entries(pool), [pool]);
+  const accounts = useMemo(
+    () => Array.from(new Set(poolRows.flatMap(([, info]) => info.managed_accounts ?? []))),
+    [poolRows],
+  );
 
   if (loading && !health) {
     return (
@@ -32,7 +36,14 @@ export default function IbGatewayCard({ health, loading, error }: IbGatewayCardP
         <header className="admin-card-header">
           <span className="admin-card-title">IB Gateway</span>
         </header>
-        <p className="admin-card-empty">Loading status...</p>
+        <dl className="admin-kv">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i}>
+              <dt><span className="admin-skeleton admin-skeleton-line" style={{ width: 48 }} /></dt>
+              <dd><span className="admin-skeleton admin-skeleton-line" style={{ width: 92 }} /></dd>
+            </div>
+          ))}
+        </dl>
       </section>
     );
   }
@@ -98,26 +109,27 @@ export default function IbGatewayCard({ health, loading, error }: IbGatewayCardP
       </dl>
 
       {poolRows.length > 0 && (
-        <table className="admin-pool-table" data-testid="ib-pool-table">
-          <thead>
-            <tr>
-              <th>Role</th>
-              <th>Client ID</th>
-              <th>Connected</th>
-              <th>Accounts</th>
-            </tr>
-          </thead>
-          <tbody>
+        <div className="admin-pool" data-testid="ib-pool-table">
+          <div className="admin-pool-accounts">
+            <span className="admin-pool-accounts-label">Account</span>
+            {accounts.join(", ") || "none"}
+          </div>
+          <div className="admin-pool-roles">
             {poolRows.map(([role, info]) => (
-              <tr key={role}>
-                <td>{role}</td>
-                <td>{info.client_id}</td>
-                <td>{info.connected ? "yes" : "no"}</td>
-                <td>{(info.managed_accounts ?? []).join(", ") || "—"}</td>
-              </tr>
+              <span
+                key={role}
+                className="admin-pool-role"
+                title={`client ${info.client_id} · ${info.connected ? "connected" : "disconnected"}`}
+              >
+                <span
+                  className={`admin-status-dot admin-status-dot-${info.connected ? "positive" : "negative"}`}
+                  aria-hidden
+                />
+                {role}
+              </span>
             ))}
-          </tbody>
-        </table>
+          </div>
+        </div>
       )}
     </section>
   );

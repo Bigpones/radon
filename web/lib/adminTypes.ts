@@ -94,3 +94,41 @@ export type RestartLogEntry = {
   ok: boolean;
   detail: string;
 };
+
+// --- Reliability surface (the isolated /edge-health daemon payload) ---
+
+export type UnitKind = "daemon" | "job";
+export type VerdictTone = "positive" | "warning" | "negative" | "neutral";
+export type UnitVerdict = { label: string; tone: VerdictTone };
+
+/** One row of the Turso `service_health` table, as surfaced by /edge-health/status. */
+export type ServiceHealthRow = {
+  service: string;
+  state: string;
+  updated_at?: string | null;
+  last_attempt_started_at?: string | null;
+  last_attempt_finished_at?: string | null;
+  last_error?: string | null;
+  age_secs?: number | null;
+};
+
+/** The Tier-3 off-box prober row (Turso `external_probe`, latest-per-source). */
+export type ExternalProbeRow = {
+  source: string;
+  ok: number;             // 1 = edge reachable + healthy, 0 = not
+  http_status?: number | null;
+  latency_ms?: number | null;
+  checked_at?: string | null;
+  detail?: string | null;
+};
+
+/** /edge-health/status — the always-200 aggregate from the isolated daemon. */
+export type EdgeHealthStatus = {
+  health_service?: string;
+  generated_at?: string;
+  probes?: Record<string, { state: string; http_status?: number; payload?: unknown; detail?: string }>;
+  units?: Record<string, { state: string; active_state?: string; sub_state?: string }>;
+  units_age_secs?: number | null;
+  service_health?: { state: string; detail?: string; rows?: ServiceHealthRow[] };
+  external_probe?: ExternalProbeRow | null;
+};
