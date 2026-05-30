@@ -10229,31 +10229,15 @@ body[data-mobile="true"] td.right {
   max-width: 720px;
 }
 
+/* Redesign IA: a single full-width vertical stack — the IB row (which packs the
+   gateway card + its controls 2-up via .admin-ib-row), then Service Control,
+   Writer Freshness, and Recent Actions each full width. (The old 2-column grid
+   squeezed the services table into a half-width column beside the IB cards.) */
 .admin-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   align-items: start;
-}
-
-/* IbGatewayCard (1) + Ib2faControls (2) share row 1.
-   ServiceControlPanel (3) and RestartLog (4) each take a full-width row
-   beneath — otherwise the long services list gets paired with the short
-   "Recent actions" empty state and the right column stretches into a
-   visually broken void. */
-.admin-grid > :nth-child(3),
-.admin-grid > :nth-child(4) {
-  grid-column: 1 / -1;
-}
-
-@media (max-width: 1100px) {
-  .admin-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .admin-grid > :nth-child(3),
-  .admin-grid > :nth-child(4) {
-    grid-column: auto;
-  }
 }
 
 .admin-card {
