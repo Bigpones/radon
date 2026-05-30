@@ -22,9 +22,10 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 try:
-    from . import probes
+    from . import probes, turso_http
 except ImportError:  # pragma: no cover - loose-module fallback
     import probes  # type: ignore
+    import turso_http  # type: ignore
 
 
 # --- config (env-overridable; defaults match the Hetzner VPS) ---
@@ -40,6 +41,8 @@ UNITS = os.environ.get(
     "radon-nextjs.service radon-ib-gateway.service radon-newsfeed.service",
 ).split()
 UNIT_REFRESH_SECS = float(os.environ.get("RADON_HEALTH_UNIT_REFRESH", "5"))
+SERVICE_HEALTH_TTL = float(os.environ.get("RADON_HEALTH_SH_TTL", "5"))
+SERVICE_HEALTH_TIMEOUT = float(os.environ.get("RADON_HEALTH_SH_TIMEOUT", "2.5"))
 
 
 def _now_iso() -> str:
@@ -121,9 +124,11 @@ def healthz_response():
     return 200, {"ok": True}
 
 
-def status_response(run_probes_fn, unit_cache, now_fn=_now_iso):
+def status_response(run_probes_fn, unit_cache, now_fn=_now_iso, service_health_cache=None):
     """Always returns 200. A probe sweep that raises degrades health_service to
-    'degraded' rather than failing the response."""
+    'degraded' rather than failing the response. The Turso service_health
+    section degrades to state 'unknown' on any failure and never affects the
+    response code."""
     health = "ok"
     try:
         probe_results = run_probes_fn()
@@ -133,8 +138,13 @@ def status_response(run_probes_fn, unit_cache, now_fn=_now_iso):
         units, age = unit_cache.snapshot()
     except Exception:
         units, age = {}, None
+    try:
+        sh = service_health_cache.snapshot() if service_health_cache is not None else None
+    except Exception:
+        sh = {"state": "unknown", "detail": "cache_error", "rows": []}
     return 200, probes.build_status(probe_results, units, now_fn(),
-                                    health_service=health, units_age_secs=age)
+                                    health_service=health, units_age_secs=age,
+                                    service_health=sh)
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -154,7 +164,11 @@ class _Handler(BaseHTTPRequestHandler):
             self._write(*healthz_response())
         elif path == "/status":
             try:
-                self._write(*status_response(run_probes, self.server.unit_cache))
+                self._write(*status_response(
+                    run_probes,
+                    self.server.unit_cache,
+                    service_health_cache=getattr(self.server, "service_health_cache", None),
+                ))
             except Exception:
                 self._write(200, {"health_service": "degraded", "error": "status_render_failed"})
         else:
@@ -166,8 +180,12 @@ class _Handler(BaseHTTPRequestHandler):
 
 def build_server(bind: str = BIND, port: int = PORT, units=UNITS):
     cache = UnitStateCache(units)
+    sh_cache = turso_http.ServiceHealthCache(
+        ttl=SERVICE_HEALTH_TTL, timeout=SERVICE_HEALTH_TIMEOUT,
+    )
     server = ThreadingHTTPServer((bind, port), _Handler)
     server.unit_cache = cache  # type: ignore[attr-defined]
+    server.service_health_cache = sh_cache  # type: ignore[attr-defined]
     return server, cache
 
 

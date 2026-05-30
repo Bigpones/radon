@@ -74,8 +74,14 @@ def probe_http_json(url: str, timeout: float = 2.0, max_bytes: int = 65536) -> d
 
 
 def unit_coarse_state(active_state: str, sub_state: str) -> str:
-    """Collapse systemd ActiveState/SubState into the three-valued vocabulary."""
-    if active_state == "active" and sub_state == "running":
+    """Collapse systemd ActiveState/SubState into the three-valued vocabulary.
+
+    `active` is "up" regardless of SubState: a docker-wrapper / oneshot unit
+    (radon-ib-gateway.service) settles at active+exited, and a normal long-lived
+    unit at active+running — both mean the unit succeeded, so neither should read
+    as 'unknown'.
+    """
+    if active_state == "active":
         return "up"
     if active_state == "failed":
         return "down"
@@ -114,13 +120,22 @@ def parse_unit_states(raw: str) -> dict:
 
 
 def build_status(probes: dict, units: dict, generated_at: str,
-                 health_service: str = "ok", units_age_secs=None) -> dict:
+                 health_service: str = "ok", units_age_secs=None,
+                 service_health=None) -> dict:
     """Assemble the always-200 /status body. Degraded sources are fields, never
-    error codes (per feedback_http_status_for_real_errors.md)."""
+    error codes (per feedback_http_status_for_real_errors.md).
+
+    `service_health` is the Turso-table section (raw rows + per-row age); a
+    Turso outage degrades it to state 'unknown' without touching the response
+    code or the rest of the body.
+    """
     return {
         "health_service": health_service,
         "generated_at": generated_at,
         "probes": probes,
         "units": units,
         "units_age_secs": units_age_secs,
+        "service_health": service_health
+        if service_health is not None
+        else {"state": "unknown", "detail": "not_collected", "rows": []},
     }

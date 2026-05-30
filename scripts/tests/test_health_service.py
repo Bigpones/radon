@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from health_service import probes, serve
+from health_service import probes, serve, turso_http
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
 
@@ -145,6 +145,11 @@ class TestUnitCoarseState:
     def test_active_running_is_up(self):
         assert probes.unit_coarse_state("active", "running") == "up"
 
+    def test_active_exited_is_up(self):
+        # radon-ib-gateway.service is a docker-wrapper/oneshot: it settles at
+        # active+exited, which must read as 'up', not 'unknown' (Feature A).
+        assert probes.unit_coarse_state("active", "exited") == "up"
+
     def test_failed_is_down(self):
         assert probes.unit_coarse_state("failed", "failed") == "down"
 
@@ -194,6 +199,14 @@ class _FakeCache:
         return dict(self._v), self._a
 
 
+class _FakeSHCache:
+    def __init__(self, value):
+        self._v = value
+
+    def snapshot(self):
+        return dict(self._v)
+
+
 class TestStatusResponse:
     def test_always_200_with_probes_and_units(self):
         status, body = serve.status_response(
@@ -206,6 +219,8 @@ class TestStatusResponse:
         assert body["probes"]["radon-api"]["state"] == "up"
         assert body["units"]["radon-api.service"]["state"] == "up"
         assert body["units_age_secs"] == 1.2
+        # service_health section present even with no cache wired in
+        assert body["service_health"]["state"] == "unknown"
 
     def test_probe_sweep_exception_degrades_but_still_200(self):
         def _boom():
@@ -219,6 +234,166 @@ class TestStatusResponse:
         assert status == 200
         assert body["health_service"] == "degraded"
         assert body["probes"] == {}
+
+    def test_service_health_section_merged_when_ok(self):
+        sh = {"state": "ok", "rows": [{"service": "cri-scan", "state": "ok",
+                                       "updated_at": "2026-05-29T00:00:00+00:00",
+                                       "age_secs": 12.0}],
+              "row_count": 1}
+        status, body = serve.status_response(
+            run_probes_fn=lambda: {},
+            unit_cache=_FakeCache({}, None),
+            now_fn=lambda: "t",
+            service_health_cache=_FakeSHCache(sh),
+        )
+        assert status == 200
+        assert body["health_service"] == "ok"
+        assert body["service_health"]["state"] == "ok"
+        assert body["service_health"]["rows"][0]["service"] == "cri-scan"
+        assert body["service_health"]["rows"][0]["age_secs"] == 12.0
+
+    def test_service_health_cache_raising_degrades_section_only(self):
+        class _BoomCache:
+            def snapshot(self):
+                raise RuntimeError("turso cache blew up")
+
+        status, body = serve.status_response(
+            run_probes_fn=lambda: {"radon-api": {"state": "up"}},
+            unit_cache=_FakeCache({}, None),
+            now_fn=lambda: "t",
+            service_health_cache=_BoomCache(),
+        )
+        # response stays 200 + ok; only the service_health section degrades
+        assert status == 200
+        assert body["health_service"] == "ok"
+        assert body["service_health"]["state"] == "unknown"
+
+
+# --- Feature B: stdlib-only Turso service_health HTTP reader ---
+
+class TestHttpUrlFromLibsql:
+    def test_libsql_becomes_https(self):
+        assert turso_http.http_url_from_libsql("libsql://radon-x.turso.io") == "https://radon-x.turso.io"
+
+    def test_https_passthrough(self):
+        assert turso_http.http_url_from_libsql("https://radon-x.turso.io") == "https://radon-x.turso.io"
+
+    def test_empty_is_empty(self):
+        assert turso_http.http_url_from_libsql("") == ""
+
+
+class TestFetchServiceHealth:
+    def test_no_creds_is_unknown(self, monkeypatch):
+        monkeypatch.delenv("TURSO_DB_URL", raising=False)
+        monkeypatch.delenv("TURSO_AUTH_TOKEN", raising=False)
+        res = turso_http.fetch_service_health(timeout=0.1)
+        assert res["state"] == "unknown"
+        assert res["detail"] == "no_creds"
+        assert res["rows"] == []
+
+    def test_partial_creds_is_unknown(self, monkeypatch):
+        monkeypatch.setenv("TURSO_DB_URL", "libsql://radon-x.turso.io")
+        monkeypatch.delenv("TURSO_AUTH_TOKEN", raising=False)
+        res = turso_http.fetch_service_health(timeout=0.1)
+        assert res["state"] == "unknown"
+        assert res["detail"] == "no_creds"
+
+    def test_happy_path_parses_rows(self, monkeypatch):
+        monkeypatch.setenv("TURSO_DB_URL", "libsql://radon-x.turso.io")
+        monkeypatch.setenv("TURSO_AUTH_TOKEN", "tok")
+        captured = {}
+
+        def _fake_post(origin, token, sql, timeout):
+            captured["origin"] = origin
+            captured["token"] = token
+            return {
+                "results": [
+                    {"type": "ok", "response": {"type": "execute", "result": {
+                        "cols": [{"name": c} for c in turso_http.SERVICE_HEALTH_COLUMNS],
+                        "rows": [[
+                            {"type": "text", "value": "cri-scan"},
+                            {"type": "text", "value": "error"},
+                            {"type": "null"},
+                            {"type": "null"},
+                            {"type": "text", "value": "{\"msg\":\"boom\"}"},
+                            {"type": "text", "value": "2026-05-29T00:00:00+00:00"},
+                        ]],
+                    }}},
+                    {"type": "ok", "response": {"type": "close"}},
+                ]
+            }
+
+        monkeypatch.setattr(turso_http, "_post_pipeline", _fake_post)
+        res = turso_http.fetch_service_health(timeout=2.5)
+        assert captured["origin"] == "https://radon-x.turso.io"
+        assert captured["token"] == "tok"
+        assert res["state"] == "ok"
+        assert res["row_count"] == 1
+        row = res["rows"][0]
+        assert row["service"] == "cri-scan"
+        assert row["state"] == "error"
+        assert row["last_error"] == '{"msg":"boom"}'
+        assert row["last_attempt_started_at"] is None
+        # raw age exposed; staleness judgement left to the consumer
+        assert isinstance(row["age_secs"], float)
+
+    def test_timeout_degrades_to_unknown(self, monkeypatch):
+        monkeypatch.setenv("TURSO_DB_URL", "libsql://radon-x.turso.io")
+        monkeypatch.setenv("TURSO_AUTH_TOKEN", "tok")
+
+        def _boom(*a, **k):
+            raise TimeoutError("turso slow")
+
+        monkeypatch.setattr(turso_http, "_post_pipeline", _boom)
+        res = turso_http.fetch_service_health(timeout=2.5)
+        assert res["state"] == "unknown"
+        assert res["detail"] == "TimeoutError"
+        assert res["rows"] == []
+
+    def test_http_error_degrades_to_unknown(self, monkeypatch):
+        monkeypatch.setenv("TURSO_DB_URL", "libsql://radon-x.turso.io")
+        monkeypatch.setenv("TURSO_AUTH_TOKEN", "tok")
+
+        def _boom(*a, **k):
+            raise urllib.error.HTTPError("u", 401, "unauthorized", {}, None)
+
+        monkeypatch.setattr(turso_http, "_post_pipeline", _boom)
+        res = turso_http.fetch_service_health(timeout=2.5)
+        assert res["state"] == "unknown"
+        assert res["detail"] == "http_401"
+
+    def test_malformed_response_degrades_to_unknown(self, monkeypatch):
+        monkeypatch.setenv("TURSO_DB_URL", "libsql://radon-x.turso.io")
+        monkeypatch.setenv("TURSO_AUTH_TOKEN", "tok")
+        monkeypatch.setattr(turso_http, "_post_pipeline",
+                            lambda *a, **k: {"results": [{"type": "error"}]})
+        res = turso_http.fetch_service_health(timeout=2.5)
+        assert res["state"] == "unknown"
+        assert res["detail"] == "bad_response"
+
+
+class TestServiceHealthCache:
+    def test_caches_within_ttl(self):
+        calls = {"n": 0}
+
+        def _fetch(timeout):
+            calls["n"] += 1
+            return {"state": "ok", "rows": [], "row_count": 0}
+
+        cache = turso_http.ServiceHealthCache(ttl=60.0, timeout=2.5, fetch_fn=_fetch)
+        a = cache.snapshot()
+        b = cache.snapshot()
+        assert calls["n"] == 1  # second read served from cache
+        assert a["state"] == "ok" and b["state"] == "ok"
+
+    def test_fetch_fn_raising_degrades_to_unknown(self):
+        def _boom(timeout):
+            raise RuntimeError("unexpected")
+
+        cache = turso_http.ServiceHealthCache(ttl=5.0, fetch_fn=_boom)
+        snap = cache.snapshot()
+        assert snap["state"] == "unknown"
+        assert snap["rows"] == []
 
 
 class TestUnitStateCacheRefresh:
