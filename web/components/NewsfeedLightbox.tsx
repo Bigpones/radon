@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
-import { ChevronLeft, ChevronRight, Link as LinkIcon, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Link as LinkIcon } from "lucide-react";
 import type { MarketEarPost } from "@/components/DashboardNewsFeed";
 import { formatAbsolute, formatRelative, formatTime } from "@/lib/newsfeedTime";
 import { useDialogChrome } from "@/lib/useDialogChrome";
@@ -38,8 +38,9 @@ type NewsfeedLightboxProps = {
  *   Esc       dismiss
  *   ←  / →    cycle to the previous / next post with an image
  *
- * Mouse: scrim click and the close X also dismiss; on-screen chevrons
- * trigger the same prev/next as the arrow keys.
+ * Mouse: scrim click dismisses (there's no close X — tapping outside the
+ * panel closes it); on-screen chevrons trigger the same prev/next as the
+ * arrow keys.
  */
 export default function NewsfeedLightbox({
   focus,
@@ -155,16 +156,6 @@ export default function NewsfeedLightbox({
         </button>
       ) : null}
       <div className="newsfeed-lightbox__frame">
-        <button
-          type="button"
-          className="newsfeed-lightbox__close"
-          onClick={onDismiss}
-          aria-label="Close lightbox"
-          data-testid="newsfeed-lightbox-close"
-        >
-          <X size={16} />
-        </button>
-
         <div
           className="newsfeed-lightbox__panel"
           onTouchStart={handleTouchStart}

@@ -56,11 +56,4 @@ describe("newsfeed lightbox touch-mobile controls", () => {
       /@media\s*\(max-width:\s*900px\)\s*and\s*\(pointer:\s*fine\)[\s\S]*?\.newsfeed-lightbox__nav\s*\{[^}]*display:\s*none/,
     );
   });
-
-  it("moves the close button out of the image/panel flow on touch mobile", () => {
-    const close = ruleBlock(touchMobile, ".newsfeed-lightbox__close");
-    expect(close).toMatch(/position:\s*fixed/);
-    expect(close).toMatch(/width:\s*44px/);
-    expect(close).toMatch(/height:\s*44px/);
-  });
 });

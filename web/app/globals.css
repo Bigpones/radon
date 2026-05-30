@@ -2838,32 +2838,6 @@ td.last-price-cell {
   }
 }
 
-.newsfeed-lightbox__close {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 4;
-  width: 32px;
-  height: 32px;
-  background: color-mix(in srgb, var(--bg-canvas) 82%, transparent);
-  border: 1px solid color-mix(in srgb, var(--signal-core) 30%, var(--line-grid));
-  border-radius: 4px;
-  color: var(--text-primary);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-}
-
-.newsfeed-lightbox__close:hover {
-  border-color: var(--signal-core);
-  background: color-mix(in srgb, var(--signal-core) 14%, var(--bg-canvas));
-  color: var(--signal-core);
-}
-
 /* Prev / next chevrons. Float outside the panel so they don't compete
    with the image; they're the only on-scrim interactive elements. The
    arrow-key shortcuts do the same job; the chevrons are the
@@ -3072,13 +3046,41 @@ td.last-price-cell {
 
 @media (max-width: 900px) {
   .newsfeed-lightbox { padding: 16px; }
+  /* On phones the two-track grid (image / copy) starved the copy: a 1fr row
+     is minmax(auto, 1fr), so it never shrinks below the full text height and
+     the panel's overflow:hidden clipped the overspill instead of scrolling.
+     Collapse the panel into a single vertical scroll document — image, head,
+     body, tags and footer all scroll together as one sheet so every line of
+     copy is reachable. The frame needs a definite height (height:100%) so the
+     panel's percentage cap resolves; without it the percentage falls back to
+     none and the panel grows past the viewport unscrolled. */
+  .newsfeed-lightbox__frame {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
   .newsfeed-lightbox__panel {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
     max-height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
     touch-action: pan-y;
   }
+  .newsfeed-lightbox__media {
+    flex: 0 0 auto;
+    /* Cap the image so a tall hero never pushes the copy below the fold. */
+    max-height: 46vh;
+  }
   .newsfeed-lightbox__copy {
+    flex: 0 0 auto;
+    /* The panel owns scrolling now; the copy flows at natural height. */
+    overflow-y: visible;
     border-left: 0;
     border-top: 1px solid var(--line-grid);
     padding: 20px 22px;
@@ -3099,14 +3101,6 @@ td.last-price-cell {
       max(16px, env(safe-area-inset-right))
       max(16px, env(safe-area-inset-bottom))
       max(16px, env(safe-area-inset-left));
-  }
-
-  .newsfeed-lightbox__close {
-    position: fixed;
-    top: 12px;
-    right: 12px;
-    width: 44px;
-    height: 44px;
   }
 
   .newsfeed-lightbox__nav {

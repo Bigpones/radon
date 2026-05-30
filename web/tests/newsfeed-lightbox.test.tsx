@@ -68,23 +68,13 @@ describe("NewsfeedLightbox", () => {
 
   it("renders title, body, and tags when focus is set", () => {
     const onDismiss = vi.fn();
-    const { getByText, getByTestId } = render(
+    const { getByText } = render(
       <NewsfeedLightbox focus={FOCUS} onDismiss={onDismiss} />,
     );
     expect(getByText(POST.title)).not.toBeNull();
     expect(getByText(/Dealer gamma exposure flipped/i)).not.toBeNull();
     expect(getByText("GAMMA")).not.toBeNull();
     expect(getByText("PINNING")).not.toBeNull();
-    expect(getByTestId("newsfeed-lightbox-close")).not.toBeNull();
-  });
-
-  it("fires onDismiss when the close button is clicked", () => {
-    const onDismiss = vi.fn();
-    const { getByTestId } = render(
-      <NewsfeedLightbox focus={FOCUS} onDismiss={onDismiss} />,
-    );
-    fireEvent.click(getByTestId("newsfeed-lightbox-close"));
-    expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
   it("fires onDismiss when the scrim is clicked", () => {
