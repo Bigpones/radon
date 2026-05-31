@@ -8,6 +8,8 @@ import RegimeRelationshipView from "./RegimeRelationshipView";
 import VcgPanel from "./VcgPanel";
 import GexPanel from "./GexPanel";
 import LlmTokenIndexCard from "./LlmTokenIndexCard";
+import SpectralLoader from "./SpectralLoader";
+import SectionEmptyState from "./SectionEmptyState";
 import { DayChange, LiveBadge, PointChange, RegimeStrip, RegimeStripCell } from "./RegimeStrip";
 import ShareReportModal from "./ShareReportModal";
 import type { ChartSeries, CriHistoryEntry } from "./CriHistoryChart";
@@ -313,14 +315,24 @@ export default function RegimePanel({
     );
   }
 
-  if (!data && !syncing) {
+  if (syncing && !data) {
     return (
       <div className="regime-panel">
         {tabBar}
-        <div className="regime-empty">
-          <Shield size={32} strokeWidth={1} />
-          <p>No CRI data available. Click Sync Now to run a scan.</p>
-        </div>
+        <SpectralLoader label="Running crash-risk regime scan" />
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="regime-panel">
+        {tabBar}
+        <SectionEmptyState
+          icon={Shield}
+          headline="No crash-risk data yet"
+          secondary="Run Sync Now in the header to compute the current crash-risk regime."
+        />
       </div>
     );
   }
