@@ -14,6 +14,8 @@ import ReliabilityStrip from "../components/admin/ReliabilityStrip";
 import SystemStatusBar from "../components/admin/SystemStatusBar";
 import WriterFreshnessTable from "../components/admin/WriterFreshnessTable";
 import ConfirmDialog from "../components/admin/ConfirmDialog";
+import ServiceControlPanel from "../components/admin/ServiceControlPanel";
+import type { ServicesListResponse } from "../lib/adminTypes";
 import type {
   AdminHealthPayload,
   EdgeHealthStatus,
@@ -130,6 +132,42 @@ describe("WriterFreshnessTable", () => {
   it("shows unreachable when the edge is down", () => {
     render(<WriterFreshnessTable reachable={false} rows={[]} />);
     expect(screen.getByText(/unreachable/i)).toBeTruthy();
+  });
+});
+
+describe("ServiceControlPanel — Start disabled when running", () => {
+  const services = (units: ServicesListResponse["units"]): ServicesListResponse => ({
+    supported: true,
+    units,
+  });
+
+  it("disables Start (with a reason tooltip) for a running daemon", () => {
+    render(
+      <ServiceControlPanel
+        loading={false}
+        error={null}
+        onAction={vi.fn()}
+        services={services([daemon("radon-api.service", true)])}
+      />,
+    );
+    const start = screen.getByTestId("service-start-radon-api.service") as HTMLButtonElement;
+    expect(start.disabled).toBe(true);
+    expect(start.getAttribute("title")).toMatch(/Already running/);
+    // Restart + Stop stay enabled for a running daemon.
+    expect((screen.getByTestId("service-restart-radon-api.service") as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByTestId("service-stop-radon-api.service") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("enables Start for a stopped daemon", () => {
+    render(
+      <ServiceControlPanel
+        loading={false}
+        error={null}
+        onAction={vi.fn()}
+        services={services([daemon("radon-api.service", false)])}
+      />,
+    );
+    expect((screen.getByTestId("service-start-radon-api.service") as HTMLButtonElement).disabled).toBe(false);
   });
 });
 
