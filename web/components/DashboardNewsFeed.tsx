@@ -309,7 +309,7 @@ export default function DashboardNewsFeed() {
           Live Market Analysis
         </div>
         <div className="news-feed-actions">
-          <span className="report-meta">{freshnessLabel}</span>
+          <span className="news-feed-updated">{freshnessLabel}</span>
           <button
             type="button"
             className="news-feed-refresh"

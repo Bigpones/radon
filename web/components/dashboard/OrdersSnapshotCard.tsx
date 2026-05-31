@@ -57,7 +57,7 @@ export function OrdersSnapshotCard({ orders }: Props) {
     <section className="snapshot-card">
       <span className="panel-edge-trace" aria-hidden />
       <header className="snapshot-card__header">
-        <p className="panel-eyebrow">Orders / 02</p>
+        <p className="panel-eyebrow">Orders / 03</p>
         <h3 className="panel-title">Working &amp; Filled</h3>
         <Link className="snapshot-card__see-all" href="/orders">All orders →</Link>
       </header>

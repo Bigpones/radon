@@ -904,6 +904,7 @@ body {
   .dashboard-surface {
     display: flex;
     flex-direction: column;
+    align-items: stretch;
     gap: 16px;
   }
   .dashboard-surface__main {
@@ -911,13 +912,20 @@ body {
   }
   .dashboard-surface__rail {
     order: 2;
+    flex: 0 0 100%;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     padding: 0;
     background: transparent;
     border: 0;
+    box-sizing: border-box;
   }
   .dashboard-section,
   .dashboard-section__body,
+  .dashboard-news,
   .snapshot-card {
+    flex: 0 0 100%;
     width: 100%;
     max-width: 100%;
     min-width: 0;
@@ -2600,6 +2608,20 @@ td.last-price-cell {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+}
+
+.news-feed-updated {
+  min-width: 0;
+  border-bottom: 0;
+  padding: 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  line-height: 1.4;
+  text-align: right;
+  text-transform: uppercase;
 }
 
 .news-feed-refresh {
@@ -2617,6 +2639,32 @@ td.last-price-cell {
   color: var(--text-muted);
   cursor: pointer;
   transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+
+body[data-mobile="true"] .dashboard-news .section-header {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+body[data-mobile="true"] .dashboard-news .news-feed-actions {
+  width: 100%;
+  min-width: 0;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+body[data-mobile="true"] .dashboard-news .news-feed-updated {
+  flex: 1 1 auto;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+body[data-mobile="true"] .dashboard-news .news-feed-refresh {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 14px;
 }
 
 .news-feed-refresh:hover:not(:disabled) {

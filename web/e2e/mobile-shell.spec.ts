@@ -95,4 +95,111 @@ test.describe("MobileShell — phase 1 foundation", () => {
       expect(box.width).toBeGreaterThanOrEqual(44);
     }
   });
+
+  test("dashboard shows Live Market Feed as section 02 with contained Refresh control", async ({ page }) => {
+    await page.goto("/dashboard");
+    await expect(page.getByTestId("mobile-tab-bar")).toBeVisible();
+
+    const visualOrder = await page.locator(".dashboard-section").evaluateAll((sections) =>
+      sections
+        .map((section) => ({
+          id: section.getAttribute("data-testid"),
+          label: [
+            section.querySelector(".dashboard-section__title")?.textContent?.trim(),
+            section.querySelector(".dashboard-section__meta span")?.textContent?.trim(),
+          ].filter(Boolean).join(" "),
+          top: section.getBoundingClientRect().top,
+        }))
+        .sort((a, b) => a.top - b.top)
+        .map(({ id, label }) => ({ id, label })),
+    );
+
+    expect(visualOrder.slice(0, 4)).toEqual([
+      { id: "dashboard-section-portfolio", label: "Portfolio 01" },
+      { id: "dashboard-section-news", label: "Live Market Feed 02" },
+      { id: "dashboard-section-orders", label: "Working & Filled 03" },
+      { id: "dashboard-section-opportunities", label: "Trading Candidates 04" },
+    ]);
+
+    const newsSection = page.getByTestId("dashboard-section-news");
+    const newsPanel = newsSection.locator(".dashboard-news");
+    const refresh = newsPanel.locator(".news-feed-refresh");
+
+    await expect(refresh).toBeVisible();
+    const geometry = await page.evaluate(() => {
+      const panel = document.querySelector('[data-testid="dashboard-section-news"] .dashboard-news');
+      const portfolioPanel = document.querySelector('[data-testid="dashboard-section-portfolio"] .snapshot-card');
+      const headerEl = panel?.querySelector(".section-header");
+      const refreshEl = panel?.querySelector(".news-feed-refresh");
+      const panelRect = panel?.getBoundingClientRect();
+      const portfolioPanelRect = portfolioPanel?.getBoundingClientRect();
+      const headerRect = headerEl?.getBoundingClientRect();
+      const refreshRect = refreshEl?.getBoundingClientRect();
+      const sectionRects = [
+        "dashboard-section-portfolio",
+        "dashboard-section-news",
+        "dashboard-section-orders",
+        "dashboard-section-opportunities",
+      ].map((id) => {
+        const rect = document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect();
+        return rect
+          ? {
+              id,
+              left: rect.left,
+              right: rect.right,
+              width: rect.width,
+            }
+          : null;
+      });
+      return {
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+        sectionRects,
+        portfolioPanel: portfolioPanelRect
+          ? {
+              left: portfolioPanelRect.left,
+              right: portfolioPanelRect.right,
+              width: portfolioPanelRect.width,
+            }
+          : null,
+        panel: panelRect
+          ? {
+              left: panelRect.left,
+              right: panelRect.right,
+              width: panelRect.width,
+            }
+          : null,
+        header: headerRect ? { left: headerRect.left, right: headerRect.right } : null,
+        refresh: refreshRect
+          ? {
+              left: refreshRect.left,
+              right: refreshRect.right,
+              height: refreshRect.height,
+            }
+          : null,
+      };
+    });
+
+    expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1);
+    expect(geometry.sectionRects.every(Boolean)).toBe(true);
+    const sectionRects = geometry.sectionRects.filter((rect): rect is NonNullable<typeof rect> => Boolean(rect));
+    const portfolioRect = sectionRects.find((rect) => rect.id === "dashboard-section-portfolio")!;
+    for (const rect of sectionRects) {
+      expect(Math.abs(rect.left - portfolioRect.left)).toBeLessThanOrEqual(1);
+      expect(Math.abs(rect.right - portfolioRect.right)).toBeLessThanOrEqual(1);
+      expect(Math.abs(rect.width - portfolioRect.width)).toBeLessThanOrEqual(1);
+    }
+    expect(geometry.panel).not.toBeNull();
+    expect(geometry.portfolioPanel).not.toBeNull();
+    expect(Math.abs(geometry.panel!.left - geometry.portfolioPanel!.left)).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.panel!.right - geometry.portfolioPanel!.right)).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.panel!.width - geometry.portfolioPanel!.width)).toBeLessThanOrEqual(1);
+    expect(geometry.header).not.toBeNull();
+    expect(geometry.refresh).not.toBeNull();
+    expect(geometry.refresh!.height).toBeGreaterThanOrEqual(44);
+    expect(geometry.refresh!.left).toBeGreaterThanOrEqual(geometry.panel!.left - 1);
+    expect(geometry.refresh!.right).toBeLessThanOrEqual(geometry.panel!.right + 1);
+    expect(geometry.refresh!.left).toBeGreaterThanOrEqual(geometry.header!.left - 1);
+    expect(geometry.refresh!.right).toBeLessThanOrEqual(geometry.header!.right + 1);
+  });
 });

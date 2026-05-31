@@ -79,7 +79,7 @@ export default function DashboardSurface({
         <DashboardSection id="portfolio" label="Portfolio" count="01">
         <PortfolioSnapshotCard portfolio={portfolio} realizedPnl={realizedPnl} />
         </DashboardSection>
-        <DashboardSection id="orders" label="Working & Filled" count="02">
+        <DashboardSection id="orders" label="Working & Filled" count="03">
           <OrdersSnapshotCard orders={orders} />
         </DashboardSection>
         <DashboardSection id="opportunities" label="Trading Candidates" count="04">
@@ -87,7 +87,7 @@ export default function DashboardSurface({
         </DashboardSection>
       </div>
       <aside className="dashboard-surface__rail" aria-label="Newsfeed">
-        <DashboardSection id="news" label="Live Market Feed" count="03">
+        <DashboardSection id="news" label="Live Market Feed" count="02">
           <DashboardNewsFeed />
         </DashboardSection>
       </aside>
