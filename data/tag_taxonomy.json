@@ -169,6 +169,14 @@
     "CROWDING",
     "CASH",
     "COST-MANAGEMENT",
-    "SPENDING"
+    "SPENDING",
+    "DEBT",
+    "AEROSPACE",
+    "MERGER-ARBITRAGE",
+    "SPACE",
+    "TESLA",
+    "IPO",
+    "STARLINK",
+    "BETA"
   ]
 }
