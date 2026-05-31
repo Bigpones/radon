@@ -68,6 +68,7 @@ describe("isPublicRoute — explicit allowlist", () => {
       "/api/flow-analysis",
       "/api/flow-analysis/MSFT",
       "/api/gex",
+      "/api/gamma-rotation",
       "/api/vcg",
       "/api/internals",
       "/api/regime",

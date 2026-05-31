@@ -1,3 +1,50 @@
+# Task: Gamma Rotation Gap End-to-End Build
+
+## Dependency Graph
+
+- T1 depends_on: [] — Map existing GEX, VCG, Turso, FastAPI, and Regime UI seams.
+- T2 depends_on: [T1] — Implement SPY/TLT Gamma Rotation Gap scanner with Turso-backed persistence and JSON fallback only as compatibility cache.
+- T3 depends_on: [T2] — Expose Gamma Rotation Gap through FastAPI and Next.js dynamic API routes.
+- T4 depends_on: [T3] — Build the Regime UI panel, hook, copy, gates, and visual components.
+- T5 depends_on: [T4] — Add Python and TypeScript regression coverage for computation, persistence contracts, API normalization, and UI rendering.
+- T6 depends_on: [T5] — Verify focused tests plus localhost browser behavior against live UW data.
+
+## Checklist
+
+- [x] T1 — Map existing GEX, VCG, Turso, FastAPI, and Regime UI seams.
+- [x] T2 — Implement SPY/TLT Gamma Rotation Gap scanner and persistence.
+- [x] T3 — Expose FastAPI and Next.js API routes.
+- [x] T4 — Build Regime UI panel and operator copy.
+- [x] T5 — Add regression coverage.
+- [x] T6 — Verify tests and localhost rendering.
+
+## Review
+
+- Implemented `scripts/gamma_rotation_gap.py` as the SPY/TLT Gamma Rotation Gap scanner using UW aggregate gamma history and current strike GEX.
+- Chose Turso as primary persistence through `gamma_rotation_snapshots`; `data/gamma_rotation_gap.json` remains a compatibility cache/fallback.
+- Removed the stale Next.js embedded-replica default so Turso reads are direct-to-cloud unless explicitly opted into replica mode.
+- Removed stale local `data/replica.db*` artifacts and confirmed GRG still reads from Turso afterward.
+- Added FastAPI `POST /gamma-rotation/scan`, Next `GET/POST /api/gamma-rotation`, `useGammaRotation`, and `/regime/grg`.
+- Added the Regime GRG tab with operator copy for cushion/whip state, top/bottom watches, gate diagnostics, SPY/TLT cards, and a 90-session divergence field.
+- Local live result on 2026-05-31: data date `2026-05-29`, state `DUAL_CUSHION`, GRG z `-0.499`, SPY GEX `+836.1K`, TLT GEX `+12.5M`, storage `turso`.
+- Verification passed:
+  - `python3.13 -m py_compile scripts/gamma_rotation_gap.py scripts/api/server.py`
+  - `python3.13 -m pytest -q scripts/tests/test_gamma_rotation_gap.py`
+  - `cd web && npx vitest run tests/db-direct-cloud.test.ts tests/middleware-auth.test.ts tests/gamma-rotation-route.test.ts tests/gamma-rotation-panel.test.tsx tests/regime-tab-routes.test.tsx tests/api-routes-no-cache-contract.test.ts --config ../vitest.config.ts`
+  - `set -a; source web/.env; set +a; RADON_DB_NO_REPLICA=1 python3.13 scripts/db/migrate.py`
+  - `python3.13 scripts/gamma_rotation_gap.py --json`
+  - `scripts/local.sh`
+  - `curl http://127.0.0.1:3000/api/gamma-rotation`
+  - `curl -X POST http://127.0.0.1:8321/gamma-rotation/scan`
+  - `node /private/tmp/grg-localhost-check.cjs`
+  - `npx playwright screenshot --full-page --viewport-size=1440,1900 --wait-for-selector="text=Dual cushion" --timeout=30000 http://127.0.0.1:3000/regime/grg /tmp/radon-grg-localhost-full.png`
+- Broad-suite status:
+  - `python3.13 -m pytest -q` baseline red: 2284 passed, 15 skipped, 90 deselected, 7 failed, 5 errors. Failures are sandbox/keychain/localhost-bind issues in existing DB guard, health-service, and VCG wrapper tests.
+  - `cd web && npm test` baseline red: 270 files passed, 1 skipped, 9 files failed; failures are existing localStorage mock and localhost bind issues.
+  - `cd web && npm run typecheck` baseline red on pre-existing e2e/test fixture typing errors.
+
+---
+
 # TODO
 
 ## Session: Fix Desktop Touchscreen Dropdown Targets (2026-05-28)

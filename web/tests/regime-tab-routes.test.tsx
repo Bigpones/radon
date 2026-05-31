@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  *
  * Each regime tab is its own route:
- *   /regime/cri  /regime/vcg  /regime/gex
+ *   /regime/cri  /regime/vcg  /regime/gex  /regime/grg
  * The bare /regime route redirects to /regime/cri, the sidebar nav points at
  * /regime/cri, and clicking a tab inside RegimePanel pushes the matching URL
  * (state lives in the URL, not in component state).
@@ -49,6 +49,7 @@ describe.each([
   ["cri", "app/regime/cri/page.tsx"],
   ["vcg", "app/regime/vcg/page.tsx"],
   ["gex", "app/regime/gex/page.tsx"],
+  ["grg", "app/regime/grg/page.tsx"],
 ])("app/regime/%s/page.tsx exists and mounts WorkspaceShell", (_tab, rel) => {
   it(`file ${rel} exists`, () => {
     expect(existsSync(join(ROOT, rel))).toBe(true);
@@ -80,6 +81,9 @@ vi.mock("../components/VcgPanel", () => ({
 vi.mock("../components/GexPanel", () => ({
   default: () => <div data-testid="gex-panel-stub" />,
 }));
+vi.mock("../components/GammaRotationPanel", () => ({
+  default: () => <div data-testid="grg-panel-stub" />,
+}));
 vi.mock("../components/CriHistoryChart", () => ({ default: () => null }));
 vi.mock("../components/RegimeRelationshipView", () => ({ default: () => null }));
 vi.mock("../components/ShareReportModal", () => ({ default: () => null }));
@@ -102,6 +106,7 @@ describe("RegimePanel — tab is URL-driven", () => {
     const { container } = render(<RegimePanel prices={{}} />);
     expect(within(container).queryByTestId("vcg-panel-stub")).toBeNull();
     expect(within(container).queryByTestId("gex-panel-stub")).toBeNull();
+    expect(within(container).queryByTestId("grg-panel-stub")).toBeNull();
   });
 
   it("renders the VCG panel when pathname is /regime/vcg", () => {
@@ -109,6 +114,7 @@ describe("RegimePanel — tab is URL-driven", () => {
     const { container } = render(<RegimePanel prices={{}} />);
     expect(within(container).getByTestId("vcg-panel-stub")).toBeTruthy();
     expect(within(container).queryByTestId("gex-panel-stub")).toBeNull();
+    expect(within(container).queryByTestId("grg-panel-stub")).toBeNull();
   });
 
   it("renders the GEX panel when pathname is /regime/gex", () => {
@@ -116,6 +122,15 @@ describe("RegimePanel — tab is URL-driven", () => {
     const { container } = render(<RegimePanel prices={{}} />);
     expect(within(container).getByTestId("gex-panel-stub")).toBeTruthy();
     expect(within(container).queryByTestId("vcg-panel-stub")).toBeNull();
+    expect(within(container).queryByTestId("grg-panel-stub")).toBeNull();
+  });
+
+  it("renders the GRG panel when pathname is /regime/grg", () => {
+    mockedPathname = "/regime/grg";
+    const { container } = render(<RegimePanel prices={{}} />);
+    expect(within(container).getByTestId("grg-panel-stub")).toBeTruthy();
+    expect(within(container).queryByTestId("vcg-panel-stub")).toBeNull();
+    expect(within(container).queryByTestId("gex-panel-stub")).toBeNull();
   });
 
   it("falls back to CRI for an unknown subpath", () => {
@@ -123,6 +138,7 @@ describe("RegimePanel — tab is URL-driven", () => {
     const { container } = render(<RegimePanel prices={{}} />);
     expect(within(container).queryByTestId("vcg-panel-stub")).toBeNull();
     expect(within(container).queryByTestId("gex-panel-stub")).toBeNull();
+    expect(within(container).queryByTestId("grg-panel-stub")).toBeNull();
   });
 
   it("clicking VCG tab pushes /regime/vcg", () => {
@@ -137,6 +153,13 @@ describe("RegimePanel — tab is URL-driven", () => {
     const { container } = render(<RegimePanel prices={{}} />);
     within(container).getByRole("button", { name: /^GEX$/ }).click();
     expect(pushSpy).toHaveBeenCalledWith("/regime/gex");
+  });
+
+  it("clicking GRG tab pushes /regime/grg", () => {
+    mockedPathname = "/regime/cri";
+    const { container } = render(<RegimePanel prices={{}} />);
+    within(container).getByRole("button", { name: /^GRG$/ }).click();
+    expect(pushSpy).toHaveBeenCalledWith("/regime/grg");
   });
 
   it("clicking CRI from VCG pushes /regime/cri", () => {

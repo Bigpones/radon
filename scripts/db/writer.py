@@ -93,6 +93,18 @@ def upsert_vcg_snapshot(scan_time: str, payload: dict[str, Any]) -> None:
     db.commit()
 
 
+def upsert_gamma_rotation_snapshot(scan_time: str, payload: dict[str, Any]) -> None:
+    db = get_db()
+    db.execute(
+        """
+        INSERT OR REPLACE INTO gamma_rotation_snapshots (scan_time, payload)
+        VALUES (?, ?)
+        """,
+        (scan_time, json.dumps(payload)),
+    )
+    db.commit()
+
+
 def upsert_portfolio_snapshot(taken_at: str, payload: dict[str, Any]) -> None:
     db = get_db()
     db.execute(

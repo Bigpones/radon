@@ -1689,6 +1689,38 @@ async def gex_scan(ticker: str = "SPX"):
         return result.data
 
 
+# ── Gamma Rotation Gap (SPY/TLT cross-asset gamma) ───────────────────
+
+_gamma_rotation_last_scan: float = 0.0
+_gamma_rotation_scan_lock: Optional[asyncio.Lock] = None
+GAMMA_ROTATION_COOLDOWN_S = 60
+
+
+@app.post("/gamma-rotation/scan")
+async def gamma_rotation_scan():
+    """Run SPY/TLT Gamma Rotation Gap scan."""
+    global _gamma_rotation_last_scan, _gamma_rotation_scan_lock
+    import time as _time
+    if _gamma_rotation_scan_lock is None:
+        _gamma_rotation_scan_lock = asyncio.Lock()
+    now = _time.monotonic()
+    if now - _gamma_rotation_last_scan < GAMMA_ROTATION_COOLDOWN_S:
+        cached = _read_cache(DATA_DIR / "gamma_rotation_gap.json")
+        if cached:
+            return cached
+    async with _gamma_rotation_scan_lock:
+        if _time.monotonic() - _gamma_rotation_last_scan < GAMMA_ROTATION_COOLDOWN_S:
+            cached = _read_cache(DATA_DIR / "gamma_rotation_gap.json")
+            if cached:
+                return cached
+        result = await run_script("gamma_rotation_gap.py", ["--json"], timeout=120)
+        if not result.ok:
+            raise HTTPException(status_code=502, detail=result.error)
+        _write_cache(DATA_DIR / "gamma_rotation_gap.json", result.data)
+        _gamma_rotation_last_scan = _time.monotonic()
+        return result.data
+
+
 @app.post("/regime/share")
 async def regime_share():
     """Generate Regime/CRI X share report (4 cards + preview HTML). Returns output path."""

@@ -1,4 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 import {
   getRequestId,
   jsonApiError,
@@ -69,7 +70,7 @@ export default clerkMiddleware(async (auth, request) => {
     isLocalDevAuthBypassEnabled(request.nextUrl) ||
     isLocalAuthlessTestBypassEnabled(request.nextUrl)
   ) {
-    return;
+    return NextResponse.next();
   }
 
   if (isPublicRoute(request)) return;

@@ -1,5 +1,10 @@
 # Lessons
 
+## 2026-05-31
+
+- For local Radon verification, use `scripts/local.sh` as the canonical launcher instead of hand-starting Next.js and FastAPI unless the task explicitly requires isolated services.
+- When checking Unusual Whales access in Radon, load `UW_TOKEN` from `web/.env` before concluding provider access is unavailable; the repo-root `.env` may not carry UW credentials.
+
 ## 2026-05-28
 
 - When the user asks whether the work was committed and pushed, stop implementation churn and immediately verify `git status`, update task docs, commit the intended changes, push, and report the exact commit hash plus any verification blockers.

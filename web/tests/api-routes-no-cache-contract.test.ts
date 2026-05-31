@@ -24,6 +24,7 @@ const DYNAMIC_ROUTES = [
   "app/api/scanner/route.ts",
   "app/api/regime/route.ts",
   "app/api/gex/route.ts",
+  "app/api/gamma-rotation/route.ts",
   "app/api/cash-flows/route.ts",
   "app/api/llm-token-index/route.ts",
   "app/api/service-health/route.ts",
@@ -92,6 +93,7 @@ describe("client hooks/components — every fetch must use cache: 'no-store'", (
 const DB_FIRST_ROUTES: { path: string; dbHelperPattern: RegExp }[] = [
   { path: "app/api/vcg/route.ts", dbHelperPattern: /readCachedVcgFromDb\s*\(/ },
   { path: "app/api/gex/route.ts", dbHelperPattern: /readCachedGexFromDb\s*\(/ },
+  { path: "app/api/gamma-rotation/route.ts", dbHelperPattern: /readCachedGammaRotationFromDb\s*\(/ },
   { path: "app/api/discover/route.ts", dbHelperPattern: /readDiscoverFromDb\s*\(/ },
   { path: "app/api/menthorq/cta/route.ts", dbHelperPattern: /readLatestCtaFromDb\s*\(/ },
   { path: "app/api/regime/route.ts", dbHelperPattern: /readLatestDbCri\s*\(/ },

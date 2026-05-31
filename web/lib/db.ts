@@ -1,17 +1,11 @@
-// libSQL client + embedded replica for the Radon Turso DB.
+// libSQL client for the Radon Turso DB.
 //
 // All Next.js API routes and FastAPI Python schedulers read/write through
-// this client. Reads hit the local replica file (SQLite-fast, <100µs);
-// writes go to the cloud DB and stream back to every replica within ~100ms.
+// this client. Embedded replicas were retired on 2026-05-20 after WAL
+// conflicts between local Node readers and Python/direct-cloud writers.
+// The safe default is direct-to-cloud; a replica requires explicit opt-in.
 //
-// One singleton per process. The replica file is gitignored at
-// `data/replica.db` (relative to the project root). On first start,
-// the file is created and back-filled from the cloud DB; subsequent
-// reads are zero-network until a write happens.
-//
-// In CI / Vitest runs we skip the embedded replica (no replica path)
-// and use a direct cloud client — keeps tests hermetic and avoids
-// committing a binary file. The schema is compiled to a no-op when
+// One singleton per process. The schema is compiled to a no-op when
 // TURSO_DB_URL is unset (tests can mock the module).
 
 import { createClient, type Client } from "@libsql/client";
@@ -39,7 +33,11 @@ export function getDb(): Client {
     );
   }
 
-  const useReplica = process.env.NODE_ENV !== "test" && !process.env.RADON_DB_NO_REPLICA;
+  const useReplica = (
+    process.env.NODE_ENV !== "test" &&
+    process.env.RADON_DB_USE_REPLICA === "1" &&
+    process.env.RADON_DB_NO_REPLICA !== "1"
+  );
 
   cached = createClient(
     useReplica
@@ -55,9 +53,7 @@ export function getDb(): Client {
   return cached;
 }
 
-// Convenience: ensure the replica is fully synced before the caller
-// reads. Useful at process startup; not required for normal reads
-// (background sync keeps the file fresh).
+// Legacy convenience for explicit replica opt-in callers.
 export async function syncDb(): Promise<void> {
   const db = getDb();
   if ("sync" in db && typeof (db as { sync?: () => Promise<unknown> }).sync === "function") {
