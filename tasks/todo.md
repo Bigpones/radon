@@ -1,3 +1,39 @@
+# Task: Fix Mobile Dashboard News Feed Bugs
+
+## Dependency Graph
+
+- T1 depends_on: [] — Inspect dashboard mobile ordering, news header CSS, and existing coverage.
+- T2 depends_on: [T1] — Add focused regression coverage for dashboard mobile numbering and refresh layout contract.
+- T3 depends_on: [T2] — Patch dashboard section numbering and mobile news header/refresh CSS.
+- T4 depends_on: [T3] — Run focused tests, visual mobile verification, and document review.
+
+## Checklist
+
+- [x] T1 — Inspect dashboard mobile ordering, news header CSS, and existing coverage.
+- [x] T2 — Add focused regression coverage.
+- [x] T3 — Patch dashboard numbering and refresh layout.
+- [x] T4 — Verify and document results.
+
+## Review
+
+- Fixed dashboard section metadata so mobile reads `Portfolio 01`, `Live Market Feed 02`, `Working & Filled 03`, `Trading Candidates 04`.
+- Replaced the news header's generic `report-meta` class with a scoped `news-feed-updated` class so it no longer brings block padding/border into the header.
+- Added mobile CSS to stretch the dashboard stack, stack the news header controls, and keep the refresh button as a 44px contained touch target.
+- Follow-up correction: made the mobile news rail and every dashboard section explicit `flex: 0 0 100%` / `width: 100%` so all four containers share the Portfolio width.
+- Follow-up correction: added `.dashboard-news` itself to that mobile width rule and changed Playwright to compare the actual bordered inner panels, not just the outer section wrappers.
+- Added `web/tests/dashboard-mobile-newsfeed.test.tsx` plus a mobile Playwright regression in `web/e2e/mobile-shell.spec.ts`.
+- Verification:
+  - `npx vitest run web/tests/dashboard-mobile-newsfeed.test.tsx --config vitest.config.ts` passed: 3 tests after the width correction.
+  - `npx vitest run web/tests/dashboard-mobile-newsfeed.test.tsx web/tests/dashboard-newsfeed-pagination.test.tsx web/tests/dashboard-newsfeed-tag-filter.test.tsx --config vitest.config.ts` passed: 17 tests.
+  - `PLAYWRIGHT_PORT=3000 RADON_AUTHLESS_TEST=1 NEXT_PUBLIC_RADON_AUTHLESS_TEST=1 npx playwright test e2e/mobile-shell.spec.ts --grep "dashboard shows Live Market Feed" --config playwright.no-server.config.ts --project=mobile --timeout=20000` passed: 1 test after the inner-panel width correction.
+  - Mobile screenshot `/tmp/radon-dashboard-mobile-news.png` visually confirmed Live Market Feed is `02`, full-width, and the Refresh control stays inside the panel border.
+  - One-off Playwright geometry check at 393px viewport measured Portfolio, Live Feed, Orders, and Opportunities bordered panels at `left=12`, `right=381`, `width=369`.
+  - `npx eslint app/globals.css components/DashboardNewsFeed.tsx components/dashboard/DashboardSurface.tsx components/dashboard/OrdersSnapshotCard.tsx tests/dashboard-mobile-newsfeed.test.tsx e2e/mobile-shell.spec.ts` passed with 0 errors; repo ESLint ignores CSS/test/e2e files and emitted 3 ignore warnings.
+  - Full `npm test` remains red: 271 files passed, 1 skipped, 9 failed; failures are unrelated localStorage mock failures across position/table/theme tests plus listen `EPERM` in realtime/order suites. The dashboard width test passed inside the full run.
+  - `npm run typecheck` remains red on existing e2e/test fixture typing errors outside the touched dashboard files.
+
+---
+
 # Task: Gamma Rotation Gap End-to-End Build
 
 ## Dependency Graph
@@ -42,6 +78,33 @@
   - `python3.13 -m pytest -q` baseline red: 2284 passed, 15 skipped, 90 deselected, 7 failed, 5 errors. Failures are sandbox/keychain/localhost-bind issues in existing DB guard, health-service, and VCG wrapper tests.
   - `cd web && npm test` baseline red: 270 files passed, 1 skipped, 9 files failed; failures are existing localStorage mock and localhost bind issues.
   - `cd web && npm run typecheck` baseline red on pre-existing e2e/test fixture typing errors.
+
+---
+
+# Task: SPY/TLT GEX Divergence Indicator Mockup
+
+## Dependency Graph
+
+- T1 depends_on: [] — Inspect VCG model, repo context, and image content.
+- T2 depends_on: [T1] — Define a VCG-like SPY/TLT GEX divergence indicator.
+- T3 depends_on: [T2] — Create a brand-aligned mockup artifact.
+- T4 depends_on: [T3] — Render and verify the mockup visually.
+- T5 depends_on: [T4] — Document final analysis and usage guidance.
+
+## Checklist
+
+- [x] T1 — Inspect VCG model, repo context, and image content.
+- [x] T2 — Define required inputs, computation, states, and copy.
+- [x] T3 — Build a visual mockup.
+- [x] T4 — Verify the mockup output renders cleanly.
+- [x] T5 — Add review notes and final response.
+
+## Review
+
+- Created mockup HTML at `/tmp/radon-grg-mockup.html`.
+- Rendered screenshot at `/tmp/radon-grg-mockup.png` using Playwright.
+- Visually inspected screenshot for layout clipping, rerendered full-page, and confirmed all panels are visible.
+- No code-bearing application files were changed.
 
 ---
 

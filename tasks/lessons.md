@@ -4,6 +4,11 @@
 
 - For local Radon verification, use `scripts/local.sh` as the canonical launcher instead of hand-starting Next.js and FastAPI unless the task explicitly requires isolated services.
 - When checking Unusual Whales access in Radon, load `UW_TOKEN` from `web/.env` before concluding provider access is unavailable; the repo-root `.env` may not carry UW credentials.
+- When fixing mobile dashboard section layout, do not rely only on visual screenshots or implicit flex stretching. Add a geometry regression that compares left/right/width across every reordered dashboard section and across the actual bordered inner panels (`.snapshot-card` vs `.dashboard-news`) so one panel cannot silently shrink.
+
+## 2026-05-29
+
+- When a startup portfolio-derived summary names positions the user says are no longer held, treat the cache as guilty first. Any startup analyzer that reasons about current holdings must sync from Interactive Brokers or fail closed with an explicit "cannot verify" message instead of reading stale `data/portfolio.json` and presenting phantom positions.
 
 ## 2026-05-28
 
