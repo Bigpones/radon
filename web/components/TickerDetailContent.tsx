@@ -14,6 +14,7 @@ import CompanyTab from "./ticker-detail/CompanyTab";
 import { TickerQuoteTelemetry } from "./QuoteTelemetry";
 import BookTab from "./ticker-detail/BookTab";
 import OptionsChainTab from "./ticker-detail/OptionsChainTab";
+import { useStockState } from "@/lib/useStockState";
 
 type TabId = "company" | "book" | "chain" | "position" | "order" | "news" | "ratings" | "seasonality";
 
@@ -145,6 +146,13 @@ export default function TickerDetailContent({
     [ticker, position, prices],
   );
 
+  // After-hours fallback for the quote bar: when the box shows the UNDERLYING
+  // (no position, or a stock position) and the live WS feed is dark, source
+  // OHLV/close from the UW stock-state instead of rendering "No real-time data".
+  // Never applied to option/spread quotes — stock-state is the stock's own OHLV.
+  const showsUnderlying = !position || position.structure_type === "Stock";
+  const { fallback: stockFallback } = useStockState(ticker, showsUnderlying);
+
   const resolvedTab: TabId = (["company", "book", "chain", "position", "order", "news", "ratings", "seasonality"] as TabId[]).includes(activeTab as TabId)
     ? (activeTab as TabId)
     : "company";
@@ -174,7 +182,7 @@ export default function TickerDetailContent({
               {positionSummary}
             </span>
           </div>
-          <TickerQuoteTelemetry priceData={priceData} label={priceLabel} />
+          <TickerQuoteTelemetry priceData={priceData} label={priceLabel} fallback={stockFallback} />
         </div>
         <div className="ticker-detail-hero-right">
           <PriceChart
