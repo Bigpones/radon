@@ -17,17 +17,21 @@ describe("ib_realtime_server.js exposes the flag-gated L2 depth channel", () => 
     expect(source).toContain("if (DEPTH_ENABLED) restoreDepthSubscriptions();");
   });
 
-  it("opens and cancels reqMktDepth tickets within an explicit budget", () => {
-    expect(source).toContain("ib.reqMktDepth(depthTickerId, contract, numRows)");
-    expect(source).toContain("ib.cancelMktDepth(state.depthTickerId)");
+  it("opens and cancels reqMktDepth tickets within an explicit budget, passing isSmartDepth both ways", () => {
+    // @stoqey/ib: reqMktDepth(reqId, contract, numRows, isSmartDepth) and
+    // cancelMktDepth(reqId, isSmartDepth) — true equity/option, false futures.
+    expect(source).toContain("ib.reqMktDepth(depthTickerId, contract, numRows, isSmartDepth)");
+    expect(source).toContain("const isSmartDepth = !isFutures;");
+    expect(source).toContain("ib.cancelMktDepth(state.depthTickerId, !state.isFutures)");
     expect(source).toContain("const MAX_CONCURRENT_DEPTH = 3");
     expect(source).toContain("function evictOldestDepth");
   });
 
-  it("handles both the futures and equity/SMART depth events", () => {
+  it("handles both the futures and equity/SMART depth events via the EventName enum", () => {
     const depthHandlers = source.match(/if \(DEPTH_ENABLED\) \{[\s\S]*?updateMktDepthL2[\s\S]*?\}\);\s*\}/)?.[0] ?? "";
-    expect(depthHandlers).toContain('ib.on("updateMktDepth", (id, position, operation, side, price, size)');
-    expect(depthHandlers).toContain('ib.on("updateMktDepthL2", (id, position, marketMaker, operation, side, price, size)');
+    expect(depthHandlers).toContain("ib.on(EventName.updateMktDepth, (id, position, operation, side, price, size)");
+    // L2 gains a trailing isSmartDepth arg under @stoqey/ib; we accept-and-ignore it.
+    expect(depthHandlers).toContain("ib.on(EventName.updateMktDepthL2, (id, position, marketMaker, operation, side, price, size, _isSmartDepth)");
   });
 
   it("broadcasts a depth-batch reusing the 100ms flush and cleans buffers per client", () => {

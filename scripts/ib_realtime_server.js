@@ -23,7 +23,7 @@ import path from "node:path";
 import http from "node:http";
 import net from "node:net";
 import { WebSocketServer } from "ws";
-import IB from "ib";
+import { IBApi, EventName, SecType, OptionType } from "@stoqey/ib";
 import { classifyIBConnectionError } from "./ib_connection_status.js";
 import {
   createPriceData,
@@ -178,11 +178,42 @@ let activeClientIdIndex = 0;
 let ib = createIBClient(IB_CLIENT_ID_POOL[0]);
 
 function createIBClient(clientId) {
-  return new IB({
+  return new IBApi({
     host: cli.ibHost,
     port: cli.ibPort,
     clientId,
   });
+}
+
+/* ─── Contract builders ────────────────────────────────────────────────────
+ * @stoqey/ib has no ib.contract.* factory helpers — contracts are plain
+ * objects. These mirror the field shapes the old `ib` lib produced
+ * (expiry → lastTradeDateOrContractMonth; right → OptionType), so every
+ * downstream consumer (ensureSymbolState, optionKey, etc.) is unaffected.
+ */
+function stockContract(symbol, exchange = "SMART", currency = "USD") {
+  return { symbol, secType: SecType.STK, exchange, currency };
+}
+
+function optionContract(symbol, expiry, strike, right, exchange = "SMART", currency = "USD") {
+  return {
+    symbol,
+    secType: SecType.OPT,
+    exchange,
+    currency,
+    lastTradeDateOrContractMonth: expiry,
+    strike,
+    right: right === "C" ? OptionType.Call : OptionType.Put,
+    multiplier: "100",
+  };
+}
+
+function indexContract(symbol, currency = "USD", exchange = "CBOE") {
+  return { symbol, secType: SecType.IND, exchange, currency };
+}
+
+function futureContract(symbol, expiry, currency = "USD", exchange = "ONE") {
+  return { symbol, secType: SecType.FUT, currency, exchange, lastTradeDateOrContractMonth: expiry };
 }
 
 async function isPortAvailable(host, port) {
@@ -288,14 +319,15 @@ const fundamentalsStore = new LRUCache(500); // symbol → FundamentalsData (LRU
  * account, so we cap concurrency and LRU-recycle the oldest non-focused
  * ladder before opening a new one.
  *
- * NOTE on the installed `ib` npm lib surface (verified against
- * node_modules/ib): reqMktDepth(tickerId, contract, numRows) takes NO
- * isSmartDepth argument, and the wire protocol does not carry smart-depth.
- * The DepthBook still emits isSmartDepth (true equity/option, false futures)
- * to match the web type, but it is a derived label here, not a request flag.
- * updateMktDepth emits (id, position, operation, side, price, size) with NO
- * marketMaker (futures / single-venue); updateMktDepthL2 emits
- * (id, position, marketMaker, operation, side, price, size) (equity/SMART).
+ * NOTE on the @stoqey/ib surface: reqMktDepth(reqId, contract, numRows,
+ * isSmartDepth) and cancelMktDepth(reqId, isSmartDepth) BOTH carry the
+ * smart-depth flag — true for equity/option (SMART aggregation), false for
+ * futures (single-venue native depth). The DepthBook also emits isSmartDepth
+ * (= !isFutures) to match the web type. updateMktDepth emits
+ * (id, position, operation, side, price, size) with NO marketMaker (futures /
+ * single-venue); updateMktDepthL2 emits
+ * (id, position, marketMaker, operation, side, price, size, isSmartDepth)
+ * (equity/SMART) — the trailing isSmartDepth arg is @stoqey-specific.
  *
  * REALTIME TRADEOFF (Phase 1): depth + tick-by-tick require realtime market
  * data (type 1), but the main relay connection requests delayed-frozen
@@ -700,7 +732,7 @@ function stopDepthSubscription(key, { keepState = false } = {}) {
   if (!state) return;
   if (state.depthTickerId != null) {
     try {
-      ib.cancelMktDepth(state.depthTickerId);
+      ib.cancelMktDepth(state.depthTickerId, !state.isFutures);
     } catch {
       // Ignore.
     }
@@ -752,11 +784,12 @@ function startDepthSubscription(key, contract, { kind, isFutures }) {
 
   const numRows = isFutures ? DEPTH_NUM_ROWS_FUTURES : DEPTH_NUM_ROWS_EQUITY;
   const depthTickerId = nextRequestId += 1;
+  const isSmartDepth = !isFutures;
   try {
-    // Installed `ib` lib: reqMktDepth(tickerId, contract, numRows) — no
-    // isSmartDepth wire field (see DEPTH note above). isSmartDepth is carried
-    // only in the emitted DepthBook for web-type parity.
-    ib.reqMktDepth(depthTickerId, contract, numRows);
+    // @stoqey/ib: reqMktDepth(reqId, contract, numRows, isSmartDepth). Smart
+    // depth (true) for equity/option SMART aggregation, native single-venue
+    // depth (false) for futures. The same isSmartDepth is required on cancel.
+    ib.reqMktDepth(depthTickerId, contract, numRows, isSmartDepth);
     state.depthTickerId = depthTickerId;
     state.ladders.bid.clear();
     state.ladders.ask.clear();
@@ -832,10 +865,10 @@ function unsubscribeClientFromDepth(client, key) {
 }
 
 function cleanupDepthForReconnect() {
-  for (const [key, state] of symbolDepthStates) {
+  for (const [, state] of symbolDepthStates) {
     if (state.depthTickerId != null) {
       try {
-        ib.cancelMktDepth(state.depthTickerId);
+        ib.cancelMktDepth(state.depthTickerId, !state.isFutures);
       } catch {
         // Ignore.
       }
@@ -948,7 +981,7 @@ async function handleSnapshotRequest(client, symbols) {
     }
 
     const requestId = nextRequestId += 1;
-    const contract = ib.contract.stock(symbol, "SMART", "USD");
+    const contract = stockContract(symbol, "SMART", "USD");
     const requestState = {
       symbol,
       client,
@@ -1174,7 +1207,7 @@ function resolveDepthSubject(payload) {
   const hasOptionFields = typeof payload.expiry === "string" && typeof payload.strike === "number" && (payload.right === "C" || payload.right === "P");
   if (hasOptionFields) {
     const c = { symbol: rawSymbol, expiry: payload.expiry.trim(), strike: payload.strike, right: payload.right };
-    return { key: optionKey(c), contract: ib.contract.option(c.symbol, c.expiry, c.strike, c.right), kind: "option", isFutures: false };
+    return { key: optionKey(c), contract: optionContract(c.symbol, c.expiry, c.strike, c.right), kind: "option", isFutures: false };
   }
 
   const isFuture = DEPTH_FUTURES_SYMBOLS.has(rawSymbol) || payload.instrument === "future" || payload.secType === "FUT";
@@ -1182,10 +1215,10 @@ function resolveDepthSubject(payload) {
     const expiry = typeof payload.expiry === "string" ? payload.expiry.trim() : "";
     const exchange = typeof payload.exchange === "string" ? payload.exchange.trim().toUpperCase() : undefined;
     // No async qualification in the relay — build it and let IB reject (200).
-    return { key: rawSymbol, contract: ib.contract.future(rawSymbol, expiry, "USD", exchange), kind: "future", isFutures: true };
+    return { key: rawSymbol, contract: futureContract(rawSymbol, expiry, "USD", exchange), kind: "future", isFutures: true };
   }
 
-  return { key: rawSymbol, contract: ib.contract.stock(rawSymbol, "SMART", "USD"), kind: "stock", isFutures: false };
+  return { key: rawSymbol, contract: stockContract(rawSymbol, "SMART", "USD"), kind: "stock", isFutures: false };
 }
 
 async function handleClientMessage(client, data) {
@@ -1225,7 +1258,7 @@ async function handleClientMessage(client, data) {
       // Stock subscriptions (backward compatible)
       for (const symbol of symbols) {
         subscribeClientToSymbol(client, symbol);
-        const ibContract = ib.contract.stock(symbol, "SMART", "USD");
+        const ibContract = stockContract(symbol, "SMART", "USD");
         ensureSymbolState(symbol, ibContract);
         if (ibConnected) {
           startLiveSubscription(symbol, ibContract);
@@ -1253,7 +1286,7 @@ async function handleClientMessage(client, data) {
       for (const c of contracts) {
         const key = optionKey(c);
         subscribeClientToSymbol(client, key);
-        const ibContract = ib.contract.option(c.symbol, c.expiry, c.strike, c.right);
+        const ibContract = optionContract(c.symbol, c.expiry, c.strike, c.right);
         ensureSymbolState(key, ibContract);
         if (ibConnected) {
           startLiveSubscription(key, ibContract);
@@ -1272,7 +1305,7 @@ async function handleClientMessage(client, data) {
       for (const idx of indexes) {
         const key = idx.symbol;
         subscribeClientToSymbol(client, key);
-        const ibContract = ib.contract.index(idx.symbol, "USD", idx.exchange);
+        const ibContract = indexContract(idx.symbol, "USD", idx.exchange);
         ensureSymbolState(key, ibContract);
         if (ibConnected) {
           startLiveSubscription(key, ibContract);
@@ -1406,7 +1439,7 @@ function scheduleReconnect() {
 }
 
 function wireIBEvents() {
-  ib.on("connected", () => {
+  ib.on(EventName.connected, () => {
     ibConnected = true;
     ibConnectionIssue = null;
     console.log(`IB connected (clientId ${IB_CLIENT_ID_POOL[activeClientIdIndex]})`);
@@ -1430,7 +1463,7 @@ function wireIBEvents() {
     broadcastStatus();
   });
 
-  ib.on("disconnected", () => {
+  ib.on(EventName.disconnected, () => {
     if (ibConnected) {
       console.log("IB disconnected");
     }
@@ -1439,10 +1472,12 @@ function wireIBEvents() {
     scheduleReconnect();
   });
 
-  ib.on("error", (error, data) => {
+  // @stoqey/ib error signature: (error, code, reqId). reqId is the request
+  // (ticker) id the error pertains to, or -1 when not request-scoped. The old
+  // `ib` lib delivered (error, { id, code }); we map reqId → tickerId, code → code.
+  ib.on(EventName.error, (error, code, reqId) => {
     const msg = String(error?.message ?? error);
-    const tickerId = data?.id;
-    const code = data?.code;
+    const tickerId = reqId != null && reqId >= 0 ? reqId : undefined;
     const symbol = tickerId != null ? requestIdToSymbol.get(tickerId) : null;
     const connectionIssue = classifyIBConnectionError(msg, {
       ibHost: cli.ibHost,
@@ -1507,23 +1542,23 @@ function wireIBEvents() {
     }
   });
 
-  ib.on("tickPrice", (tickerId, tickType, price) => {
+  ib.on(EventName.tickPrice, (tickerId, tickType, price) => {
     onTickPrice(tickerId, tickType, price);
   });
 
-  ib.on("tickSize", (tickerId, sizeType, size) => {
+  ib.on(EventName.tickSize, (tickerId, sizeType, size) => {
     onTickSize(tickerId, sizeType, size);
   });
 
-  ib.on("tickSnapshotEnd", (tickerId) => {
+  ib.on(EventName.tickSnapshotEnd, (tickerId) => {
     onTickSnapshotEnd(tickerId);
   });
 
-  ib.on("fundamentalData", (reqId, data) => {
+  ib.on(EventName.fundamentalData, (reqId, data) => {
     onFundamentalData(reqId, data);
   });
 
-  ib.on("tickOptionComputation", (tickerId, tickType, impliedVol, delta, optPrice, pvDividend, gamma, vega, theta, undPrice) => {
+  ib.on(EventName.tickOptionComputation, (tickerId, tickType, impliedVol, delta, optPrice, pvDividend, gamma, vega, theta, undPrice) => {
     const symbol = requestIdToSymbol.get(tickerId);
     const liveState = symbol ? symbolStates.get(symbol) : null;
     if (!liveState) return;
@@ -1549,7 +1584,7 @@ function wireIBEvents() {
     hydrateAndBroadcast(symbol);
   });
 
-  ib.on("symbolSamples", (reqId, contracts) => {
+  ib.on(EventName.symbolSamples, (reqId, contracts) => {
     const req = searchRequestClients.get(reqId);
     if (!req) return;
     searchRequestClients.delete(reqId);
@@ -1581,15 +1616,17 @@ function wireIBEvents() {
   if (DEPTH_ENABLED) {
     // Futures / single-venue depth — no market maker (arg order: id, position,
     // operation, side, price, size in the installed `ib` lib).
-    ib.on("updateMktDepth", (id, position, operation, side, price, size) => {
+    ib.on(EventName.updateMktDepth, (id, position, operation, side, price, size) => {
       const key = depthRequestIdToSymbol.get(id);
       if (!key) return;
       lastTickTimestamp = Date.now();
       applyDepthDelta(key, position, null, operation, side, price, size);
     });
 
-    // Equity / SMART L2 — marketMaker = exchange/MPID code.
-    ib.on("updateMktDepthL2", (id, position, marketMaker, operation, side, price, size) => {
+    // Equity / SMART L2 — marketMaker = exchange/MPID code. @stoqey/ib appends
+    // a trailing isSmartDepth arg after size; we accept it but don't re-derive
+    // from it (the ladder's smart-depth label comes from state.isFutures).
+    ib.on(EventName.updateMktDepthL2, (id, position, marketMaker, operation, side, price, size, _isSmartDepth) => {
       const key = depthRequestIdToSymbol.get(id);
       if (!key) return;
       lastTickTimestamp = Date.now();

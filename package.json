@@ -7,10 +7,10 @@
   "dependencies": {
     "@libsql/client": "^0.17.3",
     "@sinclair/typebox": "0.34.48",
+    "@stoqey/ib": "^1.5.5",
     "axios": "^1.15.2",
     "dotenv": "^17.3.1",
     "fs-extra": "^11.3.4",
-    "ib": "^0.2.9",
     "playwright": "^1.58.2",
     "ws": "^8.19.0"
   },

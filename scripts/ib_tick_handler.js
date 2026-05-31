@@ -3,9 +3,10 @@
  * Extracted from ib_realtime_server.js so they can be unit-tested independently.
  */
 
-import IB from "ib";
-
-const { TICK_TYPE } = IB;
+// @stoqey/ib does not re-export the tick-type enum from its package root, so
+// import the numeric enum directly. Field names + integer values match the
+// IB TWS API (and the old `ib` lib's TICK_TYPE), so every case below is intact.
+import { TickType as TICK_TYPE } from "@stoqey/ib/dist/api/market/tickType.js";
 
 export function normalizeNumber(value) {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
