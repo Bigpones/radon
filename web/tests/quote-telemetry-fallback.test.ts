@@ -48,6 +48,25 @@ describe("buildQuoteTelemetryModel — after-hours stock-state fallback", () => 
     expect(m.day.tone).toBe("negative");
   });
 
+  it("treats a hollow tick (last/bid/ask all null, volume 0) as market-closed when a fallback exists", () => {
+    // The relay emits this on weekends: an object, not null, but no live quote.
+    const hollow = priceData({ last: null, bid: null, ask: null, volume: 0, high: null, low: null });
+    const m = buildQuoteTelemetryModel(hollow, FALLBACK)!;
+    expect(m.last.label).toBe("CLOSE");
+    expect(m.last.value).toContain("142.24");
+    expect(m.volume.value).toBe("7,896,563"); // volume 0 is not "live", use fallback
+    expect(m.high.value).toContain("143.95");
+    expect(m.day.value).toBe("-0.86%");
+    expect(m.bid.value).toBe("---");
+  });
+
+  it("keeps non-null session fields from a hollow tick over the fallback", () => {
+    const hollow = priceData({ last: null, bid: null, ask: null, high: 144.5, volume: 222 });
+    const m = buildQuoteTelemetryModel(hollow, FALLBACK)!;
+    expect(m.high.value).toContain("144.50"); // relay's session high wins
+    expect(m.volume.value).toBe("222");
+  });
+
   it("does NOT relabel LAST as CLOSE when live data is present", () => {
     const m = buildQuoteTelemetryModel(priceData({ last: 142.5, bid: 142.4, ask: 142.6 }), FALLBACK)!;
     expect(m.last.label).toBe("LAST");

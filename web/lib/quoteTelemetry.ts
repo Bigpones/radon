@@ -117,12 +117,32 @@ function closedMarketModel(fallback: QuoteFallback): QuoteTelemetryModel {
   };
 }
 
+/** A live quote needs at least one of last/bid/ask. The relay sometimes emits a
+ * hollow tick (object present, every quote field null, volume 0) when the market
+ * is closed — that must be treated as "no live quote", not as live data. */
+function hasLiveQuote(priceData: PriceData): boolean {
+  return priceData.last != null || priceData.bid != null || priceData.ask != null;
+}
+
 export function buildQuoteTelemetryModel(
   priceData: PriceData | null,
   fallback: QuoteFallback | null = null,
 ): QuoteTelemetryModel | null {
   if (!priceData) {
     return fallback ? closedMarketModel(fallback) : null;
+  }
+
+  // Hollow tick + a fallback → render the prior session, enriched by any
+  // non-null session fields the relay did manage to send.
+  if (!hasLiveQuote(priceData) && fallback) {
+    return closedMarketModel({
+      open: priceData.open ?? fallback.open,
+      high: priceData.high ?? fallback.high,
+      low: priceData.low ?? fallback.low,
+      close: fallback.close,
+      volume: priceData.volume != null && priceData.volume > 0 ? priceData.volume : fallback.volume,
+      prevClose: fallback.prevClose,
+    });
   }
 
   const { bid, mid, ask } = getQuoteMetrics(priceData);
