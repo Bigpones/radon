@@ -7,7 +7,18 @@ price-ladder DOM), plus a show/hide Time & Sales tape.
 
 Grounded in a code-verified workflow sweep (relay / protocol+hook / component /
 testing). Line numbers are from the current `main` and should be re-confirmed at
-edit time. **Status: plan only — no code written yet.**
+edit time.
+
+**Status: Phase 1 SHIPPED (flag-gated, default off), behind `RADON_DEPTH_ENABLED`.**
+- Foundation: depth types + pure helpers + 23 tests (commit df49dbd).
+- Relay channel + `ib@0.2.9 → @stoqey/ib@1.5.5` migration unlocking `isSmartDepth`
+  (commits 9dc59b9, f69c0d4) — verified live: connect + L1 stream + depth-sub
+  accepted off-hours.
+- UI: `OrderBook`/`DepthMontage`/`LadderDOM`/`TimeAndSales` in `BookTab`,
+  `usePrices` depth slice, `TickerDetailContext` threading (commit e50f076).
+- Full web suite green (2794). **Remaining: RTH live verification of a populated
+  ladder + the depth deploy on prod; Phase 2 (futures click-to-trade) + Phase 3
+  (options BBO + dedicated `Trade[]` tape feed) per the rollout below.**
 
 ---
 

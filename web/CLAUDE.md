@@ -221,3 +221,16 @@ cushion = excess_liquidity / net_liquidation
 ## WebSocket State (`usePrices.ts`)
 
 State machine: `idle → connecting → open → closed`. `connStateRef` idempotent connect, `socketGenRef` ignores stale events, diff-based sub/unsub, exponential backoff (1s–30s, max 10). Stale tick detection at 30s; 45s no-ticks triggers Gateway restart via the relay layer (120s cooldown there).
+
+---
+
+## L2 Order Book (depth-of-book) — `BookTab`
+
+Depth montage / ladder + Time & Sales in the ticker Book tab. Plan + full design: `tasks/l2-orderbook-implementation-plan.md`. Mockup: `/tmp/radon-l2-montage.html`.
+
+- **Feature flag.** Gated end-to-end on `RADON_DEPTH_ENABLED` (relay reads `process.env`). OFF (default) → relay opens NO `reqMktDepth` tickets, registers no depth handlers, stays on delayed-frozen (`reqMarketDataType(4)`); the UI shows the existing `<L1OrderBook>`. ON → relay flips the connection to realtime (`reqMarketDataType(1)`) — depth + tick-by-tick require realtime. A dedicated realtime depth client is the production follow-up; today the shared relay connection flips while depth is active.
+- **IB lib.** The relay uses **`@stoqey/ib`** (migrated from the dead `ib@0.2.9`, commit f69c0d4) — events via the `EventName` enum, contracts as plain object literals, `error` is positional `(error, code, reqId)` with a `reqId>=0` guard. `reqMktDepth(id, contract, numRows, isSmartDepth)`: `isSmartDepth=true` equity/option (SMART-aggregated montage, `marketMaker`=exchange), `false` futures (`updateMktDepth`, no MM → price-level ladder). **Depth ticket budget ~3 concurrent** → relay enforces a cap + LRU recycle keyed to the focused symbol.
+- **Entitlements (confirmed live).** Account is realtime-entitled with L2 depth on NASDAQ/BATS/ARCA/BEX/NYSE/IEX. Error `10089` (no depth entitlement) → relay cancels the ticket + emits `depth-unavailable`, UI degrades to L1; never latches a fault.
+- **WS protocol.** New inbound: `depth` / `depth-batch` (`{updates: Record<symbol, DepthBook>}`, reuses the 100ms flush) / `depth-unavailable`. New client actions: `subscribe-depth` / `unsubscribe-depth` (**single** symbol — scarce resource, only the focused subject subscribes; distinct from the array `subscribe`). Types in `pricesProtocol.ts`: `DepthBook` (kind stock|option|future, two-sided `bid`/`ask` of `DepthLevel`, `entitled`/`feed`). `usePrices` exposes `depths` + a `depthSymbol` option (never forces a connect); `TickerDetailContent` publishes the focused book key up to `WorkspaceShell`'s `usePrices` via `TickerDetailContext`.
+- **Components** (`ticker-detail/`): `OrderBook` (kind dispatch + show/hide tape toggle, grid reflow via `.tape-hidden`, localStorage `radon:book:tape`), `DepthMontage` (stock+option two-sided), `LadderDOM` (futures centered ladder, cumulative fans), `TimeAndSales` (tick-test tape). Pure derivations in `web/lib/book/depthDerivations.ts` (`groupPriceLevels`, `buildLadderRows`, `montageFill`, `classifyTicks`, `isBestLevel`) — unit-tested.
+- **Verification.** Depth rows + the tape only populate during **market hours (RTH)** — empty off-hours is correct, not a bug. Migrated relay verified live off-hours (connect + L1 stream + depth subscription accepted); a populated ladder needs an RTH chrome-cdp check. Phase 1 ships an empty `Trade[]` tape (toggle/reflow exercised); the dedicated tape feed is Phase 3.
