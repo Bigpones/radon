@@ -125,6 +125,15 @@ describe("Options chain ATM auto-centering", () => {
           }),
         );
       }
+      // TickerDetailContent fetches stock-state for the after-hours quote-bar fallback.
+      if (url.includes("/api/ticker/info")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ stock_state: {}, uw_info: {}, profile: {}, stats: {} }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
       throw new Error(`Unexpected fetch: ${url}`);
     });
   });

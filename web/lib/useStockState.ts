@@ -26,18 +26,26 @@ export function useStockState(
     }
     let cancelled = false;
     setLoading(true);
-    fetch(`/api/ticker/info?ticker=${encodeURIComponent(ticker)}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
-        if (cancelled || !json) return;
-        setFallback(toFallback(json.stock_state));
-      })
-      .catch(() => {
-        if (!cancelled) setFallback(null);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    // Wrap the call itself: a fetch that throws synchronously (e.g. a strict
+    // test mock, or fetch being unavailable) must degrade to "no fallback",
+    // never crash the host component's render.
+    try {
+      fetch(`/api/ticker/info?ticker=${encodeURIComponent(ticker)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((json) => {
+          if (cancelled || !json) return;
+          setFallback(toFallback(json.stock_state));
+        })
+        .catch(() => {
+          if (!cancelled) setFallback(null);
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    } catch {
+      setFallback(null);
+      setLoading(false);
+    }
     return () => {
       cancelled = true;
     };

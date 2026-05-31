@@ -99,6 +99,8 @@ describe("Options chain URL deep-link", () => {
         return jsonResponse({ symbol: "MU", expiry: "20260717", strikes: [950, 960, 970] });
       }
       if (url.includes("/api/risk-free-rate")) return jsonResponse({ rate: 0 });
+      // TickerDetailContent fetches stock-state for the after-hours quote-bar fallback.
+      if (url.includes("/api/ticker/info")) return jsonResponse({ stock_state: {}, uw_info: {}, profile: {}, stats: {} });
       throw new Error(`Unexpected fetch: ${url}`);
     });
   });
