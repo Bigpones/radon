@@ -92,6 +92,55 @@ export type WSBatchMessage = {
   updates: Record<string, PriceData>;
 };
 
+/* ─── Depth-of-book (L2) types ─────────────────────────── */
+
+export type DepthSide = "bid" | "ask";
+
+/** One book row. marketMaker/exchange null for futures (no venue attribution). */
+export type DepthLevel = {
+  price: number;
+  size: number;
+  marketMaker: string | null; // MPID (NASDAQ TotalView) — equities direct
+  exchange: string | null; // venue code (SMART equities, options BBO)
+};
+
+export type DepthBook = {
+  symbol: string; // same keyspace as PriceData.symbol (ticker | optionKey | future)
+  kind: "stock" | "option" | "future";
+  bid: DepthLevel[]; // index 0 = inside/best
+  ask: DepthLevel[]; // index 0 = inside/best
+  isSmartDepth: boolean; // true equities/options, false futures
+  feed: string | null; // head-pill label, e.g. "SMART DEPTH · TOTALVIEW"
+  entitled: boolean; // false → render L1 fallback
+  timestamp: string;
+};
+
+/** Time & Sales tape row. */
+export type Trade = {
+  price: number;
+  size: number;
+  exchange: string | null;
+  time: string;
+};
+
+export type WSDepthMessage = {
+  type: "depth";
+  symbol: string;
+  data: DepthBook;
+};
+
+export type WSDepthBatchMessage = {
+  type: "depth-batch";
+  updates: Record<string, DepthBook>;
+};
+
+export type WSDepthUnavailableMessage = {
+  type: "depth-unavailable";
+  symbol: string;
+  reason: "no-entitlement" | "futures-no-depth" | "recycled";
+  code?: number;
+};
+
 export type WSMessage =
   | WSPriceMessage
   | WSFundamentalsMessage
@@ -102,7 +151,10 @@ export type WSMessage =
   | WSErrorMessage
   | WSPingMessage
   | WSPongMessage
-  | WSStatusMessage;
+  | WSStatusMessage
+  | WSDepthMessage
+  | WSDepthBatchMessage
+  | WSDepthUnavailableMessage;
 
 /* ─── Option contract types & helpers ─────────────────── */
 
