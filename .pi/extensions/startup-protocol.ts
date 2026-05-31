@@ -155,6 +155,29 @@ export class StartupTracker {
   }
 }
 
+export function summarizeFreeTradeError(errorOutput: string, fallback = "Free trade analysis error"): string {
+  const trimmed = errorOutput
+    .split("\n")
+    .map(line => line.trim())
+    .filter(Boolean);
+
+  const preferred = trimmed.find(line =>
+    line.startsWith("Cannot verify current portfolio via IB:") ||
+    line.startsWith("Cannot verify current portfolio via IB")
+  );
+  if (preferred) {
+    return preferred;
+  }
+
+  const firstUseful = trimmed.find(line =>
+    !line.startsWith("IB error ") &&
+    !line.startsWith("Peer closed connection") &&
+    !line.startsWith("API connection failed")
+  );
+
+  return firstUseful || trimmed[0] || fallback;
+}
+
 export default function (pi: ExtensionAPI) {
   const loadProjectDocs = (cwd: string) => {
     const files = [
@@ -518,7 +541,7 @@ ${memoryContent}
       } else {
         // Only notify on actual errors, not empty results
         if (errorOutput && !errorOutput.includes("No positions")) {
-          tracker.complete("free_trade", "warning", "Free trade analysis error");
+          tracker.complete("free_trade", "warning", summarizeFreeTradeError(errorOutput));
         } else {
           tracker.complete("free_trade", "success", "No positions to analyze");
         }

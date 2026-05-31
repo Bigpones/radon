@@ -3,17 +3,20 @@
 Tests for free_trade_analyzer.py
 """
 
+import json
 import pytest
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import free_trade_analyzer as free_trade_module
 from free_trade_analyzer import (
     Leg,
     FreeTradeSuggestion,
     classify_position,
     get_startup_summary,
+    load_portfolio,
     PositionAnalysis,
 )
 
@@ -263,6 +266,84 @@ class TestClassifyPosition:
         assert structure == "single_leg"
         assert core == call
         assert hedge is None
+
+
+class TestPortfolioLoading:
+    """Test live-vs-cache portfolio loading."""
+
+    def test_load_portfolio_syncs_from_ib_before_reading_cache(self, monkeypatch, tmp_path):
+        """Default portfolio loading must refresh from IB so startup cannot show stale holdings."""
+        portfolio_path = tmp_path / "portfolio.json"
+        portfolio_path.write_text(json.dumps({
+            "positions": [{"ticker": "TSLA"}],
+        }))
+
+        monkeypatch.setattr(free_trade_module, "PORTFOLIO_FILE", portfolio_path)
+
+        calls = []
+
+        def fake_run(cmd, cwd=None, capture_output=None, text=None, timeout=None):
+            calls.append(cmd)
+            portfolio_path.write_text(json.dumps({
+                "positions": [{"ticker": "MSFT"}],
+            }))
+
+            class Result:
+                returncode = 0
+                stderr = ""
+
+            return Result()
+
+        monkeypatch.setattr(free_trade_module.subprocess, "run", fake_run)
+
+        positions = load_portfolio()
+
+        assert [p["ticker"] for p in positions] == ["MSFT"]
+        assert calls == [[
+            sys.executable,
+            str(free_trade_module.SCRIPT_DIR / "ib_sync.py"),
+            "--sync",
+            "--skip-audit",
+        ]]
+
+    def test_load_portfolio_ib_failure_fails_closed_instead_of_using_stale_cache(self, monkeypatch, tmp_path):
+        """If IB sync fails, do not keep showing stale cached positions as if they were current."""
+        portfolio_path = tmp_path / "portfolio.json"
+        portfolio_path.write_text(json.dumps({
+            "positions": [{"ticker": "GOOGL"}],
+        }))
+
+        monkeypatch.setattr(free_trade_module, "PORTFOLIO_FILE", portfolio_path)
+
+        def fake_run(cmd, cwd=None, capture_output=None, text=None, timeout=None):
+            class Result:
+                returncode = 1
+                stderr = "gateway down"
+
+            return Result()
+
+        monkeypatch.setattr(free_trade_module.subprocess, "run", fake_run)
+
+        with pytest.raises(RuntimeError, match="Cannot verify current portfolio via IB"):
+            load_portfolio()
+
+    def test_load_portfolio_cache_mode_skips_ib_sync(self, monkeypatch, tmp_path):
+        """Explicit cache mode keeps the old offline behavior for manual use."""
+        portfolio_path = tmp_path / "portfolio.json"
+        portfolio_path.write_text(json.dumps({
+            "positions": [{"ticker": "AAOI"}],
+        }))
+
+        monkeypatch.setattr(free_trade_module, "PORTFOLIO_FILE", portfolio_path)
+
+        def fake_run(*args, **kwargs):
+            raise AssertionError("IB sync should not run in cache mode")
+
+        monkeypatch.setattr(free_trade_module.subprocess, "run", fake_run)
+
+        positions = load_portfolio(source="cache")
+
+        assert [p["ticker"] for p in positions] == ["AAOI"]
 
 
 class TestStartupSummary:
