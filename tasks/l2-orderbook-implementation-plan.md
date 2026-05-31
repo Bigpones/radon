@@ -292,3 +292,27 @@ already narrow. Add mobile E2E at 393×852.
 - **Modified:** `scripts/ib_realtime_server.js` (~250 LOC); `web/lib/usePrices.ts`; `web/components/ticker-detail/BookTab.tsx`; `web/components/TickerDetailContent.tsx`; `web/app/globals.css`; `web/CLAUDE.md` (WebSocket section).
 - **Confirm-only:** `web/tests/api-routes-no-cache-contract.test.ts` (depth is WS-only, no change).
 - **Reference:** mockup `/tmp/radon-l2-montage.html`.
+
+---
+
+## RTH go-live runbook (run Monday during market hours)
+
+The depth feature is deployed but flag-gated OFF. Enabling it requires the prod
+host (SSH) + the live app (browser), so it must be run from a local Claude Code
+session during RTH (09:30-16:00 ET, Mon-Fri). Trigger: open a session and say
+"run the L2 RTH go-live" (memory: project_l2_orderbook_2026_05_31).
+
+1. **Gate:** `TZ=America/New_York date` (weekday, 09:30-16:00 ET) and
+   `ssh ib-gateway 'curl -s localhost:8321/health'` → `auth_state: authenticated`.
+   Not RTH or not authenticated → STOP, do not flip.
+2. **Enable:** set `RADON_DEPTH_ENABLED=1` for the relay (`/home/radon/radon-cloud/.env`
+   or the radon-relay systemd Environment). Restart: `ssh ib-gateway 'systemctl restart
+   radon-relay.service'` (fallback `ssh ib-gateway radon restart`). Confirm journalctl
+   "IB connected" + WS 8765 listening + realtime `reqMarketDataType(1)`.
+3. **Verify (chrome-cdp on app.radon.run):** AAPL Book tab → DepthMontage populates with
+   live exchange/MPID rows; VIX or an ES future → LadderDOM with cumulative fans; no
+   console errors; depth-batch WS frames ~10/s.
+4. **Success →** screenshot, mark this plan RTH-verified + update the memory, flag stays ON.
+5. **Failure (no rows / 10089 / price disruption) →** set `RADON_DEPTH_ENABLED` off,
+   restart radon-relay, confirm L1 prices resume, report the relay log + IB error codes.
+   Never leave a broken relay.
