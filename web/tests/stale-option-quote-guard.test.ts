@@ -114,11 +114,16 @@ describe("safeInitialState — stale bid/ask guard", () => {
     expect(result).toBe(data);
   });
 
-  it("treats exactly 8-hour-old data as NOT stale (boundary)", () => {
-    // Exactly at the threshold should still pass through
-    const data = makePriceData({ timestamp: hoursAgo(8) });
+  it("treats data just under the 8-hour threshold as NOT stale (boundary)", () => {
+    // Just inside the window. Using EXACTLY hoursAgo(8) races the threshold:
+    // safeInitialState recomputes Date.now() a few ms later, so age = 8h + ε,
+    // which tips over the limit on a loaded CI runner (flaky). A small buffer
+    // (8h − 5s) keeps it deterministically under, mirroring the "8h+1s = stale"
+    // test's −2000ms buffer on the other side.
+    const data = makePriceData({
+      timestamp: new Date(Date.now() - (8 * 60 * 60 * 1000 - 5000)).toISOString(),
+    });
     const result = safeInitialState(data);
-    // Age is ~8h (slightly under due to execution time) → not stale
     expect(result.bid).toBe(32.49);
   });
 
