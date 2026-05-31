@@ -222,7 +222,10 @@ def fetch_menthorq_cta(
         print(f"  ERROR: Unexpected failure: {exc}", file=sys.stderr)
         return None
 
-    if not tables:
+    # Reject empty AND hollow extractions ({"main": [], ...}) — caching a dict
+    # whose tables are all empty poisons data/menthorq_cache for the day
+    # (feedback_dont_cache_empty_results).
+    if not tables or not any(tables.values()):
         print("  ERROR: No CTA data extracted.", file=sys.stderr)
         return None
 
