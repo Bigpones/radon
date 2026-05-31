@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { OpenOrder, PortfolioData, PortfolioPosition } from "@/lib/types";
-import type { PriceData } from "@/lib/pricesProtocol";
+import type { DepthBook, PriceData, Trade } from "@/lib/pricesProtocol";
 import { fmtPrice } from "@/lib/positionUtils";
 import SingleLegOrderTicket, { type SingleLegOrderAction } from "@/components/SingleLegOrderTicket";
 import { OrderRiskGate, type LinearOrderRiskInput } from "@/lib/order";
@@ -10,6 +10,7 @@ import { useOrderActionsOptional } from "@/lib/OrderActionsContext";
 import { isIndexSymbol, hasFuturesSupport, hasIndexOptionsSupport } from "@/lib/indexSymbols";
 import { FuturesOrderForm } from "@/components/ticker-detail/FuturesOrderForm";
 import { IndexOptionOrderForm } from "@/components/ticker-detail/IndexOptionOrderForm";
+import { OrderBook } from "@/components/ticker-detail/OrderBook";
 
 /* ─── Types ─── */
 
@@ -19,6 +20,14 @@ type BookTabProps = {
   prices: Record<string, PriceData>;
   openOrders: OpenOrder[];
   tickerPriceData: PriceData | null;
+  /** Depth-of-book keyed by symbol (from `usePrices`). The focused book key
+   *  resolves to the L2 panel; absent/unentitled falls back to `<L1OrderBook>`. */
+  depths?: Record<string, DepthBook>;
+  /** Resolved key for the focused subject's depth book (option key for a
+   *  single-leg option, else the ticker). */
+  bookKey?: string;
+  /** Resolved instrument kind for the depth panel; depth.kind wins when present. */
+  bookKind?: "stock" | "option" | "future";
   /** Threaded to `StockOrderForm` so SELL stock against held shares
    *  short-circuits to a close-out branch, and SELL with held=0
    *  surfaces UNBOUNDED via the linear risk branch. */
@@ -345,6 +354,9 @@ export default function BookTab({
   prices,
   openOrders,
   tickerPriceData,
+  depths,
+  bookKey,
+  bookKind,
   portfolio = null,
 }: BookTabProps) {
   const priceData = tickerPriceData ?? prices[ticker] ?? null;
@@ -356,16 +368,38 @@ export default function BookTab({
   const lastLabel = priceData?.lastIsCalculated ? "MARK" : "LAST";
   const isIndex = isIndexSymbol(ticker);
 
+  const resolvedBookKey = bookKey ?? ticker;
+  const depth = depths?.[resolvedBookKey] ?? null;
+  // depth.kind wins; else the kind resolved by the parent; else stock.
+  const kind = depth?.kind ?? bookKind ?? "stock";
+  // Phase 1 has no dedicated tape stream; render an empty tape so the toggle +
+  // reflow are exercised. A later `Trade[]` stream seeds this.
+  const trades: Trade[] = [];
+
+  const l1Fallback = (
+    <L1OrderBook
+      bid={bid}
+      ask={ask}
+      spread={spread}
+      last={last}
+      lastLabel={lastLabel}
+      bidSize={priceData?.bidSize ?? null}
+      askSize={priceData?.askSize ?? null}
+    />
+  );
+
   return (
     <div className="book-tab" style={{ padding: "16px 0" }}>
-      <L1OrderBook
-        bid={bid}
-        ask={ask}
-        spread={spread}
+      <OrderBook
+        symbolLabel={ticker}
+        kind={kind}
+        depth={depth}
+        trades={trades}
         last={last}
         lastLabel={lastLabel}
-        bidSize={priceData?.bidSize ?? null}
-        askSize={priceData?.askSize ?? null}
+        bid={bid}
+        ask={ask}
+        l1Fallback={l1Fallback}
       />
 
       {position && <PositionSummary position={position} />}

@@ -192,6 +192,7 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
   const {
     prices: rawPrices,
     fundamentals,
+    depths,
     connected: wsConnected,
     ibConnected: rawIbConnected,
     ibIssue,
@@ -200,6 +201,11 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
     symbols: allSymbols,
     contracts: allContracts,
     indexes: allIndexes,
+    // Single focused depth ticket for the open ticker-detail subject. The
+    // detail view publishes the resolved book key (option key for single-leg
+    // options, else the ticker); null releases the ticket. Never forces a
+    // connection on its own — the subject already streams L1.
+    depthSymbol: tickerDetail.depthSymbol,
   });
 
   // Debounce ibConnected: disconnections must persist >2s before surfacing to UI.
@@ -231,11 +237,12 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
   );
 
   // Sync prices + portfolio into ticker-detail context (refs, no re-renders)
-  const { setActiveTicker, setPrices: setTickerPrices, setFundamentals: setTickerFundamentals, setPortfolio: setTickerPortfolio, setOrders: setTickerOrders } = tickerDetail;
+  const { setActiveTicker, setPrices: setTickerPrices, setFundamentals: setTickerFundamentals, setPortfolio: setTickerPortfolio, setOrders: setTickerOrders, setDepths: setTickerDepths } = tickerDetail;
   useEffect(() => { setTickerPrices(prices); }, [prices, setTickerPrices]);
   useEffect(() => { setTickerFundamentals(fundamentals); }, [fundamentals, setTickerFundamentals]);
   useEffect(() => { setTickerPortfolio(portfolio); }, [portfolio, setTickerPortfolio]);
   useEffect(() => { setTickerOrders(orders); }, [orders, setTickerOrders]);
+  useEffect(() => { setTickerDepths(depths); }, [depths, setTickerDepths]);
 
   // Sync tickerParam to context
   useEffect(() => {

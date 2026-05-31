@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
-import type { PriceData, FundamentalsData, OptionContract } from "@/lib/pricesProtocol";
+import type { PriceData, FundamentalsData, DepthBook, OptionContract } from "@/lib/pricesProtocol";
 import type { OrdersData, PortfolioData } from "@/lib/types";
 
 type TickerDetailContextValue = {
@@ -13,12 +13,17 @@ type TickerDetailContextValue = {
   getFundamentals: () => Record<string, FundamentalsData>;
   getPortfolio: () => PortfolioData | null;
   getOrders: () => OrdersData | null;
+  getDepths: () => Record<string, DepthBook>;
   setPrices: (p: Record<string, PriceData>) => void;
   setFundamentals: (f: Record<string, FundamentalsData>) => void;
   setPortfolio: (p: PortfolioData | null) => void;
   setOrders: (o: OrdersData | null) => void;
+  setDepths: (d: Record<string, DepthBook>) => void;
   chainContracts: OptionContract[];
   setChainContracts: (c: OptionContract[]) => void;
+  /** Book key the detail view wants L2 depth for. Drives `usePrices` upstream. */
+  depthSymbol: string | null;
+  setDepthSymbol: (key: string | null) => void;
 };
 
 const TickerDetailContext = createContext<TickerDetailContextValue | null>(null);
@@ -27,16 +32,19 @@ export function TickerDetailProvider({ children }: { children: ReactNode }) {
   const [activeTicker, setActiveTickerState] = useState<string | null>(null);
   const [activePositionId, setActivePositionIdState] = useState<number | null>(null);
   const [chainContracts, setChainContractsState] = useState<OptionContract[]>([]);
+  const [depthSymbol, setDepthSymbolState] = useState<string | null>(null);
   const pricesRef = useRef<Record<string, PriceData>>({});
   const fundamentalsRef = useRef<Record<string, FundamentalsData>>({});
   const portfolioRef = useRef<PortfolioData | null>(null);
   const ordersRef = useRef<OrdersData | null>(null);
+  const depthsRef = useRef<Record<string, DepthBook>>({});
 
   const setActiveTicker = useCallback((ticker: string | null) => {
     setActiveTickerState(ticker ? ticker.toUpperCase() : null);
     if (!ticker) {
       setActivePositionIdState(null);
       setChainContractsState([]);
+      setDepthSymbolState(null);
     }
   }, []);
 
@@ -48,10 +56,15 @@ export function TickerDetailProvider({ children }: { children: ReactNode }) {
     setChainContractsState(c);
   }, []);
 
+  const setDepthSymbol = useCallback((key: string | null) => {
+    setDepthSymbolState((prev) => (prev === key ? prev : key));
+  }, []);
+
   const getPrices = useCallback(() => pricesRef.current, []);
   const getFundamentals = useCallback(() => fundamentalsRef.current, []);
   const getPortfolio = useCallback(() => portfolioRef.current, []);
   const getOrders = useCallback(() => ordersRef.current, []);
+  const getDepths = useCallback(() => depthsRef.current, []);
 
   const setPrices = useCallback((p: Record<string, PriceData>) => {
     pricesRef.current = p;
@@ -69,9 +82,13 @@ export function TickerDetailProvider({ children }: { children: ReactNode }) {
     ordersRef.current = o;
   }, []);
 
+  const setDepths = useCallback((d: Record<string, DepthBook>) => {
+    depthsRef.current = d;
+  }, []);
+
   return (
     <TickerDetailContext.Provider
-      value={{ activeTicker, activePositionId, setActiveTicker, setActivePositionId, getPrices, getFundamentals, getPortfolio, getOrders, setPrices, setFundamentals, setPortfolio, setOrders, chainContracts, setChainContracts }}
+      value={{ activeTicker, activePositionId, setActiveTicker, setActivePositionId, getPrices, getFundamentals, getPortfolio, getOrders, getDepths, setPrices, setFundamentals, setPortfolio, setOrders, setDepths, chainContracts, setChainContracts, depthSymbol, setDepthSymbol }}
     >
       {children}
     </TickerDetailContext.Provider>

@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import type { OpenOrder, PortfolioPosition, PortfolioData, OrdersData } from "@/lib/types";
-import type { PriceData, FundamentalsData } from "@/lib/pricesProtocol";
+import type { PriceData, FundamentalsData, DepthBook } from "@/lib/pricesProtocol";
 import { legPriceKey, resolveSpreadPriceData } from "@/lib/positionUtils";
+import { isIndexSymbol, hasFuturesSupport } from "@/lib/indexSymbols";
 import PriceChart from "./PriceChart";
 import PositionTab from "./ticker-detail/PositionTab";
 import OrderTab from "./ticker-detail/OrderTab";
@@ -114,6 +115,11 @@ export type TickerDetailContentProps = {
   fundamentals: Record<string, FundamentalsData>;
   portfolio: PortfolioData | null;
   orders: OrdersData | null;
+  /** Depth-of-book keyed by symbol, from the same `usePrices` call. */
+  depths?: Record<string, DepthBook>;
+  /** Publish the resolved focused book key upstream so `usePrices` subscribes
+   *  L2 depth for exactly the open subject (null releases the ticket). */
+  onDepthSymbolChange?: (key: string | null) => void;
   theme: "dark" | "light";
 };
 
@@ -126,6 +132,8 @@ export default function TickerDetailContent({
   fundamentals,
   portfolio,
   orders,
+  depths,
+  onDepthSymbolChange,
   theme,
 }: TickerDetailContentProps) {
   const position: PortfolioPosition | null = useMemo(() => {
@@ -145,6 +153,27 @@ export default function TickerDetailContent({
     () => resolveTickerQuoteTelemetry(ticker, position, prices),
     [ticker, position, prices],
   );
+
+  // The focused subject's depth book key: the single-leg option price key when
+  // present, else the ticker itself. Published upstream so `usePrices` opens
+  // the one scarce depth ticket for exactly this subject.
+  const bookKey = chartPriceKey ?? ticker;
+  const bookDepth = depths?.[bookKey] ?? null;
+
+  // Resolve instrument kind for the depth panel. depth.kind wins when the relay
+  // has classified it; else an index with futures support is a future (e.g.
+  // VIX); else a single-leg non-stock position is an option; else a stock.
+  const bookKind: "stock" | "option" | "future" = bookDepth?.kind
+    ?? (isIndexSymbol(ticker) && hasFuturesSupport(ticker)
+      ? "future"
+      : position && position.structure_type !== "Stock" && position.legs.length === 1
+        ? "option"
+        : "stock");
+
+  useEffect(() => {
+    onDepthSymbolChange?.(bookKey);
+    return () => onDepthSymbolChange?.(null);
+  }, [bookKey, onDepthSymbolChange]);
 
   // After-hours fallback for the quote bar: when the box shows the UNDERLYING
   // (no position, or a stock position) and the live WS feed is dark, source
@@ -220,6 +249,9 @@ export default function TickerDetailContent({
             prices={prices}
             openOrders={tickerOrders}
             tickerPriceData={priceData}
+            depths={depths}
+            bookKey={bookKey}
+            bookKind={bookKind}
             portfolio={portfolio}
           />
         )}
