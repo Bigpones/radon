@@ -279,6 +279,48 @@ const requestIdToSymbol = new Map();
 const snapshotRequests = new Map();
 const fundamentalsStore = new LRUCache(500); // symbol → FundamentalsData (LRU-capped)
 
+/* ─── L2 Depth Channel (flag-gated) ────────────────────────────────────────
+ * Entire feature is gated on RADON_DEPTH_ENABLED. When falsy, NO depth
+ * handlers are registered, NO reqMktDepth tickets are opened, and the relay
+ * behaves byte-for-byte as before. Default OFF.
+ *
+ * Depth budget: IB allows ~3 concurrent reqMktDepth tickets on a baseline
+ * account, so we cap concurrency and LRU-recycle the oldest non-focused
+ * ladder before opening a new one.
+ *
+ * NOTE on the installed `ib` npm lib surface (verified against
+ * node_modules/ib): reqMktDepth(tickerId, contract, numRows) takes NO
+ * isSmartDepth argument, and the wire protocol does not carry smart-depth.
+ * The DepthBook still emits isSmartDepth (true equity/option, false futures)
+ * to match the web type, but it is a derived label here, not a request flag.
+ * updateMktDepth emits (id, position, operation, side, price, size) with NO
+ * marketMaker (futures / single-venue); updateMktDepthL2 emits
+ * (id, position, marketMaker, operation, side, price, size) (equity/SMART).
+ *
+ * REALTIME TRADEOFF (Phase 1): depth + tick-by-tick require realtime market
+ * data (type 1), but the main relay connection requests delayed-frozen
+ * (type 4) at the ib "connected" handler BY DESIGN so closed-market L1
+ * queries return last known prices. reqMarketDataType is per-connection /
+ * global, so when depth is enabled we flip the shared connection to type 1.
+ * This makes the watchlist L1 realtime too while depth is on. The production
+ * follow-up is a DEDICATED realtime depth IB client (its own clientId in the
+ * 10-19 relay range) that owns all reqMktDepth tickets so the watchlist L1
+ * can stay delayed-frozen. That second connection is intentionally NOT built
+ * in this phase to keep the change surgical.
+ */
+const DEPTH_ENABLED = Boolean(process.env.RADON_DEPTH_ENABLED && process.env.RADON_DEPTH_ENABLED !== "0" && process.env.RADON_DEPTH_ENABLED !== "false");
+const MAX_CONCURRENT_DEPTH = 3;
+const DEPTH_NUM_ROWS_EQUITY = 5;
+const DEPTH_NUM_ROWS_FUTURES = 10;
+// Symbols treated as futures for depth purposes (single-venue native depth).
+const DEPTH_FUTURES_SYMBOLS = new Set(["ES", "NQ", "RTY", "YM", "CL", "GC", "ZB", "ZN", "VX"]);
+// key → { depthTickerId, contract, kind, isFutures, ladders:{bid:Map,ask:Map}, focusedAt }
+const symbolDepthStates = new Map();
+const depthRequestIdToSymbol = new Map(); // depthTickerId → key
+// Per-client depth buffer: Map<client, Map<symbol, DepthBook>>
+const clientDepthBuffers = new Map();
+const depthSubscribers = new Map(); // key → Set<client>
+
 /* ─── Symbol Search Cache ─────────────────────────────────────────────── */
 const SEARCH_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
 const SEARCH_CACHE_MAX = 200;
@@ -455,9 +497,30 @@ function flushBatches() {
   }
 }
 
+function bufferDepthForClient(client, symbol, book) {
+  let buf = clientDepthBuffers.get(client);
+  if (!buf) {
+    buf = new Map();
+    clientDepthBuffers.set(client, buf);
+  }
+  buf.set(symbol, book);
+}
+
+function flushDepthBatches() {
+  for (const [client, buf] of clientDepthBuffers) {
+    if (buf.size === 0) continue;
+    const updates = Object.fromEntries(buf);
+    buf.clear();
+    sendMessage(client, { type: "depth-batch", updates });
+  }
+}
+
 function startBatchFlush() {
   if (batchFlushTimer) return;
-  batchFlushTimer = setInterval(flushBatches, BATCH_INTERVAL_MS);
+  batchFlushTimer = setInterval(() => {
+    flushBatches();
+    if (DEPTH_ENABLED) flushDepthBatches();
+  }, BATCH_INTERVAL_MS);
 }
 
 function stopBatchFlush() {
@@ -469,6 +532,7 @@ function stopBatchFlush() {
 
 function removeBatchBuffer(client) {
   clientBatchBuffers.delete(client);
+  clientDepthBuffers.delete(client);
 }
 
 function sendMessage(client, payload) {
@@ -603,6 +667,196 @@ function cleanupSymbolStateForReconnect() {
   }
 }
 
+/* ─── L2 Depth lifecycle + ladder maintenance ──────────────────────────────
+ * All functions in this block are no-ops on the request side unless
+ * DEPTH_ENABLED; callers also guard, but the cap/LRU logic lives here.
+ */
+
+function depthFeedLabel(kind, isFutures) {
+  if (isFutures) return "NATIVE DEPTH";
+  if (kind === "option") return "OPRA BBO";
+  return "SMART DEPTH";
+}
+
+function activeDepthCount() {
+  let n = 0;
+  for (const state of symbolDepthStates.values()) {
+    if (state.depthTickerId != null) n += 1;
+  }
+  return n;
+}
+
+function emitDepthUnavailable(symbol, reason, code) {
+  const subscribers = depthSubscribers.get(symbol);
+  const payload = { type: "depth-unavailable", symbol, reason };
+  if (code != null) payload.code = code;
+  if (subscribers) {
+    for (const client of subscribers) sendMessage(client, payload);
+  }
+}
+
+function stopDepthSubscription(key, { keepState = false } = {}) {
+  const state = symbolDepthStates.get(key);
+  if (!state) return;
+  if (state.depthTickerId != null) {
+    try {
+      ib.cancelMktDepth(state.depthTickerId);
+    } catch {
+      // Ignore.
+    }
+    depthRequestIdToSymbol.delete(state.depthTickerId);
+    state.depthTickerId = null;
+  }
+  if (!keepState) symbolDepthStates.delete(key);
+}
+
+// Cancel the oldest non-focused depth ticket to stay within the budget.
+function evictOldestDepth(exceptKey) {
+  let oldestKey = null;
+  let oldestAt = Infinity;
+  for (const [key, state] of symbolDepthStates) {
+    if (key === exceptKey || state.depthTickerId == null) continue;
+    if (state.focusedAt < oldestAt) {
+      oldestAt = state.focusedAt;
+      oldestKey = key;
+    }
+  }
+  if (oldestKey != null) {
+    stopDepthSubscription(oldestKey);
+    emitDepthUnavailable(oldestKey, "recycled");
+  }
+}
+
+function startDepthSubscription(key, contract, { kind, isFutures }) {
+  if (!DEPTH_ENABLED || !ibConnected) return;
+
+  let state = symbolDepthStates.get(key);
+  if (!state) {
+    state = { depthTickerId: null, contract, kind, isFutures, ladders: { bid: new Map(), ask: new Map() }, focusedAt: Date.now() };
+    symbolDepthStates.set(key, state);
+  } else {
+    state.contract = contract;
+    state.kind = kind;
+    state.isFutures = isFutures;
+    state.focusedAt = Date.now();
+  }
+
+  if (state.depthTickerId != null) return; // already streaming
+
+  // Cap-check: cancel the oldest non-focused ticket before exceeding the budget.
+  while (activeDepthCount() >= MAX_CONCURRENT_DEPTH) {
+    const before = activeDepthCount();
+    evictOldestDepth(key);
+    if (activeDepthCount() >= before) break; // nothing evictable — avoid spin
+  }
+
+  const numRows = isFutures ? DEPTH_NUM_ROWS_FUTURES : DEPTH_NUM_ROWS_EQUITY;
+  const depthTickerId = nextRequestId += 1;
+  try {
+    // Installed `ib` lib: reqMktDepth(tickerId, contract, numRows) — no
+    // isSmartDepth wire field (see DEPTH note above). isSmartDepth is carried
+    // only in the emitted DepthBook for web-type parity.
+    ib.reqMktDepth(depthTickerId, contract, numRows);
+    state.depthTickerId = depthTickerId;
+    state.ladders.bid.clear();
+    state.ladders.ask.clear();
+    depthRequestIdToSymbol.set(depthTickerId, key);
+    verbose(`depth subscribe ${key} kind=${kind} rows=${numRows} ticket=${depthTickerId}`);
+  } catch (error) {
+    console.error(`Failed to subscribe depth ${key}:`, error);
+  }
+}
+
+function applyDepthDelta(key, position, marketMaker, operation, side, price, size) {
+  const state = symbolDepthStates.get(key);
+  if (!state) return;
+  const ladder = side === 1 ? state.ladders.bid : state.ladders.ask;
+  if (operation === 2) {
+    ladder.delete(position);
+  } else {
+    // 0 insert / 1 update — same write semantics keyed by position.
+    ladder.set(position, { price, size, marketMaker: marketMaker || null });
+  }
+  hydrateAndBroadcastDepth(key);
+}
+
+function serializeLadder(ladder, isFutures) {
+  const rows = [...ladder.entries()].sort((a, b) => a[0] - b[0]);
+  return rows.map(([, lvl]) => {
+    // Equity/option (L2): the venue/MPID code arrives as marketMaker → expose
+    // it as exchange (marketMaker always null per the web type). Futures
+    // (single-venue): no attribution, both null.
+    const exchange = isFutures ? null : (lvl.marketMaker || null);
+    return { price: lvl.price, size: lvl.size, marketMaker: null, exchange };
+  });
+}
+
+function hydrateAndBroadcastDepth(key) {
+  const state = symbolDepthStates.get(key);
+  if (!state) return;
+  const subscribers = depthSubscribers.get(key);
+  if (!subscribers || subscribers.size === 0) return;
+
+  const book = {
+    symbol: key,
+    kind: state.kind,
+    bid: serializeLadder(state.ladders.bid, state.isFutures),
+    ask: serializeLadder(state.ladders.ask, state.isFutures),
+    isSmartDepth: !state.isFutures,
+    feed: depthFeedLabel(state.kind, state.isFutures),
+    entitled: true,
+    timestamp: nowIso(),
+  };
+  for (const client of subscribers) {
+    bufferDepthForClient(client, key, book);
+  }
+}
+
+function subscribeClientToDepth(client, key) {
+  let subscribers = depthSubscribers.get(key);
+  if (!subscribers) {
+    subscribers = new Set();
+    depthSubscribers.set(key, subscribers);
+  }
+  subscribers.add(client);
+}
+
+function unsubscribeClientFromDepth(client, key) {
+  const subscribers = depthSubscribers.get(key);
+  if (!subscribers) return;
+  subscribers.delete(client);
+  if (subscribers.size === 0) {
+    depthSubscribers.delete(key);
+    stopDepthSubscription(key);
+  }
+}
+
+function cleanupDepthForReconnect() {
+  for (const [key, state] of symbolDepthStates) {
+    if (state.depthTickerId != null) {
+      try {
+        ib.cancelMktDepth(state.depthTickerId);
+      } catch {
+        // Ignore.
+      }
+      depthRequestIdToSymbol.delete(state.depthTickerId);
+      state.depthTickerId = null;
+    }
+    state.ladders.bid.clear();
+    state.ladders.ask.clear();
+  }
+}
+
+// Restore the focused depth ticket(s) after a reconnect.
+function restoreDepthSubscriptions() {
+  if (!DEPTH_ENABLED) return;
+  for (const key of depthSubscribers.keys()) {
+    const state = symbolDepthStates.get(key);
+    if (!state || !state.contract) continue;
+    startDepthSubscription(key, state.contract, { kind: state.kind, isFutures: state.isFutures });
+  }
+}
+
 function subscribeClientToSymbol(client, symbol) {
   let subscribers = symbolSubscribers.get(symbol);
   if (!subscribers) {
@@ -645,6 +899,11 @@ function unsubscribeClientFromSymbol(client, symbol) {
 function disconnectClient(client) {
   removeBatchBuffer(client);
   clientLastPong.delete(client);
+  if (DEPTH_ENABLED) {
+    for (const key of [...depthSubscribers.keys()]) {
+      unsubscribeClientFromDepth(client, key);
+    }
+  }
   const clientSet = clientSymbols.get(client);
   if (!clientSet) {
     return;
@@ -905,7 +1164,51 @@ function restoreSubscriptions() {
   }
 }
 
+/* Resolve the IB contract + instrument kind for a single depth subject from
+ * the raw client payload. Option → has expiry/strike; future → symbol in the
+ * futures set; else stock. Returns null when the payload is unusable. */
+function resolveDepthSubject(payload) {
+  const rawSymbol = typeof payload.symbol === "string" ? payload.symbol.trim().toUpperCase() : null;
+  if (!rawSymbol) return null;
+
+  const hasOptionFields = typeof payload.expiry === "string" && typeof payload.strike === "number" && (payload.right === "C" || payload.right === "P");
+  if (hasOptionFields) {
+    const c = { symbol: rawSymbol, expiry: payload.expiry.trim(), strike: payload.strike, right: payload.right };
+    return { key: optionKey(c), contract: ib.contract.option(c.symbol, c.expiry, c.strike, c.right), kind: "option", isFutures: false };
+  }
+
+  const isFuture = DEPTH_FUTURES_SYMBOLS.has(rawSymbol) || payload.instrument === "future" || payload.secType === "FUT";
+  if (isFuture) {
+    const expiry = typeof payload.expiry === "string" ? payload.expiry.trim() : "";
+    const exchange = typeof payload.exchange === "string" ? payload.exchange.trim().toUpperCase() : undefined;
+    // No async qualification in the relay — build it and let IB reject (200).
+    return { key: rawSymbol, contract: ib.contract.future(rawSymbol, expiry, "USD", exchange), kind: "future", isFutures: true };
+  }
+
+  return { key: rawSymbol, contract: ib.contract.stock(rawSymbol, "SMART", "USD"), kind: "stock", isFutures: false };
+}
+
 async function handleClientMessage(client, data) {
+  // Depth actions carry a single `symbol` (+ instrument fields), distinct from
+  // the array subscribe. Route them off the raw payload before normalization.
+  if (DEPTH_ENABLED && data && typeof data === "object" && typeof data.action === "string") {
+    const depthAction = data.action.trim().toLowerCase();
+    if (depthAction === "subscribe-depth" || depthAction === "unsubscribe-depth") {
+      const subject = resolveDepthSubject(data);
+      if (!subject) {
+        sendMessage(client, { type: "error", message: "Invalid depth subscription" });
+        return;
+      }
+      if (depthAction === "subscribe-depth") {
+        subscribeClientToDepth(client, subject.key);
+        startDepthSubscription(subject.key, subject.contract, { kind: subject.kind, isFutures: subject.isFutures });
+      } else {
+        unsubscribeClientFromDepth(client, subject.key);
+      }
+      return;
+    }
+  }
+
   const message = parseActionMessage(data);
   if (!message) {
     sendMessage(client, { type: "error", message: "Invalid JSON" });
@@ -1108,12 +1411,22 @@ function wireIBEvents() {
     ibConnectionIssue = null;
     console.log(`IB connected (clientId ${IB_CLIENT_ID_POOL[activeClientIdIndex]})`);
     reconnectTimer = null;
-    // Request Delayed-Frozen data so closed-market queries return last known prices
-    // Type 4 cascades: Live → Delayed → Frozen → Delayed-Frozen
-    ib.reqMarketDataType(4);
+    if (DEPTH_ENABLED) {
+      // Depth + tick-by-tick require realtime (type 1). reqMarketDataType is
+      // per-connection/global, so enabling depth flips the shared connection
+      // to realtime (the watchlist L1 becomes realtime too). The production
+      // follow-up is a dedicated realtime depth client; see the DEPTH note.
+      ib.reqMarketDataType(1);
+    } else {
+      // Request Delayed-Frozen data so closed-market queries return last known prices
+      // Type 4 cascades: Live → Delayed → Frozen → Delayed-Frozen
+      ib.reqMarketDataType(4);
+    }
     cleanupSymbolStateForReconnect();
+    if (DEPTH_ENABLED) cleanupDepthForReconnect();
     searchCache.clear(); // Invalidate stale search results from IB-down period
     restoreSubscriptions();
+    if (DEPTH_ENABLED) restoreDepthSubscriptions();
     broadcastStatus();
   });
 
@@ -1158,6 +1471,13 @@ function wireIBEvents() {
           state.tickerId = null;
         }
       }
+    } else if (DEPTH_ENABLED && (code === 10089 || /depth.*not (allowed|eligible)/i.test(msg)) && tickerId != null && depthRequestIdToSymbol.has(tickerId)) {
+      // No L2 entitlement — soft, expected. Cancel the ticket and tell the
+      // client; never latch a connection fault.
+      const depthSymbol = depthRequestIdToSymbol.get(tickerId);
+      console.warn(`\x1b[33mIB warning: depth not entitled for ${depthSymbol} (code ${code})\x1b[0m`);
+      stopDepthSubscription(depthSymbol, { keepState: true });
+      emitDepthUnavailable(depthSymbol, "no-entitlement", 10089);
     } else if (/Fundamentals data is not allowed/i.test(msg)) {
       verbose(`fundamentals not allowed for tickerId:${tickerId} — IBIS subscription may be inactive`);
       if (tickerId != null) {
@@ -1257,6 +1577,25 @@ function wireIBEvents() {
 
     verbose(`search "${req.pattern}" → ${results.length} results`);
   });
+
+  if (DEPTH_ENABLED) {
+    // Futures / single-venue depth — no market maker (arg order: id, position,
+    // operation, side, price, size in the installed `ib` lib).
+    ib.on("updateMktDepth", (id, position, operation, side, price, size) => {
+      const key = depthRequestIdToSymbol.get(id);
+      if (!key) return;
+      lastTickTimestamp = Date.now();
+      applyDepthDelta(key, position, null, operation, side, price, size);
+    });
+
+    // Equity / SMART L2 — marketMaker = exchange/MPID code.
+    ib.on("updateMktDepthL2", (id, position, marketMaker, operation, side, price, size) => {
+      const key = depthRequestIdToSymbol.get(id);
+      if (!key) return;
+      lastTickTimestamp = Date.now();
+      applyDepthDelta(key, position, marketMaker, operation, side, price, size);
+    });
+  }
 }
 
 // Wire events on initial instance
