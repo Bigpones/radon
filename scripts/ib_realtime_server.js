@@ -342,7 +342,7 @@ const fundamentalsStore = new LRUCache(500); // symbol → FundamentalsData (LRU
  */
 const DEPTH_ENABLED = Boolean(process.env.RADON_DEPTH_ENABLED && process.env.RADON_DEPTH_ENABLED !== "0" && process.env.RADON_DEPTH_ENABLED !== "false");
 const MAX_CONCURRENT_DEPTH = 3;
-const DEPTH_NUM_ROWS_EQUITY = 5;
+const DEPTH_NUM_ROWS_EQUITY = 10;
 const DEPTH_NUM_ROWS_FUTURES = 10;
 // Symbols treated as futures for depth purposes (single-venue native depth).
 const DEPTH_FUTURES_SYMBOLS = new Set(["ES", "NQ", "RTY", "YM", "CL", "NG", "GC", "SI", "HG", "ZB", "ZN", "ZC", "ZS", "VX"]);
