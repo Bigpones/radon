@@ -5821,19 +5821,27 @@ tr {
 .book-body-grid {
   display: grid;
   grid-template-columns: 1.35fr 1fr;
-  /* Both cells share the row height so the tape never overflows past the
-     montage/ladder; the tape scrolls internally instead of growing the panel. */
+  /* The single auto row tracks the MONTAGE/LADDER column only — the meaningful
+     content that should set the panel height. The tape column (.book-tape-cell)
+     takes its own content out of flow (the tape is absolutely positioned to
+     fill it), so it contributes 0 to the row's intrinsic height and never grows
+     the panel past the montage. align-items: stretch then makes the tape cell
+     fill that same height; the tape's own rows scroll internally. */
   align-items: stretch;
   transition: grid-template-columns 320ms cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 .book-body-grid.tape-hidden { grid-template-columns: 1fr 0fr; }
 .book-montage { border-right: 1px solid var(--line-grid); transition: border-color 200ms ease; min-width: 0; }
 .book-body-grid.tape-hidden .book-montage { border-right-color: transparent; }
+/* Positioning context for the absolutely-filled tape. Sized by the montage row
+   via align-items: stretch; its out-of-flow child never feeds the row height. */
+.book-tape-cell { position: relative; min-width: 0; overflow: hidden; }
 .book-tape {
-  min-width: 0;
-  /* Flex column so the colhead stays pinned and only the rows scroll. min-height:0
-     lets the row region shrink within the grid track instead of forcing the
-     panel taller. */
+  /* Absolutely fills .book-tape-cell, so the tape is out of flow and the
+     montage/ladder governs the row height — the two columns stay flush whether
+     the left pane is the montage or the (taller) futures ladder. */
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;

@@ -73,7 +73,7 @@ function resolveTickerQuoteTelemetry(
   ticker: string,
   position: PortfolioPosition | null,
   prices: Record<string, PriceData>,
-): { priceData: PriceData | null; label?: string; priceKey?: string } {
+): { priceData: PriceData | null; label?: string; priceKey?: string; isSpreadNet?: boolean } {
   if (!position || position.structure_type === "Stock") {
     return { priceData: prices[ticker] ?? null };
   }
@@ -98,10 +98,13 @@ function resolveTickerQuoteTelemetry(
     }
   }
 
-  // Multi-leg: compute net spread price from per-leg WS prices
+  // Multi-leg: compute net spread price from per-leg WS prices. The resolved
+  // value is a SPREAD NET (signed: credit negative, debit positive per the
+  // Sign Convention) — not a raw share/contract price — so flag it for the
+  // chart and quote bar to label honestly.
   const spreadData = resolveSpreadPriceData(ticker, position, prices);
   if (spreadData) {
-    return { priceData: spreadData, label: `${ticker} ${position.structure}` };
+    return { priceData: spreadData, label: `${ticker} ${position.structure}`, isSpreadNet: true };
   }
 
   // Fallback to underlying if leg prices unavailable
@@ -154,7 +157,7 @@ export default function TickerDetailContent({
     return orders.open_orders.filter((o) => o.contract.symbol === ticker);
   }, [ticker, orders]);
 
-  const { priceData, label: priceLabel, priceKey: chartPriceKey } = useMemo(
+  const { priceData, label: priceLabel, priceKey: chartPriceKey, isSpreadNet } = useMemo(
     () => resolveTickerQuoteTelemetry(ticker, position, prices),
     [ticker, position, prices],
   );
@@ -250,6 +253,7 @@ export default function TickerDetailContent({
             prices={prices}
             priceKey={chartPriceKey}
             priceData={priceData}
+            valueKind={isSpreadNet ? "spread-net" : "price"}
             theme={theme}
           />
         </div>

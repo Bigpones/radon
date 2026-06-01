@@ -131,7 +131,9 @@ export function OrderBook({
       </div>
       <div className={`book-body-grid${tapeVisible ? "" : " tape-hidden"}`}>
         <div className="book-montage">{left}</div>
-        <TimeAndSales trades={trades} visible={tapeVisible} />
+        <div className="book-tape-cell">
+          <TimeAndSales trades={trades} visible={tapeVisible} />
+        </div>
       </div>
     </div>
   );

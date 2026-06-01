@@ -17,11 +17,34 @@ interface PriceChartProps {
    *  position so the chart can plot IB's calculated mark instead of the
    *  default-base mock walk. */
   priceData?: PriceData | null;
+  /** What the charted value represents.
+   *  - `"price"` (default): a raw share/contract price level. Badge reads
+   *    MIDPRICE/MARK, value formats as `$X.XX`, color tracks value vs PREV CLOSE.
+   *  - `"spread-net"`: a multi-leg spread NET (signed: credit negative, debit
+   *    positive per the Sign Convention). The net has no meaningful close
+   *    baseline, so the badge reads NET CREDIT/NET DEBIT, the value formats as
+   *    a credit/debit (sign preserved), and the pill stays brand-neutral
+   *    instead of implying profit-green. */
+  valueKind?: "price" | "spread-net";
   /** Theme forwarded from the shell — defaults to 'dark' to preserve existing behavior */
   theme?: "dark" | "light";
 }
 
-export default function PriceChart({ ticker, prices, priceKey, priceData: priceDataOverride, theme = "dark" }: PriceChartProps) {
+function formatSpreadNet(v: number): string {
+  const magnitude = `$${Math.abs(v).toFixed(2)}`;
+  if (v < 0) return `(${magnitude}) cr`;
+  return `${magnitude} db`;
+}
+
+export default function PriceChart({
+  ticker,
+  prices,
+  priceKey,
+  priceData: priceDataOverride,
+  valueKind = "price",
+  theme = "dark",
+}: PriceChartProps) {
+  const isSpreadNet = valueKind === "spread-net";
   const chartKey = priceKey ?? ticker;
   // If the caller pre-resolved priceData (e.g. merged calculated mark in),
   // expose it under `chartKey` so usePriceHistory sees the same value the
@@ -37,16 +60,25 @@ export default function PriceChart({ ticker, prices, priceKey, priceData: priceD
   const closePrice = priceData?.close ?? null;
   const positiveColor = useMemo(() => resolveChartSeriesColor("primary"), []);
   const negativeColor = useMemo(() => resolveChartSeriesColor("fault"), []);
+  const neutralColor = useMemo(() => resolveChartSeriesColor("neutral"), []);
 
+  // A spread net has no meaningful close baseline to compare against, and its
+  // sign is a credit/debit convention — not profit/loss. Color it neutrally so
+  // a negative net (a legitimate credit) doesn't read as a fault/loss.
   const color = useMemo(() => {
+    if (isSpreadNet) return neutralColor;
     if (!closePrice || !value) return positiveColor;
     return value >= closePrice ? positiveColor : negativeColor;
-  }, [value, closePrice, positiveColor, negativeColor]);
+  }, [isSpreadNet, value, closePrice, positiveColor, negativeColor, neutralColor]);
 
   const referenceLine = useMemo(() => {
+    if (isSpreadNet) return undefined;
     if (closePrice == null || closePrice <= 0) return undefined;
     return { value: closePrice, label: "PREV CLOSE" };
-  }, [closePrice]);
+  }, [isSpreadNet, closePrice]);
+
+  const spreadNetBadgeLabel =
+    value != null && value < 0 ? "NET CREDIT" : "NET DEBIT";
 
   return (
     <ChartPanel
@@ -58,15 +90,26 @@ export default function PriceChart({ ticker, prices, priceKey, priceData: priceD
       dataTestId="price-chart-panel"
     >
       <div className="price-chart-container">
-        {isCalculated && (
-          <div className="price-chart-mid-badge" aria-label="Chart value is IB's calculated mark (no live trade)">
-            MARK
+        {isSpreadNet ? (
+          <div
+            className="price-chart-mid-badge"
+            aria-label="Chart value is the multi-leg spread net (credit negative, debit positive)"
+          >
+            {spreadNetBadgeLabel}
           </div>
-        )}
-        {!isCalculated && isMid && (
-          <div className="price-chart-mid-badge" aria-label="Chart values are mid price (bid+ask)/2">
-            MIDPRICE
-          </div>
+        ) : (
+          <>
+            {isCalculated && (
+              <div className="price-chart-mid-badge" aria-label="Chart value is IB's calculated mark (no live trade)">
+                MARK
+              </div>
+            )}
+            {!isCalculated && isMid && (
+              <div className="price-chart-mid-badge" aria-label="Chart values are mid price (bid+ask)/2">
+                MIDPRICE
+              </div>
+            )}
+          </>
         )}
         <Liveline
           data={data}
@@ -77,7 +120,7 @@ export default function PriceChart({ ticker, prices, priceKey, priceData: priceD
           badge={true}
           scrub={true}
           fill={true}
-          formatValue={(v: number) => `$${v.toFixed(2)}`}
+          formatValue={(v: number) => (isSpreadNet ? formatSpreadNet(v) : `$${v.toFixed(2)}`)}
           referenceLine={referenceLine}
           loading={loading}
           padding={{ top: 16, right: 80, bottom: 28, left: 12 }}
