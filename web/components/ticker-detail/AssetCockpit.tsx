@@ -110,21 +110,25 @@ export default function AssetCockpit({
             </div>
           )}
         </div>
-
-        {/* Deck lives INSIDE .act-region (position:relative) so it overlays the
-            act column EXACTLY via position:absolute inset:0 — never the book or
-            the rail, regardless of viewport width. */}
-        <AssetDeck
-          activeDeck={activeDeck}
-          onDeckChange={onDeckChange}
-          ticker={ticker}
-          prices={prices}
-          fundamentals={fundamentals}
-          portfolio={portfolio}
-          position={position}
-          quotePriceData={quotePriceData}
-        />
       </div>
+
+      {/* Deck is a .cockpit grid child (sibling of book/act/rail). Narrow decks
+          (position / news / ratings / info) pin to the `act` grid cell and overlay
+          the act column exactly. WIDE decks — the options chain, which has ~10
+          columns and overflows a 36% column — span the book + act cells so the
+          full chain table fits without horizontal scroll. The rail (column 3)
+          always stays visible. Grid children fill their cell, so no transform /
+          inset math is needed; the reveal is opacity-only. */}
+      <AssetDeck
+        activeDeck={activeDeck}
+        onDeckChange={onDeckChange}
+        ticker={ticker}
+        prices={prices}
+        fundamentals={fundamentals}
+        portfolio={portfolio}
+        position={position}
+        quotePriceData={quotePriceData}
+      />
 
       <GlyphRail activeDeck={activeDeck} onDeckChange={onDeckChange} />
     </div>

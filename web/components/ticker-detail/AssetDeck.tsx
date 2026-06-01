@@ -24,6 +24,14 @@ const DECK_TITLE: Record<DeckKey, string> = {
 /** Keys that open a deck via single-keystroke. */
 const OPEN_KEYS = new Set<string>(["c", "p", "n", "r", "s", "i", ":"]);
 
+/**
+ * Decks whose content is too wide for the 36% act column and so fly out across
+ * the book + act cells (rail stays visible). The options chain has ~10 columns
+ * (Δ / IV / Implied / Vol / Bid / Mid / Ask / Last / Strike, both sides) and was
+ * truncating + forcing a horizontal scroll when pinned to the act column.
+ */
+const WIDE_DECKS = new Set<DeckKey>(["c"]);
+
 function isTypingTarget(el: Element | null): boolean {
   if (!el) return false;
   const tag = el.tagName;
@@ -77,10 +85,14 @@ export default function AssetDeck({
   }, [activeDeck, onDeckChange]);
 
   const open = activeDeck != null;
+  const wide = activeDeck != null && WIDE_DECKS.has(activeDeck);
   const title = activeDeck ? DECK_TITLE[activeDeck] : "";
 
   return (
-    <div className={`asset-deck ${open ? "open" : ""}`} aria-hidden={!open}>
+    <div
+      className={`asset-deck ${open ? "open" : ""} ${wide ? "asset-deck--wide" : ""}`}
+      aria-hidden={!open}
+    >
       <div className="asset-deck-hd">
         <span>{title}</span>
         <button type="button" className="asset-deck-x" onClick={() => onDeckChange(null)}>
