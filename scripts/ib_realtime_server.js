@@ -1326,6 +1326,9 @@ const fundamentalsPending = new Set(); // symbols currently being fetched
 function requestFundamentals(symbol, ibContract) {
   // Only for stock symbols, not options
   if (symbol.includes("_")) return;
+  // Not for futures roots — reqFundamentalData(ReportSnapshot) is equities-only;
+  // a FUT contract returns nothing useful and just logs noise.
+  if (ibContract && ibContract.secType === SecType.FUT) return;
   // Already have data or request in-flight
   if (fundamentalsStore.has(symbol) || fundamentalsPending.has(symbol)) return;
   if (!ibConnected) return;
@@ -1487,7 +1490,18 @@ async function handleClientMessage(client, data) {
       // Stock subscriptions (backward compatible)
       for (const symbol of symbols) {
         subscribeClientToSymbol(client, symbol);
-        const ibContract = stockContract(symbol, "SMART", "USD");
+        // A bare futures ROOT (e.g. "ES") must subscribe L1 against the resolved
+        // front-month FUTURE, not a stock — otherwise IB resolves the equity
+        // ticker of the same name (ES = Eversource Energy ~$67) and the quote bar
+        // shows the wrong instrument while the depth ladder shows the future.
+        // Gated on DEPTH_ENABLED (front-month resolution lives in the depth path).
+        let ibContract;
+        if (DEPTH_ENABLED && DEPTH_FUTURES_SYMBOLS.has(symbol)) {
+          const resolvedFut = await resolveFuturesFrontMonth(symbol);
+          ibContract = resolvedFut || stockContract(symbol, "SMART", "USD");
+        } else {
+          ibContract = stockContract(symbol, "SMART", "USD");
+        }
         ensureSymbolState(symbol, ibContract);
         if (ibConnected) {
           startLiveSubscription(symbol, ibContract);

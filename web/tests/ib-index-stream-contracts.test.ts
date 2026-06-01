@@ -13,7 +13,10 @@ describe("ib_realtime_server.js preserves typed contracts for cold-start restore
     expect(source).toContain("function ensureSymbolState");
 
     const stockBlock = source.match(/\/\/ Stock subscriptions[\s\S]*?\/\/ Option contract subscriptions/s)?.[0] ?? "";
-    expect(stockBlock).toContain('const ibContract = stockContract(symbol, "SMART", "USD")');
+    // Stock symbols seed a stock contract; a futures ROOT seeds the resolved
+    // front-month future for L1 (so the quote bar matches the depth ladder).
+    expect(stockBlock).toContain('stockContract(symbol, "SMART", "USD")');
+    expect(stockBlock).toContain("resolveFuturesFrontMonth(symbol)");
     expect(stockBlock).toContain("ensureSymbolState(symbol, ibContract);");
 
     const optionBlock = source.match(/\/\/ Option contract subscriptions[\s\S]*?\/\/ Index subscriptions/s)?.[0] ?? "";
