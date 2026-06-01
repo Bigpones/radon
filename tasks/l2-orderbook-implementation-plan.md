@@ -22,14 +22,26 @@ bars, best-quote emphasis, 10 rows), values ticking realtime, no error banner.
   `usePrices` depth slice, `TickerDetailContext` threading (commit e50f076).
 - Full web suite green (2794).
 
-**LadderDOM (futures) NOT yet live-exercisable** — the UI only routes `VIX` to
-futures (`FUTURES_SUPPORTED_SYMBOLS={"VIX"}`), and VIX is an index with no
-`reqMktDepth`, so it correctly degrades to the L1 fallback (BID/ASK 0.00, no
-ladder). The relay depth set already includes ES/NQ/etc, but there is **no UI
-route to a tradeable ES contract** — that wiring + the centered ladder live data
-is **Phase 2 (futures click-to-trade)**. Stock montage is the Phase 1 deliverable
-and is done. **Remaining: Phase 2 (route ES/NQ futures → LadderDOM + click-to-trade)
-+ Phase 3 (options BBO + dedicated `Trade[]` tape feed — tape is empty in Phase 1).**
+**Phase 2 SHIPPED + verified live (2026-06-01 RTH, commits d40b164 relay /
+e549491 web).** Futures ladder + Time & Sales tape, still behind
+RADON_DEPTH_ENABLED.
+- Futures: `/ES`, `/NQ`, etc. (web/lib/futuresSymbols.ts FUTURES_ROOTS) route to
+  `<LadderDOM>`. Relay resolves the front month (reqContractDetails → nearest
+  expiry, root→exchange map) and streams `reqMktDepth(10, isSmartDepth=false)`.
+  Verified live: ES → ESM6 (conId 649180678), 10 bid/10 ask, kind:"future",
+  "CME DEPTH", no marketMaker. CME L2 entitlement confirmed live (ES + NQ).
+- Tape: relay opens `reqTickByTickData(AllLast)` alongside depth, 50-print ring,
+  `tape-batch` WS message (oldest-first snapshot); usePrices `tape` slice replaces
+  (not merges) + threads to TimeAndSales, which reverses for newest-at-top + formats
+  the time. Verified live: 50 AAPL prints. Fixes the previously-empty tape panel
+  (BookTab had hardcoded `trades=[]`).
+- Integration-seam bugs caught + fixed at integration: ordering contract mismatch
+  (relay oldest-first vs web's assumed newest-first), snapshot-replace-not-merge
+  (merging duplicated rows every 100ms flush), raw-epoch time rendering.
+
+**Remaining: Phase 3 — options per-exchange BBO montage refinement + any tape/depth
+polish. (Options already get depth via the stock montage path + tape; Phase 3 is the
+dedicated per-exchange BBO treatment + NBBO edge-marking live-verification.)**
 
 ---
 
