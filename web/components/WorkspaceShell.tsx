@@ -193,6 +193,7 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
     prices: rawPrices,
     fundamentals,
     depths,
+    tape,
     connected: wsConnected,
     ibConnected: rawIbConnected,
     ibIssue,
@@ -237,12 +238,13 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
   );
 
   // Sync prices + portfolio into ticker-detail context (refs, no re-renders)
-  const { setActiveTicker, setPrices: setTickerPrices, setFundamentals: setTickerFundamentals, setPortfolio: setTickerPortfolio, setOrders: setTickerOrders, setDepths: setTickerDepths } = tickerDetail;
+  const { setActiveTicker, setPrices: setTickerPrices, setFundamentals: setTickerFundamentals, setPortfolio: setTickerPortfolio, setOrders: setTickerOrders, setDepths: setTickerDepths, setTape: setTickerTape } = tickerDetail;
   useEffect(() => { setTickerPrices(prices); }, [prices, setTickerPrices]);
   useEffect(() => { setTickerFundamentals(fundamentals); }, [fundamentals, setTickerFundamentals]);
   useEffect(() => { setTickerPortfolio(portfolio); }, [portfolio, setTickerPortfolio]);
   useEffect(() => { setTickerOrders(orders); }, [orders, setTickerOrders]);
   useEffect(() => { setTickerDepths(depths); }, [depths, setTickerDepths]);
+  useEffect(() => { setTickerTape(tape); }, [tape, setTickerTape]);
 
   // Sync tickerParam to context
   useEffect(() => {

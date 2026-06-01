@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo } from "react";
 import type { OpenOrder, PortfolioPosition, PortfolioData, OrdersData } from "@/lib/types";
-import type { PriceData, FundamentalsData, DepthBook } from "@/lib/pricesProtocol";
+import type { PriceData, FundamentalsData, DepthBook, Trade } from "@/lib/pricesProtocol";
 import { legPriceKey, resolveSpreadPriceData } from "@/lib/positionUtils";
 import { isIndexSymbol, hasFuturesSupport } from "@/lib/indexSymbols";
+import { isFuturesRoot } from "@/lib/futuresSymbols";
 import PriceChart from "./PriceChart";
 import PositionTab from "./ticker-detail/PositionTab";
 import OrderTab from "./ticker-detail/OrderTab";
@@ -117,6 +118,8 @@ export type TickerDetailContentProps = {
   orders: OrdersData | null;
   /** Depth-of-book keyed by symbol, from the same `usePrices` call. */
   depths?: Record<string, DepthBook>;
+  /** Time & Sales tape keyed by symbol, from the same `usePrices` call. */
+  tape?: Record<string, Trade[]>;
   /** Publish the resolved focused book key upstream so `usePrices` subscribes
    *  L2 depth for exactly the open subject (null releases the ticket). */
   onDepthSymbolChange?: (key: string | null) => void;
@@ -133,6 +136,7 @@ export default function TickerDetailContent({
   portfolio,
   orders,
   depths,
+  tape,
   onDepthSymbolChange,
   theme,
 }: TickerDetailContentProps) {
@@ -161,10 +165,13 @@ export default function TickerDetailContent({
   const bookDepth = depths?.[bookKey] ?? null;
 
   // Resolve instrument kind for the depth panel. depth.kind wins when the relay
-  // has classified it; else an index with futures support is a future (e.g.
-  // VIX); else a single-leg non-stock position is an option; else a stock.
+  // has classified it; else a relay-supported futures root (ES/NQ/...) or an
+  // index with futures support is a future; else a single-leg non-stock
+  // position is an option; else a stock. The static futures-root list is the
+  // pre-depth hint so the page subscribes depth and routes to the ladder before
+  // any DepthBook has arrived; once it does, depth.kind is authoritative.
   const bookKind: "stock" | "option" | "future" = bookDepth?.kind
-    ?? (isIndexSymbol(ticker) && hasFuturesSupport(ticker)
+    ?? (isFuturesRoot(ticker) || (isIndexSymbol(ticker) && hasFuturesSupport(ticker))
       ? "future"
       : position && position.structure_type !== "Stock" && position.legs.length === 1
         ? "option"
@@ -250,6 +257,7 @@ export default function TickerDetailContent({
             openOrders={tickerOrders}
             tickerPriceData={priceData}
             depths={depths}
+            tape={tape}
             bookKey={bookKey}
             bookKind={bookKind}
             portfolio={portfolio}

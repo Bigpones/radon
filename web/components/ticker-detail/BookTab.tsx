@@ -23,6 +23,9 @@ type BookTabProps = {
   /** Depth-of-book keyed by symbol (from `usePrices`). The focused book key
    *  resolves to the L2 panel; absent/unentitled falls back to `<L1OrderBook>`. */
   depths?: Record<string, DepthBook>;
+  /** Time & Sales tape keyed by symbol (from `usePrices`, newest-first). Rides
+   *  the same focused book key as `depths`. */
+  tape?: Record<string, Trade[]>;
   /** Resolved key for the focused subject's depth book (option key for a
    *  single-leg option, else the ticker). */
   bookKey?: string;
@@ -355,6 +358,7 @@ export default function BookTab({
   openOrders,
   tickerPriceData,
   depths,
+  tape,
   bookKey,
   bookKind,
   portfolio = null,
@@ -372,9 +376,10 @@ export default function BookTab({
   const depth = depths?.[resolvedBookKey] ?? null;
   // depth.kind wins; else the kind resolved by the parent; else stock.
   const kind = depth?.kind ?? bookKind ?? "stock";
-  // Phase 1 has no dedicated tape stream; render an empty tape so the toggle +
-  // reflow are exercised. A later `Trade[]` stream seeds this.
-  const trades: Trade[] = [];
+  // Time & Sales rides the same focused book key as depth. Newest-first from
+  // the relay; empty until prints arrive (off-hours / unentitled), which the
+  // TimeAndSales header-only empty state handles.
+  const trades: Trade[] = tape?.[resolvedBookKey] ?? [];
 
   const l1Fallback = (
     <L1OrderBook

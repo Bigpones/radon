@@ -16,13 +16,14 @@ type TickerWorkspaceProps = {
 export default function TickerWorkspace({ ticker, theme }: TickerWorkspaceProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { getPrices, getFundamentals, getPortfolio, getOrders, getDepths, setDepthSymbol } = useTickerDetail();
+  const { getPrices, getFundamentals, getPortfolio, getOrders, getDepths, getTape, setDepthSymbol } = useTickerDetail();
 
   const prices = getPrices();
   const fundamentals = getFundamentals();
   const portfolio = getPortfolio();
   const orders = getOrders();
   const depths = getDepths();
+  const tape = getTape();
 
   // Read tab from URL, validate, default to "company"
   const rawTab = searchParams.get("tab");
@@ -57,6 +58,7 @@ export default function TickerWorkspace({ ticker, theme }: TickerWorkspaceProps)
         portfolio={portfolio}
         orders={orders}
         depths={depths}
+        tape={tape}
         onDepthSymbolChange={setDepthSymbol}
         theme={theme}
       />

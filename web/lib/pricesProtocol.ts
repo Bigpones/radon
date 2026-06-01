@@ -141,6 +141,17 @@ export type WSDepthUnavailableMessage = {
   code?: number;
 };
 
+/**
+ * Time & Sales batch. Rides the SAME `subscribe-depth` as the depth channel
+ * (the relay seeds the tape for the focused depth symbol — no separate client
+ * action). Trades are newest-first within each symbol's array; the hook merges
+ * and bounds to the most recent rows per symbol.
+ */
+export type WSTapeBatchMessage = {
+  type: "tape-batch";
+  updates: Record<string, Trade[]>;
+};
+
 export type WSMessage =
   | WSPriceMessage
   | WSFundamentalsMessage
@@ -154,7 +165,8 @@ export type WSMessage =
   | WSStatusMessage
   | WSDepthMessage
   | WSDepthBatchMessage
-  | WSDepthUnavailableMessage;
+  | WSDepthUnavailableMessage
+  | WSTapeBatchMessage;
 
 /* ─── Option contract types & helpers ─────────────────── */
 

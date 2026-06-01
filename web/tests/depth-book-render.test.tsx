@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render } from "@testing-library/react";
 
 import { OrderBook } from "../components/ticker-detail/OrderBook";
 import { TimeAndSales } from "../components/ticker-detail/TimeAndSales";
+import { isFuturesRoot, FUTURES_ROOTS } from "../lib/futuresSymbols";
 import type { DepthBook, Trade } from "../lib/pricesProtocol";
 
 // next/navigation is pulled in transitively by some sibling components; mock it
@@ -78,10 +79,13 @@ const FUTURE_BOOK: DepthBook = {
   ],
 };
 
+// OLDEST-first, matching the relay ring-buffer snapshot contract. Times are
+// epoch-seconds strings (what reqTickByTickData emits). Oldest -> newest:
+// 152.70 then 152.68 (down) then 152.73 (up).
 const TAPE: Trade[] = [
-  { price: 152.7, size: 1, exchange: "FINY", time: "12:10:29" },
-  { price: 152.68, size: 4, exchange: "FINY", time: "12:10:28" },
-  { price: 152.73, size: 9, exchange: "XNYS", time: "12:10:27" },
+  { price: 152.7, size: 1, exchange: "FINY", time: "1780000027" },
+  { price: 152.68, size: 4, exchange: "FINY", time: "1780000028" },
+  { price: 152.73, size: 9, exchange: "XNYS", time: "1780000029" },
 ];
 
 const L1_FALLBACK = <div data-testid="l1-fallback">L1 FALLBACK</div>;
@@ -178,8 +182,85 @@ describe("Tape tick classification", () => {
     const tones = [...container.querySelectorAll(".book-t-px")].map((el) =>
       el.className.replace("book-t-px", "").trim(),
     );
-    // First print is flat by convention; 152.68 < 152.70 is down; 152.73 > 152.68 is up.
-    expect(tones).toEqual(["flat", "down", "up"]);
+    // Input is oldest-first → classifyTicks yields [flat, down, up]; the tape
+    // renders NEWEST-at-top (reversed), so rows read [up, down, flat].
+    expect(tones).toEqual(["up", "down", "flat"]);
+  });
+});
+
+describe("Futures-root routing → LadderDOM", () => {
+  it("treats the relay-supported futures roots as futures (pre-depth hint)", () => {
+    for (const root of ["ES", "NQ", "RTY", "YM", "CL", "GC", "ZB", "ZN"]) {
+      expect(isFuturesRoot(root)).toBe(true);
+      expect(isFuturesRoot(root.toLowerCase())).toBe(true);
+    }
+    // VIX is reached through the index path (no reqMktDepth) — never a root.
+    expect(isFuturesRoot("VIX")).toBe(false);
+    expect(isFuturesRoot("AAPL")).toBe(false);
+    expect(isFuturesRoot(null)).toBe(false);
+    expect(FUTURES_ROOTS.has("ES")).toBe(true);
+  });
+
+  it("renders the centered ladder (not the montage) when a futures-root book streams", () => {
+    // A futures root resolves kind="future"; with an entitled future DepthBook
+    // the OrderBook dispatches to <LadderDOM>, never the two-sided montage.
+    const { container } = render(
+      <OrderBook
+        symbolLabel="ES"
+        kind="future"
+        depth={{ ...FUTURE_BOOK, symbol: "ES" }}
+        trades={[]}
+        last={5012.5}
+        bid={5012.5}
+        ask={5012.75}
+        l1Fallback={L1_FALLBACK}
+      />,
+    );
+    expect(container.querySelector(".book-ladder")).toBeTruthy();
+    expect(container.querySelector(".book-sides")).toBeNull();
+    expect(container.textContent).toContain("5012.50");
+  });
+});
+
+describe("Time & Sales tape wiring", () => {
+  it("renders one row per trade with tick-test tone classes (newest at top)", () => {
+    const { container } = renderBook(STOCK_BOOK, "stock");
+    const rows = container.querySelectorAll(".book-trow");
+    expect(rows.length).toBe(TAPE.length);
+    const tones = [...container.querySelectorAll(".book-t-px")].map((el) =>
+      el.className.replace("book-t-px", "").trim(),
+    );
+    // Oldest-first input tick-tests to [flat, down, up]; rendered reversed so
+    // the newest print is at the top → [up, down, flat].
+    expect(tones).toEqual(["up", "down", "flat"]);
+    // Sizes + exchanges surface.
+    expect(container.textContent).toContain("FINY");
+  });
+
+  it("shows the column header only when the tape is empty", () => {
+    const { container } = render(<TimeAndSales trades={[]} visible />);
+    // Header is always present.
+    expect(container.querySelector(".book-colhead")).toBeTruthy();
+    expect(container.textContent).toContain("Price");
+    // No trade rows.
+    expect(container.querySelectorAll(".book-trow").length).toBe(0);
+  });
+
+  it("still renders the empty tape inside the OrderBook (no crash, header only)", () => {
+    const { container } = render(
+      <OrderBook
+        symbolLabel="RKLB"
+        kind="stock"
+        depth={STOCK_BOOK}
+        trades={[]}
+        last={152.52}
+        bid={152.52}
+        ask={152.7}
+        l1Fallback={L1_FALLBACK}
+      />,
+    );
+    expect(container.querySelector(".book-colhead")).toBeTruthy();
+    expect(container.querySelectorAll(".book-trow").length).toBe(0);
   });
 });
 

@@ -6,6 +6,7 @@ import {
   type PriceData,
   type FundamentalsData,
   type DepthBook,
+  type Trade,
   type OptionContract,
   type IndexContract,
   normalizeSymbolList,
@@ -54,6 +55,9 @@ export type UsePricesReturn = {
   fundamentals: Record<string, FundamentalsData>;
   /** Depth-of-book (L2) keyed by symbol. Only the focused `depthSymbol` populates. */
   depths: Record<string, DepthBook>;
+  /** Time & Sales tape keyed by symbol (newest-first, bounded). Rides the same
+   *  focused `depthSymbol` as `depths` — only that subject populates. */
+  tape: Record<string, Trade[]>;
   /** Whether the connection is active */
   connected: boolean;
   /** Whether IB is connected on the server */
@@ -80,6 +84,10 @@ function wsLog(...args: unknown[]) {
 const STALENESS_CHECK_INTERVAL_MS = 15_000;
 const STALENESS_THRESHOLD_MS = 60_000;
 
+/** Time & Sales tape is bounded per symbol so a busy print stream can't grow
+ *  unboundedly. Newest rows are kept (the tape renders newest-first). */
+const TAPE_MAX_PER_SYMBOL = 50;
+
 /**
  * React hook for real-time price streaming from IB via WebSocket.
  *
@@ -102,6 +110,7 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
   const [prices, setPrices] = useState<Record<string, PriceData>>({});
   const [fundamentals, setFundamentals] = useState<Record<string, FundamentalsData>>({});
   const [depths, setDepths] = useState<Record<string, DepthBook>>({});
+  const [tape, setTape] = useState<Record<string, Trade[]>>({});
   const [connected, setConnected] = useState(false);
   const [ibConnected, setIbConnected] = useState(false);
   const [ibIssue, setIbIssue] = useState<string | null>(null);
@@ -344,6 +353,14 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
         delete next[previous];
         return next;
       });
+      // The tape rides the same focused depth symbol — evict it together so a
+      // focus switch never leaves a stale tape behind.
+      setTape((prev) => {
+        if (!(previous in prev)) return prev;
+        const next = { ...prev };
+        delete next[previous];
+        return next;
+      });
     }
 
     if (desired) {
@@ -483,6 +500,23 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
           case "depth-batch": {
             const { updates } = message;
             setDepths((prev) => ({ ...prev, ...updates }));
+            break;
+          }
+          case "tape-batch": {
+            // The relay sends each symbol's FULL ring-buffer snapshot
+            // (oldest-first, already bounded), not a delta — so REPLACE, never
+            // merge (merging would re-append the whole snapshot every flush and
+            // duplicate rows). Keep oldest-first: classifyTicks walks the array
+            // front-to-back treating each prior element as the chronologically
+            // earlier print, and TimeAndSales reverses for newest-at-top display.
+            const { updates } = message;
+            setTape((prev) => {
+              const next = { ...prev };
+              for (const [sym, snapshot] of Object.entries(updates)) {
+                next[sym] = snapshot.slice(-TAPE_MAX_PER_SYMBOL);
+              }
+              return next;
+            });
             break;
           }
           case "depth-unavailable": {
@@ -734,6 +768,7 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
     prices,
     fundamentals,
     depths,
+    tape,
     connected,
     ibConnected,
     ibIssue,
