@@ -36,12 +36,15 @@ export function TimeAndSales({ trades, visible }: { trades: Trade[]; visible: bo
         <span className="r">Mkt</span>
         <span className="r">Time</span>
       </div>
-      <div>
+      <div className="book-tape-rows">
         {rows.map((trade, i) => (
+          // No reveal animation on tape rows: prints stream in realtime and a
+          // per-row entry animation makes the whole tape flash/repaint on every
+          // tick. Key by print content (+ index to disambiguate dup prints) so
+          // React reconciles the list instead of remounting it.
           <div
-            className="book-trow book-reveal"
-            style={{ ["--i" as string]: i }}
-            key={`${trade.time}-${i}`}
+            className="book-trow"
+            key={`${trade.time}-${trade.price}-${trade.size}-${trade.exchange ?? ""}-${i}`}
           >
             <span className={`book-t-px ${trade.tone}`}>{fmtDepthPrice(trade.price)}</span>
             <span className="book-t-sz">{trade.size}</span>

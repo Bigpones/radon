@@ -91,16 +91,21 @@ const TAPE: Trade[] = [
 
 const L1_FALLBACK = <div data-testid="l1-fallback">L1 FALLBACK</div>;
 
-function renderBook(book: DepthBook | null, kind: DepthBook["kind"]) {
+function renderBook(
+  book: DepthBook | null,
+  kind: DepthBook["kind"],
+  l1?: { bid: number | null; ask: number | null; last: number | null; lastLabel?: string },
+) {
   return render(
     <OrderBook
       symbolLabel={book?.symbol ?? "RKLB"}
       kind={kind}
       depth={book}
       trades={TAPE}
-      last={book?.bid[0]?.price ?? null}
-      bid={book?.bid[0]?.price ?? null}
-      ask={book?.ask[0]?.price ?? null}
+      last={l1 ? l1.last : (book?.bid[0]?.price ?? null)}
+      lastLabel={l1?.lastLabel}
+      bid={l1 ? l1.bid : (book?.bid[0]?.price ?? null)}
+      ask={l1 ? l1.ask : (book?.ask[0]?.price ?? null)}
       l1Fallback={L1_FALLBACK}
     />,
   );
@@ -171,6 +176,75 @@ describe("OrderBook render — all three kinds", () => {
     expect(container.querySelector(".book-ladder-spread")).toBeTruthy();
     expect(container.querySelector(".book-sides")).toBeNull();
     expect(container.textContent).toContain("5012.50");
+  });
+});
+
+describe("Window head — derives from the depth book, not the L1 feed (BUG 1)", () => {
+  it("shows the depth bid/ask/MID even when the passed-in L1 scalars are corrupt", () => {
+    // MU corruption signature: negative MARK / BID on the L1 feed.
+    const { container } = renderBook(STOCK_BOOK, "stock", {
+      bid: -80,
+      ask: -79,
+      last: -80,
+      lastLabel: "MARK",
+    });
+    const headText = container.querySelector(".book-window-head")?.textContent ?? "";
+    // Best bid (max) = 152.52, best ask (min) = 152.70, MID = 152.61.
+    expect(headText).toContain("152.52");
+    expect(headText).toContain("152.70");
+    expect(headText).toContain("MID");
+    expect(headText).toContain("152.61");
+    // The corrupt negative L1 values never leak into the head.
+    expect(headText).not.toContain("-80");
+    expect(headText).not.toContain("-79");
+  });
+
+  it("falls back to the L1 scalars in the head when depth is unentitled", () => {
+    const unentitled: DepthBook = { ...STOCK_BOOK, entitled: false, bid: [], ask: [] };
+    const { container } = renderBook(unentitled, "stock", {
+      bid: 100.25,
+      ask: 100.5,
+      last: 100.4,
+      lastLabel: "LAST",
+    });
+    const headText = container.querySelector(".book-window-head")?.textContent ?? "";
+    expect(headText).toContain("100.25");
+    expect(headText).toContain("100.50");
+    expect(headText).toContain("LAST");
+  });
+
+  it("uses the option NBBO summary for the head", () => {
+    const withNbbo: DepthBook = {
+      ...OPTION_BOOK,
+      nbbo: { bestBid: 4.35, bestAsk: 4.45, mid: 4.4, bidSize: 60, askSize: 30 },
+    };
+    const { container } = renderBook(withNbbo, "option", {
+      bid: 7.1,
+      ask: 7.55,
+      last: 7.3,
+      lastLabel: "MARK",
+    });
+    const headText = container.querySelector(".book-window-head")?.textContent ?? "";
+    expect(headText).toContain("4.35");
+    expect(headText).toContain("4.45");
+    expect(headText).toContain("4.40"); // mid
+    // The L1 fallback values are not shown when depth is entitled.
+    expect(headText).not.toContain("7.10");
+  });
+});
+
+describe("Time & Sales tape scroll region (BUG 2)", () => {
+  it("wraps the tape rows in a dedicated internal-scroll region", () => {
+    const { container } = renderBook(STOCK_BOOK, "stock");
+    const scrollRegion = container.querySelector(".book-tape .book-tape-rows");
+    expect(scrollRegion).toBeTruthy();
+    // The trade rows live inside the scroll region (so only they scroll, the
+    // colhead above stays pinned).
+    expect(scrollRegion?.querySelectorAll(".book-trow").length).toBe(TAPE.length);
+    // The colhead is a sibling of the scroll region, not inside it.
+    const colhead = container.querySelector(".book-tape > .book-colhead");
+    expect(colhead).toBeTruthy();
+    expect(colhead?.querySelector(".book-tape-rows")).toBeNull();
   });
 });
 

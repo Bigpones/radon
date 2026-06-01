@@ -110,6 +110,19 @@ export type DepthLevel = {
   nbbo?: boolean;
 };
 
+/**
+ * Cross-venue NBBO summary for an option montage. The relay derives this from
+ * the inside (best bid / best ask) venue rows and attaches it to option books
+ * only — it is the authoritative top-of-book for the header on the Book tab.
+ */
+export type DepthNbbo = {
+  bestBid: number | null;
+  bestAsk: number | null;
+  mid: number | null;
+  bidSize: number;
+  askSize: number;
+};
+
 export type DepthBook = {
   symbol: string; // same keyspace as PriceData.symbol (ticker | optionKey | future)
   kind: "stock" | "option" | "future";
@@ -118,6 +131,8 @@ export type DepthBook = {
   isSmartDepth: boolean; // true equities/options, false futures
   feed: string | null; // head-pill label, e.g. "SMART DEPTH · TOTALVIEW"
   entitled: boolean; // false → render L1 fallback
+  /** Options only: cross-venue NBBO summary derived by the relay. */
+  nbbo?: DepthNbbo;
   timestamp: string;
 };
 
@@ -209,6 +224,24 @@ export function optionKey(c: OptionContract): string {
     return `${normalized.symbol}_${normalized.expiry}_${normalized.strike}_${normalized.right}`;
   }
   return `${c.symbol.trim().toUpperCase()}_${c.expiry.trim()}_${c.strike}_${c.right}`;
+}
+
+/**
+ * Inverse of `optionKey`: parse a composite key `SYMBOL_YYYYMMDD_STRIKE_RIGHT`
+ * back into an OptionContract. Returns null for anything that is not a
+ * well-formed option key (e.g. a bare stock ticker or futures root), so callers
+ * can branch on instrument kind. The symbol segment never contains "_" (tickers
+ * are alphanumerics), so splitting on the trailing three "_" segments is safe.
+ */
+export function parseOptionKey(key: string): OptionContract | null {
+  const parts = key.trim().split("_");
+  if (parts.length < 4) return null;
+  const right = parts[parts.length - 1];
+  if (right !== "C" && right !== "P") return null;
+  const strike = Number(parts[parts.length - 2]);
+  const expiry = parts[parts.length - 3];
+  const symbol = parts.slice(0, parts.length - 3).join("_");
+  return normalizeOptionContract({ symbol, expiry, strike, right });
 }
 
 export function uniqueOptionContracts(contracts: OptionContract[]): OptionContract[] {

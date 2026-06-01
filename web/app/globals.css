@@ -5821,6 +5821,9 @@ tr {
 .book-body-grid {
   display: grid;
   grid-template-columns: 1.35fr 1fr;
+  /* Both cells share the row height so the tape never overflows past the
+     montage/ladder; the tape scrolls internally instead of growing the panel. */
+  align-items: stretch;
   transition: grid-template-columns 320ms cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 .book-body-grid.tape-hidden { grid-template-columns: 1fr 0fr; }
@@ -5828,12 +5831,34 @@ tr {
 .book-body-grid.tape-hidden .book-montage { border-right-color: transparent; }
 .book-tape {
   min-width: 0;
+  /* Flex column so the colhead stays pinned and only the rows scroll. min-height:0
+     lets the row region shrink within the grid track instead of forcing the
+     panel taller. */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
   border-left: 1px solid transparent;
   opacity: 1;
   transition: opacity 200ms ease 80ms;
 }
 .book-tape.book-tape-hidden { opacity: 0; transition: opacity 140ms ease; }
+/* The colhead is the pinned first flex child; the row list (the bare div that
+   follows it) takes the remaining height and scrolls internally. */
+.book-tape > .book-colhead { flex: 0 0 auto; }
+.book-tape-rows {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 40%, transparent) transparent;
+}
+.book-tape-rows::-webkit-scrollbar { width: 6px; }
+.book-tape-rows::-webkit-scrollbar-track { background: transparent; }
+.book-tape-rows::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 40%, transparent);
+  border-radius: 3px;
+}
 
 .book-colhead {
   display: grid;

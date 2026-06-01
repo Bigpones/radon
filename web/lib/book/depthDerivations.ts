@@ -1,4 +1,4 @@
-import type { DepthLevel, Trade } from "@/lib/pricesProtocol";
+import type { DepthBook, DepthLevel, Trade } from "@/lib/pricesProtocol";
 
 /**
  * Pure, side-effect-free derivations for the L2 order book.
@@ -120,6 +120,75 @@ export function isBestLevel(
 ): boolean {
   if (kind === "option") return level.nbbo === true;
   return index === 0;
+}
+
+export type BookHeader = {
+  bid: number | null;
+  ask: number | null;
+  /** Depth-derived mid ((bestBid+bestAsk)/2) — the authoritative "MARK" on the
+   *  Book tab when an entitled depth book is present. */
+  last: number | null;
+  /** "MID" when derived from the book, "LAST"/"MARK" when from the L1 feed. */
+  lastLabel: string;
+};
+
+/**
+ * Best bid (max across the book.bid rows) / best ask (min across book.ask).
+ * For options this is the NBBO across venue rows; for stocks index 0 is already
+ * the inside, and max/min still resolve it. Returns null on an empty side.
+ */
+function bestBidPrice(rows: DepthLevel[]): number | null {
+  if (rows.length === 0) return null;
+  return Math.max(...rows.map((row) => row.price));
+}
+
+function bestAskPrice(rows: DepthLevel[]): number | null {
+  if (rows.length === 0) return null;
+  return Math.min(...rows.map((row) => row.price));
+}
+
+/**
+ * Resolve the window-head bid / ask / mark for the Book tab.
+ *
+ * When an entitled depth book is present it is the authoritative source (a
+ * corrupt or negative L1 scalar is ignored): bid/ask come from the book itself
+ * and the MARK is the depth mid, labelled "MID". Futures key the inside on
+ * position (index 0); stocks/options take the best price across the side
+ * (NBBO for options, inside for stocks). The relay's `nbbo` summary is
+ * preferred for options when present.
+ *
+ * Falls back entirely to the passed-in L1 scalars when there is no entitled
+ * depth book (the L1 fallback path).
+ */
+export function deriveBookHeader(
+  depth: DepthBook | null | undefined,
+  l1: { bid: number | null; ask: number | null; last: number | null; lastLabel: string },
+): BookHeader {
+  if (!depth || depth.entitled !== true) {
+    return { bid: l1.bid, ask: l1.ask, last: l1.last, lastLabel: l1.lastLabel };
+  }
+
+  let bid: number | null;
+  let ask: number | null;
+  if (depth.kind === "future") {
+    bid = depth.bid[0]?.price ?? null;
+    ask = depth.ask[0]?.price ?? null;
+  } else if (depth.kind === "option" && depth.nbbo) {
+    bid = depth.nbbo.bestBid ?? bestBidPrice(depth.bid);
+    ask = depth.nbbo.bestAsk ?? bestAskPrice(depth.ask);
+  } else {
+    bid = bestBidPrice(depth.bid);
+    ask = bestAskPrice(depth.ask);
+  }
+
+  const mid =
+    depth.kind === "option" && depth.nbbo?.mid != null
+      ? depth.nbbo.mid
+      : bid != null && ask != null
+        ? (bid + ask) / 2
+        : null;
+
+  return { bid, ask, last: mid, lastLabel: "MID" };
 }
 
 /**

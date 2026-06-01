@@ -14,6 +14,7 @@ import {
   symbolKey,
   contractsKey,
   optionKey,
+  parseOptionKey,
 } from "./pricesProtocol";
 import { createReconnectStrategy, type ReconnectState } from "./reconnectStrategy";
 
@@ -364,7 +365,24 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
     }
 
     if (desired) {
-      ws.send(JSON.stringify({ action: "subscribe-depth", symbol: desired }));
+      // A focused single-leg OPTION subject is keyed by its composite option
+      // key (SYMBOL_YYYYMMDD_STRIKE_RIGHT). The relay's option-depth branch
+      // needs the STRUCTURED contract fields (expiry/strike/right) to build the
+      // OPRA montage — given only the composite string it falls through to a
+      // bogus stock contract and emits depth-unavailable, so the panel degrades
+      // to the L1 fallback. Decompose the key here so the relay re-derives the
+      // SAME key via its own optionKey() and echoes the book under it.
+      const optionContract = parseOptionKey(desired);
+      const payload = optionContract
+        ? {
+            action: "subscribe-depth",
+            symbol: optionContract.symbol,
+            expiry: optionContract.expiry,
+            strike: optionContract.strike,
+            right: optionContract.right,
+          }
+        : { action: "subscribe-depth", symbol: desired };
+      ws.send(JSON.stringify(payload));
     }
 
     lastSentDepthRef.current = desired;

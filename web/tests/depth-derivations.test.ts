@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import type { DepthLevel, Trade } from "@/lib/pricesProtocol";
+import type { DepthBook, DepthLevel, Trade } from "@/lib/pricesProtocol";
+import { parseOptionKey, optionKey } from "@/lib/pricesProtocol";
 import {
   buildLadderRows,
   classifyTicks,
+  deriveBookHeader,
   groupPriceLevels,
   isBestLevel,
   montageFill,
@@ -203,6 +205,123 @@ describe("classifyTicks", () => {
 
   it("returns an empty array for an empty tape", () => {
     expect(classifyTicks([])).toEqual([]);
+  });
+});
+
+describe("deriveBookHeader (BUG 1 — header reads from the depth book)", () => {
+  // The L1 feed here is the MU corruption signature: negative MARK / BID.
+  const CORRUPT_L1 = { bid: -80, ask: -79, last: -80, lastLabel: "MARK" };
+
+  const STOCK_BOOK: DepthBook = {
+    symbol: "MU",
+    kind: "stock",
+    isSmartDepth: true,
+    feed: "SMART DEPTH",
+    entitled: true,
+    timestamp: "t",
+    bid: [
+      { price: 1039.6, size: 3, marketMaker: "NSDQ", exchange: "SMART" },
+      { price: 1039.55, size: 5, marketMaker: "ARCA", exchange: "SMART" },
+    ],
+    ask: [
+      { price: 1039.8, size: 4, marketMaker: "NSDQ", exchange: "SMART" },
+      { price: 1039.9, size: 2, marketMaker: "BATS", exchange: "SMART" },
+    ],
+  };
+
+  it("derives bid/ask/mid from the depth book, never the corrupt L1 scalars", () => {
+    const head = deriveBookHeader(STOCK_BOOK, CORRUPT_L1);
+    expect(head.bid).toBe(1039.6); // best (max) bid across the book
+    expect(head.ask).toBe(1039.8); // best (min) ask across the book
+    expect(head.last).toBeCloseTo((1039.6 + 1039.8) / 2, 10); // depth MID
+    expect(head.lastLabel).toBe("MID");
+    // The negative L1 values never leak through.
+    expect(head.bid).toBeGreaterThan(0);
+    expect(head.last).toBeGreaterThan(0);
+  });
+
+  it("uses the relay nbbo summary for options when present", () => {
+    const optionBook: DepthBook = {
+      symbol: "CRCL_20260116_7_C",
+      kind: "option",
+      isSmartDepth: true,
+      feed: "OPRA BBO",
+      entitled: true,
+      timestamp: "t",
+      nbbo: { bestBid: 7.1, bestAsk: 7.55, mid: 7.325, bidSize: 40, askSize: 30 },
+      bid: [{ price: 7.1, size: 40, marketMaker: null, exchange: "CBOE", nbbo: true }],
+      ask: [{ price: 7.55, size: 30, marketMaker: null, exchange: "PHLX", nbbo: true }],
+    };
+    const head = deriveBookHeader(optionBook, CORRUPT_L1);
+    expect(head.bid).toBe(7.1);
+    expect(head.ask).toBe(7.55);
+    expect(head.last).toBeCloseTo(7.325, 10);
+    expect(head.lastLabel).toBe("MID");
+  });
+
+  it("keys the inside on index 0 for futures", () => {
+    const futureBook: DepthBook = {
+      symbol: "ESM6",
+      kind: "future",
+      isSmartDepth: false,
+      feed: "CME DEPTH",
+      entitled: true,
+      timestamp: "t",
+      bid: [
+        { price: 5012.5, size: 1, marketMaker: null, exchange: null },
+        { price: 5013.0, size: 1, marketMaker: null, exchange: null }, // not inside despite higher
+      ],
+      ask: [
+        { price: 5012.75, size: 1, marketMaker: null, exchange: null },
+        { price: 5012.0, size: 1, marketMaker: null, exchange: null }, // not inside despite lower
+      ],
+    };
+    const head = deriveBookHeader(futureBook, CORRUPT_L1);
+    expect(head.bid).toBe(5012.5); // index 0 inside, not max
+    expect(head.ask).toBe(5012.75); // index 0 inside, not min
+  });
+
+  it("falls back to the L1 scalars when no entitled depth book is present", () => {
+    const l1 = { bid: 7.1, ask: 7.55, last: 7.3, lastLabel: "LAST" };
+    expect(deriveBookHeader(null, l1)).toEqual(l1);
+    const unentitled: DepthBook = { ...STOCK_BOOK, entitled: false, bid: [], ask: [] };
+    expect(deriveBookHeader(unentitled, l1)).toEqual(l1);
+  });
+
+  it("guards an empty side without throwing", () => {
+    const oneSided: DepthBook = {
+      ...STOCK_BOOK,
+      ask: [],
+    };
+    const head = deriveBookHeader(oneSided, CORRUPT_L1);
+    expect(head.bid).toBe(1039.6);
+    expect(head.ask).toBeNull();
+    expect(head.last).toBeNull(); // no mid without both sides
+  });
+});
+
+describe("parseOptionKey (BUG 3 — round-trips with optionKey)", () => {
+  it("decomposes a composite option key into its contract", () => {
+    expect(parseOptionKey("CRCL_20260116_7_C")).toEqual({
+      symbol: "CRCL",
+      expiry: "20260116",
+      strike: 7,
+      right: "C",
+    });
+  });
+
+  it("round-trips optionKey -> parseOptionKey", () => {
+    const c = { symbol: "RKLB", expiry: "20260620", strike: 150, right: "C" as const };
+    expect(parseOptionKey(optionKey(c))).toEqual(c);
+  });
+
+  it("returns null for a bare stock ticker or futures root", () => {
+    expect(parseOptionKey("MU")).toBeNull();
+    expect(parseOptionKey("ES")).toBeNull();
+  });
+
+  it("returns null when the right segment is not C/P", () => {
+    expect(parseOptionKey("CRCL_20260116_7_X")).toBeNull();
   });
 });
 

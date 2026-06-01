@@ -6,6 +6,7 @@ import { DepthMontage } from "./DepthMontage";
 import { LadderDOM } from "./LadderDOM";
 import { TimeAndSales } from "./TimeAndSales";
 import { fmtDepthPrice, fmtSpread } from "./depthFormat";
+import { deriveBookHeader } from "@/lib/book/depthDerivations";
 
 const TAPE_STORAGE_KEY = "radon:book:tape";
 
@@ -77,10 +78,16 @@ export function OrderBook({
   const hasDepth = depth?.entitled === true;
   const kindLabel = kind === "future" ? "FUTURE" : kind === "option" ? "OPTION" : "STOCK";
 
+  // The window head reads from the DEPTH BOOK when one is entitled — it is the
+  // authoritative source on this tab (the separate L1 feed can deliver corrupt
+  // / negative scalars for thin instruments). Falls back to the passed-in L1
+  // scalars only when there is no entitled depth book (the L1 fallback path).
+  const head = deriveBookHeader(depth, { bid, ask, last, lastLabel });
+
   const left = !hasDepth ? (
     l1Fallback
   ) : kind === "future" ? (
-    <LadderDOM book={depth} last={last} />
+    <LadderDOM book={depth} last={head.last} />
   ) : (
     <DepthMontage book={depth} />
   );
@@ -93,16 +100,16 @@ export function OrderBook({
           <span className="book-kind">{kindLabel}</span>
         </span>
         <span className="book-head-stat">
-          {lastLabel} <b>{last != null ? fmtDepthPrice(last) : "---"}</b>
+          {head.lastLabel} <b>{head.last != null ? fmtDepthPrice(head.last) : "---"}</b>
         </span>
         <span className="book-head-stat bid">
-          BID <b>{bid != null ? fmtDepthPrice(bid) : "---"}</b>
+          BID <b>{head.bid != null ? fmtDepthPrice(head.bid) : "---"}</b>
         </span>
         <span className="book-head-stat ask">
-          ASK <b>{ask != null ? fmtDepthPrice(ask) : "---"}</b>
+          ASK <b>{head.ask != null ? fmtDepthPrice(head.ask) : "---"}</b>
         </span>
         <span className="book-head-stat">
-          SPRD <b>{fmtSpread(bid, ask)}</b>
+          SPRD <b>{fmtSpread(head.bid, head.ask)}</b>
         </span>
         <span className="book-head-spacer" />
         {depth?.feed && <span className="book-feed-pill">{depth.feed}</span>}
