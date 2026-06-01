@@ -6,6 +6,7 @@ import type { PriceData, FundamentalsData, DepthBook, Trade } from "@/lib/prices
 import { legPriceKey, resolveSpreadPriceData } from "@/lib/positionUtils";
 import { isIndexSymbol, hasFuturesSupport } from "@/lib/indexSymbols";
 import { isFuturesRoot } from "@/lib/futuresSymbols";
+import { deriveBookHeader } from "@/lib/book/depthDerivations";
 import PriceChart from "./PriceChart";
 import PositionTab from "./ticker-detail/PositionTab";
 import OrderTab from "./ticker-detail/OrderTab";
@@ -164,6 +165,29 @@ export default function TickerDetailContent({
   const bookKey = chartPriceKey ?? ticker;
   const bookDepth = depths?.[bookKey] ?? null;
 
+  // Prefer the depth book's NBBO for the quote bar when an entitled book is
+  // streaming for this subject. The separate L1 priceData feed can deliver
+  // corrupt scalars for some instruments (e.g. MU showed negative bid/ask)
+  // while the depth book is correct; deriveBookHeader is the same source the
+  // OrderBook header uses, so the two never diverge. Falls through to raw
+  // priceData (incl. the closed-market fallback) when there is no entitled book.
+  const quotePriceData = useMemo<PriceData | null>(() => {
+    if (!priceData || !bookDepth || bookDepth.entitled !== true) return priceData;
+    const head = deriveBookHeader(bookDepth, {
+      bid: priceData.bid,
+      ask: priceData.ask,
+      last: priceData.last,
+      lastLabel: priceData.lastIsCalculated ? "MARK" : "LAST",
+    });
+    return {
+      ...priceData,
+      bid: head.bid,
+      ask: head.ask,
+      last: head.last,
+      lastIsCalculated: head.lastLabel !== "LAST",
+    };
+  }, [priceData, bookDepth]);
+
   // Resolve instrument kind for the depth panel. depth.kind wins when the relay
   // has classified it; else a relay-supported futures root (ES/NQ/...) or an
   // index with futures support is a future; else a single-leg non-stock
@@ -218,7 +242,7 @@ export default function TickerDetailContent({
               {positionSummary}
             </span>
           </div>
-          <TickerQuoteTelemetry priceData={priceData} label={priceLabel} fallback={stockFallback} />
+          <TickerQuoteTelemetry priceData={quotePriceData} label={priceLabel} fallback={stockFallback} />
         </div>
         <div className="ticker-detail-hero-right">
           <PriceChart
