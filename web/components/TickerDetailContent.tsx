@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { OpenOrder, PortfolioPosition, PortfolioData, OrdersData } from "@/lib/types";
 import type { PriceData, FundamentalsData, DepthBook, Trade } from "@/lib/pricesProtocol";
 import { legPriceKey, resolveSpreadPriceData } from "@/lib/positionUtils";
 import { isIndexSymbol, hasFuturesSupport } from "@/lib/indexSymbols";
 import { isFuturesRoot } from "@/lib/futuresSymbols";
 import { deriveBookHeader } from "@/lib/book/depthDerivations";
+import { useViewport } from "@/lib/useViewport";
+import { isDeckKey } from "@/lib/legacyTabToDeck";
+import AssetCockpit, { type DeckKey } from "./ticker-detail/AssetCockpit";
 import PriceChart from "./PriceChart";
 import PositionTab from "./ticker-detail/PositionTab";
 import OrderTab from "./ticker-detail/OrderTab";
@@ -215,6 +218,65 @@ export default function TickerDetailContent({
   // Never applied to option/spread quotes — stock-state is the stock's own OHLV.
   const showsUnderlying = !position || position.structure_type === "Stock";
   const { fallback: stockFallback } = useStockState(ticker, showsUnderlying);
+
+  // Desktop renders the cockpit; mobile keeps the existing tab layout. Gate on
+  // the same `isMobile && hasMounted` convention every other surface uses so the
+  // server-rendered (desktop-fallback width) markup never flips post-hydration.
+  const { isMobile, hasMounted } = useViewport();
+  const useCockpit = !(isMobile && hasMounted);
+
+  // Deck-key contract (shared with TickerWorkspace via `@/lib/legacyTabToDeck`).
+  // TickerWorkspace passes the DECK KEY straight through `activeTab` (the deck
+  // from `?deck=`, or "book" when no deck is open) and its `onTabChange` accepts
+  // a deck key (or "book" for the docked hot-path). So this side speaks deck keys
+  // too — no word-form translation. Earlier this file translated to/from word
+  // forms ("chain"/"position"/...), which TickerWorkspace's isDeckKey rejected,
+  // so every glyph click resolved to setDeck(null) and the deck never opened.
+  //
+  // `:` (Cmd) is the only AssetCockpit deck NOT in VALID_DECKS — it is not
+  // URL-addressable, so it lives in local component state. Every other key
+  // (c/p/n/r/s/i) flows through the URL via onTabChange.
+  const [localDeck, setLocalDeck] = useState<DeckKey | null>(null);
+  const urlDeck: DeckKey | null = isDeckKey(activeTab) ? activeTab : null;
+  const activeDeck: DeckKey | null = urlDeck ?? localDeck;
+
+  const onDeckChange = (deck: DeckKey | null) => {
+    // The command palette has no URL form: drive it from local state and clear
+    // any URL deck so the two can't both be "open".
+    if (deck === ":") {
+      if (urlDeck) onTabChange("book");
+      setLocalDeck(":");
+      return;
+    }
+    // URL-addressable decks (incl. close → null) flow straight through as deck
+    // keys; TickerWorkspace.onTabChange maps "book"/null back to no deck.
+    setLocalDeck(null);
+    onTabChange(deck ?? "book");
+  };
+
+  if (useCockpit) {
+    return (
+      <AssetCockpit
+        ticker={ticker}
+        position={position}
+        prices={prices}
+        fundamentals={fundamentals}
+        portfolio={portfolio}
+        depths={depths}
+        tape={tape}
+        bookKey={bookKey}
+        bookKind={bookKind}
+        quotePriceData={quotePriceData}
+        priceData={priceData}
+        isSpreadNet={isSpreadNet}
+        tickerOrders={tickerOrders}
+        stockFallback={stockFallback}
+        theme={theme}
+        activeDeck={activeDeck}
+        onDeckChange={onDeckChange}
+      />
+    );
+  }
 
   const resolvedTab: TabId = (["company", "book", "chain", "position", "order", "news", "ratings", "seasonality"] as TabId[]).includes(activeTab as TabId)
     ? (activeTab as TabId)

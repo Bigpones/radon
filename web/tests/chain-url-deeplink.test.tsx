@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 
 import TickerDetailContent from "../components/TickerDetailContent";
 import { TickerDetailProvider } from "../lib/TickerDetailContext";
+import { OrderActionsProvider } from "../lib/OrderActionsContext";
 import type { OrdersData, PortfolioData } from "../lib/types";
 import type { PriceData } from "../lib/pricesProtocol";
 
@@ -60,21 +61,28 @@ function jsonResponse(body: unknown) {
   );
 }
 
+// Desktop cockpit: activeTab "chain" → the Chain deck opens with the desktop
+// OptionsChainTab (combobox). The cockpit always-mounts OrderTab, which needs
+// OrderActionsProvider in the tree.
 function renderChain() {
   return render(
     React.createElement(
-      TickerDetailProvider,
+      OrderActionsProvider,
       null,
-      React.createElement(TickerDetailContent, {
-        ticker: "MU",
-        activeTab: "chain",
-        onTabChange: vi.fn(),
-        prices: { MU: MU_PRICE },
-        fundamentals: {},
-        portfolio: PORTFOLIO,
-        orders: ORDERS,
-        theme: "dark",
-      }),
+      React.createElement(
+        TickerDetailProvider,
+        null,
+        React.createElement(TickerDetailContent, {
+          ticker: "MU",
+          activeTab: "c", // deck key for Chain (cockpit nav contract; opens the Chain deck)
+          onTabChange: vi.fn(),
+          prices: { MU: MU_PRICE },
+          fundamentals: {},
+          portfolio: PORTFOLIO,
+          orders: ORDERS,
+          theme: "dark",
+        }),
+      ),
     ),
   );
 }

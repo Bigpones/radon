@@ -5,6 +5,13 @@ import TickerDetailContent from "../components/TickerDetailContent";
 import type { PortfolioData } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 
+// Force the legacy (mobile-path) layout: this suite asserts spread dollars/percent
+// on the shared price bar (the hero QuoteTelemetry), which the desktop cockpit
+// replaces with the CockpitHeader. The mobile path retains that price bar.
+vi.mock("../lib/useViewport", () => ({
+  useViewport: () => ({ viewportClass: "mobile", isMobile: true, isTablet: false, isDesktop: false, width: 393, hasMounted: true }),
+}));
+
 vi.mock("../components/PriceChart", () => ({
   default: () => createElement("div", { "data-testid": "mock-price-chart" }),
 }));

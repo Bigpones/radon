@@ -14,6 +14,7 @@ vi.mock("next/navigation", () => ({
 
 import TickerDetailContent from "../components/TickerDetailContent";
 import { TickerDetailProvider } from "../lib/TickerDetailContext";
+import { OrderActionsProvider } from "../lib/OrderActionsContext";
 import type { OrdersData, PortfolioData } from "../lib/types";
 import type { PriceData } from "../lib/pricesProtocol";
 
@@ -148,18 +149,22 @@ describe("Options chain ATM auto-centering", () => {
   it("centers the ATM row inside the chain wrapper only — never via scrollIntoView", async () => {
     render(
       React.createElement(
-        TickerDetailProvider,
+        OrderActionsProvider,
         null,
-        React.createElement(TickerDetailContent, {
-          ticker: "PLTR",
-          activeTab: "chain",
-          onTabChange: vi.fn(),
-          prices: { PLTR: PRICE },
-          fundamentals: {},
-          portfolio: PORTFOLIO,
-          orders: ORDERS,
-          theme: "dark",
-        }),
+        React.createElement(
+          TickerDetailProvider,
+          null,
+          React.createElement(TickerDetailContent, {
+            ticker: "PLTR",
+            activeTab: "c", // deck key for Chain (cockpit nav contract; opens the Chain deck)
+            onTabChange: vi.fn(),
+            prices: { PLTR: PRICE },
+            fundamentals: {},
+            portfolio: PORTFOLIO,
+            orders: ORDERS,
+            theme: "dark",
+          }),
+        ),
       ),
     );
 

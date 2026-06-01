@@ -6,6 +6,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 
 import TickerDetailContent from "../components/TickerDetailContent";
 import { TickerDetailProvider } from "../lib/TickerDetailContext";
+import { OrderActionsProvider } from "../lib/OrderActionsContext";
 import type { OrdersData, PortfolioData } from "../lib/types";
 import type { PriceData } from "../lib/pricesProtocol";
 
@@ -186,19 +187,23 @@ describe("Ticker chain position focus", () => {
   it("uses the deep-linked position expiry instead of the generic >=7d default on the chain tab", async () => {
     render(
       React.createElement(
-        TickerDetailProvider,
+        OrderActionsProvider,
         null,
-        React.createElement(TickerDetailContent, {
-          ticker: "PLTR",
-          positionId: 16,
-          activeTab: "chain",
-          onTabChange: vi.fn(),
-          prices: { PLTR: PLTR_PRICE },
-          fundamentals: {},
-          portfolio: PORTFOLIO,
-          orders: ORDERS,
-          theme: "dark",
-        }),
+        React.createElement(
+          TickerDetailProvider,
+          null,
+          React.createElement(TickerDetailContent, {
+            ticker: "PLTR",
+            positionId: 16,
+            activeTab: "c", // deck key for Chain (cockpit nav contract; opens the Chain deck)
+            onTabChange: vi.fn(),
+            prices: { PLTR: PLTR_PRICE },
+            fundamentals: {},
+            portfolio: PORTFOLIO,
+            orders: ORDERS,
+            theme: "dark",
+          }),
+        ),
       ),
     );
 

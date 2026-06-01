@@ -35,6 +35,11 @@ type BookTabProps = {
    *  short-circuits to a close-out branch, and SELL with held=0
    *  surfaces UNBOUNDED via the linear risk branch. */
   portfolio?: PortfolioData | null;
+  /** Cockpit mode: render ONLY the depth montage + tape (the OrderBook), not the
+   *  embedded position summary / order form / open-orders. In the cockpit those
+   *  live in the always-docked Act column, so embedding them here would
+   *  duplicate them. Legacy/mobile layout leaves this false (full book tab). */
+  bookOnly?: boolean;
 };
 
 /* ─── L1 Order Book ─── */
@@ -362,6 +367,7 @@ export default function BookTab({
   bookKey,
   bookKind,
   portfolio = null,
+  bookOnly = false,
 }: BookTabProps) {
   const priceData = tickerPriceData ?? prices[ticker] ?? null;
   const bid = priceData?.bid ?? null;
@@ -393,19 +399,29 @@ export default function BookTab({
     />
   );
 
+  const orderBook = (
+    <OrderBook
+      symbolLabel={ticker}
+      kind={kind}
+      depth={depth}
+      trades={trades}
+      last={last}
+      lastLabel={lastLabel}
+      bid={bid}
+      ask={ask}
+      l1Fallback={l1Fallback}
+    />
+  );
+
+  // Cockpit: just the depth montage + tape, filling the Book region. The ticket,
+  // position summary and open-orders are owned by the docked Act column.
+  if (bookOnly) {
+    return <div className="book-tab book-tab-only">{orderBook}</div>;
+  }
+
   return (
     <div className="book-tab" style={{ padding: "16px 0" }}>
-      <OrderBook
-        symbolLabel={ticker}
-        kind={kind}
-        depth={depth}
-        trades={trades}
-        last={last}
-        lastLabel={lastLabel}
-        bid={bid}
-        ask={ask}
-        l1Fallback={l1Fallback}
-      />
+      {orderBook}
 
       {position && <PositionSummary position={position} />}
 

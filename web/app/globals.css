@@ -4985,6 +4985,327 @@ tr.leg-row td {
   }
 }
 
+/* ──────────────────────────────────────────────────────────────
+   Asset Cockpit (desktop ticker-detail) — ported from the approved
+   mockup tasks/mockups/asset-detail-ia.html. Book-first grid:
+   header strip / [book | act | rail], deck slides over the act
+   column only. Brand tokens + color-mix; 4px radius; no raw hex.
+   ────────────────────────────────────────────────────────────── */
+
+/* Height threading: the cockpit root carries `.cockpit-host`, which is
+   also applied to the shell content wrapper via the body-scoped override
+   below. The cockpit fills the shell content area at height:100% and
+   scrolls INTERNALLY (book rows, tape rows, deck body). Scoped to the
+   ticker-detail section only — other `.content` sections keep their
+   scroll + 20px padding untouched. */
+.app-shell .content:has(> .ticker-detail-page .cockpit-host),
+.app-shell .content:has(> .cockpit-host) {
+  overflow: hidden;
+  padding: 0;
+  min-height: 0;
+}
+.ticker-detail-page:has(.cockpit-host) {
+  max-width: none;
+  padding: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.ticker-detail-page:has(.cockpit-host) .ticker-back-nav {
+  margin: 8px 0 0 12px;
+}
+
+.cockpit {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 34px 1fr;
+  grid-template-columns: 1fr minmax(360px, 36%) 44px;
+  grid-template-areas:
+    "head head head"
+    "book act rail";
+}
+
+/* ── header strip (single source: symbol/last/netΔ/spread/LIVE/chip) ── */
+.cockpit-head {
+  grid-area: head;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line-grid);
+  background: linear-gradient(180deg, var(--bg-panel-raised), var(--bg-panel));
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.cockpit-head .mono { font-variant-numeric: tabular-nums; }
+.cockpit-head .positive { color: var(--positive); }
+.cockpit-head .negative { color: var(--negative); }
+.cockpit-head .neutral { color: var(--text-primary); }
+.ckh-sym { font-weight: 700; font-size: 15px; letter-spacing: 0.05em; }
+.ckh-kind { font-size: 9px; color: var(--text-muted); letter-spacing: 0.16em; }
+.ckh-sep { width: 1px; height: 16px; background: var(--line-grid); }
+.ckh-last { font-weight: 600; font-variant-numeric: tabular-nums; }
+.ckh-lastlabel { font-size: 8px; color: var(--text-muted); letter-spacing: 0.1em; margin-left: 4px; }
+.ckh-delta { font-weight: 600; font-variant-numeric: tabular-nums; }
+.ckh-spr { font-size: 11px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.ckh-spr b { color: var(--text-primary); font-weight: 600; }
+.ckh-live {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--signal-strong);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.ckh-live::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--signal-core);
+  box-shadow: 0 0 7px var(--signal-core);
+}
+.ckh-spacer { flex: 1; }
+.ckh-poschip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  padding: 5px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--line-grid);
+  color: var(--text-secondary);
+  background: var(--bg-panel);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  transition: border-color 140ms, color 140ms;
+}
+.ckh-poschip:hover {
+  border-color: color-mix(in srgb, var(--signal-core) 45%, var(--line-grid));
+  color: var(--text-primary);
+}
+.ckh-poschip.held {
+  border-color: color-mix(in srgb, var(--signal-core) 40%, var(--line-grid));
+  color: var(--signal-strong);
+}
+.ckh-arr { color: var(--text-muted); }
+
+/* ── book column: order book (top) + tape (bottom), full height ──
+   The REGION owns the structural divider (border-right) + a consistent inner
+   gutter. Child panels inside it must NOT add a second outer border against a
+   region edge — the gutter already separates them, so a single hairline reads
+   clean instead of doubling against the head / column seams. */
+.book-region {
+  grid-area: book;
+  border-right: 1px solid var(--line-grid);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  /* Consistent gutter so the book panel never butts the header / column seams. */
+  padding: 14px;
+}
+.book-region > * { flex: 1; min-height: 0; }
+/* Cockpit book pane: fill the region as a flex column, no legacy padding so the
+   montage + tape own the full height and scroll internally. */
+.book-tab-only { display: flex; flex-direction: column; min-height: 0; padding: 0; }
+.book-tab-only > * { flex: 1; min-height: 0; }
+/* OrderBook panel inside the cockpit: a single clean hairline bounded by the
+   region gutter. Drops its own shadow so there is no doubled, smushed seam. */
+.book-region .book-window {
+  border: 1px solid var(--line-grid);
+  border-radius: 4px;
+  box-shadow: none;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* ── act column: ticket (top) + position-or-FLAT (bottom), both live ──
+   The region owns the single internal divider between ticket and position; the
+   glyph rail owns the act|rail divider (one hairline, never two touching). Each
+   child carries its own inner gutter so the ticket form and the position cards
+   have breathing room and never sit flush against the column or divider edges. */
+.act-region {
+  grid-area: act;
+  position: relative; /* containing block for the absolutely-positioned deck */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.act-ticket {
+  /* Ticket-focused act column: the ticket sizes to its content (no hard height
+     cap) so it reads clean whether the ticker is flat or holds a combo. The
+     flat/affordance area below fills the remaining space and centers in it. */
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--line-grid);
+  /* Inner gutter so the ticket form clears the column + split-divider seams. */
+  padding: 16px;
+}
+.act-position {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* Matching gutter; the extra top padding gives the split divider air on both
+     sides instead of the cards smushing straight against the hairline. */
+  padding: 16px;
+}
+/* Position panel inside the cockpit: looser card grid so the STRUCTURE /
+   DIRECTION / QTY / ENTRY-DATE / AVG-ENTRY / MARK / ENTRY-COST / MARKET-VALUE /
+   UNREALIZED-P&L cards breathe and don't smush against each other. */
+.act-position .position-tab { gap: 14px; }
+.act-position .position-summary-grid { gap: 10px; }
+.act-position .pos-stat { padding: 10px; border-radius: 4px; }
+.act-flat {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.act-flat-hint {
+  border: 1px dashed var(--line-grid);
+  border-radius: 4px;
+  padding: 6px 12px;
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+/* ── glyph rail (labeled vertical nav) ── */
+.glyph-rail {
+  grid-area: rail;
+  border-left: 1px solid var(--line-grid);
+  background: var(--bg-panel);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 8px;
+  gap: 2px;
+}
+.glyph {
+  width: 40px;
+  height: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  cursor: pointer;
+  color: var(--text-muted);
+  position: relative;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+}
+.glyph:hover { background: var(--bg-panel-raised); color: var(--text-secondary); }
+.glyph[aria-pressed="true"] {
+  color: var(--signal-strong);
+  background: color-mix(in srgb, var(--signal-core) 12%, transparent);
+}
+.glyph-k { font-family: var(--font-mono); font-size: 11px; font-weight: 600; }
+.glyph-l { font-family: var(--font-mono); font-size: 7px; letter-spacing: 0.08em; text-transform: uppercase; }
+.glyph-dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  font-size: 8px;
+  color: var(--signal-strong);
+  font-family: var(--font-mono);
+}
+
+/* ── deck (slides over the ACT column only; never the book, never the rail) ──
+   The deck is a grid child of `.cockpit` and a SIBLING of `.act-region`, so we
+   anchor it to the same named `act` grid track. Both occupy the identical grid
+   cell (CSS grid allows children to overlap); the deck stacks above the act
+   column via z-index and fills its box EXACTLY — left edge = book|act seam,
+   right edge = act|rail seam. Width follows the `minmax(360px, 36%)` column
+   automatically, so it is responsive and can never cover the book or the rail.
+   No viewport math, no manual right/width. visibility:hidden when closed so the
+   off-screen panel can't clip the right edge. */
+.asset-deck {
+  /* Rendered INSIDE .act-region (position:relative) and pinned inset:0, so it
+     overlays the act column EXACTLY — never the book or the rail, at any
+     viewport width. Closed state fades out + nudges a few px right, then is
+     removed from the a11y tree. */
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--bg-panel);
+  box-shadow: -24px 0 60px -30px color-mix(in srgb, var(--bg-base) 80%, transparent);
+  /* inset:0 already positions the deck on the act box exactly; the reveal is
+     opacity-only (no transform) so nothing can shift it off the act column. */
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 180ms ease, visibility 0s linear 180ms;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+}
+.asset-deck.open {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 160ms ease, visibility 0s;
+}
+.asset-deck-hd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line-grid);
+  background: var(--bg-panel-raised);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.asset-deck-x {
+  margin-left: auto;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 13px;
+  border: none;
+  background: transparent;
+  font-family: var(--font-mono);
+}
+.asset-deck-x:hover { color: var(--text-primary); }
+.asset-deck-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  min-height: 0;
+}
+.asset-deck-empty,
+.asset-deck-palette .asset-deck-ph {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.asset-deck-palette p {
+  margin-top: 10px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
 /* Tab shared */
 .tab-loading { padding: 24px 0; text-align: center; }
 .tab-loading-text { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
@@ -11458,3 +11779,4 @@ body[data-mobile="true"] td.right {
   font-size: 12px;
   color: var(--text-secondary);
 }
+
