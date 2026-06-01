@@ -1,3 +1,228 @@
+# Task: Unusual Whales Indicator Expansion Roadmap
+
+## Goal
+Add the UW indicators from the user-provided list that are not yet fully supported as Radon operator surfaces. In this plan, "supported" means more than a `UWClient` method: the indicator must have a normalized fetch contract, persistence or explicit cache policy, FastAPI/Next API access, an operator-facing UI, service-health visibility where scheduled, and regression coverage.
+
+## Dependency Graph
+
+- T1 depends_on: [] — Inventory current Radon UW support and classify each listed UW feature as supported, partial, missing, or blocked by external API scope.
+- T2 depends_on: [T1] — Update the UW endpoint contract map and shared ingestion layer for missing REST/WebSocket surfaces.
+- T3 depends_on: [T1, T2] — Add a durable storage model for bounded snapshots, deduped event feeds, and optional live stream state.
+- T4 depends_on: [T2, T3] — Build global-market collectors: Market Tide, Market Map, Economic Calendar, Earnings Hub, market-wide net impact, sector/ETF tide.
+- T5 depends_on: [T2, T3] — Build ticker/options collectors: Net Premium, Intraday Levels, expanded Greek Exposure, Options Flow/Dark Pool extensions, custom screeners.
+- T6 depends_on: [T4, T5] — Expose normalized FastAPI and Next.js routes with stale-data semantics, no-store headers, and DB-first reads.
+- T7 depends_on: [T6] — Add operator UI surfaces in the Dashboard, Scanner/Flow Analysis, Regime, and Ticker workspaces.
+- T8 depends_on: [T4, T5, T6] — Add custom alert/screener workflows and optional live WebSocket ingestion for Advanced UW API plans.
+- T9 depends_on: [T4, T5, T6] — Integrate new data into evaluation/scanner context without weakening Radon's sequential trade gates.
+- T10 depends_on: [T4, T5, T6, T7] — Add a Radon-native "Mr. Whale" style synthesis layer backed by cited UW rows; do not assume a public UW Mr. Whale REST endpoint exists.
+- T11 depends_on: [T6, T7, T8, T9, T10] — Add regression, route, UI, ingestion, and scheduler tests; run focused suites and then full suites before any commit.
+- T12 depends_on: [T11] — Document rollout, source freshness, rate limits, token scopes, fallback behavior, and verification results.
+
+## Current Support Matrix
+
+| UW feature from list | Current Radon status | Required work |
+|---|---|---|
+| Options Flow | Partial | Existing `fetch_flow.py`, `flow_report.py`, flow-analysis UI, and `UWClient.get_flow_alerts` cover flow alerts. Missing full-tape support, reusable custom presets, ticker-level net/strike/expiry flow UI, and optional live `option_trades` / `flow-alerts` WebSocket ingestion. |
+| Dark Pools | Partial | Existing scanner/flow reports use `/darkpool/{ticker}` and `UWClient.get_darkpool_recent`. Missing live off-lit stream, market-wide dark pool tape, per-ticker price-level integration, and dashboard surfacing. |
+| Market Map | Missing | Map to UW market endpoints: `/market/sector-etfs`, `/market/top-net-impact`, `/market/total-options-volume`, `/market/{sector}/sector-tide`, `/market/{ticker}/etf-tide`, and `/screener/stocks`. Build a Radon market map focused on net premium, sector rotation, option volume, and watchlist exposure. |
+| Net Premium | Plumbing only | `UWClient.get_net_prem_ticks` exists, but no storage/API/UI. Need ticker cumulative net call/put premium charts, market-wide net-flow expiry charts, and scanner/evaluation summaries. |
+| Greeks Exposure | Partial | Regime GEX and Gamma Rotation Gap use UW GEX for SPX/SPY/TLT. Missing per-ticker GEX/VEX/CEX/DEX panels, strike-expiry views, spot-exposure history, live GEX WebSocket, and option-chain integration. |
+| Custom Flow Alerts/Screeners | Missing | Add `/alerts`, `/alerts/configuration`, `/screener/option-contracts`, `/screener/stocks`, saved Radon presets, and a local rule evaluator so UW-created alerts and Radon-created screeners share one operator feed. |
+| Intraday Levels | Missing | Add UW option price levels `/stock/{ticker}/option/stock-price-levels`, off/lit stock price levels `/stock/{ticker}/stock-volume-price-levels`, `flow-per-strike-intraday`, and combine them with existing IB depth/chain views. |
+| Earnings Hub | Missing | `UWClient` has premarket/afterhours/historical earnings methods, but no surfaced hub. Add calendar, expected move, recent post-earnings move behavior, watchlist/portfolio filters, and ticker detail history. |
+| Analyst Ratings | Partial | `fetch_analyst_ratings.py`, `analyst_ratings` DB rows, `/ticker/ratings`, and `RatingsTab` exist. Fold ratings into the new catalyst/event feed and custom alert surface; avoid duplicating the existing tab. |
+| Insider Trading | Plumbing only | `UWClient` wrappers exist, but there is no route/UI/event persistence. Add transaction feed, ticker-flow/sector-flow summaries, insider quality filters, and ticker detail module. |
+| Congressional Trading | Plumbing only | `UWClient` wrappers exist for recent trades/trader reports. Add recent/late report feeds, ticker filters, politician detail links, deduping, and portfolio/watchlist impact scoring. |
+| Economic Calendar | Plumbing only | `UWClient.get_economic_calendar` exists. Add macro event timeline, day/week filters, expected/previous/actual fields, portfolio risk tags, and evaluation warnings around event windows. |
+| Market Tide | Plumbing only | `UWClient.get_market_tide` exists. Add market-wide net call/put premium chart, slope/acceleration metrics, OTM-only and 5-minute modes, sector/ETF tide drilldowns, and Regime/Dashboard cards. |
+| Mr. Whale AI | Blocked as direct UW API surface | Official UW API docs list REST, WebSocket, Kafka, and MCP surfaces, but no public Mr. Whale REST endpoint was found in the current docs. Implement a Radon-native synthesis panel using fetched UW evidence rows and existing AI/chat infrastructure; optionally evaluate UW MCP later as a separate integration path. |
+
+## Implementation Plan
+
+### T1 — Inventory and contract audit
+
+- Reconcile `docs/unusual_whales_api.md`, `docs/unusual_whales_api_spec.yaml`, `scripts/clients/uw_client.py`, and official UW docs.
+- Produce a checked support matrix in `docs/unusual-whales-radon-coverage.md`.
+- Mark every listed feature by support level: full, partial, plumbing-only, missing, or blocked.
+- Acceptance criteria:
+  - Every row names the exact UW endpoint(s), Radon files using them today, desired UI owner, and planned persistence policy.
+  - Explicitly document API-plan requirements, especially Advanced-only WebSocket/full-tape access.
+
+### T2 — Shared UW ingestion layer
+
+- Extend `UWClient` with missing wrappers:
+  - Alerts: `/alerts`, `/alerts/configuration`.
+  - Market: `/market/top-net-impact`, `/market/{sector}/sector-tide`, `/market/{ticker}/etf-tide`, `/net-flow/expiry`, `/market/spike`.
+  - Screeners: richer `/screener/option-contracts` and `/screener/stocks` parameter support.
+  - Ticker levels: `/stock/{ticker}/option/stock-price-levels`, `/stock/{ticker}/stock-volume-price-levels`, `/stock/{ticker}/flow-per-strike-intraday`, `/stock/{ticker}/flow-recent`.
+  - Greek extensions: `/stock/{ticker}/greek-exposure/strike-expiry`, `/stock/{ticker}/spot-exposures`, `/stock/{ticker}/spot-exposures/strike`, `/stock/{ticker}/spot-exposures/expiry-strike`.
+  - Congress/insider gaps: `/congress/late-reports`, `/politician-portfolios/recent_trades`, `/stock/{ticker}/insider-buy-sells`.
+- Normalize provider errors using existing `UWAPIError` hierarchy; do not hide 401/403 scope failures behind empty data.
+- Acceptance criteria:
+  - Unit tests pin path, params, retry behavior, 404 empty-vs-error policy, and array query names.
+  - `UW_TOKEN` loading keeps honoring `web/.env` when local verification needs it.
+
+### T3 — Storage model
+
+- Add a small number of generic tables rather than one table per UW widget:
+  - `uw_indicator_snapshots(surface, scope, symbol, as_of_date, interval, fetched_at, status, payload)`.
+  - `uw_event_items(source_type, provider_id, symbol, event_time, fetched_at, payload)` for alerts, earnings, insider, congress, analyst, economic events.
+  - `uw_stream_state(channel, symbol, last_seen_at, last_payload_hash, status, error)` for optional WebSocket consumers.
+- Keep JSON fallback files only where a current route pattern already requires compatibility; new surfaces should be DB-first.
+- Acceptance criteria:
+  - Idempotent upsert helpers in `scripts/db/writer.py`.
+  - Migration tests cover inserts, replacement, deduping, and latest-row reads.
+
+### T4 — Global market collectors
+
+- Add `scripts/uw_market_overview.py --json`:
+  - Market Tide: `/market/market-tide` with `date`, `otm_only`, `interval_5m`.
+  - Market Map: sector ETFs, top net impact, total options volume, sector tide, ETF tide.
+  - Net flow by expiry: `/net-flow/expiry` for zero-DTE vs weekly, equity/ETF/index splits, ITM/OTM/ATM.
+  - Economic Calendar: `/market/economic-calendar`.
+  - Earnings Hub: `/earnings/premarket`, `/earnings/afterhours`.
+- Compute derived fields:
+  - Net premium slope and acceleration.
+  - Bullish/bearish top-net-impact split.
+  - Sector tide breadth.
+  - Event risk window for FOMC/CPI/NFP/Fed speakers/earnings.
+- Acceptance criteria:
+  - CLI returns one stable JSON envelope with `data_date`, `fetched_at`, `surfaces`, `freshness`, and per-surface errors.
+  - Partial endpoint failure degrades only that surface.
+
+### T5 — Ticker/options collectors
+
+- Add `scripts/uw_ticker_intel.py TICKER --json`:
+  - Net premium ticks with cumulative call/put premium and volume.
+  - Intraday levels: option price levels plus lit/off-lit stock volume levels.
+  - Expanded Greek exposure: aggregate, strike, expiry, strike-expiry, Greek flow, spot exposures.
+  - Options flow extensions: flow per strike/expiry/intraday, recent flows, flow alerts using named Radon presets.
+  - Insider/congress/analyst/earnings for the ticker.
+- Keep current `fetch_flow.py` intact for existing scanner/evaluation behavior until the new collector proves equivalent or better.
+- Acceptance criteria:
+  - One command can populate a full ticker intelligence payload for a watchlist symbol without calling unrelated endpoints.
+  - Numeric parsing is centralized; raw payloads remain available for audit.
+
+### T6 — API routes
+
+- FastAPI:
+  - `POST /uw/market/scan`
+  - `GET /uw/market`
+  - `POST /uw/ticker/{ticker}/scan`
+  - `GET /uw/ticker/{ticker}`
+  - `GET /uw/events`
+  - `GET /uw/alerts`
+  - Optional `POST /uw/ws/start` / `POST /uw/ws/stop` only after token scope is verified.
+- Next.js:
+  - `/api/uw/market`
+  - `/api/uw/ticker/[ticker]`
+  - `/api/uw/events`
+  - `/api/uw/alerts`
+- Acceptance criteria:
+  - Routes are DB-first, no-store where operator freshness matters, and explicit about stale/fallback data.
+  - Existing `/api/gex`, `/api/flow-analysis`, `/api/ticker/ratings`, and `/api/ticker/info` stay backward compatible.
+
+### T7 — Operator UI
+
+- Dashboard:
+  - Add compact Market Tide, Market Map, Earnings/Economic risk strip, and top net-impact modules.
+- Scanner / Flow Analysis:
+  - Add custom screener presets, flow-alert presets, top net premium names, and dark-pool/off-lit tape drilldowns.
+- Regime:
+  - Add Market Tide and net-flow expiry panels beside CRI/VCG/GEX/GRG, clearly source-tagged as UW.
+- Ticker workspace:
+  - Add or extend tabs/modules for Net Premium, Levels, Expanded Greeks, Insider/Congress, Earnings, and Events.
+  - Keep `RatingsTab` as the ratings owner; add cross-links rather than a duplicate ratings surface.
+- Acceptance criteria:
+  - No generic marketing/landing page.
+  - UI follows Radon brand: instrument modules, hairline borders, matte panels, max 4px radius, no gradients/glass/decorative copy.
+  - Mobile layouts have geometry tests for key panels.
+
+### T8 — Alerts, screeners, and optional WebSocket
+
+- Start with REST polling:
+  - Fetch UW-created alert configurations and triggered alerts.
+  - Add Radon-local saved presets for flow alerts and contract/stock screeners.
+  - Emit a unified event feed with severity, ticker, source type, dedupe key, and operator action.
+- Add WebSocket ingestion only if the active UW plan supports it:
+  - Channels: `flow-alerts`, `option_trades:{TICKER}`, `gex:{TICKER}`, `gex_strike:{TICKER}`, `news`, `off_lit_trades`, `price:{TICKER}`.
+  - Run in monitor daemon or a separate supervised worker, never in Next.js request handlers.
+- Acceptance criteria:
+  - Live stream outages write service health and fall back to REST snapshots.
+  - No duplicate alert spam when REST and WebSocket report the same event.
+
+### T9 — Evaluation and scanner integration
+
+- Add the new surfaces as context and conflict checks, not as shortcuts around Radon's gates:
+  - Market Tide and net-flow expiry become regime context.
+  - Net Premium, Greek Exposure, intraday levels, and custom screeners become supporting edge context.
+  - Earnings/Economic/Insider/Congress/Analyst become catalyst and risk-event context.
+  - Dark-pool/OTC remains the specific data-backed edge gate unless the strategy spec is explicitly changed.
+- Acceptance criteria:
+  - `evaluate [TICKER]` still outputs `signal -> structure -> Kelly math -> decision`.
+  - If an active gate fails, output stops at that gate.
+  - Tests prove the new indicators cannot rationalize a trade when convexity or edge fails.
+
+### T10 — Radon-native "Mr. Whale" synthesis
+
+- Since no current public UW Mr. Whale REST endpoint is documented, implement a Radon synthesis layer:
+  - Input: the normalized UW market/ticker/event payloads.
+  - Output: short operator brief with cited rows, contradictions, missing data, and confidence.
+  - Scope: explain market state and anomaly clusters; do not place orders or override evaluation gates.
+- Integrate into existing chat/context infrastructure as a tool-backed "UW Brief" rather than a free-form hallucination surface.
+- Acceptance criteria:
+  - Every assertion links to an underlying endpoint row or says data is unavailable.
+  - Snapshot tests cover bullish, bearish, mixed, and stale-data briefs.
+
+### T11 — Verification
+
+- Python:
+  - `python3.13 scripts/run_pytest_affected.py --files ... -- -q`
+  - Focused tests for `UWClient`, collectors, DB writers, FastAPI routes, service health, and scheduler/daemon workers.
+  - Full `python3.13 -m pytest -q` before commit; report unrelated baseline failures separately if still red.
+- TypeScript/React:
+  - Focused Vitest for API routes, hooks, staleness helpers, and components.
+  - Relevant Playwright E2E for Dashboard, Regime, Scanner/Flow Analysis, and Ticker workspace surfaces.
+  - Full `npm test` and `npm run typecheck` before commit; report current repo baseline separately if red.
+- Live verification:
+  - Load `UW_TOKEN` from `web/.env`.
+  - Smoke one liquid index ETF (`SPY`), one mega-cap (`NVDA` or `AAPL`), one lower-liquidity watchlist name, and one no-data ticker.
+  - Confirm rate-limit behavior and stale/fallback labels.
+
+### T12 — Documentation and rollout
+
+- Update:
+  - `docs/unusual_whales_api.md`
+  - `docs/scripts-reference.md`
+  - `README.md`
+  - `web/CLAUDE.md` / scoped `AGENTS.md` only if route/verification conventions change.
+- Add an operator runbook:
+  - API plan and token-scope requirements.
+  - Refresh cadence per surface.
+  - Known delayed-data behavior.
+  - What counts as stale, partial, unavailable, and auth-scope-blocked.
+- Acceptance criteria:
+  - A future agent can run the collectors, verify the surfaces, and understand why each indicator is or is not allowed to influence a trade decision.
+
+## Proposed Delivery Order
+
+1. Foundation: T1, T2, T3.
+2. Highest signal global surfaces: T4 Market Tide, top net impact, net-flow expiry, economic/earnings risk strip.
+3. Highest signal ticker surfaces: T5 Net Premium, Intraday Levels, expanded Greeks.
+4. Event intelligence: insider, congress, analyst integration, earnings history.
+5. Custom alerts/screeners: REST first, WebSocket only after scope verification.
+6. Radon-native UW synthesis.
+7. Full verification and docs.
+
+## Review
+
+- Planned against current repo state on 2026-05-31.
+- Official UW docs confirm REST categories for options flow, dark pool, congressional trading, Greek exposure, market data, earnings, insiders, screeners, and WebSocket streaming; local `docs/unusual_whales_api_spec.yaml` contains the concrete endpoint map.
+- Current Radon code already has broad `UWClient` plumbing, existing flow/dark-pool/GEX/rating surfaces, and DB patterns (`*_snapshots`, `analyst_ratings`, `oi_changes`) to reuse.
+- No implementation changes were made in this task beyond this planning artifact.
+
+---
+
 # Task: Fix Mobile Dashboard News Feed Bugs
 
 ## Dependency Graph
