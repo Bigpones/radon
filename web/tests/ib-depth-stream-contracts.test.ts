@@ -37,7 +37,7 @@ describe("ib_realtime_server.js exposes the flag-gated L2 depth channel", () => 
   it("broadcasts a depth-batch reusing the 100ms flush and cleans buffers per client", () => {
     expect(source).toContain('type: "depth-batch"');
     expect(source).toContain("function flushDepthBatches");
-    expect(source).toContain("if (DEPTH_ENABLED) flushDepthBatches();");
+    expect(source).toContain("flushDepthBatches();");
     expect(source).toContain("clientDepthBuffers.delete(client)");
   });
 
@@ -62,5 +62,77 @@ describe("ib_realtime_server.js exposes the flag-gated L2 depth channel", () => 
     expect(book).toContain("feed: depthFeedLabel");
     // Per-level: equity exchange = marketMaker code, marketMaker null; futures both null.
     expect(source).toContain("return { price: lvl.price, size: lvl.size, marketMaker: null, exchange };");
+  });
+
+  it("resolves a futures root to a qualified front-month contract via reqContractDetails", () => {
+    // @stoqey/ib has no ContFuture auto-resolution — depth on a bare root needs
+    // a qualified contract (conId), resolved via reqContractDetails on the
+    // native exchange, picking the nearest non-expired expiry.
+    expect(source).toContain("function resolveFuturesFrontMonth");
+    expect(source).toContain("ib.reqContractDetails(reqId, probe)");
+    expect(source).toContain("includeExpired: false");
+    expect(source).toContain("secType: SecType.FUT");
+    expect(source).toContain("function pickFrontMonth");
+    expect(source).toContain("ib.on(EventName.contractDetails");
+    expect(source).toContain("ib.on(EventName.contractDetailsEnd");
+    // Cache the resolved contract per root so we don't re-resolve every subscribe.
+    expect(source).toContain("resolvedFuturesContracts");
+  });
+
+  it("maps each futures root to its native depth exchange", () => {
+    const map = source.match(/const FUTURES_ROOT_EXCHANGES = \{[\s\S]*?\};/)?.[0] ?? "";
+    expect(map).toContain('ES: "CME"');
+    expect(map).toContain('NQ: "CME"');
+    expect(map).toContain('CL: "NYMEX"');
+    expect(map).toContain('NG: "NYMEX"');
+    expect(map).toContain('GC: "COMEX"');
+    expect(map).toContain('SI: "COMEX"');
+    expect(map).toContain('HG: "COMEX"');
+    expect(map).toContain('ZB: "CBOT"');
+    expect(map).toContain('ZN: "CBOT"');
+    expect(map).toContain('VX: "CFE"');
+  });
+
+  it("bounds the futures resolution await and degrades to futures-no-depth without hanging", () => {
+    expect(source).toContain("const FUTURES_RESOLVE_TIMEOUT_MS");
+    expect(source).toContain("setTimeout(() => {");
+    // The subscribe path awaits resolution; null → emit futures-no-depth, bail.
+    expect(source).toContain("const resolved = await resolveFuturesFrontMonth(subject.root)");
+    expect(source).toContain('emitDepthUnavailable(subject.key, "futures-no-depth")');
+  });
+
+  it("labels futures depth feed with the resolved venue (CME DEPTH)", () => {
+    const label = source.match(/function depthFeedLabel\([\s\S]*?\n\}/)?.[0] ?? "";
+    expect(label).toContain("`${exchange} DEPTH`");
+    expect(label).toContain('"NATIVE DEPTH"');
+  });
+
+  it("opens a Time & Sales tape on the focused depth symbol via reqTickByTickData(AllLast)", () => {
+    // @stoqey/ib: reqTickByTickData(reqId, contract, tickType, numberOfTicks, ignoreSize)
+    // and cancelTickByTickData(reqId). AllLast is realtime-only (no backfill).
+    expect(source).toContain("ib.reqTickByTickData(tapeTickerId, contract, TickByTickDataType.AllLast, 0, false)");
+    expect(source).toContain("ib.cancelTickByTickData(state.tapeTickerId)");
+    expect(source).toContain("function startTapeSubscription");
+    expect(source).toContain("function stopTapeSubscription");
+    // Tape rides the focused symbol — started alongside depth, stopped with it.
+    expect(source).toContain("startTapeSubscription(subject.key, contract)");
+    expect(source).toContain("stopTapeSubscription(key)");
+    expect(source).toContain("import { IBApi, EventName, SecType, OptionType, TickByTickDataType }");
+  });
+
+  it("consumes the tickByTickAllLast event with the @stoqey arity and rings the buffer", () => {
+    // (reqId, tickType, time, price, size, tickAttribLast, exchange, specialConditions)
+    expect(source).toContain("ib.on(EventName.tickByTickAllLast, (reqId, _tickType, time, price, size, _tickAttribLast, exchange, _specialConditions)");
+    expect(source).toContain("const TAPE_RING_SIZE = 50");
+    expect(source).toContain("function applyTrade");
+    // Trade shape must match web/lib Trade = {price, size, exchange, time}.
+    expect(source).toContain("state.trades.push({ price, size, exchange: exchange || null, time })");
+  });
+
+  it("broadcasts a tape-batch reusing the 100ms flush and cleans tape buffers per client", () => {
+    expect(source).toContain('type: "tape-batch"');
+    expect(source).toContain("function flushTapeBatches");
+    expect(source).toContain("flushTapeBatches();");
+    expect(source).toContain("clientTapeBuffers.delete(client)");
   });
 });

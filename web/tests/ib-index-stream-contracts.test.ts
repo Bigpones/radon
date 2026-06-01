@@ -26,8 +26,8 @@ describe("ib_realtime_server.js preserves typed contracts for cold-start restore
   });
 
   it("uses the @stoqey/ib API surface (IBApi + EventName) instead of the dead ib@0.2.9 package", () => {
-    expect(source).toContain('import { IBApi, EventName, SecType, OptionType } from "@stoqey/ib";');
-    expect(source).not.toContain('from "ib"');
+    expect(source).toMatch(/import \{ IBApi, EventName, SecType, OptionType(, TickByTickDataType)? \} from "@stoqey\/ib";/);
+    expect(source).not.toMatch(/from ["']ib["']/);
     expect(source).toContain("new IBApi({");
     // Contracts are plain object literals built from the @stoqey enums.
     expect(source).toContain("secType: SecType.STK");

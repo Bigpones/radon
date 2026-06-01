@@ -23,7 +23,7 @@ import path from "node:path";
 import http from "node:http";
 import net from "node:net";
 import { WebSocketServer } from "ws";
-import { IBApi, EventName, SecType, OptionType } from "@stoqey/ib";
+import { IBApi, EventName, SecType, OptionType, TickByTickDataType } from "@stoqey/ib";
 import { classifyIBConnectionError } from "./ib_connection_status.js";
 import {
   createPriceData,
@@ -345,13 +345,56 @@ const MAX_CONCURRENT_DEPTH = 3;
 const DEPTH_NUM_ROWS_EQUITY = 5;
 const DEPTH_NUM_ROWS_FUTURES = 10;
 // Symbols treated as futures for depth purposes (single-venue native depth).
-const DEPTH_FUTURES_SYMBOLS = new Set(["ES", "NQ", "RTY", "YM", "CL", "GC", "ZB", "ZN", "VX"]);
+const DEPTH_FUTURES_SYMBOLS = new Set(["ES", "NQ", "RTY", "YM", "CL", "NG", "GC", "SI", "HG", "ZB", "ZN", "ZC", "ZS", "VX"]);
+// Futures root → native exchange. Front-month depth requires a qualified
+// contract (conId), which we resolve via reqContractDetails on this exchange.
+const FUTURES_ROOT_EXCHANGES = {
+  ES: "CME", NQ: "CME", RTY: "CME", YM: "CME",
+  CL: "NYMEX", NG: "NYMEX",
+  GC: "COMEX", SI: "COMEX", HG: "COMEX",
+  ZB: "CBOT", ZN: "CBOT", ZC: "CBOT", ZS: "CBOT",
+  VX: "CFE",
+};
+function futuresExchangeForRoot(root) {
+  return FUTURES_ROOT_EXCHANGES[root] || "CME";
+}
+const FUTURES_RESOLVE_TIMEOUT_MS = 6000;
 // key → { depthTickerId, contract, kind, isFutures, ladders:{bid:Map,ask:Map}, focusedAt }
 const symbolDepthStates = new Map();
 const depthRequestIdToSymbol = new Map(); // depthTickerId → key
 // Per-client depth buffer: Map<client, Map<symbol, DepthBook>>
 const clientDepthBuffers = new Map();
 const depthSubscribers = new Map(); // key → Set<client>
+// Resolved front-month futures contracts, cached per root so we don't
+// re-resolve on every subscribe. root → qualified Contract (with conId).
+const resolvedFuturesContracts = new Map();
+// In-flight reqContractDetails resolutions: reqId → { root, resolve, timer, candidates }
+const futuresResolveRequests = new Map();
+
+/* ─── Time & Sales tape (flag-gated, rides the focused depth symbol) ─────────
+ * On subscribe-depth we also open a reqTickByTickData(AllLast) stream for the
+ * same contract; on unsubscribe-depth we cancel it. Trades land in a bounded
+ * per-symbol ring buffer and broadcast as {type:"tape-batch"} on the same
+ * 100ms flush as depth. tick-by-tick shares the depth line allowance, so the
+ * existing focused-symbol-only model + 3-ticket cap keep us inside budget.
+ *
+ * @stoqey/ib surface (verified against dist/api/api.d.ts):
+ *   reqTickByTickData(reqId, contract, tickType, numberOfTicks, ignoreSize)
+ *   cancelTickByTickData(reqId)
+ *   EventName.tickByTickAllLast: (reqId, tickType, time, price, size,
+ *     tickAttribLast, exchange, specialConditions)
+ * AllLast is realtime-only (no historical backfill) — start empty, fill forward.
+ *
+ * ORDERING CONVENTION: the ring buffer (and the emitted Trade[]) is
+ * NEWEST-LAST — index 0 is the oldest retained print, the final element is the
+ * most recent. classifyTicks consumes an ordered array (prior-tick test) and
+ * reads forward, so chronological/newest-last matches the prior-tick semantics.
+ */
+const TAPE_RING_SIZE = 50;
+const tapeRequestIdToSymbol = new Map(); // tapeTickerId → key
+// key → { tapeTickerId, trades: Trade[] (newest-last, bounded TAPE_RING_SIZE) }
+const symbolTapeStates = new Map();
+const clientTapeBuffers = new Map(); // client → Map<symbol, Trade[]>
 
 /* ─── Symbol Search Cache ─────────────────────────────────────────────── */
 const SEARCH_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
@@ -547,11 +590,32 @@ function flushDepthBatches() {
   }
 }
 
+function bufferTapeForClient(client, symbol, trades) {
+  let buf = clientTapeBuffers.get(client);
+  if (!buf) {
+    buf = new Map();
+    clientTapeBuffers.set(client, buf);
+  }
+  buf.set(symbol, trades);
+}
+
+function flushTapeBatches() {
+  for (const [client, buf] of clientTapeBuffers) {
+    if (buf.size === 0) continue;
+    const updates = Object.fromEntries(buf);
+    buf.clear();
+    sendMessage(client, { type: "tape-batch", updates });
+  }
+}
+
 function startBatchFlush() {
   if (batchFlushTimer) return;
   batchFlushTimer = setInterval(() => {
     flushBatches();
-    if (DEPTH_ENABLED) flushDepthBatches();
+    if (DEPTH_ENABLED) {
+      flushDepthBatches();
+      flushTapeBatches();
+    }
   }, BATCH_INTERVAL_MS);
 }
 
@@ -565,6 +629,7 @@ function stopBatchFlush() {
 function removeBatchBuffer(client) {
   clientBatchBuffers.delete(client);
   clientDepthBuffers.delete(client);
+  clientTapeBuffers.delete(client);
 }
 
 function sendMessage(client, payload) {
@@ -704,8 +769,10 @@ function cleanupSymbolStateForReconnect() {
  * DEPTH_ENABLED; callers also guard, but the cap/LRU logic lives here.
  */
 
-function depthFeedLabel(kind, isFutures) {
-  if (isFutures) return "NATIVE DEPTH";
+function depthFeedLabel(kind, isFutures, exchange) {
+  // Futures: native single-venue depth — label with the venue when known
+  // (e.g. "CME DEPTH"), else generic "NATIVE DEPTH".
+  if (isFutures) return exchange ? `${exchange} DEPTH` : "NATIVE DEPTH";
   if (kind === "option") return "OPRA BBO";
   return "SMART DEPTH";
 }
@@ -756,6 +823,150 @@ function evictOldestDepth(exceptKey) {
   if (oldestKey != null) {
     stopDepthSubscription(oldestKey);
     emitDepthUnavailable(oldestKey, "recycled");
+  }
+}
+
+/* Resolve a futures root (e.g. "ES") to its qualified front-month contract.
+ * @stoqey/ib has no ContFuture auto-resolution, so reqMktDepth on a bare root
+ * fails — we need a conId. reqContractDetails on the native exchange returns
+ * every listed expiry; we pick the NEAREST non-expired one. Cached per root.
+ * Bounded await: resolves null on timeout/error so the caller never hangs. */
+function resolveFuturesFrontMonth(root) {
+  const cached = resolvedFuturesContracts.get(root);
+  if (cached) return Promise.resolve(cached);
+  if (!ibConnected) return Promise.resolve(null);
+
+  const exchange = futuresExchangeForRoot(root);
+  const probe = {
+    symbol: root,
+    secType: SecType.FUT,
+    exchange,
+    currency: "USD",
+    includeExpired: false,
+  };
+  const reqId = nextRequestId += 1;
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      futuresResolveRequests.delete(reqId);
+      resolve(value);
+    };
+
+    const timer = setTimeout(() => {
+      verbose(`futures resolve ${root} timed out`);
+      finish(null);
+    }, FUTURES_RESOLVE_TIMEOUT_MS);
+
+    futuresResolveRequests.set(reqId, { root, finish, candidates: [] });
+
+    try {
+      ib.reqContractDetails(reqId, probe);
+    } catch (error) {
+      verbose(`reqContractDetails(${root}) failed: ${error}`);
+      finish(null);
+    }
+  });
+}
+
+// Pick the nearest non-expired expiry from the collected contractDetails.
+function pickFrontMonth(candidates) {
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, ""); // YYYYMMDD
+  const dated = candidates
+    .map((c) => ({ contract: c, expiry: String(c.lastTradeDateOrContractMonth || "").slice(0, 8) }))
+    .filter((e) => e.expiry.length === 8 && e.expiry >= today)
+    .sort((a, b) => a.expiry.localeCompare(b.expiry));
+  return dated.length ? dated[0].contract : null;
+}
+
+function onContractDetails(reqId, contractDetails) {
+  const req = futuresResolveRequests.get(reqId);
+  if (!req || !contractDetails?.contract) return;
+  req.candidates.push(contractDetails.contract);
+}
+
+function onContractDetailsEnd(reqId) {
+  const req = futuresResolveRequests.get(reqId);
+  if (!req) return;
+  const front = pickFrontMonth(req.candidates);
+  if (front) {
+    resolvedFuturesContracts.set(req.root, front);
+    verbose(`futures resolve ${req.root} → ${front.localSymbol || front.lastTradeDateOrContractMonth} (conId ${front.conId})`);
+    req.finish(front);
+  } else {
+    verbose(`futures resolve ${req.root}: no non-expired expiry`);
+    req.finish(null);
+  }
+}
+
+/* ─── Time & Sales tape lifecycle ────────────────────────────────────────── */
+function startTapeSubscription(key, contract) {
+  if (!DEPTH_ENABLED || !ibConnected) return;
+  let state = symbolTapeStates.get(key);
+  if (!state) {
+    state = { tapeTickerId: null, trades: [] };
+    symbolTapeStates.set(key, state);
+  }
+  if (state.tapeTickerId != null) return; // already streaming
+
+  const tapeTickerId = nextRequestId += 1;
+  try {
+    // AllLast = every last-trade print (incl. combos/odd-lots). numberOfTicks=0
+    // → continuous stream; ignoreSize=false keeps trade sizes.
+    ib.reqTickByTickData(tapeTickerId, contract, TickByTickDataType.AllLast, 0, false);
+    state.tapeTickerId = tapeTickerId;
+    tapeRequestIdToSymbol.set(tapeTickerId, key);
+    verbose(`tape subscribe ${key} ticket=${tapeTickerId}`);
+  } catch (error) {
+    console.error(`Failed to subscribe tape ${key}:`, error);
+  }
+}
+
+function stopTapeSubscription(key) {
+  const state = symbolTapeStates.get(key);
+  if (!state) return;
+  if (state.tapeTickerId != null) {
+    try {
+      ib.cancelTickByTickData(state.tapeTickerId);
+    } catch {
+      // Ignore.
+    }
+    tapeRequestIdToSymbol.delete(state.tapeTickerId);
+    state.tapeTickerId = null;
+  }
+  symbolTapeStates.delete(key);
+}
+
+// Append a print to the bounded ring (newest-last) and buffer for broadcast.
+function applyTrade(key, price, size, exchange, time) {
+  const state = symbolTapeStates.get(key);
+  if (!state) return;
+  state.trades.push({ price, size, exchange: exchange || null, time });
+  if (state.trades.length > TAPE_RING_SIZE) {
+    state.trades.splice(0, state.trades.length - TAPE_RING_SIZE);
+  }
+  const subscribers = depthSubscribers.get(key);
+  if (!subscribers || subscribers.size === 0) return;
+  const snapshot = state.trades.slice();
+  for (const client of subscribers) {
+    bufferTapeForClient(client, key, snapshot);
+  }
+}
+
+function cleanupTapeForReconnect() {
+  for (const [, state] of symbolTapeStates) {
+    if (state.tapeTickerId != null) {
+      try {
+        ib.cancelTickByTickData(state.tapeTickerId);
+      } catch {
+        // Ignore.
+      }
+      tapeRequestIdToSymbol.delete(state.tapeTickerId);
+      state.tapeTickerId = null;
+    }
   }
 }
 
@@ -836,7 +1047,7 @@ function hydrateAndBroadcastDepth(key) {
     bid: serializeLadder(state.ladders.bid, state.isFutures),
     ask: serializeLadder(state.ladders.ask, state.isFutures),
     isSmartDepth: !state.isFutures,
-    feed: depthFeedLabel(state.kind, state.isFutures),
+    feed: depthFeedLabel(state.kind, state.isFutures, state.isFutures ? state.contract?.exchange : null),
     entitled: true,
     timestamp: nowIso(),
   };
@@ -861,6 +1072,7 @@ function unsubscribeClientFromDepth(client, key) {
   if (subscribers.size === 0) {
     depthSubscribers.delete(key);
     stopDepthSubscription(key);
+    stopTapeSubscription(key); // tape rides the focused depth symbol
   }
 }
 
@@ -878,15 +1090,17 @@ function cleanupDepthForReconnect() {
     state.ladders.bid.clear();
     state.ladders.ask.clear();
   }
+  cleanupTapeForReconnect();
 }
 
-// Restore the focused depth ticket(s) after a reconnect.
+// Restore the focused depth ticket(s) + tape after a reconnect.
 function restoreDepthSubscriptions() {
   if (!DEPTH_ENABLED) return;
   for (const key of depthSubscribers.keys()) {
     const state = symbolDepthStates.get(key);
     if (!state || !state.contract) continue;
     startDepthSubscription(key, state.contract, { kind: state.kind, isFutures: state.isFutures });
+    startTapeSubscription(key, state.contract);
   }
 }
 
@@ -1212,10 +1426,12 @@ function resolveDepthSubject(payload) {
 
   const isFuture = DEPTH_FUTURES_SYMBOLS.has(rawSymbol) || payload.instrument === "future" || payload.secType === "FUT";
   if (isFuture) {
-    const expiry = typeof payload.expiry === "string" ? payload.expiry.trim() : "";
-    const exchange = typeof payload.exchange === "string" ? payload.exchange.trim().toUpperCase() : undefined;
-    // No async qualification in the relay — build it and let IB reject (200).
-    return { key: rawSymbol, contract: futureContract(rawSymbol, expiry, "USD", exchange), kind: "future", isFutures: true };
+    // Depth on a bare futures root needs a QUALIFIED front-month contract
+    // (conId), resolved via reqContractDetails in the handler. We carry the
+    // root + a fallback bare-root contract; the handler swaps in the resolved
+    // front-month before calling reqMktDepth.
+    const exchange = typeof payload.exchange === "string" ? payload.exchange.trim().toUpperCase() : futuresExchangeForRoot(rawSymbol);
+    return { key: rawSymbol, root: rawSymbol, contract: futureContract(rawSymbol, "", "USD", exchange), kind: "future", isFutures: true };
   }
 
   return { key: rawSymbol, contract: stockContract(rawSymbol, "SMART", "USD"), kind: "stock", isFutures: false };
@@ -1234,7 +1450,20 @@ async function handleClientMessage(client, data) {
       }
       if (depthAction === "subscribe-depth") {
         subscribeClientToDepth(client, subject.key);
-        startDepthSubscription(subject.key, subject.contract, { kind: subject.kind, isFutures: subject.isFutures });
+        let contract = subject.contract;
+        if (subject.isFutures) {
+          // Qualify the front month (conId) before reqMktDepth — bounded await
+          // so a slow/failed resolution can't hang the relay. No depth without
+          // a real contract: emit futures-no-depth and bail.
+          const resolved = await resolveFuturesFrontMonth(subject.root);
+          if (!resolved) {
+            emitDepthUnavailable(subject.key, "futures-no-depth");
+            return;
+          }
+          contract = resolved;
+        }
+        startDepthSubscription(subject.key, contract, { kind: subject.kind, isFutures: subject.isFutures });
+        startTapeSubscription(subject.key, contract);
       } else {
         unsubscribeClientFromDepth(client, subject.key);
       }
@@ -1631,6 +1860,26 @@ function wireIBEvents() {
       if (!key) return;
       lastTickTimestamp = Date.now();
       applyDepthDelta(key, position, marketMaker, operation, side, price, size);
+    });
+
+    // Time & Sales tape — reqTickByTickData(AllLast). @stoqey/ib arity:
+    // (reqId, tickType, time, price, size, tickAttribLast, exchange,
+    // specialConditions). `time` is unix seconds (string); we emit ISO.
+    ib.on(EventName.tickByTickAllLast, (reqId, _tickType, time, price, size, _tickAttribLast, exchange, _specialConditions) => {
+      const key = tapeRequestIdToSymbol.get(reqId);
+      if (!key) return;
+      lastTickTimestamp = Date.now();
+      const seconds = Number(time);
+      const iso = Number.isFinite(seconds) ? new Date(seconds * 1000).toISOString() : nowIso();
+      applyTrade(key, price, size, exchange, iso);
+    });
+
+    // Front-month futures contract resolution (reqContractDetails).
+    ib.on(EventName.contractDetails, (reqId, contractDetails) => {
+      onContractDetails(reqId, contractDetails);
+    });
+    ib.on(EventName.contractDetailsEnd, (reqId) => {
+      onContractDetailsEnd(reqId);
     });
   }
 }
