@@ -38,6 +38,10 @@ RADON_DEPTH_ENABLED.
 - Integration-seam bugs caught + fixed at integration: ordering contract mismatch
   (relay oldest-first vs web's assumed newest-first), snapshot-replace-not-merge
   (merging duplicated rows every 100ms flush), raw-epoch time rendering.
+- Futures L1 quote-bar fix (commit af8e208): a bare futures root subscribed L1 as
+  a stock, so /ES showed the equity "ES" (Eversource ~$67) in the quote bar while
+  the ladder showed the future (~7595). L1 now resolves the front-month future
+  (same path as depth). Verified live: /ES quote bar 7595.00 == ladder head 7595.00.
 
 **Remaining: Phase 3 — options per-exchange BBO montage refinement + any tape/depth
 polish. (Options already get depth via the stock montage path + tape; Phase 3 is the
