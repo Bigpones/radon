@@ -1024,15 +1024,45 @@ function applyDepthDelta(key, position, marketMaker, operation, side, price, siz
   hydrateAndBroadcastDepth(key);
 }
 
-function serializeLadder(ladder, isFutures) {
+function serializeLadder(ladder, isFutures, kind, side) {
   const rows = [...ladder.entries()].sort((a, b) => a[0] - b[0]);
+  // OPRA options: each row is a venue's top-of-book BBO (no stacked depth). The
+  // NBBO is the best bid (max price) / best ask (min price) across the venue
+  // rows; ALL venues tied at that inside price are flagged nbbo=true.
+  const isOption = kind === "option";
+  const nbboPrice = nbboPriceForOptionLadder(rows, side, isOption);
   return rows.map(([, lvl]) => {
-    // Equity/option (L2): the venue/MPID code arrives as marketMaker → expose
-    // it as exchange (marketMaker always null per the web type). Futures
-    // (single-venue): no attribution, both null.
-    const exchange = isFutures ? null : (lvl.marketMaker || null);
-    return { price: lvl.price, size: lvl.size, marketMaker: null, exchange };
+    // Equity/option (L2): the venue/MPID code arrives as marketMaker. For
+    // options the marketMaker IS the venue, so populate BOTH fields so the web
+    // montage (level.marketMaker ?? level.exchange) labels the Market column
+    // consistently with stocks. Equities keep marketMaker null (MPID exposed
+    // as exchange). Futures (single-venue): no attribution, both null.
+    const venue = isFutures ? null : (lvl.marketMaker || null);
+    const marketMaker = isOption ? venue : null;
+    const exchange = venue;
+    const level = { price: lvl.price, size: lvl.size, marketMaker, exchange };
+    if (isOption) level.nbbo = nbboPrice != null && lvl.price === nbboPrice;
+    return level;
   });
+}
+
+// Inside price across an option venue montage: max bid / min ask. Returns null
+// for non-option ladders or empty rows (no flag emitted).
+function nbboPriceForOptionLadder(rows, side, isOption) {
+  if (!isOption || rows.length === 0) return null;
+  const prices = rows.map(([, lvl]) => lvl.price).filter((p) => typeof p === "number");
+  if (prices.length === 0) return null;
+  return side === "bid" ? Math.max(...prices) : Math.min(...prices);
+}
+
+// Cross-venue NBBO summary for an option montage: best bid / best ask / mid /
+// total displayed size across the venue rows at the inside.
+function summarizeOptionNbbo(bid, ask) {
+  const bestBid = bid.length ? Math.max(...bid.map((l) => l.price)) : null;
+  const bestAsk = ask.length ? Math.min(...ask.map((l) => l.price)) : null;
+  const mid = bestBid != null && bestAsk != null ? (bestBid + bestAsk) / 2 : null;
+  const sumSize = (rows) => rows.reduce((acc, l) => acc + (typeof l.size === "number" ? l.size : 0), 0);
+  return { bestBid, bestAsk, mid, bidSize: sumSize(bid), askSize: sumSize(ask) };
 }
 
 function hydrateAndBroadcastDepth(key) {
@@ -1041,16 +1071,22 @@ function hydrateAndBroadcastDepth(key) {
   const subscribers = depthSubscribers.get(key);
   if (!subscribers || subscribers.size === 0) return;
 
+  const bid = serializeLadder(state.ladders.bid, state.isFutures, state.kind, "bid");
+  const ask = serializeLadder(state.ladders.ask, state.isFutures, state.kind, "ask");
   const book = {
     symbol: key,
     kind: state.kind,
-    bid: serializeLadder(state.ladders.bid, state.isFutures),
-    ask: serializeLadder(state.ladders.ask, state.isFutures),
+    bid,
+    ask,
     isSmartDepth: !state.isFutures,
     feed: depthFeedLabel(state.kind, state.isFutures, state.isFutures ? state.contract?.exchange : null),
     entitled: true,
     timestamp: nowIso(),
   };
+  // Options: surface the cross-venue NBBO summary (cheap — derived from the
+  // already-flagged inside rows). Honest framing: this is top-of-book per
+  // venue, not stacked depth.
+  if (state.kind === "option") book.nbbo = summarizeOptionNbbo(bid, ask);
   for (const client of subscribers) {
     bufferDepthForClient(client, key, book);
   }

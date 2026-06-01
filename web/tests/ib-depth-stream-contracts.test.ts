@@ -60,8 +60,46 @@ describe("ib_realtime_server.js exposes the flag-gated L2 depth channel", () => 
     expect(book).toContain("isSmartDepth: !state.isFutures");
     expect(book).toContain("entitled: true");
     expect(book).toContain("feed: depthFeedLabel");
-    // Per-level: equity exchange = marketMaker code, marketMaker null; futures both null.
-    expect(source).toContain("return { price: lvl.price, size: lvl.size, marketMaker: null, exchange };");
+    // Per-level base shape — fields populated per instrument kind below.
+    expect(source).toContain("const level = { price: lvl.price, size: lvl.size, marketMaker, exchange };");
+  });
+
+  it("labels option venue code into BOTH marketMaker and exchange; equities keep marketMaker null", () => {
+    // The web montage reads `level.marketMaker ?? level.exchange`. Options have
+    // no MPID — the venue code IS the marketMaker — so populate both fields so
+    // the Market column labels consistently with stocks.
+    const ladder = source.match(/function serializeLadder\([\s\S]*?\n\}/)?.[0] ?? "";
+    expect(ladder).toContain('const isOption = kind === "option";');
+    expect(ladder).toContain("const venue = isFutures ? null : (lvl.marketMaker || null);");
+    expect(ladder).toContain("const marketMaker = isOption ? venue : null;");
+    expect(ladder).toContain("const exchange = venue;");
+    // serializeLadder now receives the instrument kind + side for option NBBO.
+    expect(source).toContain('serializeLadder(state.ladders.bid, state.isFutures, state.kind, "bid")');
+    expect(source).toContain('serializeLadder(state.ladders.ask, state.isFutures, state.kind, "ask")');
+  });
+
+  it("flags option NBBO rows: bid=max price, ask=min price, ties all flagged, options only", () => {
+    const ladder = source.match(/function serializeLadder\([\s\S]*?\n\}/)?.[0] ?? "";
+    // nbbo flag emitted ONLY for options (lean payload) and only when a price matches the inside.
+    expect(ladder).toContain("if (isOption) level.nbbo = nbboPrice != null && lvl.price === nbboPrice;");
+    const nbboFn = source.match(/function nbboPriceForOptionLadder\([\s\S]*?\n\}/)?.[0] ?? "";
+    expect(nbboFn).toContain("if (!isOption || rows.length === 0) return null;");
+    // Bid inside = highest price; ask inside = lowest price. Ties: every row at
+    // that price satisfies lvl.price === nbboPrice, so ALL are flagged.
+    expect(nbboFn).toContain('return side === "bid" ? Math.max(...prices) : Math.min(...prices);');
+  });
+
+  it("attaches a cross-venue NBBO summary to option DepthBooks only", () => {
+    expect(source).toContain('if (state.kind === "option") book.nbbo = summarizeOptionNbbo(bid, ask);');
+    const summary = source.match(/function summarizeOptionNbbo\([\s\S]*?\n\}/)?.[0] ?? "";
+    expect(summary).toContain("const bestBid = bid.length ? Math.max(...bid.map((l) => l.price)) : null;");
+    expect(summary).toContain("const bestAsk = ask.length ? Math.min(...ask.map((l) => l.price)) : null;");
+    expect(summary).toContain("const mid = bestBid != null && bestAsk != null ? (bestBid + bestAsk) / 2 : null;");
+  });
+
+  it("keeps the honest OPRA BBO feed label (top-of-book per venue, not stacked depth)", () => {
+    const label = source.match(/function depthFeedLabel\([\s\S]*?\n\}/)?.[0] ?? "";
+    expect(label).toContain('if (kind === "option") return "OPRA BBO";');
   });
 
   it("resolves a futures root to a qualified front-month contract via reqContractDetails", () => {
