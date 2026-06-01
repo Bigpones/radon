@@ -4094,3 +4094,29 @@ Restore the 31 skipped skills under `/Users/joemccann/.agents/skills/` by adding
     - Result: `150` files passed, `1385` tests passed
   - `python3.13 -m pytest -x -q`
     - Result: first failure is unrelated to this change set after `894 passed`: [scripts/tests/test_menthorq_integration.py](/Users/joemccann/dev/apps/finance/radon/scripts/tests/test_menthorq_integration.py) fails in `TestMenthorQIntegrationHTML.test_eod_spx` with `MenthorQExtractionError` from [scripts/clients/menthorq_client.py](/Users/joemccann/dev/apps/finance/radon/scripts/clients/menthorq_client.py).
+
+---
+
+## FOLLOW-UP (apply after Phase 3 relay track lands): instrument search regression
+
+REGRESSION from commit f69c0d4 (@stoqey/ib migration). The symbolSamples handler
+in scripts/ib_realtime_server.js (~line 1855) still reads the OLD flat ib@0.2.9
+payload shape, but @stoqey/ib nests contract fields under `c.contract` and renames
+primaryExchange -> primaryExch. Result: relay sends secType:undefined on the wire,
+TickerSearch.tsx:109 filters all results via ALLOWED_SEC_TYPES.has(undefined) ->
+"No results" for every query.
+
+FIX (one function, after the Phase 3 relay edits settle to avoid a concurrent-edit
+conflict):
+```js
+const results = contracts.map((c) => {
+  const k = c.contract ?? c; // tolerate both shapes
+  return {
+    conId: k.conId, symbol: k.symbol, secType: k.secType,
+    primaryExchange: k.primaryExch ?? k.primaryExchange, currency: k.currency,
+    derivativeSecTypes: c.derivativeSecTypes || [],
+  };
+});
+```
+Add a relay source-assertion / unit test for the symbolSamples mapping + chrome-cdp
+verify search returns results on app.radon.run.
