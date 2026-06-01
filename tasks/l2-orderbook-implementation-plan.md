@@ -9,16 +9,27 @@ Grounded in a code-verified workflow sweep (relay / protocol+hook / component /
 testing). Line numbers are from the current `main` and should be re-confirmed at
 edit time.
 
-**Status: Phase 1 SHIPPED (flag-gated, default off), behind `RADON_DEPTH_ENABLED`.**
+**Status: Phase 1 RTH-VERIFIED LIVE ON PROD + FLAG ON (2026-06-01 10:0x ET).**
+`RADON_DEPTH_ENABLED=1` set in `/home/radon/radon-cloud/.env` (backup
+`.env.bak.predepth`); relay-only restart (no gateway 2FA). Verified via chrome-cdp
+on app.radon.run/AAPL Book tab: **DepthMontage populated with live per-exchange L2**
+(ARCA/BATS/IEX/MEMX/NSDQ MPID rows, real bid/ask sizes, SMART DEPTH pill, depth-fill
+bars, best-quote emphasis, 10 rows), values ticking realtime, no error banner.
 - Foundation: depth types + pure helpers + 23 tests (commit df49dbd).
 - Relay channel + `ib@0.2.9 → @stoqey/ib@1.5.5` migration unlocking `isSmartDepth`
-  (commits 9dc59b9, f69c0d4) — verified live: connect + L1 stream + depth-sub
-  accepted off-hours.
+  (commits 9dc59b9, f69c0d4).
 - UI: `OrderBook`/`DepthMontage`/`LadderDOM`/`TimeAndSales` in `BookTab`,
   `usePrices` depth slice, `TickerDetailContext` threading (commit e50f076).
-- Full web suite green (2794). **Remaining: RTH live verification of a populated
-  ladder + the depth deploy on prod; Phase 2 (futures click-to-trade) + Phase 3
-  (options BBO + dedicated `Trade[]` tape feed) per the rollout below.**
+- Full web suite green (2794).
+
+**LadderDOM (futures) NOT yet live-exercisable** — the UI only routes `VIX` to
+futures (`FUTURES_SUPPORTED_SYMBOLS={"VIX"}`), and VIX is an index with no
+`reqMktDepth`, so it correctly degrades to the L1 fallback (BID/ASK 0.00, no
+ladder). The relay depth set already includes ES/NQ/etc, but there is **no UI
+route to a tradeable ES contract** — that wiring + the centered ladder live data
+is **Phase 2 (futures click-to-trade)**. Stock montage is the Phase 1 deliverable
+and is done. **Remaining: Phase 2 (route ES/NQ futures → LadderDOM + click-to-trade)
++ Phase 3 (options BBO + dedicated `Trade[]` tape feed — tape is empty in Phase 1).**
 
 ---
 
