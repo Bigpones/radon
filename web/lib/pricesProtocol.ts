@@ -102,6 +102,12 @@ export type DepthLevel = {
   size: number;
   marketMaker: string | null; // MPID (NASDAQ TotalView) — equities direct
   exchange: string | null; // venue code (SMART equities, options BBO)
+  /**
+   * Options only: this venue row sets the NBBO (best bid / best ask across
+   * exchanges). The relay flags it per row; ties at the inside mark every
+   * matching venue. Absent on stock/future books, which key best on position.
+   */
+  nbbo?: boolean;
 };
 
 export type DepthBook = {

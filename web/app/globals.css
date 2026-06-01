@@ -5885,6 +5885,48 @@ tr {
 .book-side.bid .book-row.best::after { content: ""; position: absolute; inset: 0 0 0 auto; width: 2px; background: var(--signal-core); }
 .book-side.ask .book-row.best::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 2px; background: var(--fault); }
 
+/* option per-exchange BBO montage — honest framing + NBBO cue */
+.book-montage-body { display: flex; flex-direction: column; }
+.book-montage-note {
+  margin: 0;
+  padding: 7px 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.45;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--line-grid);
+  background: var(--bg-panel-raised);
+}
+.book-montage-body.is-option .book-side.bid .book-row.nbbo {
+  background-color: color-mix(in srgb, var(--signal-core) 9%, transparent);
+}
+.book-montage-body.is-option .book-side.ask .book-row.nbbo {
+  background-color: color-mix(in srgb, var(--fault) 9%, transparent);
+}
+.book-nbbo-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  vertical-align: middle;
+  line-height: 1.2;
+}
+.book-side.bid .book-nbbo-tag {
+  color: var(--signal-core);
+  background: color-mix(in srgb, var(--signal-core) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--signal-core) 45%, transparent);
+}
+.book-side.ask .book-nbbo-tag {
+  color: var(--fault);
+  background: color-mix(in srgb, var(--fault) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--fault) 45%, transparent);
+}
+
 /* futures centered ladder DOM */
 .book-ladder-head {
   display: grid;

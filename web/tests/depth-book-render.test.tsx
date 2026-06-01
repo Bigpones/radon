@@ -53,12 +53,13 @@ const OPTION_BOOK: DepthBook = {
   entitled: true,
   timestamp: "2026-05-31T16:00:00Z",
   bid: [
-    { price: 4.35, size: 42, marketMaker: null, exchange: "CBOE", nbbo: true } as never,
-    { price: 4.3, size: 25, marketMaker: null, exchange: "PHLX" } as never,
+    { price: 4.35, size: 42, marketMaker: null, exchange: "CBOE", nbbo: true },
+    { price: 4.35, size: 18, marketMaker: null, exchange: "EDGX", nbbo: true },
+    { price: 4.3, size: 25, marketMaker: null, exchange: "PHLX" },
   ],
   ask: [
-    { price: 4.45, size: 30, marketMaker: null, exchange: "PHLX", nbbo: true } as never,
-    { price: 4.5, size: 55, marketMaker: null, exchange: "CBOE" } as never,
+    { price: 4.45, size: 30, marketMaker: null, exchange: "PHLX", nbbo: true },
+    { price: 4.5, size: 55, marketMaker: null, exchange: "CBOE" },
   ],
 };
 
@@ -132,6 +133,36 @@ describe("OrderBook render — all three kinds", () => {
     // NBBO best-rule marks the flagged venues, not index 0 alone.
     expect(container.querySelectorAll(".book-row.best").length).toBeGreaterThan(0);
     expect(container.textContent).toContain("CBOE");
+  });
+
+  it("renders the NBBO marker on exactly the flagged option rows", () => {
+    const { container } = renderBook(OPTION_BOOK, "option");
+    // Three venue rows are flagged nbbo:true (2 bid ties @4.35 + 1 ask @4.45).
+    const nbboRows = container.querySelectorAll(".book-row.nbbo");
+    expect(nbboRows.length).toBe(3);
+    // The explicit "NBBO" tag rides exactly the flagged rows — one per row.
+    const tags = container.querySelectorAll(".book-nbbo-tag");
+    expect(tags.length).toBe(3);
+    // Every nbbo row also carries the .best inside-marker; every .best row is nbbo.
+    expect(container.querySelectorAll(".book-row.best").length).toBe(3);
+    // The outside (non-NBBO) venues carry neither the marker nor the tag.
+    const allRows = [...container.querySelectorAll(".book-row")];
+    const outsideRows = allRows.filter((r) => !r.classList.contains("nbbo"));
+    expect(outsideRows.length).toBe(2); // bid @4.30 PHLX + ask @4.50 CBOE
+    for (const row of outsideRows) {
+      expect(row.classList.contains("best")).toBe(false);
+      expect(row.querySelector(".book-nbbo-tag")).toBeNull();
+    }
+  });
+
+  it("frames the option montage as per-exchange BBO, not stacked depth", () => {
+    const { container } = renderBook(OPTION_BOOK, "option");
+    const note = container.querySelector(".book-montage-note");
+    expect(note).toBeTruthy();
+    expect(note?.textContent).toContain("OPRA top of book");
+    // Stock montage carries no such note.
+    const { container: stock } = renderBook(STOCK_BOOK, "stock");
+    expect(stock.querySelector(".book-montage-note")).toBeNull();
   });
 
   it("renders the futures centered ladder", () => {

@@ -4,17 +4,19 @@ import { groupPriceLevels, montageFill, isBestLevel } from "@/lib/book/depthDeri
 import type { DepthBook, DepthLevel } from "@/lib/pricesProtocol";
 import { fmtDepthPrice } from "./depthFormat";
 
-type MontageLevel = DepthLevel & { firstOfLevel: boolean; nbbo?: boolean };
+type MontageLevel = DepthLevel & { firstOfLevel: boolean };
 
 /**
  * Two-sided montage for stocks (exchange / MPID L2 depth) and options
  * (per-exchange BBO). The two render identically except: stocks draw the
  * price-level edge marker (`firstOfLevel`) and treat index 0 as best; options
- * suppress the edge marker and trust the per-row `nbbo` best-rule.
+ * suppress the edge marker, trust the per-row `nbbo` best-rule, and tag the
+ * NBBO-setting venue rows so the inside-of-market reads honestly as L1
+ * top-of-book per exchange rather than a stacked depth ladder.
  */
 export function DepthMontage({ book }: { book: DepthBook }) {
-  const bids = groupPriceLevels(book.bid) as MontageLevel[];
-  const asks = groupPriceLevels(book.ask) as MontageLevel[];
+  const bids: MontageLevel[] = groupPriceLevels(book.bid);
+  const asks: MontageLevel[] = groupPriceLevels(book.ask);
   const maxSize = Math.max(
     ...book.bid.map((l) => l.size),
     ...book.ask.map((l) => l.size),
@@ -27,21 +29,33 @@ export function DepthMontage({ book }: { book: DepthBook }) {
     const best = isBestLevel(level, index, book.kind);
     const lvlfirst = !isOption && level.firstOfLevel ? 1 : 0;
     const mkt = level.marketMaker ?? level.exchange ?? "--";
+    const nbboTag =
+      isOption && level.nbbo ? (
+        <span className="book-nbbo-tag" key="n">
+          NBBO
+        </span>
+      ) : null;
+    const priceCell = (
+      <span className="book-px" key="p">
+        {fmtDepthPrice(level.price)}
+        {nbboTag}
+      </span>
+    );
     const cells =
       side === "bid"
         ? [
             <span className="book-mkt" key="m">{mkt}</span>,
             <span className="book-shares" key="s">{level.size}</span>,
-            <span className="book-px" key="p">{fmtDepthPrice(level.price)}</span>,
+            priceCell,
           ]
         : [
-            <span className="book-px" key="p">{fmtDepthPrice(level.price)}</span>,
+            priceCell,
             <span className="book-shares" key="s">{level.size}</span>,
             <span className="book-mkt" key="m">{mkt}</span>,
           ];
     return (
       <div
-        className={`book-row book-reveal${best ? " best" : ""}`}
+        className={`book-row book-reveal${best ? " best" : ""}${isOption && level.nbbo ? " nbbo" : ""}`}
         data-lvlfirst={lvlfirst}
         style={{ ["--fill" as string]: fill, ["--i" as string]: index }}
         key={`${side}-${index}`}
@@ -52,22 +66,30 @@ export function DepthMontage({ book }: { book: DepthBook }) {
   };
 
   return (
-    <div className="book-sides">
-      <div className="book-side bid">
-        <div className="book-colhead">
-          <span>Market</span>
-          <span className="r">Shares</span>
-          <span className="r">Bid</span>
+    <div className={`book-montage-body${isOption ? " is-option" : ""}`}>
+      {isOption && (
+        <p className="book-montage-note">
+          OPRA top of book. Each row is one exchange&apos;s best quote, not stacked
+          depth. NBBO marks the venues setting the inside bid and ask.
+        </p>
+      )}
+      <div className="book-sides">
+        <div className="book-side bid">
+          <div className="book-colhead">
+            <span>{isOption ? "Exchange" : "Market"}</span>
+            <span className="r">{isOption ? "Size" : "Shares"}</span>
+            <span className="r">Bid</span>
+          </div>
+          {bids.map((level, i) => row(level, "bid", i))}
         </div>
-        {bids.map((level, i) => row(level, "bid", i))}
-      </div>
-      <div className="book-side ask">
-        <div className="book-colhead">
-          <span>Ask</span>
-          <span className="r">Shares</span>
-          <span className="r">Market</span>
+        <div className="book-side ask">
+          <div className="book-colhead">
+            <span>Ask</span>
+            <span className="r">{isOption ? "Size" : "Shares"}</span>
+            <span className="r">{isOption ? "Exchange" : "Market"}</span>
+          </div>
+          {asks.map((level, i) => row(level, "ask", i))}
         </div>
-        {asks.map((level, i) => row(level, "ask", i))}
       </div>
     </div>
   );

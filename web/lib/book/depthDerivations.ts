@@ -114,7 +114,7 @@ export function classifyTicks(
  * so we trust the nbbo flag instead of position.
  */
 export function isBestLevel(
-  level: DepthLevel & { nbbo?: boolean },
+  level: DepthLevel,
   index: number,
   kind: "stock" | "option" | "future",
 ): boolean {
