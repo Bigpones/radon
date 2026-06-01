@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
+import type { OpenOrder, PortfolioData, PortfolioPosition } from "@/lib/types";
 import type { PriceData, FundamentalsData } from "@/lib/pricesProtocol";
-import type { PortfolioData, PortfolioPosition } from "@/lib/types";
 import type { DeckKey } from "./AssetCockpit";
 import OptionsChainTab from "./OptionsChainTab";
 import PositionTab from "./PositionTab";
+import OrderTab from "./OrderTab";
 import NewsTab from "./NewsTab";
 import RatingsTab from "./RatingsTab";
 import SeasonalityTab from "./SeasonalityTab";
@@ -19,6 +20,7 @@ const DECK_TITLE: Record<DeckKey, string> = {
   s: "Seasonal",
   i: "Info / Company",
   ":": "Command Palette",
+  o: "Order Ticket",
 };
 
 /** Keys that open a deck via single-keystroke. */
@@ -48,6 +50,10 @@ type AssetDeckProps = {
   portfolio: PortfolioData | null;
   position: PortfolioPosition | null;
   quotePriceData: PriceData | null;
+  /** Open orders + resolved price data for the `o` (order ticket) deck — the
+   *  mobile entry to the ticket that lives in the desktop act column. */
+  openOrders?: OpenOrder[];
+  tickerPriceData?: PriceData | null;
 };
 
 export default function AssetDeck({
@@ -59,6 +65,8 @@ export default function AssetDeck({
   portfolio,
   position,
   quotePriceData,
+  openOrders,
+  tickerPriceData,
 }: AssetDeckProps) {
   // Single-key deck open + Esc close. Guarded so the keys never fire while the
   // user is typing in the order ticket fields (Qty / Limit / TIF).
@@ -116,6 +124,16 @@ export default function AssetDeck({
           ) : (
             <div className="asset-deck-empty">No position</div>
           ))}
+        {activeDeck === "o" && (
+          <OrderTab
+            ticker={ticker}
+            position={position}
+            portfolio={portfolio}
+            prices={prices}
+            openOrders={openOrders ?? []}
+            tickerPriceData={tickerPriceData ?? null}
+          />
+        )}
         {activeDeck === "n" && <NewsTab ticker={ticker} active={open} />}
         {activeDeck === "r" && (
           <RatingsTab

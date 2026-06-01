@@ -7,22 +7,9 @@ import { legPriceKey, resolveSpreadPriceData } from "@/lib/positionUtils";
 import { isIndexSymbol, hasFuturesSupport } from "@/lib/indexSymbols";
 import { isFuturesRoot } from "@/lib/futuresSymbols";
 import { deriveBookHeader } from "@/lib/book/depthDerivations";
-import { useViewport } from "@/lib/useViewport";
 import { isDeckKey } from "@/lib/legacyTabToDeck";
 import AssetCockpit, { type DeckKey } from "./ticker-detail/AssetCockpit";
-import PriceChart from "./PriceChart";
-import PositionTab from "./ticker-detail/PositionTab";
-import OrderTab from "./ticker-detail/OrderTab";
-import NewsTab from "./ticker-detail/NewsTab";
-import RatingsTab from "./ticker-detail/RatingsTab";
-import SeasonalityTab from "./ticker-detail/SeasonalityTab";
-import CompanyTab from "./ticker-detail/CompanyTab";
-import { TickerQuoteTelemetry } from "./QuoteTelemetry";
-import BookTab from "./ticker-detail/BookTab";
-import OptionsChainTab from "./ticker-detail/OptionsChainTab";
 import { useStockState } from "@/lib/useStockState";
-
-type TabId = "company" | "book" | "chain" | "position" | "order" | "news" | "ratings" | "seasonality";
 
 /**
  * Resolve the best price data for the shared ticker quote telemetry wrapper.
@@ -160,7 +147,7 @@ export default function TickerDetailContent({
     return orders.open_orders.filter((o) => o.contract.symbol === ticker);
   }, [ticker, orders]);
 
-  const { priceData, label: priceLabel, priceKey: chartPriceKey, isSpreadNet } = useMemo(
+  const { priceData, priceKey: chartPriceKey, isSpreadNet } = useMemo(
     () => resolveTickerQuoteTelemetry(ticker, position, prices),
     [ticker, position, prices],
   );
@@ -219,12 +206,6 @@ export default function TickerDetailContent({
   const showsUnderlying = !position || position.structure_type === "Stock";
   const { fallback: stockFallback } = useStockState(ticker, showsUnderlying);
 
-  // Desktop renders the cockpit; mobile keeps the existing tab layout. Gate on
-  // the same `isMobile && hasMounted` convention every other surface uses so the
-  // server-rendered (desktop-fallback width) markup never flips post-hydration.
-  const { isMobile, hasMounted } = useViewport();
-  const useCockpit = !(isMobile && hasMounted);
-
   // Deck-key contract (shared with TickerWorkspace via `@/lib/legacyTabToDeck`).
   // TickerWorkspace passes the DECK KEY straight through `activeTab` (the deck
   // from `?deck=`, or "book" when no deck is open) and its `onTabChange` accepts
@@ -233,19 +214,19 @@ export default function TickerDetailContent({
   // forms ("chain"/"position"/...), which TickerWorkspace's isDeckKey rejected,
   // so every glyph click resolved to setDeck(null) and the deck never opened.
   //
-  // `:` (Cmd) is the only AssetCockpit deck NOT in VALID_DECKS — it is not
-  // URL-addressable, so it lives in local component state. Every other key
-  // (c/p/n/r/s/i) flows through the URL via onTabChange.
+  // `:` (Cmd) and `o` (Order ticket, mobile) are the AssetCockpit decks NOT in
+  // VALID_DECKS — they are not URL-addressable, so they live in local component
+  // state. Every other key (c/p/n/r/s/i) flows through the URL via onTabChange.
   const [localDeck, setLocalDeck] = useState<DeckKey | null>(null);
   const urlDeck: DeckKey | null = isDeckKey(activeTab) ? activeTab : null;
   const activeDeck: DeckKey | null = urlDeck ?? localDeck;
 
   const onDeckChange = (deck: DeckKey | null) => {
-    // The command palette has no URL form: drive it from local state and clear
+    // Local-only decks have no URL form: drive them from local state and clear
     // any URL deck so the two can't both be "open".
-    if (deck === ":") {
+    if (deck === ":" || deck === "o") {
       if (urlDeck) onTabChange("book");
-      setLocalDeck(":");
+      setLocalDeck(deck);
       return;
     }
     // URL-addressable decks (incl. close → null) flow straight through as deck
@@ -254,152 +235,28 @@ export default function TickerDetailContent({
     onTabChange(deck ?? "book");
   };
 
-  if (useCockpit) {
-    return (
-      <AssetCockpit
-        ticker={ticker}
-        position={position}
-        prices={prices}
-        fundamentals={fundamentals}
-        portfolio={portfolio}
-        depths={depths}
-        tape={tape}
-        bookKey={bookKey}
-        bookKind={bookKind}
-        quotePriceData={quotePriceData}
-        priceData={priceData}
-        isSpreadNet={isSpreadNet}
-        tickerOrders={tickerOrders}
-        stockFallback={stockFallback}
-        theme={theme}
-        activeDeck={activeDeck}
-        onDeckChange={onDeckChange}
-      />
-    );
-  }
-
-  const resolvedTab: TabId = (["company", "book", "chain", "position", "order", "news", "ratings", "seasonality"] as TabId[]).includes(activeTab as TabId)
-    ? (activeTab as TabId)
-    : "company";
-
-  const tabs: { id: TabId; label: string; hidden?: boolean }[] = [
-    { id: "company", label: "Company" },
-    { id: "book", label: "Book" },
-    { id: "chain", label: "Chain" },
-    { id: "position", label: "Position", hidden: !position },
-    { id: "order", label: tickerOrders.length > 0 ? `Orders (${tickerOrders.length})` : "Order" },
-    { id: "news", label: "News" },
-    { id: "ratings", label: "Ratings" },
-    { id: "seasonality", label: "Seasonal" },
-  ];
-
-  const positionSummary = position
-    ? `${position.direction} ${position.contracts}x ${position.structure}`
-    : "No Position";
-
+  // The cockpit is the single ticker-detail layout on every viewport. It adapts
+  // internally: desktop = book + act column + glyph rail; mobile = book-first
+  // with a horizontal glyph strip and full-screen decks (see AssetCockpit).
   return (
-    <div className="ticker-detail-content">
-      {/* Hero row: telemetry (left) + chart (right) */}
-      <div className="ticker-detail-hero">
-        <div className="ticker-detail-hero-left">
-          <div className="ticker-detail-header">
-            <span className={`pill ${position ? "defined" : "neutral"}`} style={{ fontSize: "9px" }}>
-              {positionSummary}
-            </span>
-          </div>
-          <TickerQuoteTelemetry priceData={quotePriceData} label={priceLabel} fallback={stockFallback} />
-        </div>
-        <div className="ticker-detail-hero-right">
-          <PriceChart
-            ticker={ticker}
-            prices={prices}
-            priceKey={chartPriceKey}
-            priceData={priceData}
-            valueKind={isSpreadNet ? "spread-net" : "price"}
-            theme={theme}
-          />
-        </div>
-      </div>
-
-      {/* Tab bar */}
-      <div className="ticker-tabs">
-        {tabs.filter((t) => !t.hidden).map((tab) => (
-          <button
-            key={tab.id}
-            className={`ticker-tab ${resolvedTab === tab.id ? "active" : ""}`}
-            onClick={() => onTabChange(tab.id)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab content */}
-      <div className="ticker-tab-content">
-        {resolvedTab === "company" && (
-          <CompanyTab ticker={ticker} active={resolvedTab === "company"} priceData={prices[ticker] ?? null} fundamentals={fundamentals[ticker] ?? null} />
-        )}
-        {resolvedTab === "book" && (
-          <BookTab
-            ticker={ticker}
-            position={position}
-            prices={prices}
-            openOrders={tickerOrders}
-            tickerPriceData={priceData}
-            depths={depths}
-            tape={tape}
-            bookKey={bookKey}
-            bookKind={bookKind}
-            portfolio={portfolio}
-          />
-        )}
-        {resolvedTab === "chain" && (
-          <OptionsChainTab
-            ticker={ticker}
-            prices={prices}
-            tickerPriceData={prices[ticker] ?? null}
-            // Auto-focus on any existing position for this ticker — not just
-            // when the URL carries an explicit positionId. Otherwise the chain
-            // defaults to the next ≥7-day Friday expiry instead of the user's
-            // actual position expiry, leading to mismatched-expiry orders.
-            focusPosition={position ?? null}
-            focusPositionRequested={position != null}
-            // Portfolio-aware risk: chain SELL legs against a held LONG at
-            // the same expiry compose to a bull/bear vertical spread instead
-            // of "uncovered short". See `augmentOrderLegsWithPortfolioCoverage`.
-            portfolio={portfolio}
-          />
-        )}
-        {resolvedTab === "position" && position && (
-          <PositionTab position={position} prices={prices} />
-        )}
-        {resolvedTab === "order" && (
-          <OrderTab
-            ticker={ticker}
-            position={position}
-            portfolio={portfolio}
-            prices={prices}
-            openOrders={tickerOrders}
-            tickerPriceData={priceData}
-          />
-        )}
-        {resolvedTab === "news" && (
-          <NewsTab ticker={ticker} active={resolvedTab === "news"} />
-        )}
-        {resolvedTab === "ratings" && (
-          <RatingsTab
-            ticker={ticker}
-            active={resolvedTab === "ratings"}
-            currentPrice={prices[ticker]?.last ?? priceData?.last}
-          />
-        )}
-        {resolvedTab === "seasonality" && (
-          <SeasonalityTab
-            ticker={ticker}
-            active={resolvedTab === "seasonality"}
-          />
-        )}
-      </div>
-    </div>
+    <AssetCockpit
+      ticker={ticker}
+      position={position}
+      prices={prices}
+      fundamentals={fundamentals}
+      portfolio={portfolio}
+      depths={depths}
+      tape={tape}
+      bookKey={bookKey}
+      bookKind={bookKind}
+      quotePriceData={quotePriceData}
+      priceData={priceData}
+      isSpreadNet={isSpreadNet}
+      tickerOrders={tickerOrders}
+      stockFallback={stockFallback}
+      theme={theme}
+      activeDeck={activeDeck}
+      onDeckChange={onDeckChange}
+    />
   );
 }

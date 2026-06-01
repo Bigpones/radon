@@ -5264,6 +5264,87 @@ tr.leg-row td {
   visibility: visible;
   transition: opacity 160ms ease, visibility 0s;
 }
+
+/* ── mobile cockpit ──────────────────────────────────────────────────────────
+   A phone can't show book + act side by side, so the cockpit becomes a vertical
+   book-first stack: header / book (fills) / horizontal glyph strip. The act
+   column is dropped — the order ticket opens as the `o` deck and the position as
+   the `p` deck. Every deck is a full-screen overlay that stops just above the
+   glyph strip, so deck-switching stays one tap and the active glyph is visible. */
+.cockpit--mobile {
+  --m-rail-h: 56px;
+  display: flex;
+  flex-direction: column;
+  grid-template: none;
+  position: relative;
+}
+.cockpit--mobile .cockpit-head {
+  flex: 0 0 auto;
+  height: auto;
+  min-height: 34px;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 8px 12px;
+}
+.cockpit--mobile .book-region {
+  flex: 1 1 auto;
+  border-right: none;
+  padding: 10px;
+}
+/* Glyph rail runs horizontally along the bottom (thumb-reachable). */
+.cockpit--mobile .glyph-rail {
+  flex: 0 0 auto;
+  flex-direction: row;
+  height: var(--m-rail-h);
+  border-left: none;
+  border-top: 1px solid var(--line-grid);
+  padding: 4px 2px;
+  gap: 2px;
+}
+.cockpit--mobile .glyph {
+  flex: 1 1 0;
+  width: auto;
+  height: 100%;
+}
+/* Decks: full-screen over header + book, stopping above the glyph strip. */
+.cockpit--mobile .asset-deck,
+.cockpit--mobile .asset-deck--wide {
+  position: absolute;
+  inset: 0 0 var(--m-rail-h) 0;
+  grid-area: auto;
+  grid-row: auto;
+  grid-column: auto;
+  box-shadow: none;
+  border-bottom: 1px solid var(--line-grid);
+}
+/* Book: stack montage OVER tape on a phone. The desktop side-by-side split
+   (montage | tape) leaves the two-sided montage ~210px wide, where its bid/ask
+   columns (≥122px each side) collide. Full-width montage fits cleanly; the tape
+   sits below and the existing toggle collapses it. */
+.cockpit--mobile .book-body-grid,
+.cockpit--mobile .book-body-grid.tape-hidden {
+  display: flex;
+  flex-direction: column;
+  grid-template-columns: none;
+}
+.cockpit--mobile .book-montage {
+  border-right: none;
+  border-bottom: 1px solid var(--line-grid);
+  flex: 1 1 56%;
+  min-height: 0;
+  overflow-y: auto;
+}
+.cockpit--mobile .book-tape-cell {
+  flex: 1 1 44%;
+  min-height: 0;
+}
+.cockpit--mobile .book-body-grid.tape-hidden .book-tape-cell {
+  display: none;
+}
+.cockpit--mobile .book-body-grid.tape-hidden .book-montage {
+  flex-basis: 100%;
+  border-bottom: none;
+}
 .asset-deck-hd {
   display: flex;
   align-items: center;

@@ -4,27 +4,35 @@ import type { DeckKey } from "./AssetCockpit";
 
 type GlyphDef = { key: DeckKey; label: string };
 
-const GLYPHS: GlyphDef[] = [
+const SECONDARY_GLYPHS: GlyphDef[] = [
   { key: "c", label: "Chain" },
   { key: "p", label: "Posn" },
   { key: "n", label: "News" },
   { key: "r", label: "Rate" },
   { key: "s", label: "Seas" },
   { key: "i", label: "Info" },
-  { key: ":", label: "Cmd" },
 ];
+
+const ORDER_GLYPH: GlyphDef = { key: "o", label: "Trade" };
+const CMD_GLYPH: GlyphDef = { key: ":", label: "Cmd" };
 
 type GlyphRailProps = {
   activeDeck: DeckKey | null;
   onDeckChange: (deck: DeckKey | null) => void;
   /** Unread-news count for the `n` badge. Omitted/0 renders no badge. */
   newsCount?: number;
+  /** Mobile: surface the order-ticket glyph (the desktop act column is dropped)
+   *  and drop the keyboard-only command palette. */
+  includeOrder?: boolean;
 };
 
-export default function GlyphRail({ activeDeck, onDeckChange, newsCount }: GlyphRailProps) {
+export default function GlyphRail({ activeDeck, onDeckChange, newsCount, includeOrder }: GlyphRailProps) {
+  const glyphs: GlyphDef[] = includeOrder
+    ? [...SECONDARY_GLYPHS, ORDER_GLYPH]
+    : [...SECONDARY_GLYPHS, CMD_GLYPH];
   return (
     <div className="glyph-rail">
-      {GLYPHS.map((g) => {
+      {glyphs.map((g) => {
         const pressed = activeDeck === g.key;
         const showBadge = g.key === "n" && typeof newsCount === "number" && newsCount > 0;
         return (
