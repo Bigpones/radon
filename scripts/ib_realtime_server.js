@@ -1868,14 +1868,23 @@ function wireIBEvents() {
     if (!req) return;
     searchRequestClients.delete(reqId);
 
-    const results = contracts.map((c) => ({
-      conId: c.conId,
-      symbol: c.symbol,
-      secType: c.secType,
-      primaryExchange: c.primaryExchange,
-      currency: c.currency,
-      derivativeSecTypes: c.derivativeSecTypes || [],
-    }));
+    // @stoqey/ib delivers ContractDescription[] where the contract fields are
+    // NESTED under `c.contract` (and primaryExchange is renamed `primaryExch`),
+    // unlike the dead ib@0.2.9 lib which had them flat on `c`. Read from
+    // `c.contract` (falling back to `c` for the old shape). Without this the
+    // wire payload had secType:undefined, so TickerSearch's ALLOWED_SEC_TYPES
+    // filter dropped every result → "No results" (regression from f69c0d4).
+    const results = contracts.map((c) => {
+      const k = c.contract ?? c;
+      return {
+        conId: k.conId,
+        symbol: k.symbol,
+        secType: k.secType,
+        primaryExchange: k.primaryExch ?? k.primaryExchange,
+        currency: k.currency,
+        derivativeSecTypes: c.derivativeSecTypes || [],
+      };
+    });
 
     if (searchCache.size >= SEARCH_CACHE_MAX) {
       const oldest = searchCache.keys().next().value;

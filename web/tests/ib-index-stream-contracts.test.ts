@@ -46,6 +46,17 @@ describe("ib_realtime_server.js preserves typed contracts for cold-start restore
     expect(source).toContain("ib.on(EventName.error, (error, code, reqId) =>");
   });
 
+  it("reads symbolSamples from the @stoqey nested c.contract shape (search regression guard)", () => {
+    // @stoqey ContractDescription nests fields under c.contract and renames
+    // primaryExchange → primaryExch. Reading flat c.* (the old ib@0.2.9 shape)
+    // put secType:undefined on the wire and TickerSearch filtered everything
+    // out → "No results" (regressed at f69c0d4). Pin the nested read.
+    const block = source.match(/EventName\.symbolSamples[\s\S]*?verbose\(`search/s)?.[0] ?? "";
+    expect(block).toContain("const k = c.contract ?? c;");
+    expect(block).toContain("secType: k.secType");
+    expect(block).toContain("primaryExchange: k.primaryExch ?? k.primaryExchange");
+  });
+
   it("restores subscriptions from the stored contract instead of rebuilding everything as stocks", () => {
     const restoreBlock = source.match(/function restoreSubscriptions\(\) \{[\s\S]*?\n\}/)?.[0] ?? "";
     expect(restoreBlock).toContain("const ibContract = existing?.contract;");
