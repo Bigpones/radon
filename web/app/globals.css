@@ -5013,7 +5013,11 @@ tr.leg-row td {
   min-height: 0;
 }
 .ticker-detail-page:has(.cockpit-host) .ticker-back-nav {
-  margin: 8px 0 0 12px;
+  /* Breathing room on both sides so "← Back" isn't sandwiched between the
+     global header strip and the quote row; left edge aligns with the book
+     gutter (14px). line-height:1 keeps the arrow + label vertically centered. */
+  margin: 12px 0 10px 14px;
+  line-height: 1;
 }
 
 .cockpit {
