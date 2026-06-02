@@ -6237,6 +6237,14 @@ tr {
   padding: 12px 16px;
   border-bottom: 1px solid var(--line-grid);
   background: linear-gradient(180deg, var(--bg-panel-raised), var(--bg-panel));
+  /* Stable height: the live MID/BID/ASK/SPRD values change digit width every
+     tick. Without nowrap + a pinned height the row reflowed (label/value
+     wrapping to two lines) and shoved the montage down. The flex spacer
+     collapses first under width pressure; overflow clips rather than grows. */
+  flex-wrap: nowrap;
+  min-height: 45px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 .book-sym {
   font-family: var(--font-mono);
@@ -6256,8 +6264,12 @@ tr {
   font-size: 11px;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+  /* Keep each "LABEL value" pair on one line and never shrink below it, so a
+     wider tick can't wrap the value under its label. */
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
-.book-head-stat b { color: var(--text-primary); font-weight: 600; }
+.book-head-stat b { color: var(--text-primary); font-weight: 600; font-variant-numeric: tabular-nums; }
 .book-head-stat.bid b { color: var(--signal-core); }
 .book-head-stat.ask b { color: var(--fault); }
 .book-head-spacer { flex: 1; }
@@ -6311,7 +6323,7 @@ tr {
   transform: translateX(14px);
   background: var(--signal-strong);
 }
-.book-toggle-text { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
+.book-toggle-text { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
 
 /* reflow grid (the only animated surface) */
 .book-body-grid {
