@@ -510,10 +510,10 @@ export default function GexPanel({ marketState }: GexPanelProps) {
         : { label: "FRESH", className: "gex-status-badge gex-status-badge-fresh" };
 
   return (
-    <div className="section gex-panel">
+    <div className="section gex-panel regime-relationship-panel">
       {/* ── Header ── */}
-      <div className="section-header">
-        <div className="section-title">
+      <div className="regime-relationship-panel-head">
+        <div className="regime-panel-title">
           <Activity size={14} />
           {data.ticker} Gamma Exposure Levels &mdash; {data.data_date}
           <InfoTooltip
@@ -552,7 +552,7 @@ export default function GexPanel({ marketState }: GexPanelProps) {
         </div>
       </div>
 
-      <div className="section-body" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         {/* ── Metrics Row ── */}
         <div className="gex-metrics-row">
           <MetricCard

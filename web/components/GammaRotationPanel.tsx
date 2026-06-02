@@ -193,9 +193,9 @@ function GateList({ gates }: { gates: GammaRotationGate[] }) {
 function GammaRotationBody({ data }: { data: GammaRotationData }) {
   const tone = interpretationColor(data.signal.interpretation);
   return (
-    <div className="section grg-panel">
-      <div className="section-header">
-        <div className="section-title">
+    <div className="section grg-panel regime-relationship-panel">
+      <div className="regime-relationship-panel-head">
+        <div className="regime-panel-title">
           <Activity size={14} />
           Gamma Rotation Gap
           <InfoTooltip
@@ -212,7 +212,7 @@ function GammaRotationBody({ data }: { data: GammaRotationData }) {
         </div>
       </div>
 
-      <div className="section-body grg-body">
+      <div className="grg-body">
         <div className="grg-hero">
           <div>
             <div className="grg-eyebrow">GRG residual</div>
