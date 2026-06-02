@@ -20,12 +20,23 @@ import { useMemo, useState, useCallback } from "react";
 
 import type { GexBucket } from "@/lib/useGex";
 
+const MARKER_LABEL_FONT_SIZE = 8;
+const MARKER_LABEL_CHAR_WIDTH = 5.1; // mono-font advance at the label font size
+const MARKER_LABEL_GAP = 6; // minimum horizontal breathing room between adjacent labels
+const MARKER_LANE_HEIGHT = 11; // vertical stride between stacked label rows
+const MARKER_TRIANGLE_DROP = 9; // distance from axis to triangle base
+const MARKER_FIRST_LANE_DROP = 13; // distance from axis to the first label row baseline
+
+const MAX_MARKER_LANES = 5; // PUT WALL / CALL WALL / ACCEL / MAGNET / FLIP can all collide
+const MARKER_LANE_BAND = MARKER_FIRST_LANE_DROP + MARKER_LANE_HEIGHT * (MAX_MARKER_LANES - 1) + 6;
+
 const VIEWBOX_WIDTH = 800;
-const VIEWBOX_HEIGHT = 260;
 const PADDING_LEFT = 56;
 const PADDING_RIGHT = 24;
 const PADDING_TOP = 36;
-const PADDING_BOTTOM = 40;
+const PADDING_BOTTOM = MARKER_LANE_BAND + 8;
+const PLOT_HEIGHT_BASE = 184; // preserve the original curvature-field plot height
+const VIEWBOX_HEIGHT = PLOT_HEIGHT_BASE + PADDING_TOP + PADDING_BOTTOM;
 const PLOT_WIDTH = VIEWBOX_WIDTH - PADDING_LEFT - PADDING_RIGHT;
 const PLOT_HEIGHT = VIEWBOX_HEIGHT - PADDING_TOP - PADDING_BOTTOM;
 
@@ -218,6 +229,40 @@ function buildLevelMarkers({
   return candidates.filter((m) => m.strike >= domain.minStrike && m.strike <= domain.maxStrike);
 }
 
+export type PlacedMarker = LevelMarker & {
+  x: number;
+  lane: number;
+  labelWidth: number;
+};
+
+export const MARKER_LABEL_LANE_GAP = MARKER_LABEL_GAP;
+
+function estimateLabelWidth(label: string): number {
+  return label.length * MARKER_LABEL_CHAR_WIDTH;
+}
+
+/**
+ * Assign each marker to a horizontal lane so its centered text label never
+ * overlaps a label already placed in the same lane. Markers are processed
+ * left-to-right; a marker drops to the next lane whenever its label box would
+ * collide with the previous occupant of every shallower lane. Co-located
+ * strikes therefore stack vertically with leader lines instead of smearing
+ * their text into one another.
+ */
+export function assignMarkerLanes(markers: LevelMarker[], domain: StrikeDomain): PlacedMarker[] {
+  const ordered = [...markers].sort((a, b) => a.strike - b.strike);
+  const laneRightEdges: number[] = [];
+  return ordered.map((marker) => {
+    const x = projectX(marker.strike, domain);
+    const labelWidth = estimateLabelWidth(marker.label);
+    const leftEdge = x - labelWidth / 2 - MARKER_LABEL_GAP;
+    let lane = laneRightEdges.findIndex((rightEdge) => leftEdge >= rightEdge);
+    if (lane === -1) lane = laneRightEdges.length;
+    laneRightEdges[lane] = x + labelWidth / 2 + MARKER_LABEL_GAP;
+    return { ...marker, x, lane, labelWidth };
+  });
+}
+
 function readoutFor(point: Point | null): { strike: string; netGex: string; curvature: string } {
   if (!point) {
     return { strike: "---", netGex: "---", curvature: "---" };
@@ -248,6 +293,7 @@ export default function GexLaplaceContour({
     () => buildLevelMarkers({ maxMagnet, maxAccelerator, putWall, callWall, flipStrike, domain }),
     [maxMagnet, maxAccelerator, putWall, callWall, flipStrike, domain],
   );
+  const placedMarkers = useMemo(() => assignMarkerLanes(levelMarkers, domain), [levelMarkers, domain]);
 
   const initialHoverStrike = useMemo(() => {
     const spotPoint = nearestPoint(points, spotPrice);
@@ -462,22 +508,36 @@ export default function GexLaplaceContour({
           SPOT {fmtPrice(spotPrice)}
         </text>
 
-        {levelMarkers.map((marker) => {
-          const x = projectX(marker.strike, domain);
-          const baseY = VIEWBOX_HEIGHT - PADDING_BOTTOM;
+        {placedMarkers.map((marker) => {
+          const axisY = VIEWBOX_HEIGHT - PADDING_BOTTOM;
+          const triangleBaseY = axisY + MARKER_TRIANGLE_DROP;
+          const labelBaselineY = axisY + MARKER_FIRST_LANE_DROP + marker.lane * MARKER_LANE_HEIGHT;
+          const showLeader = marker.lane > 0;
           return (
             <g key={marker.testId} data-testid={marker.testId}>
+              {showLeader && (
+                <line
+                  data-testid={`${marker.testId}-leader`}
+                  x1={marker.x}
+                  y1={triangleBaseY}
+                  x2={marker.x}
+                  y2={labelBaselineY - MARKER_LABEL_FONT_SIZE}
+                  stroke={marker.color}
+                  strokeWidth={1}
+                  opacity={0.4}
+                />
+              )}
               <polygon
-                points={`${x},${baseY + 2} ${x - 5},${baseY + 11} ${x + 5},${baseY + 11}`}
+                points={`${marker.x},${axisY + 2} ${marker.x - 5},${triangleBaseY} ${marker.x + 5},${triangleBaseY}`}
                 fill={marker.color}
                 opacity={0.85}
               />
               <text
-                x={x}
-                y={baseY + 22}
+                x={marker.x}
+                y={labelBaselineY}
                 textAnchor="middle"
                 fontFamily="var(--font-mono)"
-                fontSize={8}
+                fontSize={MARKER_LABEL_FONT_SIZE}
                 fill={marker.color}
                 letterSpacing="0.06em"
               >
