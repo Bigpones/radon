@@ -7,6 +7,7 @@ import { fmtPrice } from "@/lib/positionUtils";
 import { formatExpiry, daysToExpiry, type OrderLeg } from "@/lib/optionsChainUtils";
 import BottomSheet from "./BottomSheet";
 import MobileOrderTicket from "./MobileOrderTicket";
+import SpectralLoader from "@/components/SpectralLoader";
 
 type Strike = {
   strike: number;
@@ -134,7 +135,7 @@ export default function MobileChainLadder({
 
       {loading ? (
         <div className="mobile-empty-state" data-testid="mobile-chain-loading">
-          <span>Loading chain…</span>
+          <SpectralLoader label="Loading chain" />
         </div>
       ) : visibleStrikes.length === 0 ? (
         <div className="mobile-empty-state" data-testid="mobile-chain-empty">

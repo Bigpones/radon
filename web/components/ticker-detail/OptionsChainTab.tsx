@@ -6,6 +6,7 @@ import { optionKey, normalizeOptionExpiry } from "@/lib/pricesProtocol";
 import type { PortfolioData, PortfolioPosition } from "@/lib/types";
 import { fmtPrice } from "@/lib/positionUtils";
 import OrderErrorBanner from "@/components/OrderErrorBanner";
+import SpectralLoader from "@/components/SpectralLoader";
 import { useOrderActionsOptional } from "@/lib/OrderActionsContext";
 import { useTickerDetail } from "@/lib/TickerDetailContext";
 import { useChainPrefetch } from "@/lib/useChainPrefetch";
@@ -1162,9 +1163,7 @@ export default function OptionsChainTab({
   if (loadingExpiries) {
     return (
       <div style={{ padding: "24px 0", textAlign: "center" }}>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-secondary)" }}>
-          Loading expirations...
-        </span>
+        <SpectralLoader label="Loading expirations" />
       </div>
     );
   }
@@ -1272,9 +1271,7 @@ export default function OptionsChainTab({
       {/* Chain grid */}
       {loadingStrikes ? (
         <div style={{ padding: "24px 0", textAlign: "center" }}>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-secondary)" }}>
-            Loading chain...
-          </span>
+          <SpectralLoader label="Loading chain" />
         </div>
       ) : (
         <div className="chain-grid-wrapper" ref={wrapperRef}>
