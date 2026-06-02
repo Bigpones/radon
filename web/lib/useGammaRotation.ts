@@ -2,7 +2,7 @@
 
 import { useSyncHook, type UseSyncReturn } from "./useSyncHook";
 import { MarketState } from "./useMarketHours";
-import { scanTimeToEtDate } from "./parseScanTime";
+import { isGammaRotationStale } from "./gammaRotationStaleness";
 
 export type GammaRotationInterpretation =
   | "TOP_WATCH"
@@ -99,14 +99,11 @@ export type GammaRotationData = {
   };
 };
 
-function todayET(): string {
-  return new Date().toLocaleDateString("sv", { timeZone: "America/New_York" });
-}
-
+// Delegate to the market-gated staleness lib so the 5s retry stops re-arming
+// off-hours (the bare scanDate-vs-today check used to fire it every weekend).
 function needsGammaRotationRetry(data: GammaRotationData | null | undefined): boolean {
-  if (!data?.scan_time) return true;
-  const scanDate = scanTimeToEtDate(data.scan_time);
-  return scanDate !== todayET();
+  if (!data) return true;
+  return isGammaRotationStale(data);
 }
 
 const GAMMA_ROTATION_SYNC_CONFIG = {

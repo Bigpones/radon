@@ -2,7 +2,7 @@
 
 import { useSyncHook, type UseSyncReturn } from "./useSyncHook";
 import { MarketState } from "./useMarketHours";
-import { scanTimeToEtDate } from "./parseScanTime";
+import { isVcgDataStale } from "./vcgStaleness";
 
 /* ─── VCG types (match vcg_scan.py JSON output) ─────────────── */
 
@@ -58,15 +58,11 @@ export type VcgData = {
 
 /* ─── Staleness check ────────────────────────────────────────── */
 
-function todayET(): string {
-  return new Date().toLocaleDateString("sv", { timeZone: "America/New_York" });
-}
-
+// Delegate to the market-gated staleness lib so off-hours retries stop (the
+// bare scanDate-vs-today check used to re-arm a 5s GET retry every weekend).
 function needsVcgRetry(data: VcgData | null | undefined): boolean {
-  if (!data?.scan_time) return true;
-  const scanDate = scanTimeToEtDate(data.scan_time);
-  if (!scanDate) return true;
-  return scanDate !== todayET();
+  if (!data) return true;
+  return isVcgDataStale(data);
 }
 
 /* ─── Hook ───────────────────────────────────────────────────── */

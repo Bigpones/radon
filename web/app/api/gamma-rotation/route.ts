@@ -4,7 +4,7 @@ import { join } from "path";
 import { getDb } from "@/lib/db";
 import { radonFetch } from "@/lib/radonApi";
 import { getRequestId, setCacheResponseHeaders } from "@/lib/apiContracts";
-import { scanTimeToEtDate } from "@/lib/parseScanTime";
+import { isGammaRotationStale } from "@/lib/gammaRotationStaleness";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -76,16 +76,9 @@ function isMarketOpenNow(): boolean {
   return minutes >= 9 * 60 + 30 && minutes <= 16 * 60;
 }
 
-function todayET(): string {
-  return new Date().toLocaleDateString("sv", { timeZone: "America/New_York" });
-}
-
-function isGammaRotationStale(raw: Record<string, unknown>, currentMarketOpen: boolean): boolean {
-  const scanDate = scanTimeToEtDate(typeof raw.scan_time === "string" ? raw.scan_time : "");
-  if (!scanDate) return true;
-  if (scanDate !== todayET()) return true;
-  return currentMarketOpen && raw.market_open === false;
-}
+// Staleness now lives in the shared, market-gated lib/gammaRotationStaleness.ts
+// (closed-guard precedes the date-roll check) so off-hours GETs stop firing a
+// background scan on every weekend/overnight tab open.
 
 async function readCachedGammaRotationFromDb(): Promise<Record<string, unknown> | null> {
   try {
@@ -169,7 +162,7 @@ export async function GET(): Promise<Response> {
 
   data.market_open = currentMarketOpen;
 
-  if (!cached || isGammaRotationStale(cached, currentMarketOpen)) {
+  if (!cached || isGammaRotationStale(cached, undefined, currentMarketOpen)) {
     triggerBackgroundScan();
   }
 
