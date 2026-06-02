@@ -883,6 +883,7 @@ def main():
     parser.add_argument("--json", action="store_true", help="Output JSON to stdout")
     parser.add_argument("--no-cache", action="store_true", help="Skip reading prior cache")
     parser.add_argument("--no-mq", action="store_true", help="Skip MenthorQ enrichment")
+    parser.add_argument("--force", action="store_true", help="Fetch fresh even when the market is closed (bypass off-hours cache gate)")
     args = parser.parse_args()
 
     ticker = args.ticker.upper()
@@ -893,6 +894,20 @@ def main():
     print(f"{'='*60}", file=sys.stderr)
     if not market_open:
         print("  Market closed — using last available data.", file=sys.stderr)
+
+    # Off-hours cache gate: when closed and the cached scan is already for the
+    # most-recent session AND the same ticker, serve it and skip the UW fetch.
+    try:
+        from utils.scan_cache_gate import cached_scan_if_fresh
+
+        cached = cached_scan_if_fresh(_PROJECT_DIR / "data" / "gex.json", force=args.force)
+    except Exception:
+        cached = None
+    if cached is not None and str(cached.get("ticker", "")).upper() == ticker:
+        print("  Serving cached GEX (market closed); skipping UW fetch.", file=sys.stderr)
+        if args.json:
+            print(json.dumps(cached, indent=2))
+        return
 
     t_start = time.time()
 

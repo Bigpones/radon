@@ -118,6 +118,61 @@ def get_last_n_trading_days(n: int, from_date: datetime = None,
     return trading_days
 
 
+def is_market_open_et(now: datetime = None) -> bool:
+    """Market-open check that converts to ET first (safe on UTC hosts).
+
+    The legacy ``is_market_open`` treats its datetime's raw fields as ET, which
+    is wrong when called bare on a UTC host (e.g. the VPS). This variant resolves
+    the ET wall-clock before checking the weekday/holiday/time window.
+    """
+    try:
+        import zoneinfo
+        et = zoneinfo.ZoneInfo("America/New_York")
+        now_et = (now.astimezone(et) if (now and now.tzinfo) else now) if now else datetime.now(et)
+    except Exception:
+        now_et = now or datetime.now()
+    if now_et.weekday() >= 5:
+        return False
+    if now_et.strftime("%Y-%m-%d") in load_holidays(now_et.year):
+        return False
+    minutes = now_et.hour * 60 + now_et.minute
+    return 9 * 60 + 30 <= minutes <= 16 * 60
+
+
+def most_recent_session_date(now: datetime = None) -> str:
+    """Return the most-recent EXPECTED trading-session date (ET) as YYYY-MM-DD.
+
+    This is the session whose data we should already HAVE: before the cash open
+    use the prior trading session; at/after the open use today; weekends and
+    holidays resolve back to the prior trading day. Mirrors the frontend
+    `lib/marketSession.ts` and CRI's `current_session_date_et` so the off-hours
+    cache gate agrees with the route/staleness layer.
+    """
+    try:
+        import zoneinfo
+        et = zoneinfo.ZoneInfo("America/New_York")
+        now_et = (now.astimezone(et) if (now and now.tzinfo) else now) if now else datetime.now(et)
+    except Exception:
+        now_et = now or datetime.now()
+
+    def previous_trading_day(dt: datetime) -> datetime:
+        candidate = dt - timedelta(days=1)
+        while not _is_trading_day(candidate):
+            candidate -= timedelta(days=1)
+        return candidate
+
+    # Weekend or holiday → prior trading day.
+    if not _is_trading_day(now_et):
+        return previous_trading_day(now_et).strftime("%Y-%m-%d")
+
+    # Weekday pre-open → prior trading day (the new session has no data yet).
+    minutes = now_et.hour * 60 + now_et.minute
+    if minutes < 9 * 60 + 30:
+        return previous_trading_day(now_et).strftime("%Y-%m-%d")
+
+    return now_et.strftime("%Y-%m-%d")
+
+
 # ── internal helpers ──────────────────────────────────────────────────
 
 def _is_trading_day(dt: datetime) -> bool:

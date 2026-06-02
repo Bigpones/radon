@@ -515,7 +515,23 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="Print JSON to stdout")
     parser.add_argument("--no-db", action="store_true", help="Do not persist to Turso")
     parser.add_argument("--no-cache", action="store_true", help="Do not write JSON fallback cache")
+    parser.add_argument("--force", action="store_true", help="Fetch fresh even when the market is closed (bypass off-hours cache gate)")
     args = parser.parse_args()
+
+    # Off-hours cache gate: when the market is closed and the cached snapshot is
+    # already for the most-recent session, serve it and skip the UW fetch.
+    try:
+        from utils.scan_cache_gate import cached_scan_if_fresh
+
+        cached = cached_scan_if_fresh(CACHE_PATH, force=args.force)
+    except Exception:
+        cached = None
+    if cached is not None:
+        if args.json:
+            print(json.dumps(cached, indent=2))
+        else:
+            print(f"GRG (cached, market closed) — {cached.get('scan_time', '')}", file=sys.stderr)
+        return 0
 
     t0 = time.time()
     try:

@@ -1557,6 +1557,7 @@ Examples:
     parser.add_argument("--json", action="store_true", help="Output JSON to stdout")
     parser.add_argument("--no-open", action="store_true", help="Don't open HTML report in browser")
     parser.add_argument("--output", "-o", help="Custom output path for HTML")
+    parser.add_argument("--force", action="store_true", help="Fetch fresh even when the market is closed (bypass off-hours cache gate)")
 
     args = parser.parse_args()
 
@@ -1567,6 +1568,26 @@ Examples:
     print(f"{'='*60}", file=sys.stderr)
     if not market_open:
         print(f"  Market closed — using last available data.", file=sys.stderr)
+
+    # Off-hours cache gate: when closed and the cached scan already covers the
+    # most-recent session, serve it and skip the IB/UW fetch. Exempt the bounded
+    # post-close window (16:00-16:35 ET) so the official Cboe daily-close upgrade
+    # still runs; the overnight timer (~1am) and weekends are gated. JSON-only
+    # (the HTML report path always rebuilds).
+    if args.json and not args.force:
+        now_et = _now_et()
+        in_post_close = now_et.weekday() < 5 and (16 * 60) <= (now_et.hour * 60 + now_et.minute) < (16 * 60 + 35)
+        if not in_post_close:
+            try:
+                from utils.scan_cache_gate import cached_scan_if_fresh
+
+                cached = cached_scan_if_fresh(_PROJECT_DIR / "data" / "cri.json", force=False)
+            except Exception:
+                cached = None
+            if cached is not None:
+                print("  Serving cached CRI (market closed); skipping IB/UW fetch.", file=sys.stderr)
+                print(json.dumps(cached, indent=2))
+                return
 
     t_start = time.time()
 

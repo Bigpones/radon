@@ -1088,6 +1088,7 @@ Examples:
         "--vcg-trigger", type=float, default=VCG_RO_TRIGGER,
         help=f"VCG z-score threshold for RO trigger (default: {VCG_RO_TRIGGER})",
     )
+    parser.add_argument("--force", action="store_true", help="Fetch fresh even when the market is closed (bypass off-hours cache gate)")
 
     args = parser.parse_args()
     proxy = args.proxy.upper()
@@ -1100,6 +1101,25 @@ Examples:
     print(f"{'='*60}", file=sys.stderr)
     if not market_open:
         print(f"  Market closed — using last available data.", file=sys.stderr)
+
+    # Off-hours cache gate: when closed and the cached scan is already for the
+    # most-recent session AND the same credit proxy, serve it and skip the fetch.
+    if not args.backtest:
+        try:
+            from utils.scan_cache_gate import cached_scan_if_fresh
+            from pathlib import Path as _Path
+
+            cached = cached_scan_if_fresh(
+                _Path(__file__).resolve().parent.parent / "data" / "vcg.json",
+                force=getattr(args, "force", False),
+            )
+        except Exception:
+            cached = None
+        if cached is not None and str(cached.get("credit_proxy", proxy)).upper() == proxy:
+            print("  Serving cached VCG (market closed); skipping fetch.", file=sys.stderr)
+            if args.json:
+                print(json.dumps(cached, indent=2))
+            return
 
     t_start = time.time()
 
