@@ -133,7 +133,7 @@ export default function RegimePanel({
   const pathname = usePathname();
   const activeTab = tabFromPathname(pathname);
   const goToTab = (tab: RegimeTab) => router.push(`/regime/${tab}`);
-  const { data, syncing, lastSync } = useRegime(marketState, { endpoint: dataEndpoint });
+  const { data, loading, syncing, lastSync } = useRegime(marketState, { endpoint: dataEndpoint });
   const shareModal = shareEndpoint ? (
     <ShareReportModal
       modalTitle={shareModalTitle}
@@ -326,7 +326,11 @@ export default function RegimePanel({
     );
   }
 
-  if (syncing && !data) {
+  // While the first payload is being fetched OR an explicit sync is running,
+  // show the spectral loader — consistent with the GRG/VCG/GEX tabs (which gate
+  // on `loading && !data`). The text empty state below is reserved for the
+  // settled no-data case (fetch finished, genuinely nothing to show).
+  if ((loading || syncing) && !data) {
     return (
       <div className="regime-panel">
         {tabBar}
