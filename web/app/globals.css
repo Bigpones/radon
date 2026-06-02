@@ -5410,6 +5410,97 @@ tr.leg-row td {
 .pos-legs-table th { font-size: 9px; padding: 8px 10px; }
 .pos-legs-table td { font-size: 11px; padding: 6px 10px; }
 
+/* ── Position-deck trade affordances ─────────────────────────────────────── */
+.position-trade-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.position-trade-cta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 9px 16px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--signal-core) 50%, var(--line-grid));
+  background: color-mix(in srgb, var(--signal-core) 12%, transparent);
+  color: var(--signal-strong);
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+.position-trade-cta:hover {
+  background: color-mix(in srgb, var(--signal-core) 20%, transparent);
+  border-color: var(--signal-core);
+}
+.position-trade-actions-hint {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+/* Per-leg trade pill in the legs table. BUY-to-close tinted by signal, SELL by fault. */
+.pos-leg-trade {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 3px 9px;
+  border-radius: 4px;
+  border: 1px solid var(--line-grid);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
+}
+.pos-leg-trade:hover {
+  border-color: color-mix(in srgb, var(--signal-core) 55%, var(--line-grid));
+  color: var(--signal-strong);
+  background: color-mix(in srgb, var(--signal-core) 10%, transparent);
+}
+
+/* ── Position trade ticket (inline in the p-deck) ────────────────────────── */
+.position-trade-ticket { gap: 14px; }
+.position-trade-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line-grid);
+}
+.position-trade-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.position-trade-subject {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-top: 3px;
+}
+.position-trade-close {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+.position-trade-close:hover { color: var(--text-primary); }
+.position-trade-hint {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
 /* Order tab */
 .order-tab { padding: 0; }
 .order-form { display: flex; flex-direction: column; gap: 12px; }

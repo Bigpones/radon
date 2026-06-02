@@ -120,7 +120,7 @@ export default function AssetDeck({
         )}
         {activeDeck === "p" &&
           (position ? (
-            <PositionTab position={position} prices={prices} />
+            <PositionTab position={position} prices={prices} portfolio={portfolio} />
           ) : (
             <div className="asset-deck-empty">No position</div>
           ))}
