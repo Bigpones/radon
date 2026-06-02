@@ -242,3 +242,56 @@ describe("VcgPanel — chart range chips", () => {
     expect(tbodyRows.length).toBe(20);
   });
 });
+
+describe("VcgPanel — brush minimap (CRI-style range zoom)", () => {
+  function barCount(svg: Element): number {
+    return svg.querySelectorAll('rect[opacity="0.22"]').length;
+  }
+
+  it("renders the brush minimap with a window + two handles", () => {
+    mockUseVcg.mockReturnValue({
+      data: buildVcgData({ history: buildHistory(300) }),
+      loading: false,
+      error: null,
+      lastSync: "2026-05-17T20:00:00Z",
+    });
+
+    const { getByTestId } = render(React.createElement(VcgPanel, { prices: {} }));
+    expect(getByTestId("vcg-history-brush")).toBeTruthy();
+    expect(getByTestId("vcg-history-brush-window")).toBeTruthy();
+    expect(getByTestId("vcg-history-brush-handle-left")).toBeTruthy();
+    expect(getByTestId("vcg-history-brush-handle-right")).toBeTruthy();
+  });
+
+  it("dragging the left handle widens the visible slice and flags a Custom range", () => {
+    mockUseVcg.mockReturnValue({
+      data: buildVcgData({ history: buildHistory(300) }),
+      loading: false,
+      error: null,
+      lastSync: "2026-05-17T20:00:00Z",
+    });
+
+    const { getByTestId, queryByTestId } = render(React.createElement(VcgPanel, { prices: {} }));
+
+    // Default 1M on 300 sessions → 21 visible bars; no Custom chip yet.
+    expect(barCount(getByTestId("vcg-signal-area-chart"))).toBe(21);
+    expect(queryByTestId("vcg-history-range-chips-custom")).toBeNull();
+
+    const brush = getByTestId("vcg-history-brush");
+    const handle = getByTestId("vcg-history-brush-handle-left");
+    const brushRect = {
+      x: 0, y: 0, left: 0, top: 0, right: 700, bottom: 40, width: 700, height: 40,
+      toJSON: () => ({}),
+    } as DOMRect;
+    brush.getBoundingClientRect = () => brushRect;
+    handle.getBoundingClientRect = () => brushRect;
+
+    // Drag the left handle to the far left → the window expands to (near) full history.
+    fireEvent.pointerDown(handle, { clientX: 700, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerUp(window, { clientX: 0, pointerId: 1 });
+
+    expect(barCount(getByTestId("vcg-signal-area-chart"))).toBeGreaterThan(21);
+    expect(getByTestId("vcg-history-range-chips-custom")).toBeTruthy();
+  });
+});

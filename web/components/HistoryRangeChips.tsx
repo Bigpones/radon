@@ -3,8 +3,8 @@
 import { RANGE_PRESETS, type RangePresetSlug } from "@/lib/historyRange";
 
 interface HistoryRangeChipsProps {
-  /** Currently active preset slug. */
-  active: RangePresetSlug;
+  /** Currently active preset slug, or "custom" when a brush selection drives the view. */
+  active: RangePresetSlug | "custom";
   /** Fired when the user picks a different preset. */
   onChange: (slug: RangePresetSlug) => void;
   /** Hides chips whose preset would span more sessions than this. */
@@ -56,6 +56,15 @@ export default function HistoryRangeChips({
           </button>
         );
       })}
+      {active === "custom" ? (
+        <span
+          className="history-range-chip is-active history-range-chip-custom"
+          aria-label="Custom range from brush selection"
+          data-testid={dataTestId ? `${dataTestId}-custom` : undefined}
+        >
+          Custom
+        </span>
+      ) : null}
     </nav>
   );
 }
