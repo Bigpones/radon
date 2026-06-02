@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
+import { useTickerDetailOptional } from "@/lib/TickerDetailContext";
 import type { OpenOrder, PortfolioData, PortfolioPosition } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { optionKey } from "@/lib/pricesProtocol";
@@ -287,6 +288,26 @@ function NewOrderForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const orderActions = useOrderActionsOptional();
+
+  // Click-to-fill: when a depth level / tape print is clicked in the book, the
+  // cockpit publishes {price, action?, quantity?} to TickerDetailContext. We
+  // apply it here — keyed ONLY on the nonce so it fires exactly once per click
+  // and never on unrelated re-renders (price ticks, typing). It cannot clobber
+  // a half-typed price unless the user deliberately clicks the book. Action is
+  // applied only when the click was unambiguous; quantity only into an empty
+  // field. Optional context → no-op outside the ticker-detail tree.
+  const tickerDetail = useTickerDetailOptional();
+  const prefillNonce = tickerDetail?.orderPrefill?.nonce;
+  useEffect(() => {
+    const p = tickerDetail?.orderPrefill;
+    if (!p) return;
+    setLimitPrice(p.price.toFixed(2));
+    if (p.action) setAction(p.action);
+    if (p.quantity != null && quantity.trim() === "") setQuantity(String(p.quantity));
+    setConfirmStep(false);
+    // Intentionally keyed on the nonce alone (see comment above).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillNonce]);
 
   const parsedQty = parseInt(quantity, 10);
   const parsedPrice = parseFloat(limitPrice);

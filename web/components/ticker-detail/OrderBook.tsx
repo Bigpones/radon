@@ -2,6 +2,7 @@
 
 import { type ReactNode, useEffect, useState } from "react";
 import type { DepthBook, Trade } from "@/lib/pricesProtocol";
+import type { OrderPrefill } from "@/lib/TickerDetailContext";
 import { DepthMontage } from "./DepthMontage";
 import { LadderDOM } from "./LadderDOM";
 import { TimeAndSales } from "./TimeAndSales";
@@ -28,6 +29,8 @@ export type OrderBookProps = {
   ask: number | null;
   /** The existing L1 panel, rendered when depth is absent or unentitled. */
   l1Fallback: ReactNode;
+  /** Click-to-fill: a depth level or tape print was clicked. Omitted = no fill. */
+  onPriceClick?: (p: Omit<OrderPrefill, "nonce">) => void;
 };
 
 function readTapePreference(): boolean {
@@ -56,6 +59,7 @@ export function OrderBook({
   bid,
   ask,
   l1Fallback,
+  onPriceClick,
 }: OrderBookProps) {
   const [tapeVisible, setTapeVisible] = useState(true);
 
@@ -89,7 +93,7 @@ export function OrderBook({
   ) : kind === "future" ? (
     <LadderDOM book={depth} last={head.last} />
   ) : (
-    <DepthMontage book={depth} />
+    <DepthMontage book={depth} onPriceClick={onPriceClick} />
   );
 
   return (
@@ -132,7 +136,7 @@ export function OrderBook({
       <div className={`book-body-grid${tapeVisible ? "" : " tape-hidden"}`}>
         <div className="book-montage">{left}</div>
         <div className="book-tape-cell">
-          <TimeAndSales trades={trades} visible={tapeVisible} />
+          <TimeAndSales trades={trades} visible={tapeVisible} onPriceClick={onPriceClick} />
         </div>
       </div>
     </div>

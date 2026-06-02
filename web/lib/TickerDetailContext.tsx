@@ -4,6 +4,22 @@ import { createContext, useCallback, useContext, useRef, useState, type ReactNod
 import type { PriceData, FundamentalsData, DepthBook, Trade, OptionContract } from "@/lib/pricesProtocol";
 import type { OrdersData, PortfolioData } from "@/lib/types";
 
+/**
+ * Click-to-fill payload: a price (and, when unambiguous, a side) sent from the
+ * order book / tape to the order ticket. `nonce` is stamped by the setter and
+ * monotonically increases so two clicks on the SAME price+side still re-fire
+ * the consuming effect (which keys on nonce, never on object identity).
+ * `action` is OMITTED whenever the side is ambiguous — a price-only fill is
+ * always safe; the ticket keeps its current action and the user still confirms.
+ */
+export type OrderPrefill = {
+  price: number;
+  action?: "BUY" | "SELL";
+  quantity?: number;
+  source: "montage" | "ladder" | "tape";
+  nonce: number;
+};
+
 type TickerDetailContextValue = {
   activeTicker: string | null;
   activePositionId: number | null;
@@ -26,6 +42,10 @@ type TickerDetailContextValue = {
   /** Book key the detail view wants L2 depth for. Drives `usePrices` upstream. */
   depthSymbol: string | null;
   setDepthSymbol: (key: string | null) => void;
+  /** Click-to-fill: latest price/side published from the book/tape, or null. */
+  orderPrefill: OrderPrefill | null;
+  /** Publish a click-to-fill; the nonce is stamped here (monotonic). */
+  setOrderPrefill: (p: Omit<OrderPrefill, "nonce">) => void;
 };
 
 const TickerDetailContext = createContext<TickerDetailContextValue | null>(null);
@@ -35,6 +55,8 @@ export function TickerDetailProvider({ children }: { children: ReactNode }) {
   const [activePositionId, setActivePositionIdState] = useState<number | null>(null);
   const [chainContracts, setChainContractsState] = useState<OptionContract[]>([]);
   const [depthSymbol, setDepthSymbolState] = useState<string | null>(null);
+  const [orderPrefill, setOrderPrefillState] = useState<OrderPrefill | null>(null);
+  const prefillNonceRef = useRef(0);
   const pricesRef = useRef<Record<string, PriceData>>({});
   const fundamentalsRef = useRef<Record<string, FundamentalsData>>({});
   const portfolioRef = useRef<PortfolioData | null>(null);
@@ -61,6 +83,11 @@ export function TickerDetailProvider({ children }: { children: ReactNode }) {
 
   const setDepthSymbol = useCallback((key: string | null) => {
     setDepthSymbolState((prev) => (prev === key ? prev : key));
+  }, []);
+
+  const setOrderPrefill = useCallback((p: Omit<OrderPrefill, "nonce">) => {
+    prefillNonceRef.current += 1;
+    setOrderPrefillState({ ...p, nonce: prefillNonceRef.current });
   }, []);
 
   const getPrices = useCallback(() => pricesRef.current, []);
@@ -96,7 +123,7 @@ export function TickerDetailProvider({ children }: { children: ReactNode }) {
 
   return (
     <TickerDetailContext.Provider
-      value={{ activeTicker, activePositionId, setActiveTicker, setActivePositionId, getPrices, getFundamentals, getPortfolio, getOrders, getDepths, getTape, setPrices, setFundamentals, setPortfolio, setOrders, setDepths, setTape, chainContracts, setChainContracts, depthSymbol, setDepthSymbol }}
+      value={{ activeTicker, activePositionId, setActiveTicker, setActivePositionId, getPrices, getFundamentals, getPortfolio, getOrders, getDepths, getTape, setPrices, setFundamentals, setPortfolio, setOrders, setDepths, setTape, chainContracts, setChainContracts, depthSymbol, setDepthSymbol, orderPrefill, setOrderPrefill }}
     >
       {children}
     </TickerDetailContext.Provider>
@@ -107,4 +134,13 @@ export function useTickerDetail(): TickerDetailContextValue {
   const ctx = useContext(TickerDetailContext);
   if (!ctx) throw new Error("useTickerDetail must be used within TickerDetailProvider");
   return ctx;
+}
+
+/**
+ * Non-throwing accessor: returns null when there is no provider. Use this for
+ * progressive-enhancement consumers (click-to-fill) that must not crash when
+ * the component is rendered outside the ticker-detail tree (modals, tests).
+ */
+export function useTickerDetailOptional(): TickerDetailContextValue | null {
+  return useContext(TickerDetailContext);
 }

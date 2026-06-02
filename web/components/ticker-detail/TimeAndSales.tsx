@@ -2,7 +2,10 @@
 
 import { classifyTicks } from "@/lib/book/depthDerivations";
 import type { Trade } from "@/lib/pricesProtocol";
+import type { OrderPrefill } from "@/lib/TickerDetailContext";
 import { fmtDepthPrice } from "./depthFormat";
+
+type PriceClick = (p: Omit<OrderPrefill, "nonce">) => void;
 
 /**
  * Render the tape `time` as HH:MM:SS ET. Accepts either an ISO-8601 string
@@ -25,7 +28,15 @@ function fmtTapeTime(time: string): string {
  * renders at the top, the montage-tape convention.
  * `visible` drives the reflow-aware opacity on the parent.
  */
-export function TimeAndSales({ trades, visible }: { trades: Trade[]; visible: boolean }) {
+export function TimeAndSales({
+  trades,
+  visible,
+  onPriceClick,
+}: {
+  trades: Trade[];
+  visible: boolean;
+  onPriceClick?: PriceClick;
+}) {
   const rows = classifyTicks(trades).reverse();
 
   return (
@@ -37,21 +48,38 @@ export function TimeAndSales({ trades, visible }: { trades: Trade[]; visible: bo
         <span className="r">Time</span>
       </div>
       <div className="book-tape-rows">
-        {rows.map((trade, i) => (
+        {rows.map((trade, i) => {
+          // Click-to-fill: tick-test tone infers side (uptick traded into the
+          // offer -> BUY, downtick -> SELL). Flat/unknown -> price-only (action
+          // omitted) since tone is a heuristic, not the true aggressor side.
+          const action = trade.tone === "up" ? "BUY" : trade.tone === "down" ? "SELL" : undefined;
+          const clickable = onPriceClick != null;
           // No reveal animation on tape rows: prints stream in realtime and a
           // per-row entry animation makes the whole tape flash/repaint on every
           // tick. Key by print content (+ index to disambiguate dup prints) so
           // React reconciles the list instead of remounting it.
-          <div
-            className="book-trow"
-            key={`${trade.time}-${trade.price}-${trade.size}-${trade.exchange ?? ""}-${i}`}
-          >
-            <span className={`book-t-px ${trade.tone}`}>{fmtDepthPrice(trade.price)}</span>
-            <span className="book-t-sz">{trade.size}</span>
-            <span className="book-t-mkt">{trade.exchange ?? "--"}</span>
-            <span className="book-t-time">{fmtTapeTime(trade.time)}</span>
-          </div>
-        ))}
+          return (
+            <div
+              className={`book-trow${clickable ? " book-row-fill" : ""}`}
+              key={`${trade.time}-${trade.price}-${trade.size}-${trade.exchange ?? ""}-${i}`}
+              {...(clickable
+                ? {
+                    role: "button" as const,
+                    tabIndex: 0,
+                    "aria-label": `Fill ticket: ${fmtDepthPrice(trade.price)}`,
+                    title: `Fill ticket: ${fmtDepthPrice(trade.price)}`,
+                    onClick: () =>
+                      onPriceClick({ price: trade.price, action, quantity: trade.size, source: "tape" }),
+                  }
+                : {})}
+            >
+              <span className={`book-t-px ${trade.tone}`}>{fmtDepthPrice(trade.price)}</span>
+              <span className="book-t-sz">{trade.size}</span>
+              <span className="book-t-mkt">{trade.exchange ?? "--"}</span>
+              <span className="book-t-time">{fmtTapeTime(trade.time)}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

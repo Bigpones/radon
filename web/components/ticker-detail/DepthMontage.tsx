@@ -2,9 +2,12 @@
 
 import { groupPriceLevels, montageFill, isBestLevel } from "@/lib/book/depthDerivations";
 import type { DepthBook, DepthLevel } from "@/lib/pricesProtocol";
+import type { OrderPrefill } from "@/lib/TickerDetailContext";
 import { fmtDepthPrice } from "./depthFormat";
 
 type MontageLevel = DepthLevel & { firstOfLevel: boolean };
+
+type PriceClick = (p: Omit<OrderPrefill, "nonce">) => void;
 
 /**
  * Two-sided montage for stocks (exchange / MPID L2 depth) and options
@@ -14,7 +17,7 @@ type MontageLevel = DepthLevel & { firstOfLevel: boolean };
  * NBBO-setting venue rows so the inside-of-market reads honestly as L1
  * top-of-book per exchange rather than a stacked depth ladder.
  */
-export function DepthMontage({ book }: { book: DepthBook }) {
+export function DepthMontage({ book, onPriceClick }: { book: DepthBook; onPriceClick?: PriceClick }) {
   const bids: MontageLevel[] = groupPriceLevels(book.bid);
   const asks: MontageLevel[] = groupPriceLevels(book.ask);
   const maxSize = Math.max(
@@ -53,12 +56,25 @@ export function DepthMontage({ book }: { book: DepthBook }) {
             <span className="book-shares" key="s">{level.size}</span>,
             <span className="book-mkt" key="m">{mkt}</span>,
           ];
+    // Click-to-fill: hitting a BID level = you'd hit the bid -> SELL; an ASK
+    // level = you'd lift the offer -> BUY. Price flows to the ticket's limit.
+    const action = side === "bid" ? "SELL" : "BUY";
+    const clickable = onPriceClick != null;
     return (
       <div
-        className={`book-row book-reveal${best ? " best" : ""}${isOption && level.nbbo ? " nbbo" : ""}`}
+        className={`book-row book-reveal${best ? " best" : ""}${isOption && level.nbbo ? " nbbo" : ""}${clickable ? " book-row-fill" : ""}`}
         data-lvlfirst={lvlfirst}
         style={{ ["--fill" as string]: fill, ["--i" as string]: index }}
         key={`${side}-${index}`}
+        {...(clickable
+          ? {
+              role: "button" as const,
+              tabIndex: 0,
+              "aria-label": `Fill ticket: ${action} ${fmtDepthPrice(level.price)}`,
+              title: `Fill ticket: ${action} ${fmtDepthPrice(level.price)}`,
+              onClick: () => onPriceClick({ price: level.price, action, source: "montage" }),
+            }
+          : {})}
       >
         {cells}
       </div>

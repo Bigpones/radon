@@ -4,6 +4,7 @@ import type { OpenOrder, PortfolioData, PortfolioPosition } from "@/lib/types";
 import type { PriceData, FundamentalsData, DepthBook, Trade } from "@/lib/pricesProtocol";
 import type { QuoteFallback } from "@/lib/quoteTelemetry";
 import { useViewport } from "@/lib/useViewport";
+import { useTickerDetailOptional, type OrderPrefill } from "@/lib/TickerDetailContext";
 import BookTab from "./BookTab";
 import OrderTab from "./OrderTab";
 import ActHeldSummary from "./ActHeldSummary";
@@ -68,6 +69,17 @@ export default function AssetCockpit({
   const { isMobile, hasMounted } = useViewport();
   const mobile = isMobile && hasMounted;
 
+  // Click-to-fill: a depth level / tape print click publishes its price (and an
+  // unambiguous side) to the order ticket via TickerDetailContext. The ticket
+  // (act column on desktop, `o`-deck on mobile) consumes it on a nonce-keyed
+  // effect. On mobile the ticket isn't visible beside the book, so also open
+  // the `o` deck. Optional context → no-op when rendered outside the provider.
+  const ticker_ctx = useTickerDetailOptional();
+  const onBookPriceClick = (p: Omit<OrderPrefill, "nonce">) => {
+    ticker_ctx?.setOrderPrefill(p);
+    if (mobile) onDeckChange("o");
+  };
+
   return (
     <div className={`cockpit cockpit-host ${mobile ? "cockpit--mobile" : ""}`}>
       <CockpitHeader
@@ -94,6 +106,7 @@ export default function AssetCockpit({
           bookKind={bookKind}
           portfolio={portfolio}
           bookOnly
+          onPriceClick={onBookPriceClick}
         />
       </div>
 

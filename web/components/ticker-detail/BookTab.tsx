@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { OpenOrder, PortfolioData, PortfolioPosition } from "@/lib/types";
 import type { DepthBook, PriceData, Trade } from "@/lib/pricesProtocol";
+import type { OrderPrefill } from "@/lib/TickerDetailContext";
 import { fmtPrice } from "@/lib/positionUtils";
 import SingleLegOrderTicket, { type SingleLegOrderAction } from "@/components/SingleLegOrderTicket";
 import { OrderRiskGate, type LinearOrderRiskInput } from "@/lib/order";
@@ -40,6 +41,9 @@ type BookTabProps = {
    *  live in the always-docked Act column, so embedding them here would
    *  duplicate them. Legacy/mobile layout leaves this false (full book tab). */
   bookOnly?: boolean;
+  /** Click-to-fill: a depth level / tape print was clicked. Forwarded to the
+   *  OrderBook; the cockpit supplies a handler that publishes to the ticket. */
+  onPriceClick?: (p: Omit<OrderPrefill, "nonce">) => void;
 };
 
 /* ─── L1 Order Book ─── */
@@ -368,6 +372,7 @@ export default function BookTab({
   bookKind,
   portfolio = null,
   bookOnly = false,
+  onPriceClick,
 }: BookTabProps) {
   const priceData = tickerPriceData ?? prices[ticker] ?? null;
   const bid = priceData?.bid ?? null;
@@ -410,6 +415,7 @@ export default function BookTab({
       bid={bid}
       ask={ask}
       l1Fallback={l1Fallback}
+      onPriceClick={onPriceClick}
     />
   );
 
