@@ -457,10 +457,10 @@ export default function VcgPanel({ marketState }: VcgPanelProps) {
           deltaVsPrior != null ? ` · ${fmtVcg(deltaVsPrior)}σ vs prior` : ""
         }`;
         return (
-          <div className="section" data-testid="vcg-history-chart-section">
+          <div className="section regime-relationship-panel" data-testid="vcg-history-chart-section">
             <div className="regime-relationship-panel-head">
               <div>
-                <div className="section-title">
+                <div className="regime-panel-title">
                   VCG Z-Score History
                   <InfoTooltip text="Volatility-Credit Gap z-score over the selected range. Bars above zero = vol cheap relative to credit (stress signal building); bars below zero = vol rich (bounce territory)." />
                 </div>

@@ -35,7 +35,9 @@ interface SignalAreaChartProps {
 }
 
 const DEFAULT_HEIGHT = 360;
-const MARGIN = { top: 16, right: 24, bottom: 32, left: 56 };
+// Matches the CRI "Correlation Risk Premium" chart (RegimeRelationshipView)
+// so every regime signal-history chart shares the same plot gutter.
+const MARGIN = { top: 16, right: 20, bottom: 32, left: 44 };
 const DATE_FORMATTER = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
 
 function defaultFormat(v: number): string {
