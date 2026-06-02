@@ -36,6 +36,7 @@ from utils.market_calendar import (
     load_holidays,
     _is_trading_day,
 )
+from utils.darkpool_cache import get_cached_darkpool, set_cached_darkpool
 
 WATCHLIST = Path(__file__).parent.parent / "data" / "watchlist.json"
 PORTFOLIO = Path(__file__).parent.parent / "data" / "portfolio.json"
@@ -150,11 +151,18 @@ def fetch_darkpool_multi(ticker: str, days: int = 3, _client: UWClient = None) -
     all_trades = []
 
     def _fetch_day(client, date):
-        try:
-            resp = client.get_darkpool_flow(ticker, date=date)
-        except UWAPIError:
-            return None, []
-        trades = resp.get("data", [])
+        # Prior (closed) sessions are immutable — serve from the shared on-disk
+        # cache and skip UW. Only today hits the API. (Same P0 reduction as
+        # fetch_flow; discover scans market-wide so this is high-impact.)
+        trades = get_cached_darkpool(ticker, date)
+        if trades is None:
+            try:
+                resp = client.get_darkpool_flow(ticker, date=date)
+            except UWAPIError:
+                return None, []
+            trades = resp.get("data", [])
+            if isinstance(trades, list):
+                set_cached_darkpool(ticker, date, trades)
         if isinstance(trades, list):
             day_analysis = analyze_darkpool_day(trades)
             day_analysis["date"] = date

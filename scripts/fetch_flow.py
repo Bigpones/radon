@@ -35,6 +35,7 @@ from utils.market_calendar import (
     load_holidays,
     _is_trading_day,
 )
+from utils.darkpool_cache import get_cached_darkpool, set_cached_darkpool
 
 logger = logging.getLogger(__name__)
 
@@ -487,7 +488,14 @@ def fetch_flow(ticker: str, lookback_days: int = 5, _client: Optional[UWClient] 
     def _do_fetch(client):
         nonlocal all_dp_trades, daily_signals
         for date in trading_days:
-            trades = fetch_darkpool(ticker, date, _client=client)
+            # Prior (closed) sessions are immutable: serve them from the on-disk
+            # cache and skip UW entirely. Only today is fetched live. A failed
+            # fetch raises out of fetch_darkpool (never cached); empty/today are
+            # no-ops in set_cached_darkpool. This is the P0 UW-load reduction.
+            trades = get_cached_darkpool(ticker, date)
+            if trades is None:
+                trades = fetch_darkpool(ticker, date, _client=client)
+                set_cached_darkpool(ticker, date, trades)
             if isinstance(trades, list):
                 day_analysis = analyze_darkpool(trades)
                 day_analysis["date"] = date
