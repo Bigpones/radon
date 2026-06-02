@@ -91,7 +91,7 @@ export function OrderBook({
   const left = !hasDepth ? (
     l1Fallback
   ) : kind === "future" ? (
-    <LadderDOM book={depth} last={head.last} />
+    <LadderDOM book={depth} last={head.last} onPriceClick={onPriceClick} />
   ) : (
     <DepthMontage book={depth} onPriceClick={onPriceClick} />
   );

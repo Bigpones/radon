@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { DepthMontage } from "../components/ticker-detail/DepthMontage";
 import { TimeAndSales } from "../components/ticker-detail/TimeAndSales";
+import { LadderDOM } from "../components/ticker-detail/LadderDOM";
 import type { DepthBook, Trade } from "@/lib/pricesProtocol";
 
 afterEach(() => cleanup());
@@ -83,5 +84,50 @@ describe("TimeAndSales click-to-fill", () => {
     expect(arg.price).toBe(49.68);
     expect(arg.action).toBeUndefined();
     expect(arg.source).toBe("tape");
+  });
+});
+
+function futuresBook(): DepthBook {
+  return {
+    kind: "future",
+    entitled: true,
+    feed: "CME",
+    bid: [
+      { price: 7614.75, size: 49, exchange: "CME" },
+      { price: 7614.5, size: 88, exchange: "CME" },
+    ],
+    ask: [
+      { price: 7615.0, size: 88, exchange: "CME" },
+      { price: 7615.25, size: 40, exchange: "CME" },
+    ],
+  } as unknown as DepthBook;
+}
+
+describe("LadderDOM click-to-fill (futures)", () => {
+  it("clicking an ASK ladder row emits BUY at that price (source ladder)", () => {
+    const onPriceClick = vi.fn();
+    render(React.createElement(LadderDOM, { book: futuresBook(), last: 7614.75, onPriceClick }));
+    fireEvent.click(screen.getByLabelText("Fill ticket: BUY 7615.00"));
+    expect(onPriceClick).toHaveBeenCalledWith({ price: 7615.0, action: "BUY", source: "ladder" });
+  });
+
+  it("clicking a BID ladder row emits SELL at that price", () => {
+    const onPriceClick = vi.fn();
+    render(React.createElement(LadderDOM, { book: futuresBook(), last: 7614.75, onPriceClick }));
+    fireEvent.click(screen.getByLabelText("Fill ticket: SELL 7614.75"));
+    expect(onPriceClick).toHaveBeenCalledWith({ price: 7614.75, action: "SELL", source: "ladder" });
+  });
+
+  it("the LAST/SPRD spine is not a tradeable level (no fill click)", () => {
+    const { container } = render(
+      React.createElement(LadderDOM, { book: futuresBook(), last: 7614.75, onPriceClick: vi.fn() }),
+    );
+    const spine = container.querySelector(".book-ladder-spread");
+    expect(spine?.getAttribute("role")).not.toBe("button");
+  });
+
+  it("no click affordance + no crash when handler absent", () => {
+    const { container } = render(React.createElement(LadderDOM, { book: futuresBook(), last: 7614.75 }));
+    expect(container.querySelector(".book-row-fill")).toBeNull();
   });
 });
