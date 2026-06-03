@@ -53,11 +53,11 @@ export function indexExchangeFor(symbol: string | null | undefined): IndexExchan
 
 /**
  * Symbols where Radon supports trading futures on the underlying index.
- * Keep this in sync with scripts/clients/contract_resolver.py
- * FUTURES_ROOTS. Phase 2 ships VIX only; SPX / NDX / RUT futures wire
- * in later.
+ * Keep this in sync with scripts/clients/contract_resolver.py FUTURES_ROOTS.
+ * VIX resolves to the VIX/CFE future; SPX/NDX/RUT to their CME E-minis
+ * (ES/NQ/RTY) — the index→future mapping lives in the relay + resolver.
  */
-const FUTURES_SUPPORTED_SYMBOLS = new Set(["VIX"]);
+const FUTURES_SUPPORTED_SYMBOLS = new Set(["VIX", "SPX", "NDX", "RUT"]);
 
 export function hasFuturesSupport(symbol: string | null | undefined): boolean {
   if (!symbol) return false;

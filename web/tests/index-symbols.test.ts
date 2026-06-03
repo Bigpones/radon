@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isIndexSymbol, indexExchangeFor, INDEX_SYMBOLS } from "../lib/indexSymbols";
+import { isIndexSymbol, indexExchangeFor, hasFuturesSupport, INDEX_SYMBOLS } from "../lib/indexSymbols";
 
 describe("isIndexSymbol", () => {
   it("returns true for canonical index symbols", () => {
@@ -50,6 +50,24 @@ describe("indexExchangeFor", () => {
 
   it("normalises case before lookup", () => {
     expect(indexExchangeFor("vix")).toBe("CBOE");
+  });
+});
+
+describe("hasFuturesSupport", () => {
+  it("is true for every index Radon resolves to a tradeable future", () => {
+    // VIX → VIX/CFE; SPX/NDX/RUT → CME E-minis (ES/NQ/RTY). Must stay in
+    // sync with contract_resolver.py FUTURES_ROOTS + the relay INDEX_FUTURE_ROOT.
+    expect(hasFuturesSupport("VIX")).toBe(true);
+    expect(hasFuturesSupport("SPX")).toBe(true);
+    expect(hasFuturesSupport("NDX")).toBe(true);
+    expect(hasFuturesSupport("RUT")).toBe(true);
+  });
+
+  it("normalises case and rejects unmapped / empty symbols", () => {
+    expect(hasFuturesSupport("spx")).toBe(true);
+    expect(hasFuturesSupport("VVIX")).toBe(false); // index, but no listed future
+    expect(hasFuturesSupport("AAPL")).toBe(false);
+    expect(hasFuturesSupport(null)).toBe(false);
   });
 });
 

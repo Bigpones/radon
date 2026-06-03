@@ -134,6 +134,20 @@ describe("ib_realtime_server.js exposes the flag-gated L2 depth channel", () => 
     expect(source).toContain('"VIX"]'); // DEPTH_FUTURES_SYMBOLS ends with "VIX"
   });
 
+  it("maps cash indices to their CME E-mini future root for depth (SPX→ES, NDX→NQ, RUT→RTY)", () => {
+    // SPX/NDX/RUT have no future of their own name; the Book tab subscribes
+    // depth under the index symbol but the relay resolves the E-mini front month.
+    const map = source.match(/const INDEX_FUTURE_ROOT = \{[\s\S]*?\};/)?.[0] ?? "";
+    expect(map).toContain('SPX: "ES"');
+    expect(map).toContain('NDX: "NQ"');
+    expect(map).toContain('RUT: "RTY"');
+    // The mapped roots must themselves resolve to a native depth exchange.
+    const exch = source.match(/const FUTURES_ROOT_EXCHANGES = \{[\s\S]*?\};/)?.[0] ?? "";
+    expect(exch).toContain('ES: "CME"');
+    expect(exch).toContain('NQ: "CME"');
+    expect(exch).toContain('RTY: "CME"');
+  });
+
   it("bounds the futures resolution await and degrades to futures-no-depth without hanging", () => {
     expect(source).toContain("const FUTURES_RESOLVE_TIMEOUT_MS");
     expect(source).toContain("setTimeout(() => {");

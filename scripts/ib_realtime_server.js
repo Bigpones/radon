@@ -360,6 +360,11 @@ const FUTURES_ROOT_EXCHANGES = {
 function futuresExchangeForRoot(root) {
   return FUTURES_ROOT_EXCHANGES[root] || "CME";
 }
+// Cash indices whose tradeable depth lives on a CME E-mini future. The Book tab
+// subscribes depth under the INDEX symbol (key stays e.g. "SPX") but the relay
+// resolves the front-month FUTURE (ES) for reqMktDepth. VIX is NOT here — its
+// IB future symbol IS "VIX", so it lives directly in DEPTH_FUTURES_SYMBOLS.
+const INDEX_FUTURE_ROOT = { SPX: "ES", NDX: "NQ", RUT: "RTY" };
 const FUTURES_RESOLVE_TIMEOUT_MS = 6000;
 // key → { depthTickerId, contract, kind, isFutures, ladders:{bid:Map,ask:Map}, focusedAt }
 const symbolDepthStates = new Map();
@@ -1465,14 +1470,20 @@ function resolveDepthSubject(payload) {
     return { key: optionKey(c), contract: optionContract(c.symbol, c.expiry, c.strike, c.right), kind: "option", isFutures: false };
   }
 
-  const isFuture = DEPTH_FUTURES_SYMBOLS.has(rawSymbol) || payload.instrument === "future" || payload.secType === "FUT";
+  const mappedRoot = INDEX_FUTURE_ROOT[rawSymbol];
+  const isFuture = DEPTH_FUTURES_SYMBOLS.has(rawSymbol) || Boolean(mappedRoot) || payload.instrument === "future" || payload.secType === "FUT";
   if (isFuture) {
     // Depth on a bare futures root needs a QUALIFIED front-month contract
     // (conId), resolved via reqContractDetails in the handler. We carry the
     // root + a fallback bare-root contract; the handler swaps in the resolved
-    // front-month before calling reqMktDepth.
-    const exchange = typeof payload.exchange === "string" ? payload.exchange.trim().toUpperCase() : futuresExchangeForRoot(rawSymbol);
-    return { key: rawSymbol, root: rawSymbol, contract: futureContract(rawSymbol, "", "USD", exchange), kind: "future", isFutures: true };
+    // front-month before calling reqMktDepth. For an index→future mapping
+    // (SPX→ES) the native future exchange wins over any index exchange the
+    // client sent; the key stays the inbound symbol so depths[key] still matches.
+    const root = mappedRoot || rawSymbol;
+    const exchange = mappedRoot
+      ? futuresExchangeForRoot(root)
+      : (typeof payload.exchange === "string" ? payload.exchange.trim().toUpperCase() : futuresExchangeForRoot(root));
+    return { key: rawSymbol, root, contract: futureContract(root, "", "USD", exchange), kind: "future", isFutures: true };
   }
 
   return { key: rawSymbol, contract: stockContract(rawSymbol, "SMART", "USD"), kind: "stock", isFutures: false };

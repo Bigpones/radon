@@ -53,6 +53,11 @@ def is_tradeable(symbol: str) -> bool:
 # scoped to VIX; extend as we wire more index-futures.
 FUTURES_ROOTS: dict[str, dict[str, str]] = {
     "VIX": {"root": "VIX", "exchange": "CFE", "multiplier": "1000"},
+    # Cash indices → their CME E-mini future. `root` is IB's contract symbol;
+    # multiplier pins the E-mini (excludes the Micro: MES/MNQ/M2K).
+    "SPX": {"root": "ES", "exchange": "CME", "multiplier": "50"},
+    "NDX": {"root": "NQ", "exchange": "CME", "multiplier": "20"},
+    "RUT": {"root": "RTY", "exchange": "CME", "multiplier": "50"},
 }
 
 
