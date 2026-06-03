@@ -57,7 +57,7 @@ describe("GET /api/futures/chain", () => {
     expect(Array.isArray(body.contracts)).toBe(true);
     expect(mockRadonFetch).toHaveBeenCalledWith(
       "/futures/chain?symbol=VIX",
-      expect.objectContaining({ timeout: 20_000 }),
+      expect.objectContaining({ timeout: 28_000 }),
     );
   });
 
