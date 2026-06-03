@@ -365,6 +365,16 @@ function futuresExchangeForRoot(root) {
 // resolves the front-month FUTURE (ES) for reqMktDepth. VIX is NOT here — its
 // IB future symbol IS "VIX", so it lives directly in DEPTH_FUTURES_SYMBOLS.
 const INDEX_FUTURE_ROOT = { SPX: "ES", NDX: "NQ", RUT: "RTY" };
+
+// Indices whose OPTIONS are priced off the front-month future (the forward),
+// not the cash spot — Black-Scholes must use the future as the underlying.
+// When such an index L1 is subscribed, the relay also opens an L1 on the
+// front-month future and copies its last/mid into prices[index].fwd so the
+// client prices options off the tradeable forward, not the after-hours-frozen
+// cash index. VIX only (VIX options settle into the VIX future).
+const FORWARD_PRICED_INDICES = new Set(["VIX"]);
+const FORWARD_KEY_PREFIX = "@fwd:"; // internal symbol-state key; never client-facing
+const forwardKeyToIndex = new Map(); // "@fwd:VIX" -> "VIX"
 const FUTURES_RESOLVE_TIMEOUT_MS = 6000;
 // key → { depthTickerId, contract, kind, isFutures, ladders:{bid:Map,ask:Map}, focusedAt }
 const symbolDepthStates = new Map();
@@ -743,6 +753,47 @@ function startLiveSubscription(key, ibContract) {
   } catch (error) {
     console.error(`Failed to subscribe ${key}:`, error);
   }
+}
+
+// Open (or re-open after a reconnect) an L1 subscription on the front-month
+// future for a forward-priced index, under an internal "@fwd:<index>" key. Its
+// ticks feed prices[index].fwd via publishForwardFromFutureTick. Resolution can
+// fail during a data-farm flap (returns null) — we just skip and the client
+// falls back to the cash spot until the next tick re-arms it.
+async function ensureForwardSubscription(indexKey) {
+  if (!FORWARD_PRICED_INDICES.has(indexKey) || !ibConnected) return;
+  const fwdKey = FORWARD_KEY_PREFIX + indexKey;
+  const existing = symbolStates.get(fwdKey);
+  if (existing && existing.tickerId != null) return; // already streaming
+  const contract = await resolveFuturesFrontMonth(indexKey);
+  if (!contract) return;
+  forwardKeyToIndex.set(fwdKey, indexKey);
+  startLiveSubscription(fwdKey, contract);
+}
+
+function isFinitePositive(n) {
+  return typeof n === "number" && Number.isFinite(n) && n > 0;
+}
+
+// Copy the front-month future's last/mid into the index's .fwd field and
+// rebroadcast the index so subscribed clients price options off the forward.
+function publishForwardFromFutureTick(fwdKey, fwdState) {
+  const indexKey = forwardKeyToIndex.get(fwdKey);
+  if (!indexKey) return;
+  const d = fwdState.data;
+  const fwd = isFinitePositive(d.bid) && isFinitePositive(d.ask)
+    ? (d.bid + d.ask) / 2
+    : isFinitePositive(d.last)
+      ? d.last
+      : isFinitePositive(d.close)
+        ? d.close
+        : null;
+  if (fwd == null) return;
+  const idxState = symbolStates.get(indexKey);
+  if (!idxState) return;
+  if (idxState.data.fwd === fwd) return; // no change — skip rebroadcast
+  idxState.data.fwd = fwd;
+  hydrateAndBroadcast(indexKey);
 }
 
 function stopLiveSubscription(symbol) {
@@ -1344,6 +1395,8 @@ function onTickPrice(tickerId, tickType, price) {
     updateOptionCloseCache(symbol, liveState.data.close);
     verbose(`tick ${symbol} type=${tickType} price=${price}`);
     hydrateAndBroadcast(symbol);
+    // Forward-priced index: route the front-month future tick into index.fwd.
+    if (forwardKeyToIndex.has(symbol)) publishForwardFromFutureTick(symbol, liveState);
   }
   if (snapshotState) {
     updatePriceFromTickPrice(snapshotState.data, tickType, price);
@@ -1455,6 +1508,10 @@ function restoreSubscriptions() {
     const ibContract = existing?.contract;
     if (!ibContract) continue;
     startLiveSubscription(key, ibContract);
+    // Re-arm the front-month future L1 behind a forward-priced index — its
+    // ticker was cancelled by cleanupSymbolStateForReconnect and it is not a
+    // client-facing subscription, so restoreSubscriptions would otherwise skip it.
+    if (FORWARD_PRICED_INDICES.has(key)) void ensureForwardSubscription(key);
     const state = symbolStates.get(key);
     if (state) {
       sendToSymbolSubscribers(key, {
@@ -1610,6 +1667,9 @@ async function handleClientMessage(client, data) {
         ensureSymbolState(key, ibContract);
         if (ibConnected) {
           startLiveSubscription(key, ibContract);
+          // Forward-priced index (VIX): also open the front-month future L1 so
+          // prices[key].fwd carries the forward options are priced against.
+          if (FORWARD_PRICED_INDICES.has(key)) void ensureForwardSubscription(key);
           const state = symbolStates.get(key);
           if (state) {
             sendMessage(client, {

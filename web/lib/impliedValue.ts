@@ -10,6 +10,7 @@
  */
 
 import { bsImpliedVol, bsPrice, RISK_FREE_RATE_DEFAULT } from "./blackScholes";
+import { isForwardPricedIndex } from "./indexSymbols";
 import { optionKey, type PriceData } from "./pricesProtocol";
 import type { OpenOrder, PortfolioLeg, PortfolioPosition } from "./types";
 
@@ -36,7 +37,7 @@ export type ImpliedValueInputs = {
   T: number;
   sigma: number;
   r: number;
-  spotSource: "last" | "undPrice" | "mid";
+  spotSource: "forward" | "last" | "undPrice" | "mid";
   /** Where σ came from. "stream" = IB tickOptionComputation,
    *  "backsolve" = bisection on yesterday's option close + underlying close. */
   sigmaSource: "stream" | "backsolve";
@@ -81,7 +82,7 @@ function isPositive(n: number | null | undefined): n is number {
   return typeof n === "number" && Number.isFinite(n) && n > 0;
 }
 
-type SpotResolution = { S: number; source: "last" | "undPrice" | "mid" } | null;
+type SpotResolution = { S: number; source: "forward" | "last" | "undPrice" | "mid" } | null;
 
 function resolveSpot(
   ticker: string,
@@ -89,6 +90,14 @@ function resolveSpot(
   prices: Record<string, PriceData>,
 ): SpotResolution {
   const tickerPd = prices[ticker.toUpperCase()];
+  // Forward-priced indices (VIX): options are priced off the front-month
+  // future, not the cash spot. The relay publishes that forward as
+  // prices[ticker].fwd; prefer it so Black-Scholes uses the tradeable
+  // underlying instead of the (after-hours-frozen) cash index. Falls through
+  // to the cash chain when the forward is unavailable.
+  if (isForwardPricedIndex(ticker) && isPositive(tickerPd?.fwd)) {
+    return { S: tickerPd!.fwd!, source: "forward" };
+  }
   if (isPositive(tickerPd?.last)) return { S: tickerPd!.last!, source: "last" };
   if (isPositive(optionPd?.undPrice)) return { S: optionPd!.undPrice!, source: "undPrice" };
   if (isPositive(tickerPd?.bid) && isPositive(tickerPd?.ask)) {

@@ -69,6 +69,22 @@ export function hasFuturesSupport(symbol: string | null | undefined): boolean {
  * Keep in sync with scripts/clients/contract_resolver.py
  * INDEX_OPTION_ROOTS.
  */
+/**
+ * Indices whose options are priced off a tradeable FUTURE (the forward), not
+ * the cash spot. Black-Scholes must use the front-month future as the
+ * underlying S for these — the cash index is neither tradeable nor hedgeable,
+ * carries a large basis, and freezes after hours. VIX is the clear case (VIX
+ * options settle into the VIX future). The relay publishes the forward as
+ * prices[symbol].fwd. SPX/NDX/RUT cash track their forwards closely and trade
+ * continuously in RTH, so they are intentionally NOT included.
+ */
+const FORWARD_PRICED_INDICES = new Set(["VIX"]);
+
+export function isForwardPricedIndex(symbol: string | null | undefined): boolean {
+  if (!symbol) return false;
+  return FORWARD_PRICED_INDICES.has(symbol.toUpperCase());
+}
+
 const INDEX_OPTIONS_SUPPORTED_SYMBOLS = new Set(["VIX", "SPX", "NDX", "RUT", "XSP"]);
 
 export function hasIndexOptionsSupport(symbol: string | null | undefined): boolean {

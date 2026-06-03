@@ -7,7 +7,7 @@ import {
   yearsToExpiry,
   type LegImpliedInput,
 } from "../lib/impliedValue";
-import type { PriceData } from "../lib/pricesProtocol";
+import { optionKey, type PriceData } from "../lib/pricesProtocol";
 import type { OpenOrder, PortfolioPosition } from "../lib/types";
 
 const NOW = new Date("2026-04-28T12:00:00Z"); // 8 AM ET pre-market on the AMD example
@@ -178,6 +178,62 @@ describe("computeLegImpliedValue", () => {
       { now: NOW },
     );
     expect(r.notional).toBeCloseTo(r.perContract! * 75 * 100, 6);
+  });
+});
+
+describe("forward-priced underlying (VIX options price off the future, not cash)", () => {
+  const VIX_EXPIRY = "20260616";
+  const vixCallKey = optionKey({ symbol: "VIX", expiry: VIX_EXPIRY, strike: 18, right: "C" });
+  function vixCall() {
+    return leg({ ticker: "VIX", expiry: VIX_EXPIRY, strike: 18, type: "Call", direction: "LONG", contracts: 500 });
+  }
+
+  it("uses prices[VIX].fwd as the Black-Scholes spot when present", () => {
+    const r = computeLegImpliedValue(
+      vixCall(),
+      {
+        VIX: pd({ last: 17.7, fwd: 19.5 }),
+        [vixCallKey]: pd({ impliedVol: 0.9 }),
+      },
+      { now: NOW },
+    );
+    expect(r.inputs?.spotSource).toBe("forward");
+    expect(r.inputs?.S).toBeCloseTo(19.5, 6);
+  });
+
+  it("falls back to the cash index last when no forward is published", () => {
+    const r = computeLegImpliedValue(
+      vixCall(),
+      {
+        VIX: pd({ last: 17.7 }), // fwd absent/null
+        [vixCallKey]: pd({ impliedVol: 0.9 }),
+      },
+      { now: NOW },
+    );
+    expect(r.inputs?.spotSource).toBe("last");
+    expect(r.inputs?.S).toBeCloseTo(17.7, 6);
+  });
+
+  it("prices the call richer off the (higher) forward than off the stale cash spot", () => {
+    const prices = { [vixCallKey]: pd({ impliedVol: 0.9 }) };
+    const onFwd = computeLegImpliedValue(vixCall(), { ...prices, VIX: pd({ last: 17.7, fwd: 19.5 }) }, { now: NOW });
+    const onCash = computeLegImpliedValue(vixCall(), { ...prices, VIX: pd({ last: 17.7 }) }, { now: NOW });
+    // 18-strike call is ITM at the 19.5 forward but ~ATM at the 17.7 cash spot.
+    expect(onFwd.perContract!).toBeGreaterThan(onCash.perContract!);
+  });
+
+  it("ignores .fwd for non-forward-priced indices (SPX uses cash last)", () => {
+    const spxKey = optionKey({ symbol: "SPX", expiry: VIX_EXPIRY, strike: 6000, right: "C" });
+    const r = computeLegImpliedValue(
+      leg({ ticker: "SPX", expiry: VIX_EXPIRY, strike: 6000, type: "Call", direction: "LONG", contracts: 1 }),
+      {
+        SPX: pd({ last: 6000, fwd: 6080 }),
+        [spxKey]: pd({ impliedVol: 0.2 }),
+      },
+      { now: NOW },
+    );
+    expect(r.inputs?.spotSource).toBe("last");
+    expect(r.inputs?.S).toBeCloseTo(6000, 6);
   });
 });
 

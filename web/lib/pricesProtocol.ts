@@ -21,6 +21,10 @@ export type PriceData = {
   vega: number | null;
   impliedVol: number | null;
   undPrice: number | null;
+  // Forward price: for forward-priced indices (VIX) the relay publishes the
+  // front-month future last/mid here so option pricing uses the tradeable
+  // forward instead of the (after-hours-frozen) cash index. Null otherwise.
+  fwd?: number | null;
   timestamp: string;
 };
 

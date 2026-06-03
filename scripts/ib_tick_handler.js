@@ -39,6 +39,10 @@ export function createPriceData(symbol) {
     vega: null,
     impliedVol: null,
     undPrice: null,
+    // Forward price for forward-priced indices (VIX): the relay copies the
+    // front-month future last/mid here so option pricing uses the tradeable
+    // forward, not the after-hours-frozen cash index. Null for everything else.
+    fwd: null,
     timestamp: new Date().toISOString(),
   };
 }
