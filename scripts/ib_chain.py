@@ -19,7 +19,20 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
+
+# Transient-farm resilience. IB Gateway intermittently reports its data farms
+# (secdefil / ushmds) as "connection is broken" while they reconnect — during
+# that window a fresh connect times out and reqContractDetails returns empty.
+# These flaps usually clear within a few seconds, so we retry both steps within
+# the endpoint's time budget (radonFetch 28s / subprocess 30s) instead of
+# failing the whole order ticket after a single attempt.
+_CONNECT_ATTEMPTS = 3
+_CONNECT_TIMEOUT = 5
+_CONNECT_BACKOFF_S = 1.0
+_DETAILS_ATTEMPTS = 3
+_DETAILS_BACKOFF_S = 1.5
 
 # Path bootstrap mirrors ib_place_order.py
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -41,6 +54,46 @@ from clients.contract_resolver import (
 from clients.ib_client import DEFAULT_HOST, DEFAULT_GATEWAY_PORT, IBClient
 
 
+def _connect_with_retry(client: IBClient):
+    """Connect, retrying transient failures (farm flaps / handshake timeouts).
+
+    The IBClient auto-allocator already rotates client IDs on collision; this
+    loop adds resilience to the OTHER failure mode — a connect that times out
+    because secdefil/ushmds are mid-reconnect. Returns None on success, or the
+    last exception when every attempt fails.
+    """
+    last_exc = None
+    for attempt in range(1, _CONNECT_ATTEMPTS + 1):
+        try:
+            client.connect(
+                host=DEFAULT_HOST, port=DEFAULT_GATEWAY_PORT,
+                client_id="auto", timeout=_CONNECT_TIMEOUT,
+            )
+            return None
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if attempt < _CONNECT_ATTEMPTS:
+                time.sleep(_CONNECT_BACKOFF_S)
+    return last_exc
+
+
+def _req_details_with_retry(client: IBClient, spec):
+    """reqContractDetails, retrying on an empty result.
+
+    A connect can succeed a beat before secdefil finishes reconnecting, so the
+    first reqContractDetails comes back empty. We wait via the event-loop-aware
+    ib.sleep (so pending farm-status messages get processed) and retry. For a
+    genuinely-unlisted symbol this just burns the bounded retries and returns [].
+    """
+    details = client.ib.reqContractDetails(spec)
+    for attempt in range(2, _DETAILS_ATTEMPTS + 1):
+        if details:
+            break
+        client.ib.sleep(_DETAILS_BACKOFF_S)
+        details = client.ib.reqContractDetails(spec)
+    return details
+
+
 def fetch_chain(kind: str, symbol: str, expiry: str = "") -> dict:
     symbol_upper = symbol.upper()
     if kind == "future":
@@ -58,13 +111,12 @@ def fetch_chain(kind: str, symbol: str, expiry: str = "") -> dict:
     # connection conventions as other subprocess scripts. Direct
     # ib_insync.IB.connect rejects clientId="auto" with a ValueError.
     client = IBClient()
-    try:
-        client.connect(host=DEFAULT_HOST, port=DEFAULT_GATEWAY_PORT, client_id="auto", timeout=10)
-    except Exception as exc:  # noqa: BLE001
-        return {"error": f"IB connect failed: {exc}"}
+    connect_err = _connect_with_retry(client)
+    if connect_err is not None:
+        return {"error": f"IB connect failed: {connect_err}"}
 
     try:
-        details = client.ib.reqContractDetails(spec)
+        details = _req_details_with_retry(client, spec)
     except Exception as exc:  # noqa: BLE001
         return {"error": f"reqContractDetails failed: {exc}"}
     finally:

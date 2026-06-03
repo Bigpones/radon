@@ -34,7 +34,9 @@ export async function GET(request: Request): Promise<Response> {
   try {
     const data = await radonFetch<Record<string, unknown>>(
       `/futures/chain?symbol=${encodeURIComponent(symbol.toUpperCase())}`,
-      { timeout: 20_000 },
+      // 28s: room for ib_chain.py's bounded connect/details retries (it rides
+      // out transient secdefil/ushmds farm flaps) within the 30s subprocess cap.
+      { timeout: 28_000 },
     );
     return setNoStoreResponseHeaders(NextResponse.json(data), requestId);
   } catch (err) {
