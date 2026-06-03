@@ -9,6 +9,7 @@ import {
   type GammaRotationGate,
   type GammaRotationHistoryEntry,
 } from "@/lib/useGammaRotation";
+import { isGammaRotationStale } from "@/lib/gammaRotationStaleness";
 import InfoTooltip from "./InfoTooltip";
 import SpectralLoader from "./SpectralLoader";
 
@@ -190,8 +191,16 @@ function GateList({ gates }: { gates: GammaRotationGate[] }) {
   );
 }
 
-function GammaRotationBody({ data }: { data: GammaRotationData }) {
+function GammaRotationBody({ data, lastSync, syncing }: { data: GammaRotationData; lastSync: string | null; syncing: boolean }) {
   const tone = interpretationColor(data.signal.interpretation);
+  const gammaRotationIsStale = isGammaRotationStale(data);
+  const freshnessBadge = syncing
+    ? { label: "SYNCING", className: "grg-status-badge grg-status-badge-syncing" }
+    : gammaRotationIsStale
+      ? { label: "STALE", className: "grg-status-badge grg-status-badge-stale" }
+      : data.market_open
+        ? { label: "LIVE", className: "grg-status-badge grg-status-badge-live" }
+        : { label: "FRESH", className: "grg-status-badge grg-status-badge-fresh" };
   return (
     <div className="section grg-panel regime-relationship-panel">
       <div className="regime-relationship-panel-head">
@@ -205,10 +214,18 @@ function GammaRotationBody({ data }: { data: GammaRotationData }) {
           />
         </div>
         <div className="grg-header-meta">
+          <span className={freshnessBadge.className} data-testid="grg-freshness-badge">
+            {freshnessBadge.label}
+          </span>
           <span className="grg-badge" style={{ color: tone, borderColor: `color-mix(in srgb, ${tone} 42%, var(--line-grid))` }}>
             {interpretationLabel(data.signal.interpretation)}
           </span>
           <span>{data.data_date || "no date"}</span>
+          {lastSync && (
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-muted)" }}>
+              {new Date(lastSync).toLocaleTimeString()}
+            </span>
+          )}
         </div>
       </div>
 
@@ -268,7 +285,7 @@ function GammaRotationBody({ data }: { data: GammaRotationData }) {
 }
 
 export default function GammaRotationPanel({ marketState }: GammaRotationPanelProps) {
-  const { data, loading, error } = useGammaRotation(marketState ?? null);
+  const { data, loading, error, lastSync, syncing } = useGammaRotation(marketState ?? null);
 
   if (loading && !data) {
     return (
@@ -311,5 +328,5 @@ export default function GammaRotationPanel({ marketState }: GammaRotationPanelPr
     );
   }
 
-  return <GammaRotationBody data={data} />;
+  return <GammaRotationBody data={data} lastSync={lastSync} syncing={syncing} />;
 }

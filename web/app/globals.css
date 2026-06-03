@@ -9149,6 +9149,42 @@ tr {
   text-transform: uppercase;
 }
 
+.grg-status-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.5px;
+  border: 1px solid var(--border-dim);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+}
+
+.grg-status-badge-live {
+  border-color: color-mix(in srgb, var(--signal-core) 45%, transparent);
+  background: color-mix(in srgb, var(--signal-core) 10%, transparent);
+  color: var(--signal-core);
+}
+
+.grg-status-badge-fresh {
+  border-color: color-mix(in srgb, var(--warning) 38%, transparent);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  color: var(--warning);
+}
+
+.grg-status-badge-stale {
+  border-color: color-mix(in srgb, var(--fault) 45%, transparent);
+  background: color-mix(in srgb, var(--fault) 10%, transparent);
+  color: var(--fault);
+}
+
+.grg-status-badge-syncing {
+  border-color: color-mix(in srgb, var(--text-secondary) 45%, transparent);
+  background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
+  color: var(--text-secondary);
+}
+
 .grg-hero {
   display: grid;
   grid-template-columns: minmax(260px, 0.92fr) minmax(420px, 1.08fr);
