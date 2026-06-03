@@ -101,19 +101,37 @@ describe("montageFill", () => {
 });
 
 describe("buildLadderRows", () => {
+  // Helpers to read only the live (non-placeholder) rows, in render order.
+  const live = (rows: ReturnType<typeof buildLadderRows>["askRows"]) =>
+    rows.filter((r): r is Extract<typeof r, { placeholder?: false }> => !r.placeholder);
+
+  // A DEEP book: more bid/ask levels than the requested row count.
+  const deepBid: DepthLevel[] = Array.from({ length: 14 }, (_, i) => ({
+    price: 5012.5 - i * 0.25,
+    size: 100 + i,
+    marketMaker: null,
+    exchange: null,
+  }));
+  const deepAsk: DepthLevel[] = Array.from({ length: 14 }, (_, i) => ({
+    price: 5012.75 + i * 0.25,
+    size: 100 + i,
+    marketMaker: null,
+    exchange: null,
+  }));
+
   it("accrues cumulative size monotonically from the inside out", () => {
     const { bidRows, askRows } = buildLadderRows({
       bid: FUTURES_BID,
       ask: FUTURES_ASK,
     });
-    // bidRows are inside -> worst, so cum is non-decreasing in order.
-    const bidCums = bidRows.map((r) => r.cum);
+    // bidRows are inside -> worst, so cum is non-decreasing across live rows.
+    const bidCums = live(bidRows).map((r) => r.cum);
     expect(bidCums).toEqual([137, 137 + 295, 137 + 295 + 263]);
     for (let i = 1; i < bidCums.length; i++) {
       expect(bidCums[i]).toBeGreaterThanOrEqual(bidCums[i - 1]);
     }
     // askRows are emitted worst -> best (reversed), so cum is non-increasing.
-    const askCums = askRows.map((r) => r.cum);
+    const askCums = live(askRows).map((r) => r.cum);
     expect(askCums).toEqual([142 + 318 + 274, 142 + 318, 142]);
     for (let i = 1; i < askCums.length; i++) {
       expect(askCums[i]).toBeLessThanOrEqual(askCums[i - 1]);
@@ -125,21 +143,23 @@ describe("buildLadderRows", () => {
       bid: FUTURES_BID,
       ask: FUTURES_ASK,
     });
-    expect(askRows[0].level.price).toBe(5013.25); // worst ask at top
-    expect(askRows[askRows.length - 1].level.price).toBe(5012.75); // best ask above spine
-    expect(bidRows[0].level.price).toBe(5012.50); // best bid below spine
-    expect(bidRows[bidRows.length - 1].level.price).toBe(5012.00); // worst bid
+    const liveAsk = live(askRows);
+    const liveBid = live(bidRows);
+    expect(liveAsk[0].level.price).toBe(5013.25); // worst live ask at top
+    expect(liveAsk[liveAsk.length - 1].level.price).toBe(5012.75); // best ask above spine
+    expect(liveBid[0].level.price).toBe(5012.5); // best bid below spine
+    expect(liveBid[liveBid.length - 1].level.price).toBe(5012.0); // worst bid
   });
 
-  it("scales fill into [0,1] against the deepest cumulative", () => {
+  it("scales fill into [0,1] against the deepest cumulative (placeholders excluded)", () => {
     const result = buildLadderRows({ bid: FUTURES_BID, ask: FUTURES_ASK });
-    const allRows = [...result.askRows, ...result.bidRows];
-    for (const row of allRows) {
+    const liveRows = [...live(result.askRows), ...live(result.bidRows)];
+    for (const row of liveRows) {
       expect(row.fill).toBeGreaterThanOrEqual(0);
       expect(row.fill).toBeLessThanOrEqual(1);
       expect(row.fill).toBeCloseTo(row.cum / result.maxCumulative, 10);
     }
-    expect(Math.max(...allRows.map((r) => r.fill))).toBeCloseTo(1, 10);
+    expect(Math.max(...liveRows.map((r) => r.fill))).toBeCloseTo(1, 10);
   });
 
   it("flags the inside row of each side as best", () => {
@@ -147,10 +167,12 @@ describe("buildLadderRows", () => {
       bid: FUTURES_BID,
       ask: FUTURES_ASK,
     });
-    // best bid sits at the spine (last emitted is worst, first is best)
-    expect(bidRows.find((r) => r.isBest)?.level.price).toBe(5012.50);
-    // best ask sits just above the spine (last emitted after reverse)
-    expect(askRows.find((r) => r.isBest)?.level.price).toBe(5012.75);
+    const bestBid = bidRows.find((r) => r.isBest);
+    const bestAsk = askRows.find((r) => r.isBest);
+    expect(bestBid?.placeholder).toBe(false);
+    expect(bestAsk?.placeholder).toBe(false);
+    expect(bestBid && !bestBid.placeholder && bestBid.level.price).toBe(5012.5);
+    expect(bestAsk && !bestAsk.placeholder && bestAsk.level.price).toBe(5012.75);
     expect(bidRows.filter((r) => r.isBest)).toHaveLength(1);
     expect(askRows.filter((r) => r.isBest)).toHaveLength(1);
   });
@@ -163,25 +185,105 @@ describe("buildLadderRows", () => {
     expect(maxCumulative).toBe(142 + 318 + 274); // 734, the deeper (ask) side
   });
 
-  it("handles an empty book without dividing by zero", () => {
-    const { askRows, bidRows, maxCumulative } = buildLadderRows({
-      bid: [],
-      ask: [],
-    });
-    expect(askRows).toEqual([]);
-    expect(bidRows).toEqual([]);
+  /* ── Spine anchoring: fixed row count + correct-end padding ── */
+
+  it("returns exactly `rows` askRows and `rows` bidRows for a THIN book, padding the far end", () => {
+    const rows = 10;
+    const { askRows, bidRows } = buildLadderRows(
+      { bid: FUTURES_BID, ask: FUTURES_ASK },
+      rows,
+    );
+    // Exactly `rows` per side regardless of how few live levels stream.
+    expect(askRows).toHaveLength(rows);
+    expect(bidRows).toHaveLength(rows);
+    // 3 live levels per side, so 7 placeholders pad each side.
+    expect(askRows.filter((r) => r.placeholder)).toHaveLength(rows - 3);
+    expect(bidRows.filter((r) => r.placeholder)).toHaveLength(rows - 3);
+    // Asks pad the TOP (far end): the first rows are placeholders, live at the bottom.
+    expect(askRows.slice(0, rows - 3).every((r) => r.placeholder)).toBe(true);
+    expect(askRows.slice(rows - 3).every((r) => !r.placeholder)).toBe(true);
+    // Bids pad the BOTTOM (far end): live at the top, placeholders trail.
+    expect(bidRows.slice(0, 3).every((r) => !r.placeholder)).toBe(true);
+    expect(bidRows.slice(3).every((r) => r.placeholder)).toBe(true);
+  });
+
+  it("returns exactly `rows` per side for a DEEP book, taking the best `rows` levels", () => {
+    const rows = 10;
+    const { askRows, bidRows } = buildLadderRows(
+      { bid: deepBid, ask: deepAsk },
+      rows,
+    );
+    expect(askRows).toHaveLength(rows);
+    expect(bidRows).toHaveLength(rows);
+    // A deep book fills every row — no placeholders needed.
+    expect(askRows.some((r) => r.placeholder)).toBe(false);
+    expect(bidRows.some((r) => r.placeholder)).toBe(false);
+  });
+
+  it("anchors the spine: best ask is the LAST askRow, best bid is the FIRST bidRow (thin AND deep)", () => {
+    for (const book of [
+      { bid: FUTURES_BID, ask: FUTURES_ASK },
+      { bid: deepBid, ask: deepAsk },
+    ]) {
+      const { askRows, bidRows } = buildLadderRows(book, 10);
+      const lastAsk = askRows[askRows.length - 1];
+      const firstBid = bidRows[0];
+      // The rows adjacent to the spine are always live (never placeholders),
+      // so the inside market never reflows away from the divider.
+      expect(lastAsk.placeholder).toBeFalsy();
+      expect(firstBid.placeholder).toBeFalsy();
+      expect(lastAsk.isBest).toBe(true);
+      expect(firstBid.isBest).toBe(true);
+      // And they carry the true best prices (min ask / max bid of the book).
+      const bestAskPrice = Math.min(...book.ask.map((l) => l.price));
+      const bestBidPrice = Math.max(...book.bid.map((l) => l.price));
+      expect(!lastAsk.placeholder && lastAsk.level.price).toBe(bestAskPrice);
+      expect(!firstBid.placeholder && firstBid.level.price).toBe(bestBidPrice);
+    }
+  });
+
+  it("fill / cumulative ignore placeholder rows (one honest scale on the live levels)", () => {
+    const { askRows, bidRows, maxCumulative } = buildLadderRows(
+      { bid: FUTURES_BID, ask: FUTURES_ASK },
+      10,
+    );
+    // maxCumulative comes only from real levels, not the padded count.
+    expect(maxCumulative).toBe(142 + 318 + 274);
+    for (const row of [...askRows, ...bidRows]) {
+      if (row.placeholder) {
+        expect(row.cum).toBe(0);
+        expect(row.fill).toBe(0);
+        expect(row.level).toBeNull();
+      } else {
+        expect(row.fill).toBeCloseTo(row.cum / maxCumulative, 10);
+      }
+    }
+  });
+
+  it("handles an empty book without dividing by zero (all placeholders, spine still anchored)", () => {
+    const { askRows, bidRows, maxCumulative } = buildLadderRows(
+      { bid: [], ask: [] },
+      10,
+    );
+    expect(askRows).toHaveLength(10);
+    expect(bidRows).toHaveLength(10);
+    expect(askRows.every((r) => r.placeholder)).toBe(true);
+    expect(bidRows.every((r) => r.placeholder)).toBe(true);
     expect(maxCumulative).toBe(1);
   });
 
-  it("handles a one-sided book (bids only)", () => {
-    const { askRows, bidRows, maxCumulative } = buildLadderRows({
-      bid: FUTURES_BID,
-      ask: [],
-    });
-    expect(askRows).toEqual([]);
-    expect(bidRows).toHaveLength(FUTURES_BID.length);
+  it("handles a one-sided book (bids only): asks all placeholder, bids padded at the bottom", () => {
+    const { askRows, bidRows, maxCumulative } = buildLadderRows(
+      { bid: FUTURES_BID, ask: [] },
+      10,
+    );
+    expect(askRows).toHaveLength(10);
+    expect(bidRows).toHaveLength(10);
+    expect(askRows.every((r) => r.placeholder)).toBe(true);
+    expect(bidRows.filter((r) => !r.placeholder)).toHaveLength(FUTURES_BID.length);
     expect(maxCumulative).toBe(695);
-    expect(bidRows[0].fill).toBeGreaterThan(0);
+    const firstBid = bidRows[0];
+    expect(!firstBid.placeholder && firstBid.fill).toBeGreaterThan(0);
   });
 });
 

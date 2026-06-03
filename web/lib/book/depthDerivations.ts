@@ -36,12 +36,26 @@ export function montageFill(level: DepthLevel, maxSize: number): number {
   return level.size / maxSize;
 }
 
-export type LadderRow = {
+/** A live ladder row carries a real depth level and its derived bar geometry. */
+export type LadderLevelRow = {
   level: DepthLevel;
   cum: number;
   fill: number;
   isBest: boolean;
+  placeholder?: false;
 };
+
+/** A spacer row holds the spine in place when fewer live levels than rows
+ *  exist. It renders as an empty, non-interactive cell of full row height. */
+export type LadderPlaceholderRow = {
+  level: null;
+  cum: 0;
+  fill: 0;
+  isBest: false;
+  placeholder: true;
+};
+
+export type LadderRow = LadderLevelRow | LadderPlaceholderRow;
 
 export type LadderRows = {
   askRows: LadderRow[];
@@ -49,37 +63,85 @@ export type LadderRows = {
   maxCumulative: number;
 };
 
+/** Default rows per side. Picked so the inside market sits well clear of both
+ *  ends of the panel and the spine never lands at the very top or bottom. */
+export const DEFAULT_LADDER_ROWS = 10;
+
+const PLACEHOLDER_ROW: LadderPlaceholderRow = {
+  level: null,
+  cum: 0,
+  fill: 0,
+  isBest: false,
+  placeholder: true,
+};
+
 /**
- * Build the centered futures DOM ladder. Cumulative size accrues from the
- * inside out on each side so a resting wall shows as a long bar regardless of
- * how far from the touch it sits. Asks are emitted worst -> best (top of the
- * ladder down to the spine); bids best -> worst (spine down). fill normalises
- * each cumulative against the deepest cumulative across both sides so the bars
- * share one scale.
+ * Build the centered futures DOM ladder with a FIXED row count per side so the
+ * inside market (the spine) stays anchored at a constant vertical offset no
+ * matter how many live levels stream tick to tick. Cumulative size accrues from
+ * the inside out on each side so a resting wall reads as a long bar regardless
+ * of how far from the touch it sits. fill normalises each cumulative against the
+ * deepest cumulative across both sides — placeholders are excluded so the bars
+ * keep one honest scale.
+ *
+ * Each side emits EXACTLY `rows` entries:
+ *  - asks render worst -> best top-down to the spine. We take the best `rows`
+ *    ask levels and pad the TOP (far-from-touch end) with placeholders, so the
+ *    best ask always sits in the row directly ABOVE the spine.
+ *  - bids render best -> worst below the spine. We take the best `rows` bid
+ *    levels and pad the BOTTOM with placeholders, so the best bid always sits
+ *    directly BELOW the spine.
  */
-export function buildLadderRows(book: {
-  bid: DepthLevel[];
-  ask: DepthLevel[];
-}): LadderRows {
-  const bidCum = runningCumulative(book.bid);
-  const askCum = runningCumulative(book.ask);
+export function buildLadderRows(
+  book: { bid: DepthLevel[]; ask: DepthLevel[] },
+  rows: number = DEFAULT_LADDER_ROWS,
+): LadderRows {
+  const bids = book.bid.slice(0, rows);
+  const asks = book.ask.slice(0, rows);
+
+  const bidCum = runningCumulative(bids);
+  const askCum = runningCumulative(asks);
   const maxCumulative = Math.max(...bidCum, ...askCum, 1);
 
-  const toRow = (level: DepthLevel, index: number, cum: number): LadderRow => ({
+  const toRow = (
+    level: DepthLevel,
+    index: number,
+    cum: number,
+  ): LadderLevelRow => ({
     level,
     cum,
     fill: cum / maxCumulative,
     isBest: index === 0,
+    placeholder: false,
   });
 
-  const askRows = book.ask
+  // Asks: best -> worst becomes worst -> best after reverse, then pad the top.
+  const askLevelRows = asks
     .map((level, index) => toRow(level, index, askCum[index]))
     .reverse();
-  const bidRows = book.bid.map((level, index) =>
+  const askRows = padTop(askLevelRows, rows);
+
+  // Bids: best -> worst as emitted, then pad the bottom.
+  const bidLevelRows = bids.map((level, index) =>
     toRow(level, index, bidCum[index]),
   );
+  const bidRows = padBottom(bidLevelRows, rows);
 
   return { askRows, bidRows, maxCumulative };
+}
+
+/** Pad the FAR-from-touch end (top) so the inside row stays last (adjacent to
+ *  the spine). Truncated to `rows` when already full. */
+function padTop(levelRows: LadderRow[], rows: number): LadderRow[] {
+  const missing = Math.max(0, rows - levelRows.length);
+  return [...Array(missing).fill(PLACEHOLDER_ROW), ...levelRows];
+}
+
+/** Pad the FAR-from-touch end (bottom) so the inside row stays first (adjacent
+ *  to the spine). Truncated to `rows` when already full. */
+function padBottom(levelRows: LadderRow[], rows: number): LadderRow[] {
+  const missing = Math.max(0, rows - levelRows.length);
+  return [...levelRows, ...Array(missing).fill(PLACEHOLDER_ROW)];
 }
 
 export type TickTone = "up" | "down" | "flat";

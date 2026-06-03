@@ -6532,6 +6532,11 @@ tr {
 .book-lrow.ask .book-rsz { background: linear-gradient(to right, var(--book-ladder-ask) calc(var(--fill, 0) * 1%), transparent 0); }
 .book-lrow.best.bid .book-lpx { color: var(--text-primary); font-weight: 700; text-shadow: 0 0 12px color-mix(in srgb, var(--signal-strong) 35%, transparent); }
 .book-lrow.best.ask .book-lpx { color: var(--text-primary); font-weight: 700; text-shadow: 0 0 12px color-mix(in srgb, var(--fault) 35%, transparent); }
+/* Spacer rows anchor the spine: full row height, no fill bar, no hover, inert. */
+.book-lrow-empty { pointer-events: none; }
+.book-lrow-empty .book-lsz, .book-lrow-empty .book-rsz { background: none; }
+.book-lrow-empty .book-lpx { color: transparent; text-shadow: none; }
+.book-lrow-empty:hover { background-color: transparent; box-shadow: none; }
 .book-ladder-spread {
   display: flex;
   align-items: center;

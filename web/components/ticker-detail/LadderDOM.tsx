@@ -43,31 +43,48 @@ export function LadderDOM({
     };
   };
 
-  const askRow = (row: LadderRow, i: number) => (
-    <div
-      className={`book-lrow ask book-reveal${row.isBest ? " best" : ""}${onPriceClick ? " book-row-fill" : ""}`}
-      style={{ ["--fill" as string]: Math.round(row.fill * 95), ["--i" as string]: i }}
-      key={`ask-${i}`}
-      {...clickProps("ask", row.level.price)}
-    >
+  // A spacer row keeps the spine anchored when fewer live levels than rows
+  // exist. It occupies full row height but is inert: no fill bar, no price, no
+  // click affordance, hidden from assistive tech.
+  const placeholderRow = (side: "ask" | "bid", i: number) => (
+    <div className={`book-lrow ${side} book-lrow-empty`} key={`${side}-${i}`} aria-hidden="true">
       <span className="book-lsz" />
-      <span className="book-lpx">{fmtDepthPrice(row.level.price)}</span>
-      <span className="book-rsz">{row.level.size}</span>
-    </div>
-  );
-
-  const bidRow = (row: LadderRow, i: number) => (
-    <div
-      className={`book-lrow bid book-reveal${row.isBest ? " best" : ""}${onPriceClick ? " book-row-fill" : ""}`}
-      style={{ ["--fill" as string]: Math.round(row.fill * 95), ["--i" as string]: i }}
-      key={`bid-${i}`}
-      {...clickProps("bid", row.level.price)}
-    >
-      <span className="book-lsz">{row.level.size}</span>
-      <span className="book-lpx">{fmtDepthPrice(row.level.price)}</span>
+      <span className="book-lpx" />
       <span className="book-rsz" />
     </div>
   );
+
+  const askRow = (row: LadderRow, i: number) => {
+    if (row.placeholder) return placeholderRow("ask", i);
+    return (
+      <div
+        className={`book-lrow ask book-reveal${row.isBest ? " best" : ""}${onPriceClick ? " book-row-fill" : ""}`}
+        style={{ ["--fill" as string]: Math.round(row.fill * 95), ["--i" as string]: i }}
+        key={`ask-${i}`}
+        {...clickProps("ask", row.level.price)}
+      >
+        <span className="book-lsz" />
+        <span className="book-lpx">{fmtDepthPrice(row.level.price)}</span>
+        <span className="book-rsz">{row.level.size}</span>
+      </div>
+    );
+  };
+
+  const bidRow = (row: LadderRow, i: number) => {
+    if (row.placeholder) return placeholderRow("bid", i);
+    return (
+      <div
+        className={`book-lrow bid book-reveal${row.isBest ? " best" : ""}${onPriceClick ? " book-row-fill" : ""}`}
+        style={{ ["--fill" as string]: Math.round(row.fill * 95), ["--i" as string]: i }}
+        key={`bid-${i}`}
+        {...clickProps("bid", row.level.price)}
+      >
+        <span className="book-lsz">{row.level.size}</span>
+        <span className="book-lpx">{fmtDepthPrice(row.level.price)}</span>
+        <span className="book-rsz" />
+      </div>
+    );
+  };
 
   return (
     <div className="book-ladder">

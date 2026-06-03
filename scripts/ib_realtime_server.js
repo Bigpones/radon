@@ -982,7 +982,7 @@ function startDepthSubscription(key, contract, { kind, isFutures }) {
 
   let state = symbolDepthStates.get(key);
   if (!state) {
-    state = { depthTickerId: null, contract, kind, isFutures, ladders: { bid: new Map(), ask: new Map() }, focusedAt: Date.now() };
+    state = { depthTickerId: null, contract, kind, isFutures, ladders: { bid: [], ask: [] }, focusedAt: Date.now() };
     symbolDepthStates.set(key, state);
   } else {
     state.contract = contract;
@@ -1009,8 +1009,8 @@ function startDepthSubscription(key, contract, { kind, isFutures }) {
     // depth (false) for futures. The same isSmartDepth is required on cancel.
     ib.reqMktDepth(depthTickerId, contract, numRows, isSmartDepth);
     state.depthTickerId = depthTickerId;
-    state.ladders.bid.clear();
-    state.ladders.ask.clear();
+    state.ladders.bid.length = 0;
+    state.ladders.ask.length = 0;
     depthRequestIdToSymbol.set(depthTickerId, key);
     verbose(`depth subscribe ${key} kind=${kind} rows=${numRows} ticket=${depthTickerId}`);
   } catch (error) {
@@ -1022,17 +1022,26 @@ function applyDepthDelta(key, position, marketMaker, operation, side, price, siz
   const state = symbolDepthStates.get(key);
   if (!state) return;
   const ladder = side === 1 ? state.ladders.bid : state.ladders.ask;
-  if (operation === 2) {
-    ladder.delete(position);
-  } else {
-    // 0 insert / 1 update — same write semantics keyed by position.
-    ladder.set(position, { price, size, marketMaker: marketMaker || null });
+  const level = { price, size, marketMaker: marketMaker || null };
+  switch (operation) {
+    case 0: // insert: shift every level at/below position down one.
+      ladder.splice(position, 0, level);
+      break;
+    case 1: // update in place; defensive OOB update => insert.
+      if (position < ladder.length) ladder[position] = level;
+      else ladder.splice(position, 0, level);
+      break;
+    case 2: // delete: shift every level below position up one; ignore OOB.
+      if (position < ladder.length) ladder.splice(position, 1);
+      break;
+    default:
+      break;
   }
   hydrateAndBroadcastDepth(key);
 }
 
 function serializeLadder(ladder, isFutures, kind, side) {
-  const rows = [...ladder.entries()].sort((a, b) => a[0] - b[0]);
+  const rows = ladder.map((lvl, i) => [i, lvl]);
   // OPRA options: each row is a venue's top-of-book BBO (no stacked depth). The
   // NBBO is the best bid (max price) / best ask (min price) across the venue
   // rows; ALL venues tied at that inside price are flagged nbbo=true.
@@ -1130,8 +1139,8 @@ function cleanupDepthForReconnect() {
       depthRequestIdToSymbol.delete(state.depthTickerId);
       state.depthTickerId = null;
     }
-    state.ladders.bid.clear();
-    state.ladders.ask.clear();
+    state.ladders.bid.length = 0;
+    state.ladders.ask.length = 0;
   }
   cleanupTapeForReconnect();
 }
