@@ -345,7 +345,9 @@ const MAX_CONCURRENT_DEPTH = 3;
 const DEPTH_NUM_ROWS_EQUITY = 10;
 const DEPTH_NUM_ROWS_FUTURES = 10;
 // Symbols treated as futures for depth purposes (single-venue native depth).
-const DEPTH_FUTURES_SYMBOLS = new Set(["ES", "NQ", "RTY", "YM", "CL", "NG", "GC", "SI", "HG", "ZB", "ZN", "ZC", "ZS", "VX"]);
+// NOTE: VIX futures use IB contract symbol "VIX" (exchange CFE), NOT the CBOE
+// product code "VX" — Future(symbol:"VX") returns IB Error 200 (no security definition).
+const DEPTH_FUTURES_SYMBOLS = new Set(["ES", "NQ", "RTY", "YM", "CL", "NG", "GC", "SI", "HG", "ZB", "ZN", "ZC", "ZS", "VIX"]);
 // Futures root → native exchange. Front-month depth requires a qualified
 // contract (conId), which we resolve via reqContractDetails on this exchange.
 const FUTURES_ROOT_EXCHANGES = {
@@ -353,7 +355,7 @@ const FUTURES_ROOT_EXCHANGES = {
   CL: "NYMEX", NG: "NYMEX",
   GC: "COMEX", SI: "COMEX", HG: "COMEX",
   ZB: "CBOT", ZN: "CBOT", ZC: "CBOT", ZS: "CBOT",
-  VX: "CFE",
+  VIX: "CFE",
 };
 function futuresExchangeForRoot(root) {
   return FUTURES_ROOT_EXCHANGES[root] || "CME";

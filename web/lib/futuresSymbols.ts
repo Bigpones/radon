@@ -11,9 +11,9 @@
  * is authoritative (`depth.kind === "future"` wins).
  *
  * Keep conceptually in sync with the relay's `DEPTH_FUTURES_SYMBOLS`
- * (`scripts/ib_realtime_server.js`). The relay set additionally carries `VX`
- * (the VIX future root); Radon's UI reaches VIX through the index path, so it
- * is intentionally excluded here.
+ * (`scripts/ib_realtime_server.js`). The relay set additionally carries `VIX`
+ * (IB's contract symbol for the VIX future, on CFE); Radon's UI reaches VIX
+ * through the index path, so it is intentionally excluded here.
  */
 export const FUTURES_ROOTS = new Set([
   "ES", // E-mini S&P 500

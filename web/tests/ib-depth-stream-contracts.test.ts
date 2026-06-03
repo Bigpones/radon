@@ -128,7 +128,10 @@ describe("ib_realtime_server.js exposes the flag-gated L2 depth channel", () => 
     expect(map).toContain('HG: "COMEX"');
     expect(map).toContain('ZB: "CBOT"');
     expect(map).toContain('ZN: "CBOT"');
-    expect(map).toContain('VX: "CFE"');
+    expect(map).toContain('VIX: "CFE"');
+    // VIX futures resolve under IB contract symbol "VIX" (not CBOE's "VX" product code);
+    // Future(symbol:"VX") returns IB Error 200. The depth futures set must carry "VIX".
+    expect(source).toContain('"VIX"]'); // DEPTH_FUTURES_SYMBOLS ends with "VIX"
   });
 
   it("bounds the futures resolution await and degrades to futures-no-depth without hanging", () => {
