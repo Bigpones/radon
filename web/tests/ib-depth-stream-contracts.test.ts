@@ -47,11 +47,12 @@ describe("ib_realtime_server.js exposes the flag-gated L2 depth channel", () => 
     expect(source).toContain("function resolveDepthSubject");
   });
 
-  it("treats no-entitlement (10089) as soft — cancel the ticket, emit depth-unavailable, never latch a fault", () => {
+  it("treats no-entitlement (10089) / unsupported deep depth (10092) as soft — cancel the ticket, emit depth-unavailable, never latch a fault", () => {
     expect(source).toContain("code === 10089");
-    expect(source).toContain("/depth.*not (allowed|eligible)/i");
+    expect(source).toContain("code === 10092"); // index options on CBOE: deep depth unsupported, degrade to BBO/L1
+    expect(source).toContain("/depth.*not (allowed|eligible)|not supported for this combination/i");
     expect(source).toContain('type: "depth-unavailable"');
-    expect(source).toContain('emitDepthUnavailable(depthSymbol, "no-entitlement", 10089)');
+    expect(source).toContain('emitDepthUnavailable(depthSymbol, "no-entitlement", code)');
   });
 
   it("emits a DepthBook matching the web type shape", () => {

@@ -42,6 +42,10 @@ type TickerDetailContextValue = {
   /** Book key the detail view wants L2 depth for. Drives `usePrices` upstream. */
   depthSymbol: string | null;
   setDepthSymbol: (key: string | null) => void;
+  /** User-pinned book subject (e.g. a combo leg's option key) overriding the
+   *  default focus, so the Book pane shows that leg's depth. Null = default. */
+  focusedBookKey: string | null;
+  setFocusedBookKey: (key: string | null) => void;
   /** Click-to-fill: latest price/side published from the book/tape, or null. */
   orderPrefill: OrderPrefill | null;
   /** Publish a click-to-fill; the nonce is stamped here (monotonic). */
@@ -55,6 +59,7 @@ export function TickerDetailProvider({ children }: { children: ReactNode }) {
   const [activePositionId, setActivePositionIdState] = useState<number | null>(null);
   const [chainContracts, setChainContractsState] = useState<OptionContract[]>([]);
   const [depthSymbol, setDepthSymbolState] = useState<string | null>(null);
+  const [focusedBookKey, setFocusedBookKeyState] = useState<string | null>(null);
   const [orderPrefill, setOrderPrefillState] = useState<OrderPrefill | null>(null);
   const prefillNonceRef = useRef(0);
   const pricesRef = useRef<Record<string, PriceData>>({});
@@ -65,12 +70,22 @@ export function TickerDetailProvider({ children }: { children: ReactNode }) {
   const tapeRef = useRef<Record<string, Trade[]>>({});
 
   const setActiveTicker = useCallback((ticker: string | null) => {
-    setActiveTickerState(ticker ? ticker.toUpperCase() : null);
+    setActiveTickerState((prev) => {
+      const next = ticker ? ticker.toUpperCase() : null;
+      // A pinned leg book belongs to one subject — drop it whenever the focused
+      // ticker changes so it never leaks across instruments.
+      if (next !== prev) setFocusedBookKeyState(null);
+      return next;
+    });
     if (!ticker) {
       setActivePositionIdState(null);
       setChainContractsState([]);
       setDepthSymbolState(null);
     }
+  }, []);
+
+  const setFocusedBookKey = useCallback((key: string | null) => {
+    setFocusedBookKeyState((prev) => (prev === key ? prev : key));
   }, []);
 
   const setActivePositionId = useCallback((id: number | null) => {
@@ -123,7 +138,7 @@ export function TickerDetailProvider({ children }: { children: ReactNode }) {
 
   return (
     <TickerDetailContext.Provider
-      value={{ activeTicker, activePositionId, setActiveTicker, setActivePositionId, getPrices, getFundamentals, getPortfolio, getOrders, getDepths, getTape, setPrices, setFundamentals, setPortfolio, setOrders, setDepths, setTape, chainContracts, setChainContracts, depthSymbol, setDepthSymbol, orderPrefill, setOrderPrefill }}
+      value={{ activeTicker, activePositionId, setActiveTicker, setActivePositionId, getPrices, getFundamentals, getPortfolio, getOrders, getDepths, getTape, setPrices, setFundamentals, setPortfolio, setOrders, setDepths, setTape, chainContracts, setChainContracts, depthSymbol, setDepthSymbol, focusedBookKey, setFocusedBookKey, orderPrefill, setOrderPrefill }}
     >
       {children}
     </TickerDetailContext.Provider>

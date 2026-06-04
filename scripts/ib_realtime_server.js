@@ -1968,13 +1968,16 @@ function wireIBEvents() {
           state.tickerId = null;
         }
       }
-    } else if (DEPTH_ENABLED && (code === 10089 || /depth.*not (allowed|eligible)/i.test(msg)) && tickerId != null && depthRequestIdToSymbol.has(tickerId)) {
-      // No L2 entitlement — soft, expected. Cancel the ticket and tell the
-      // client; never latch a connection fault.
+    } else if (DEPTH_ENABLED && (code === 10089 || code === 10092 || /depth.*not (allowed|eligible)|not supported for this combination/i.test(msg)) && tickerId != null && depthRequestIdToSymbol.has(tickerId)) {
+      // No L2 entitlement (10089) or deep depth unsupported for this
+      // secType/exchange (10092, e.g. index options on CBOE) — soft, expected.
+      // Cancel the ticket and tell the client; never latch a connection fault.
+      // (Index options still serve a single CBOE BBO row via smart depth; this
+      // only fires when even that is unavailable.)
       const depthSymbol = depthRequestIdToSymbol.get(tickerId);
-      console.warn(`\x1b[33mIB warning: depth not entitled for ${depthSymbol} (code ${code})\x1b[0m`);
+      console.warn(`\x1b[33mIB warning: depth unavailable for ${depthSymbol} (code ${code})\x1b[0m`);
       stopDepthSubscription(depthSymbol, { keepState: true });
-      emitDepthUnavailable(depthSymbol, "no-entitlement", 10089);
+      emitDepthUnavailable(depthSymbol, "no-entitlement", code);
     } else if (/Fundamentals data is not allowed/i.test(msg)) {
       verbose(`fundamentals not allowed for tickerId:${tickerId} — IBIS subscription may be inactive`);
       if (tickerId != null) {

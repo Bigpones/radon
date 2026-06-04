@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { useTickerDetailOptional } from "@/lib/TickerDetailContext";
 import type { PortfolioData, PortfolioPosition } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import {
@@ -40,6 +41,8 @@ function LegsDisclosure({
   prices: Record<string, PriceData>;
   onTradeLeg: (index: number) => void;
 }) {
+  const ctx = useTickerDetailOptional();
+  const focusedBookKey = ctx?.focusedBookKey ?? null;
   // Default expanded: the legs ARE the actionable surface for a combo.
   const [expanded, setExpanded] = useState(true);
 
@@ -63,6 +66,7 @@ function LegsDisclosure({
               <th className="right">Qty</th>
               <th className="right">Entry</th>
               <th className="right">Market</th>
+              <th className="right">Book</th>
               <th className="right">Trade</th>
             </tr>
           </thead>
@@ -89,6 +93,22 @@ function LegsDisclosure({
                   </td>
                   <td className={`right ${signedMarket != null && toneClass(signedMarket) !== "neutral" ? toneClass(signedMarket) : ""}`}>
                     {fmtSignedPrice(signedMarket)}
+                  </td>
+                  <td className="right">
+                    {isTradeableLeg(leg) && key && ctx ? (
+                      <button
+                        type="button"
+                        className={`pos-leg-book${focusedBookKey === key ? " active" : ""}`}
+                        aria-pressed={focusedBookKey === key}
+                        title={focusedBookKey === key ? "Showing this leg's book — click to return" : "Show this leg's order book"}
+                        onClick={() => ctx.setFocusedBookKey(focusedBookKey === key ? null : key)}
+                        data-testid={`pos-leg-book-${i}`}
+                      >
+                        {focusedBookKey === key ? "BOOK ✓" : "BOOK"}
+                      </button>
+                    ) : (
+                      "---"
+                    )}
                   </td>
                   <td className="right">
                     {isTradeableLeg(leg) ? (

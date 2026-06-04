@@ -10,6 +10,7 @@ import { deriveBookHeader } from "@/lib/book/depthDerivations";
 import { isDeckKey } from "@/lib/legacyTabToDeck";
 import AssetCockpit, { type DeckKey } from "./ticker-detail/AssetCockpit";
 import { useStockState } from "@/lib/useStockState";
+import { useTickerDetailOptional } from "@/lib/TickerDetailContext";
 
 /**
  * Resolve the best price data for the shared ticker quote telemetry wrapper.
@@ -152,10 +153,12 @@ export default function TickerDetailContent({
     [ticker, position, prices],
   );
 
-  // The focused subject's depth book key: the single-leg option price key when
-  // present, else the ticker itself. Published upstream so `usePrices` opens
-  // the one scarce depth ticket for exactly this subject.
-  const bookKey = chartPriceKey ?? ticker;
+  // The focused subject's depth book key: a user-pinned leg (e.g. a combo leg's
+  // option, set from the position deck) wins; else the single-leg option price
+  // key; else the ticker. Published upstream so `usePrices` opens the one scarce
+  // depth ticket for exactly this subject.
+  const focusedBookKey = useTickerDetailOptional()?.focusedBookKey ?? null;
+  const bookKey = focusedBookKey ?? chartPriceKey ?? ticker;
   const bookDepth = depths?.[bookKey] ?? null;
 
   // Prefer the depth book's NBBO for the quote bar when an entitled book is

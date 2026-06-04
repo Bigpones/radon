@@ -5465,6 +5465,30 @@ tr.leg-row td {
   background: color-mix(in srgb, var(--signal-core) 10%, transparent);
 }
 
+/* Per-leg book-focus toggle: pins the Book pane to this leg's depth. */
+.pos-leg-book {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 3px 9px;
+  border-radius: 4px;
+  border: 1px solid var(--line-grid);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
+}
+.pos-leg-book:hover {
+  border-color: color-mix(in srgb, var(--signal-core) 45%, var(--line-grid));
+  color: var(--text-primary);
+}
+.pos-leg-book.active {
+  border-color: color-mix(in srgb, var(--signal-core) 60%, var(--line-grid));
+  color: var(--signal-core);
+  background: color-mix(in srgb, var(--signal-core) 12%, transparent);
+}
+
 /* ── Position trade ticket (inline in the p-deck) ────────────────────────── */
 .position-trade-ticket { gap: 14px; }
 .position-trade-head {
