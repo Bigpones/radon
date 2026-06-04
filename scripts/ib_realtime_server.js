@@ -374,7 +374,11 @@ const INDEX_FUTURE_ROOT = { SPX: "ES", NDX: "NQ", RUT: "RTY" };
 // cash index. VIX only (VIX options settle into the VIX future).
 const FORWARD_PRICED_INDICES = new Set(["VIX"]);
 const FORWARD_KEY_PREFIX = "@fwd:"; // internal symbol-state key; never client-facing
-const forwardKeyToIndex = new Map(); // "@fwd:VIX" -> "VIX"
+const forwardKeyToIndex = new Map(); // "@fwd:VIX" or "@fwd:VIX:20260618" -> "VIX"
+// Curve forward keys ("@fwd:VIX:<futExpiry>") -> Set of OPTION expiries (YYYYMMDD)
+// to publish that future's price under in prices[index].fwdCurve. The relay owns
+// the option->future matching so the client does a plain fwdCurve[legExpiry].
+const fwdKeyToCurveExpiries = new Map();
 const FUTURES_RESOLVE_TIMEOUT_MS = 6000;
 // key → { depthTickerId, contract, kind, isFutures, ladders:{bid:Map,ask:Map}, focusedAt }
 const symbolDepthStates = new Map();
@@ -385,6 +389,9 @@ const depthSubscribers = new Map(); // key → Set<client>
 // Resolved front-month futures contracts, cached per root so we don't
 // re-resolve on every subscribe. root → qualified Contract (with conId).
 const resolvedFuturesContracts = new Map();
+// Full non-expired futures chain per root (nearest-expiry first), for the
+// per-expiry forward curve. root → Contract[].
+const resolvedFuturesChain = new Map();
 // In-flight reqContractDetails resolutions: reqId → { root, resolve, timer, candidates }
 const futuresResolveRequests = new Map();
 
@@ -771,26 +778,63 @@ async function ensureForwardSubscription(indexKey) {
   startLiveSubscription(fwdKey, contract);
 }
 
+// Per-expiry forward: match a held VIX OPTION expiry to its nearest VIX future,
+// subscribe that future's L1 (deduped by future expiry), and publish its price
+// in prices[index].fwdCurve under the OPTION expiry so each leg prices off the
+// future of its own expiry. Degrades silently (falls back to front-month `fwd`
+// then cash) when the chain can't resolve during a data-farm flap.
+async function ensureForwardForOptionExpiry(indexKey, optExpiryRaw) {
+  if (!FORWARD_PRICED_INDICES.has(indexKey) || !ibConnected) return;
+  const optExp = String(optExpiryRaw || "").replace(/\D/g, "").slice(0, 8);
+  if (optExp.length !== 8) return;
+  const chain = await resolveFuturesChain(indexKey);
+  const fut = pickNearestExpiry(chain, optExp);
+  if (!fut) return;
+  const futExp = String(fut.lastTradeDateOrContractMonth || "").slice(0, 8);
+  const fwdKey = `${FORWARD_KEY_PREFIX}${indexKey}:${futExp}`;
+  forwardKeyToIndex.set(fwdKey, indexKey);
+  let expiries = fwdKeyToCurveExpiries.get(fwdKey);
+  if (!expiries) { expiries = new Set(); fwdKeyToCurveExpiries.set(fwdKey, expiries); }
+  expiries.add(optExp);
+  const existing = symbolStates.get(fwdKey);
+  if (!existing || existing.tickerId == null) startLiveSubscription(fwdKey, fut);
+}
+
 function isFinitePositive(n) {
   return typeof n === "number" && Number.isFinite(n) && n > 0;
 }
 
-// Copy the front-month future's last/mid into the index's .fwd field and
-// rebroadcast the index so subscribed clients price options off the forward.
+function forwardFromState(fwdState) {
+  const d = fwdState.data;
+  if (isFinitePositive(d.bid) && isFinitePositive(d.ask)) return (d.bid + d.ask) / 2;
+  if (isFinitePositive(d.last)) return d.last;
+  if (isFinitePositive(d.close)) return d.close;
+  return null;
+}
+
+// Route a future tick into the index price: a curve key ("@fwd:VIX:<futExp>")
+// updates prices[index].fwdCurve under every OPTION expiry mapped to it; the
+// front-month key ("@fwd:VIX") updates prices[index].fwd. Rebroadcasts only on
+// a real change.
 function publishForwardFromFutureTick(fwdKey, fwdState) {
   const indexKey = forwardKeyToIndex.get(fwdKey);
   if (!indexKey) return;
-  const d = fwdState.data;
-  const fwd = isFinitePositive(d.bid) && isFinitePositive(d.ask)
-    ? (d.bid + d.ask) / 2
-    : isFinitePositive(d.last)
-      ? d.last
-      : isFinitePositive(d.close)
-        ? d.close
-        : null;
+  const fwd = forwardFromState(fwdState);
   if (fwd == null) return;
   const idxState = symbolStates.get(indexKey);
   if (!idxState) return;
+
+  const curveExpiries = fwdKeyToCurveExpiries.get(fwdKey);
+  if (curveExpiries && curveExpiries.size) {
+    const curve = idxState.data.fwdCurve || (idxState.data.fwdCurve = {});
+    let changed = false;
+    for (const optExp of curveExpiries) {
+      if (curve[optExp] !== fwd) { curve[optExp] = fwd; changed = true; }
+    }
+    if (changed) hydrateAndBroadcast(indexKey);
+    return;
+  }
+
   if (idxState.data.fwd === fwd) return; // no change — skip rebroadcast
   idxState.data.fwd = fwd;
   hydrateAndBroadcast(indexKey);
@@ -931,13 +975,47 @@ function resolveFuturesFrontMonth(root) {
 }
 
 // Pick the nearest non-expired expiry from the collected contractDetails.
-function pickFrontMonth(candidates) {
+// Non-expired contracts sorted nearest-expiry first. Shared by front-month
+// (chain[0]) and the per-expiry forward curve (nearest match).
+function sortedNonExpiredChain(candidates) {
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, ""); // YYYYMMDD
-  const dated = candidates
+  return candidates
     .map((c) => ({ contract: c, expiry: String(c.lastTradeDateOrContractMonth || "").slice(0, 8) }))
     .filter((e) => e.expiry.length === 8 && e.expiry >= today)
-    .sort((a, b) => a.expiry.localeCompare(b.expiry));
-  return dated.length ? dated[0].contract : null;
+    .sort((a, b) => a.expiry.localeCompare(b.expiry))
+    .map((e) => e.contract);
+}
+
+function pickFrontMonth(candidates) {
+  const chain = sortedNonExpiredChain(candidates);
+  return chain.length ? chain[0] : null;
+}
+
+// Pick the future whose expiry is nearest the option expiry (abs date distance).
+// VIX monthly options settle into the same-dated future; nearest absorbs the
+// few-day option/future offset and routes weeklies to the closest listed future.
+function pickNearestExpiry(chain, optExpiryDigits) {
+  if (!Array.isArray(chain) || chain.length === 0) return null;
+  const target = toEpochDays(optExpiryDigits);
+  if (target == null) return chain[0];
+  let best = null;
+  let bestDist = Infinity;
+  for (const c of chain) {
+    const e = toEpochDays(String(c.lastTradeDateOrContractMonth || "").slice(0, 8));
+    if (e == null) continue;
+    const dist = Math.abs(e - target);
+    if (dist < bestDist) { bestDist = dist; best = c; }
+  }
+  return best || chain[0];
+}
+
+function toEpochDays(yyyymmdd) {
+  if (!yyyymmdd || yyyymmdd.length < 8) return null;
+  const y = Number(yyyymmdd.slice(0, 4));
+  const m = Number(yyyymmdd.slice(4, 6));
+  const d = Number(yyyymmdd.slice(6, 8));
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+  return Math.floor(Date.UTC(y, m - 1, d) / 86_400_000);
 }
 
 function onContractDetails(reqId, contractDetails) {
@@ -949,15 +1027,25 @@ function onContractDetails(reqId, contractDetails) {
 function onContractDetailsEnd(reqId) {
   const req = futuresResolveRequests.get(reqId);
   if (!req) return;
-  const front = pickFrontMonth(req.candidates);
+  const chain = sortedNonExpiredChain(req.candidates);
+  resolvedFuturesChain.set(req.root, chain); // full curve for per-expiry matching
+  const front = chain.length ? chain[0] : null;
   if (front) {
     resolvedFuturesContracts.set(req.root, front);
-    verbose(`futures resolve ${req.root} → ${front.localSymbol || front.lastTradeDateOrContractMonth} (conId ${front.conId})`);
+    verbose(`futures resolve ${req.root} → ${front.localSymbol || front.lastTradeDateOrContractMonth} (conId ${front.conId}), ${chain.length} listed`);
     req.finish(front);
   } else {
     verbose(`futures resolve ${req.root}: no non-expired expiry`);
     req.finish(null);
   }
+}
+
+// Full non-expired chain for a root, resolving (and caching) on first use by
+// piggybacking on the front-month reqContractDetails flow.
+async function resolveFuturesChain(root) {
+  if (resolvedFuturesChain.has(root)) return resolvedFuturesChain.get(root);
+  await resolveFuturesFrontMonth(root); // populates resolvedFuturesChain as a side effect
+  return resolvedFuturesChain.get(root) || [];
 }
 
 /* ─── Time & Sales tape lifecycle ────────────────────────────────────────── */
@@ -1512,6 +1600,14 @@ function restoreSubscriptions() {
     // ticker was cancelled by cleanupSymbolStateForReconnect and it is not a
     // client-facing subscription, so restoreSubscriptions would otherwise skip it.
     if (FORWARD_PRICED_INDICES.has(key)) void ensureForwardSubscription(key);
+    // Re-arm the per-expiry forward curve for a restored forward-priced index
+    // OPTION (key = "VIX_YYYYMMDD_STRIKE_C"): the curve future is internal too.
+    if (key.includes("_")) {
+      const parts = key.split("_");
+      if (parts.length >= 4 && FORWARD_PRICED_INDICES.has(parts[0])) {
+        void ensureForwardForOptionExpiry(parts[0], parts[1]);
+      }
+    }
     const state = symbolStates.get(key);
     if (state) {
       sendToSymbolSubscribers(key, {
@@ -1648,6 +1744,11 @@ async function handleClientMessage(client, data) {
         ensureSymbolState(key, ibContract);
         if (ibConnected) {
           startLiveSubscription(key, ibContract);
+          // Forward-priced index option (VIX): subscribe the future of THIS
+          // option's expiry so it prices off its own forward (prices[idx].fwdCurve).
+          if (FORWARD_PRICED_INDICES.has(String(c.symbol).toUpperCase())) {
+            void ensureForwardForOptionExpiry(String(c.symbol).toUpperCase(), c.expiry);
+          }
           const state = symbolStates.get(key);
           if (state) {
             sendMessage(client, {

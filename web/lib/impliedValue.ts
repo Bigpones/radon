@@ -84,19 +84,30 @@ function isPositive(n: number | null | undefined): n is number {
 
 type SpotResolution = { S: number; source: "forward" | "last" | "undPrice" | "mid" } | null;
 
+/** Digits-only expiry key (YYYYMMDD) so "2026-06-16" and "20260616" match. */
+function expiryKey(expiry: string | null | undefined): string | null {
+  if (!expiry) return null;
+  const digits = expiry.replace(/\D/g, "");
+  return digits.length >= 8 ? digits.slice(0, 8) : null;
+}
+
 function resolveSpot(
   ticker: string,
+  optionExpiry: string | null | undefined,
   optionPd: PriceData | null | undefined,
   prices: Record<string, PriceData>,
 ): SpotResolution {
   const tickerPd = prices[ticker.toUpperCase()];
-  // Forward-priced indices (VIX): options are priced off the front-month
-  // future, not the cash spot. The relay publishes that forward as
-  // prices[ticker].fwd; prefer it so Black-Scholes uses the tradeable
-  // underlying instead of the (after-hours-frozen) cash index. Falls through
-  // to the cash chain when the forward is unavailable.
-  if (isForwardPricedIndex(ticker) && isPositive(tickerPd?.fwd)) {
-    return { S: tickerPd!.fwd!, source: "forward" };
+  // Forward-priced indices (VIX): options are priced off the future for their
+  // OWN expiry, not the cash spot. The relay matches each held option expiry to
+  // a VIX future and publishes it in prices[ticker].fwdCurve keyed by the option
+  // expiry. Prefer that per-expiry forward; fall back to the front-month `fwd`,
+  // then the cash chain. blackScholes math is unchanged — only S differs.
+  if (isForwardPricedIndex(ticker)) {
+    const key = expiryKey(optionExpiry);
+    const curveVal = key ? tickerPd?.fwdCurve?.[key] : undefined;
+    if (isPositive(curveVal)) return { S: curveVal, source: "forward" };
+    if (isPositive(tickerPd?.fwd)) return { S: tickerPd!.fwd!, source: "forward" };
   }
   if (isPositive(tickerPd?.last)) return { S: tickerPd!.last!, source: "last" };
   if (isPositive(optionPd?.undPrice)) return { S: optionPd!.undPrice!, source: "undPrice" };
@@ -173,7 +184,7 @@ export function computeLegImpliedValue(
   const optionPd = prices[oKey];
   const tickerPd = prices[input.ticker.toUpperCase()];
 
-  const spot = resolveSpot(input.ticker, optionPd, prices);
+  const spot = resolveSpot(input.ticker, input.expiry, optionPd, prices);
   if (!spot) return NULL_RESULT;
 
   const now = opts.now ?? new Date();

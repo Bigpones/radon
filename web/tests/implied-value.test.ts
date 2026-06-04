@@ -222,6 +222,55 @@ describe("forward-priced underlying (VIX options price off the future, not cash)
     expect(onFwd.perContract!).toBeGreaterThan(onCash.perContract!);
   });
 
+  it("prices each leg off the future of its OWN expiry via fwdCurve[legExpiry]", () => {
+    // Two VIX call legs at different expiries; the relay publishes a forward
+    // curve keyed by option expiry (front 18.0, back 19.2). Each must price off
+    // its own curve point, not the shared front-month fwd.
+    const backExpiry = "20260722";
+    const frontKey = optionKey({ symbol: "VIX", expiry: VIX_EXPIRY, strike: 18, right: "C" });
+    const backKey = optionKey({ symbol: "VIX", expiry: backExpiry, strike: 18, right: "C" });
+    const prices = {
+      VIX: pd({ last: 17.7, fwd: 18.0, fwdCurve: { [VIX_EXPIRY]: 18.0, [backExpiry]: 19.2 } }),
+      [frontKey]: pd({ impliedVol: 0.9 }),
+      [backKey]: pd({ impliedVol: 0.9 }),
+    };
+    const frontLeg = computeLegImpliedValue(vixCall(), prices, { now: NOW });
+    const backLeg = computeLegImpliedValue(
+      leg({ ticker: "VIX", expiry: backExpiry, strike: 18, type: "Call", direction: "LONG", contracts: 500 }),
+      prices,
+      { now: NOW },
+    );
+    expect(frontLeg.inputs?.spotSource).toBe("forward");
+    expect(frontLeg.inputs?.S).toBeCloseTo(18.0, 6);
+    expect(backLeg.inputs?.spotSource).toBe("forward");
+    expect(backLeg.inputs?.S).toBeCloseTo(19.2, 6);
+  });
+
+  it("matches expiries regardless of dash formatting (2026-06-16 vs 20260616)", () => {
+    const r = computeLegImpliedValue(
+      leg({ ticker: "VIX", expiry: "2026-06-16", strike: 18, type: "Call", direction: "LONG", contracts: 1 }),
+      {
+        VIX: pd({ last: 17.7, fwd: 18.0, fwdCurve: { "20260616": 19.9 } }),
+        [optionKey({ symbol: "VIX", expiry: "2026-06-16", strike: 18, right: "C" })]: pd({ impliedVol: 0.9 }),
+      },
+      { now: NOW },
+    );
+    expect(r.inputs?.S).toBeCloseTo(19.9, 6);
+  });
+
+  it("falls back to front-month fwd when the curve has no point for the leg expiry", () => {
+    const r = computeLegImpliedValue(
+      vixCall(),
+      {
+        VIX: pd({ last: 17.7, fwd: 18.3, fwdCurve: { "20270101": 22.0 } }), // no match for VIX_EXPIRY
+        [vixCallKey]: pd({ impliedVol: 0.9 }),
+      },
+      { now: NOW },
+    );
+    expect(r.inputs?.spotSource).toBe("forward");
+    expect(r.inputs?.S).toBeCloseTo(18.3, 6);
+  });
+
   it("ignores .fwd for non-forward-priced indices (SPX uses cash last)", () => {
     const spxKey = optionKey({ symbol: "SPX", expiry: VIX_EXPIRY, strike: 6000, right: "C" });
     const r = computeLegImpliedValue(

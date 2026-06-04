@@ -43,6 +43,10 @@ export function createPriceData(symbol) {
     // front-month future last/mid here so option pricing uses the tradeable
     // forward, not the after-hours-frozen cash index. Null for everything else.
     fwd: null,
+    // Per-expiry forward curve keyed by OPTION expiry (YYYYMMDD): the relay
+    // matches each held VIX option expiry to a VIX future and publishes that
+    // future's price here so each leg prices off its own expiry's forward.
+    fwdCurve: null,
     timestamp: new Date().toISOString(),
   };
 }

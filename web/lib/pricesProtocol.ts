@@ -25,6 +25,11 @@ export type PriceData = {
   // front-month future last/mid here so option pricing uses the tradeable
   // forward instead of the (after-hours-frozen) cash index. Null otherwise.
   fwd?: number | null;
+  // Per-expiry forward curve, keyed by the OPTION expiry (YYYYMMDD) the relay
+  // matched to a VIX future. Each held VIX option leg is priced off the future
+  // of its own expiry via fwdCurve[legExpiry]; falls back to `fwd` (front
+  // month) then cash. The relay owns the option->future matching.
+  fwdCurve?: Record<string, number> | null;
   timestamp: string;
 };
 
