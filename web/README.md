@@ -302,10 +302,9 @@ npm test
 
 # E2E tests (Playwright)
 npx playwright test
-
-# Mock mode (no API keys needed)
-ASSISTANT_MOCK=1 npm test
 ```
+
+`npm test` already runs with `NODE_ENV=test ASSISTANT_MOCK=1`, so no API keys are needed and there is no separate opt-in to run beyond plain `npm test`.
 
 **Unit tests** (`web/tests/`): Route logic, price utilities, naked short guard, WebSocket state machine, regime/CRI staleness, CTA freshness, share cards, P&L calculations, day change, exposure breakdown, stale option quote guard (`stale-option-quote-guard.test.ts`).
 

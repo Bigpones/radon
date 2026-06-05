@@ -4,9 +4,28 @@
   <img src=".github/hero.png" alt="Radon - reconstructing market structure" width="900" />
 </p>
 
+![CI](https://github.com/joemccann/radon/actions/workflows/ci.yml/badge.svg)
+![version](https://img.shields.io/badge/version-0.7.0-05AD98)
+![license](https://img.shields.io/badge/license-proprietary-1e293b)
+
 **Market-structure reconstruction.** Radon surfaces convex options trades from dark pool and OTC flow, the volatility surface, and cross-asset positioning. The system runs every candidate through a hard three-gate framework before sizing it.
 
 Flow signal or nothing. No narrative trades, no chart-pattern trades.
+
+## Contents
+
+- [What it does](#what-it-does)
+- [Three gates, in order](#three-gates-in-order)
+- [Quick start](#quick-start)
+- [External services](#external-services)
+- [Architecture at a glance](#architecture-at-a-glance)
+- [Recent additions](#recent-additions)
+- [What's where](#whats-where)
+- [Project layout](#project-layout)
+- [Data source priority](#data-source-priority)
+- [Deployment](#deployment)
+- [Tests](#tests)
+- [Glossary](#glossary)
 
 ## What it does
 
@@ -88,7 +107,7 @@ Radon is glued together from a long list of third-party services. The full env-v
 | **Hetzner Cloud** | VPS that hosts FastAPI, IB Gateway (docker), the WS relay, the monitor daemon, the newsfeed, Caddy, and `media.radon.run`. | Resolved as `ib-gateway` via Tailscale on the laptop |
 | **Tailscale** | Mesh VPN between laptop and VPS. Laptop reaches `ib-gateway:4001` over Tailscale; FastAPI on the VPS binds to localhost-only. | [tailscale.com](https://tailscale.com/) |
 | **Caddy** | TLS termination + reverse proxy on the VPS. Serves `app.radon.run` and `media.radon.run`. | Config in the sibling `radon-cloud` repo |
-| **GitHub Actions** | `git push origin main` triggers `.github/workflows/deploy.yml` which SSHes to Hetzner and runs `bash scripts/deploy.sh`. | Confirm: `gh run list --workflow=deploy.yml --limit 1` |
+| **GitHub Actions** | `git push origin main` triggers `.github/workflows/ci.yml` which runs the Vitest + pytest gate then deploys on green: it SSHes to Hetzner and runs `bash scripts/deploy.sh`. | Confirm: `gh run list --workflow=ci.yml --limit 1` |
 
 ### Optional alerting / fallback data
 
@@ -123,7 +142,7 @@ Production `.env` lives on the VPS at `/home/radon/radon-cloud/.env`. Laptop dev
 **Process layout**
 
 - `localhost:3000` for the Next.js 16 terminal
-- `:8321` for FastAPI (26 endpoints, JWT-gated, localhost bypass for server-to-server)
+- `:8321` for FastAPI (40+ endpoints, JWT-gated, localhost bypass for server-to-server)
 - `:8765` for the IB realtime WebSocket relay
 - 120s loop for the newsfeed scraper (headless Playwright)
 
@@ -205,14 +224,14 @@ Never skip to Yahoo or web scrape without trying IB then Unusual Whales first. R
 
 ## Deployment
 
-`git push origin main` is the deploy. `.github/workflows/deploy.yml` SSHes to the Hetzner VPS and runs `bash scripts/deploy.sh`:
+`git push origin main` is the deploy. `.github/workflows/ci.yml` runs the Vitest + pytest gate then deploys on green: it SSHes to the Hetzner VPS and runs `bash scripts/deploy.sh`:
 
 1. `git reset --hard origin/main`
 2. `pip install -r requirements.txt`
-3. `bun install` then `next build --experimental-build-mode=compile`
-4. `sudo systemctl restart radon-{nextjs,api,relay,monitor}` with health-gated rollback
+3. `npm install` (the VPS uses npm, not bun) then `next build --experimental-build-mode=compile`
+4. `sudo systemctl restart radon-{nextjs,api,relay,monitor,newsfeed}` with health-gated rollback
 
-Confirm with `gh run list --workflow=deploy.yml --limit 1`. Full operational detail in [`docs/operations.md`](docs/operations.md). The systemd units, Caddy config, and Docker Compose project for IB Gateway live in a sibling `radon-cloud` repo.
+Confirm with `gh run list --workflow=ci.yml --limit 1`. Full operational detail in [`docs/operations.md`](docs/operations.md). The systemd units, Caddy config, and Docker Compose project for IB Gateway live in a sibling `radon-cloud` repo.
 
 ## Tests
 

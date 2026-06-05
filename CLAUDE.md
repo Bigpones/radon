@@ -105,7 +105,7 @@ Both modes read/write the **same Turso DB** (`libsql://radon-joemccann.aws-us-we
 - `scripts/cloud.sh` → `RADON_MODE=hetzner`. Schedulers run as systemd on Hetzner (`radon-{api,monitor,relay,refresh,nextjs}`); laptop runs only Next.js + newsfeed. `app.radon.run` serves when laptop closed.
 - `scripts/local.sh` → `RADON_MODE=local`. Laptop launchd plists own all schedulers.
 
-**Auto-deploy on push to main.** `.github/workflows/deploy.yml` SSHes to Hetzner and runs `bash scripts/deploy.sh` from `~/radon-cloud/`. `git push origin main` IS the deploy. Confirm: `gh run list --workflow=deploy.yml --limit 1`. After deploy, `sudo systemctl restart radon-api.service` may be needed.
+**Auto-deploy on push to main.** `.github/workflows/ci.yml` runs the Vitest + pytest gate then deploys on green: it SSHes to Hetzner and runs `bash scripts/deploy.sh` from `~/radon-cloud/`. `git push origin main` IS the deploy. Confirm: `gh run list --workflow=ci.yml --limit 1`. After deploy, `sudo systemctl restart radon-api.service` may be needed.
 
 Schema: `scripts/db/migrations/0001_init.sql`. Writers: `scripts/db/writer.{js,py}`. Routes prefer DB, fall back to disk.
 
