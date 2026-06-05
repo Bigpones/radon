@@ -54,14 +54,16 @@ describe("site SEO contract", () => {
       host: siteUrl,
     });
 
-    expect(sitemap()).toEqual([
-      {
-        url: siteUrl,
-        lastModified: new Date("2026-03-11T00:00:00.000Z"),
-        changeFrequency: "weekly",
-        priority: 1,
-      },
-    ]);
+    const routes = sitemap();
+    expect(routes).toHaveLength(1);
+    expect(routes[0]).toMatchObject({
+      url: siteUrl,
+      changeFrequency: "weekly",
+      priority: 1,
+    });
+    // lastModified is stamped at build time (new Date()), not a frozen literal.
+    expect(routes[0].lastModified).toBeInstanceOf(Date);
+    expect(Number.isNaN(new Date(routes[0].lastModified!).getTime())).toBe(false);
 
     expect(manifest()).toMatchObject({
       name: SITE_NAME,

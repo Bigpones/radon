@@ -20,20 +20,20 @@ function applySiteTheme(theme: SiteTheme) {
 }
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<SiteTheme>(() => {
-    if (typeof document === "undefined") {
-      return DEFAULT_SITE_THEME;
-    }
-    return resolveInitialTheme(
-      document.documentElement.getAttribute("data-theme") ||
-        window.localStorage.getItem(SITE_THEME_STORAGE_KEY),
-      window.matchMedia("(prefers-color-scheme: dark)").matches,
-    );
-  });
+  // SSR and the first client render must agree, so both start from the default.
+  // The pre-hydration bootstrap script in layout.tsx has already applied the real
+  // theme to <html>; this effect only syncs the button's state to it after mount.
+  const [theme, setTheme] = useState<SiteTheme>(DEFAULT_SITE_THEME);
 
   useEffect(() => {
-    applySiteTheme(theme);
-  }, [theme]);
+    setTheme(
+      resolveInitialTheme(
+        document.documentElement.getAttribute("data-theme") ||
+          window.localStorage.getItem(SITE_THEME_STORAGE_KEY),
+        window.matchMedia("(prefers-color-scheme: dark)").matches,
+      ),
+    );
+  }, []);
 
   const nextTheme = getNextTheme(theme);
   const label = nextTheme === "light" ? "Light" : "Dark";

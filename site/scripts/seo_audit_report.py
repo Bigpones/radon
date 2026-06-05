@@ -183,8 +183,7 @@ def audit_site(base_url: str) -> tuple[list[AuditCheck], dict[str, Any]]:
         f"{base_url}/manifest.webmanifest",
         "application/manifest+json",
     )
-    og_status, _, og_headers = fetch(f"{base_url}/opengraph-image")
-    twitter_status, _, twitter_headers = fetch(f"{base_url}/twitter-image")
+    social_image_status, _, social_image_headers = fetch(f"{base_url}/og-image.png")
 
     parser = DocumentParser()
     html_text = root_body.decode("utf-8", errors="replace")
@@ -329,16 +328,16 @@ def audit_site(base_url: str) -> tuple[list[AuditCheck], dict[str, Any]]:
         AuditCheck(
             "Assets",
             "Open Graph image route",
-            classify(og_status == 200 and "image/png" in og_headers.get("content-type", "")),
-            f"status={og_status} content_type={og_headers.get('content-type', 'Missing')}",
-            "Serve a PNG Open Graph image from the metadata route.",
+            classify(social_image_status == 200 and "image/png" in social_image_headers.get("content-type", "")),
+            f"status={social_image_status} content_type={social_image_headers.get('content-type', 'Missing')}",
+            "Serve the static PNG share image at /og-image.png for Open Graph.",
         ),
         AuditCheck(
             "Assets",
             "Twitter image route",
-            classify(twitter_status == 200 and "image/png" in twitter_headers.get("content-type", "")),
-            f"status={twitter_status} content_type={twitter_headers.get('content-type', 'Missing')}",
-            "Serve a PNG Twitter image from the metadata route.",
+            classify(social_image_status == 200 and "image/png" in social_image_headers.get("content-type", "")),
+            f"status={social_image_status} content_type={social_image_headers.get('content-type', 'Missing')}",
+            "Serve the static PNG share image at /og-image.png for Twitter cards.",
         ),
         AuditCheck(
             "Assets",

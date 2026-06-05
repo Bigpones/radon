@@ -42,6 +42,12 @@ export default function manifest(): MetadataRoute.Manifest {
         type: "image/png",
       },
       {
+        src: "/icons/icon-512x512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
+      },
+      {
         src: "/brand/radon-app-icon.svg",
         sizes: "any",
         type: "image/svg+xml",

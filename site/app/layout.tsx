@@ -2,6 +2,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { Inter, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { siteMetadata, siteStructuredData, siteViewport } from "../lib/seo";
+import { siteThemeBootstrapScript } from "../lib/theme";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -25,7 +26,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en-US" className={`${inter.variable} ${ibmPlexMono.variable}`}>
+    <html
+      lang="en-US"
+      className={`${inter.variable} ${ibmPlexMono.variable}`}
+      suppressHydrationWarning
+    >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{ __html: siteThemeBootstrapScript() }}
+        />
+      </head>
       <body>
         {children}
         {siteStructuredData.map((item) => (
