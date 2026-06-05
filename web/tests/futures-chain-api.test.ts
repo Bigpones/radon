@@ -21,8 +21,16 @@ vi.mock("@/lib/radonApi", () => ({
   },
 }));
 
+const mockReadFile = vi.fn();
+vi.mock("fs/promises", () => ({
+  readFile: (...args: unknown[]) => mockReadFile(...args),
+}));
+
 beforeEach(() => {
   mockRadonFetch.mockReset();
+  mockReadFile.mockReset();
+  // Default: no disk cache present.
+  mockReadFile.mockRejectedValue(new Error("ENOENT"));
 });
 
 function req(url: string, init: RequestInit = {}): Request {
@@ -61,13 +69,36 @@ describe("GET /api/futures/chain", () => {
     );
   });
 
-  it("returns 502 envelope when FastAPI fails", async () => {
+  it("returns 502 envelope when FastAPI fails and no disk cache exists", async () => {
     mockRadonFetch.mockRejectedValueOnce(new Error("upstream down"));
     const { GET } = await import("../app/api/futures/chain/route");
     const res = await GET(req("http://localhost/api/futures/chain?symbol=VIX"));
     expect(res.status).toBe(502);
     const body = (await jsonOf(res)) as Record<string, unknown>;
     expect(body.error).toBeDefined();
+  });
+
+  it("serves the disk cache flagged stale when FastAPI fails", async () => {
+    mockRadonFetch.mockRejectedValueOnce(new Error("upstream down"));
+    mockReadFile.mockResolvedValueOnce(
+      JSON.stringify({
+        symbol: "VIX",
+        exchange: "CFE",
+        contracts: [
+          { conId: 1, localSymbol: "VXM6", lastTradeDateOrContractMonth: "20260617", multiplier: "1000" },
+        ],
+        count: 1,
+        as_of_date: "2026-06-01",
+      }),
+    );
+    const { GET } = await import("../app/api/futures/chain/route");
+    const res = await GET(req("http://localhost/api/futures/chain?symbol=VIX"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-Sync-Warning")).toContain("serving cached data");
+    const body = (await jsonOf(res)) as Record<string, unknown>;
+    expect(body.symbol).toBe("VIX");
+    expect(body.stale).toBe(true);
+    expect(Array.isArray(body.contracts)).toBe(true);
   });
 });
 

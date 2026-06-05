@@ -1931,6 +1931,33 @@ async def options_expirations(symbol: str):
 _FUTURES_CHAIN_TIMEOUT_S = 30.0  # patched in tests
 
 
+def _futures_chain_cache_path(symbol_upper: str) -> Path:
+    return DATA_DIR / f"futures_chain_{symbol_upper}.json"
+
+
+def _is_fresh_futures_cache(cached: Optional[dict]) -> bool:
+    """A cache is fresh when it was stamped on the current ET trading day
+    and carries at least one contract. The listed-futures chain is static
+    intraday (the front month only rolls at expiry), so a same-day cache is
+    always valid to serve.
+    """
+    if not isinstance(cached, dict):
+        return False
+    if cached.get("as_of_date") != _today_et_str():
+        return False
+    contracts = cached.get("contracts")
+    return isinstance(contracts, list) and len(contracts) > 0
+
+
+def _stamp_futures_chain(data: dict, symbol_upper: str) -> dict:
+    stamped = dict(data)
+    stamped["symbol"] = stamped.get("symbol") or symbol_upper
+    stamped["as_of"] = datetime.now(timezone.utc).isoformat()
+    stamped["as_of_date"] = _today_et_str()
+    stamped["stale"] = False
+    return stamped
+
+
 @app.get("/futures/chain")
 async def futures_chain(symbol: str):
     """List listed futures contracts for a supported underlying.
@@ -1941,6 +1968,13 @@ async def futures_chain(symbol: str):
     intermittently with "There is no current event loop in thread"
     (large payloads consistently; small payloads luckily). Subprocess
     avoids the cross-thread loop deadlock entirely.
+
+    Per-symbol disk cache + stale-on-failure: the listed-futures chain is
+    static intraday, so a same-day cache is served immediately (no live
+    call, no farm dependency). On a cold/cross-day miss we run the
+    subprocess; if that fails we serve the last good cache (flagged stale)
+    rather than surfacing a timeout to the order ticket. Only 502 when
+    there is no cache at all.
     """
     from clients.contract_resolver import supports_futures
 
@@ -1951,16 +1985,44 @@ async def futures_chain(symbol: str):
             detail=f"futures not supported for {symbol_upper}; supported: VIX",
         )
 
+    cache_path = _futures_chain_cache_path(symbol_upper)
+    cached = _read_cache(cache_path)
+
+    if _is_fresh_futures_cache(cached):
+        return cached
+
     result = await run_script(
         "ib_chain.py",
         ["--kind", "future", "--symbol", symbol_upper],
         timeout=_FUTURES_CHAIN_TIMEOUT_S,
     )
+
+    live_ok = (
+        result.ok
+        and result.data
+        and not result.data.get("error")
+        and isinstance(result.data.get("contracts"), list)
+        and len(result.data["contracts"]) > 0
+    )
+    if live_ok:
+        stamped = _stamp_futures_chain(result.data, symbol_upper)
+        try:
+            from utils.atomic_io import atomic_save
+            atomic_save(str(cache_path), stamped)
+        except Exception:
+            pass
+        return stamped
+
+    if isinstance(cached, dict) and isinstance(cached.get("contracts"), list):
+        stale = dict(cached)
+        stale["stale"] = True
+        return stale
+
     if not result.ok:
         raise HTTPException(status_code=502, detail=result.error)
     if result.data and result.data.get("error"):
         raise HTTPException(status_code=502, detail=result.data["error"])
-    return result.data or {"symbol": symbol_upper, "exchange": "CFE", "contracts": [], "count": 0}
+    return {"symbol": symbol_upper, "exchange": "CFE", "contracts": [], "count": 0}
 
 
 # ── PI command surface ──────────────────────────────────────────────
