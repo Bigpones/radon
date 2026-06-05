@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useTickerDetailOptional } from "@/lib/TickerDetailContext";
 import { useFuturesChain, type FuturesChainContract } from "@/lib/useFuturesChain";
 import { type LinearOrderRiskInput } from "@/lib/order";
 import type { PortfolioData } from "@/lib/types";
@@ -46,6 +47,7 @@ function formatExpiry(date: string): string {
  */
 export function FuturesOrderForm({ ticker, portfolio = null }: FuturesOrderFormProps) {
   const symbol = ticker.toUpperCase();
+  const tickerDetail = useTickerDetailOptional();
   const { data, loading, error } = useFuturesChain(symbol);
 
   const [selectedConId, setSelectedConId] = useState<number | null>(null);
@@ -61,6 +63,19 @@ export function FuturesOrderForm({ ticker, portfolio = null }: FuturesOrderFormP
     if (!data || selectedConId == null) return null;
     return data.contracts.find((c) => c.conId === selectedConId) ?? null;
   }, [data, selectedConId]);
+
+  // Publish the selected contract's expiry to the depth subject so the relay
+  // resolves THIS future (not the front month) under the index key, and the
+  // OrderBook ladder follows the ticket. Clear on unmount so the book reverts
+  // to front-month when the order form is not shown. Keyed on the expiry string
+  // (including the auto-selected default front-month) so a swap re-publishes.
+  const selectedExpiry = selectedContract?.lastTradeDateOrContractMonth ?? null;
+  const setDepthFutureExpiry = tickerDetail?.setDepthFutureExpiry;
+  useEffect(() => {
+    if (!setDepthFutureExpiry) return;
+    setDepthFutureExpiry(selectedExpiry);
+    return () => setDepthFutureExpiry(null);
+  }, [selectedExpiry, setDepthFutureExpiry]);
 
   const multiplier = useMemo(() => {
     if (!selectedContract) return 1000;

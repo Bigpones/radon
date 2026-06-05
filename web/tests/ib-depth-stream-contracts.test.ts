@@ -153,8 +153,23 @@ describe("ib_realtime_server.js exposes the flag-gated L2 depth channel", () => 
     expect(source).toContain("const FUTURES_RESOLVE_TIMEOUT_MS");
     expect(source).toContain("setTimeout(() => {");
     // The subscribe path awaits resolution; null → emit futures-no-depth, bail.
-    expect(source).toContain("const resolved = await resolveFuturesFrontMonth(subject.root)");
+    // Front-month is the fallback when no selected expiry is carried.
+    expect(source).toContain("resolved = await resolveFuturesFrontMonth(subject.root)");
     expect(source).toContain('emitDepthUnavailable(subject.key, "futures-no-depth")');
+  });
+
+  it("resolves the order-ticket selected future expiry under the index key (per-expiry depth)", () => {
+    // resolveDepthSubject carries the normalized expiry digits through onto the
+    // future subject; the key stays the inbound index symbol so depths[key] matches.
+    expect(source).toContain("const expiry = typeof payload.expiry === \"string\"");
+    // The subscribe handler resolves the SPECIFIC contract for a selected expiry
+    // off the relay's own futures chain, falling back to the front month.
+    expect(source).toContain("const chain = await resolveFuturesChain(subject.root)");
+    expect(source).toContain("resolved = pickNearestExpiry(chain, subject.expiry)");
+    // Contract swap under an existing key: cancel the old ticket so a new conId
+    // re-reqs depth instead of short-circuiting on "already streaming".
+    expect(source).toContain("existing.contract.conId !== contract.conId");
+    expect(source).toContain("stopDepthSubscription(subject.key, { keepState: true })");
   });
 
   it("labels futures depth feed with the resolved venue (CME DEPTH)", () => {

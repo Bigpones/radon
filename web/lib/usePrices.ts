@@ -41,6 +41,14 @@ export type UsePricesOptions = {
    * already part of `symbols`/`contracts`.
    */
   depthSymbol?: string | null;
+  /**
+   * For a futures/index depth subject, the order-ticket selected contract's
+   * expiry (YYYYMMDD or YYYYMM). The depth KEY stays `depthSymbol`; this expiry
+   * tells the relay WHICH listed future to resolve under that key. `null`
+   * resolves the front month. Ignored for OPTION depth subjects (those carry
+   * their own structured expiry/strike/right).
+   */
+  depthExpiry?: string | null;
   /** Callback when a price updates */
   onPriceUpdate?: (update: PriceUpdate) => void;
   /** Callback when connection status changes */
@@ -103,6 +111,7 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
     indexes = [],
     enabled = true,
     depthSymbol = null,
+    depthExpiry = null,
     onPriceUpdate,
     onConnectionChange,
     getToken,
@@ -139,10 +148,14 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
   }>({ symbols: [], contracts: [], indexes: [] });
   const lastSentHashRef = useRef("");
 
-  // Focused-depth tracking (single symbol or null) — kept SEPARATE from the
-  // price subscription diff so the scarce depth resource is routed on its own.
+  // Focused-depth tracking — kept SEPARATE from the price subscription diff so
+  // the scarce depth resource is routed on its own. We track the symbol AND the
+  // optional selected future expiry separately, but dedupe/diff on the PAIR
+  // (symbol + "|" + expiry) so changing ONLY the expiry still re-fires
+  // subscribe-depth (the relay swaps the resolved contract under the same key).
   const desiredDepthRef = useRef<string | null>(null);
-  const lastSentDepthRef = useRef<string | null>(null);
+  const desiredDepthExpiryRef = useRef<string | null>(null);
+  const lastSentDepthKeyRef = useRef<string | null>(null);
 
   // Callback refs (avoid stale closures in WS handlers)
   const onPriceUpdateRef = useRef(onPriceUpdate);
@@ -177,6 +190,8 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
 
   const normalizedDepthSymbol =
     depthSymbol && depthSymbol.trim().length > 0 ? depthSymbol.trim() : null;
+  const normalizedDepthExpiry =
+    depthExpiry && depthExpiry.trim().length > 0 ? depthExpiry.trim() : null;
 
   // Sync refs during render (before any useCallback/useEffect)
   desiredRef.current = {
@@ -185,6 +200,7 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
     indexes: normalizedIndexes,
   };
   desiredDepthRef.current = normalizedDepthSymbol;
+  desiredDepthExpiryRef.current = normalizedDepthExpiry;
   onPriceUpdateRef.current = onPriceUpdate;
   onConnectionChangeRef.current = onConnectionChange;
   getTokenRef.current = getToken;
@@ -341,25 +357,35 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
     if (ws.readyState !== WebSocket.OPEN) return;
 
     const desired = desiredDepthRef.current;
-    const previous = lastSentDepthRef.current;
-    if (desired === previous) return; // No change
+    const desiredExpiry = desiredDepthExpiryRef.current;
+    // Diff on the PAIR so changing ONLY the expiry (same index symbol) still
+    // re-sends subscribe-depth and the relay swaps the resolved future.
+    const desiredKey = desired ? `${desired}|${desiredExpiry ?? ""}` : null;
+    const previousKey = lastSentDepthKeyRef.current;
+    if (desiredKey === previousKey) return; // No change
 
-    if (previous) {
+    // The depths/tape maps are keyed by the bare symbol, not the pair. When the
+    // expiry changes for the SAME symbol the relay re-uses that key (swap in
+    // place), so only evict the previous book when the SYMBOL itself changed.
+    const previousSymbol = previousKey ? previousKey.split("|")[0] : null;
+    const symbolChanged = previousSymbol !== desired;
+
+    if (previousSymbol && symbolChanged) {
       ws.send(
-        JSON.stringify({ action: "unsubscribe-depth", symbol: previous }),
+        JSON.stringify({ action: "unsubscribe-depth", symbol: previousSymbol }),
       );
       setDepths((prev) => {
-        if (!(previous in prev)) return prev;
+        if (!(previousSymbol in prev)) return prev;
         const next = { ...prev };
-        delete next[previous];
+        delete next[previousSymbol];
         return next;
       });
       // The tape rides the same focused depth symbol — evict it together so a
       // focus switch never leaves a stale tape behind.
       setTape((prev) => {
-        if (!(previous in prev)) return prev;
+        if (!(previousSymbol in prev)) return prev;
         const next = { ...prev };
-        delete next[previous];
+        delete next[previousSymbol];
         return next;
       });
     }
@@ -373,19 +399,31 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
       // to the L1 fallback. Decompose the key here so the relay re-derives the
       // SAME key via its own optionKey() and echoes the book under it.
       const optionContract = parseOptionKey(desired);
-      const payload = optionContract
-        ? {
-            action: "subscribe-depth",
-            symbol: optionContract.symbol,
-            expiry: optionContract.expiry,
-            strike: optionContract.strike,
-            right: optionContract.right,
-          }
-        : { action: "subscribe-depth", symbol: desired };
+      let payload: Record<string, unknown>;
+      if (optionContract) {
+        payload = {
+          action: "subscribe-depth",
+          symbol: optionContract.symbol,
+          expiry: optionContract.expiry,
+          strike: optionContract.strike,
+          right: optionContract.right,
+        };
+      } else if (desiredExpiry) {
+        // Futures/index subject with a selected expiry: tell the relay to
+        // resolve THIS listed future (not the front month) under the same key.
+        payload = {
+          action: "subscribe-depth",
+          symbol: desired,
+          instrument: "future",
+          expiry: desiredExpiry,
+        };
+      } else {
+        payload = { action: "subscribe-depth", symbol: desired };
+      }
       ws.send(JSON.stringify(payload));
     }
 
-    lastSentDepthRef.current = desired;
+    lastSentDepthKeyRef.current = desiredKey;
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -458,7 +496,7 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
       lastSentHashRef.current = "";
       syncSubscriptions(ws);
       // Depth resubscribes from scratch on every fresh socket.
-      lastSentDepthRef.current = null;
+      lastSentDepthKeyRef.current = null;
       syncDepth(ws);
       wsLog("open", { gen });
 
@@ -601,7 +639,7 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
       setIbStatusMessage(null);
       onConnectionChangeRef.current?.(false);
       lastSentHashRef.current = ""; // Next connect must full-sync
-      lastSentDepthRef.current = null; // Depth re-subscribes on reconnect
+      lastSentDepthKeyRef.current = null; // Depth re-subscribes on reconnect
       wsLog("close", { gen });
       scheduleReconnectRef.current();
     };
@@ -737,7 +775,7 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
       }
       connStateRef.current = "idle";
       lastSentHashRef.current = "";
-      lastSentDepthRef.current = null;
+      lastSentDepthKeyRef.current = null;
       setConnected(false);
       onConnectionChangeRef.current?.(false);
     }
@@ -754,7 +792,7 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
       }
       connStateRef.current = "idle";
       lastSentHashRef.current = "";
-      lastSentDepthRef.current = null;
+      lastSentDepthKeyRef.current = null;
     };
   }, [enabled, hasSubscriptions, connect, clearReconnectTimer, clearStalenessTimer]);
 
@@ -780,7 +818,7 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
       syncDepth(ws);
     }
     // If still connecting, onopen will flush via syncDepth
-  }, [normalizedDepthSymbol, syncDepth]);
+  }, [normalizedDepthSymbol, normalizedDepthExpiry, syncDepth]);
 
   return {
     prices,

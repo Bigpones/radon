@@ -42,6 +42,11 @@ type TickerDetailContextValue = {
   /** Book key the detail view wants L2 depth for. Drives `usePrices` upstream. */
   depthSymbol: string | null;
   setDepthSymbol: (key: string | null) => void;
+  /** For a futures-backed depth subject (e.g. VIX), the order-ticket selected
+   *  contract's expiry. The depth KEY stays the index symbol; this expiry tells
+   *  the relay WHICH listed future to resolve under that key. Null = front-month. */
+  depthFutureExpiry: string | null;
+  setDepthFutureExpiry: (expiry: string | null) => void;
   /** User-pinned book subject (e.g. a combo leg's option key) overriding the
    *  default focus, so the Book pane shows that leg's depth. Null = default. */
   focusedBookKey: string | null;
@@ -59,6 +64,7 @@ export function TickerDetailProvider({ children }: { children: ReactNode }) {
   const [activePositionId, setActivePositionIdState] = useState<number | null>(null);
   const [chainContracts, setChainContractsState] = useState<OptionContract[]>([]);
   const [depthSymbol, setDepthSymbolState] = useState<string | null>(null);
+  const [depthFutureExpiry, setDepthFutureExpiryState] = useState<string | null>(null);
   const [focusedBookKey, setFocusedBookKeyState] = useState<string | null>(null);
   const [orderPrefill, setOrderPrefillState] = useState<OrderPrefill | null>(null);
   const prefillNonceRef = useRef(0);
@@ -73,14 +79,19 @@ export function TickerDetailProvider({ children }: { children: ReactNode }) {
     setActiveTickerState((prev) => {
       const next = ticker ? ticker.toUpperCase() : null;
       // A pinned leg book belongs to one subject — drop it whenever the focused
-      // ticker changes so it never leaks across instruments.
-      if (next !== prev) setFocusedBookKeyState(null);
+      // ticker changes so it never leaks across instruments. The selected depth
+      // future expiry is likewise per-instrument and must not survive a switch.
+      if (next !== prev) {
+        setFocusedBookKeyState(null);
+        setDepthFutureExpiryState(null);
+      }
       return next;
     });
     if (!ticker) {
       setActivePositionIdState(null);
       setChainContractsState([]);
       setDepthSymbolState(null);
+      setDepthFutureExpiryState(null);
     }
   }, []);
 
@@ -98,6 +109,10 @@ export function TickerDetailProvider({ children }: { children: ReactNode }) {
 
   const setDepthSymbol = useCallback((key: string | null) => {
     setDepthSymbolState((prev) => (prev === key ? prev : key));
+  }, []);
+
+  const setDepthFutureExpiry = useCallback((expiry: string | null) => {
+    setDepthFutureExpiryState((prev) => (prev === expiry ? prev : expiry));
   }, []);
 
   const setOrderPrefill = useCallback((p: Omit<OrderPrefill, "nonce">) => {
@@ -138,7 +153,7 @@ export function TickerDetailProvider({ children }: { children: ReactNode }) {
 
   return (
     <TickerDetailContext.Provider
-      value={{ activeTicker, activePositionId, setActiveTicker, setActivePositionId, getPrices, getFundamentals, getPortfolio, getOrders, getDepths, getTape, setPrices, setFundamentals, setPortfolio, setOrders, setDepths, setTape, chainContracts, setChainContracts, depthSymbol, setDepthSymbol, focusedBookKey, setFocusedBookKey, orderPrefill, setOrderPrefill }}
+      value={{ activeTicker, activePositionId, setActiveTicker, setActivePositionId, getPrices, getFundamentals, getPortfolio, getOrders, getDepths, getTape, setPrices, setFundamentals, setPortfolio, setOrders, setDepths, setTape, chainContracts, setChainContracts, depthSymbol, setDepthSymbol, depthFutureExpiry, setDepthFutureExpiry, focusedBookKey, setFocusedBookKey, orderPrefill, setOrderPrefill }}
     >
       {children}
     </TickerDetailContext.Provider>

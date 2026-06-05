@@ -1645,7 +1645,12 @@ function resolveDepthSubject(payload) {
     const exchange = mappedRoot
       ? futuresExchangeForRoot(root)
       : (typeof payload.exchange === "string" ? payload.exchange.trim().toUpperCase() : futuresExchangeForRoot(root));
-    return { key: rawSymbol, root, contract: futureContract(root, "", "USD", exchange), kind: "future", isFutures: true };
+    // Carry the order-ticket selected expiry (YYYYMMDD/YYYYMM digits) so the
+    // handler resolves THAT listed future under the key instead of the front
+    // month. Absent → front-month fallback. Key stays the inbound symbol so
+    // depths[key] still matches regardless of which expiry is selected.
+    const expiry = typeof payload.expiry === "string" ? payload.expiry.replace(/-/g, "").trim() : null;
+    return { key: rawSymbol, root, expiry: expiry || null, contract: futureContract(root, "", "USD", exchange), kind: "future", isFutures: true };
   }
 
   return { key: rawSymbol, contract: stockContract(rawSymbol, "SMART", "USD"), kind: "stock", isFutures: false };
@@ -1666,15 +1671,37 @@ async function handleClientMessage(client, data) {
         subscribeClientToDepth(client, subject.key);
         let contract = subject.contract;
         if (subject.isFutures) {
-          // Qualify the front month (conId) before reqMktDepth — bounded await
-          // so a slow/failed resolution can't hang the relay. No depth without
-          // a real contract: emit futures-no-depth and bail.
-          const resolved = await resolveFuturesFrontMonth(subject.root);
+          // Qualify a real conId before reqMktDepth — bounded await so a
+          // slow/failed resolution can't hang the relay. No depth without a
+          // real contract: emit futures-no-depth and bail.
+          //
+          // If the client sent a selected expiry, resolve THAT specific listed
+          // future from the full curve; otherwise fall back to the front month.
+          // The depth path owns its own resolveFuturesChain — independent of
+          // /api/futures/chain — so depth resolves even when the order-form
+          // chain fetch is slow.
+          let resolved = null;
+          if (subject.expiry) {
+            const chain = await resolveFuturesChain(subject.root);
+            resolved = pickNearestExpiry(chain, subject.expiry);
+          }
+          if (!resolved) {
+            resolved = await resolveFuturesFrontMonth(subject.root);
+          }
           if (!resolved) {
             emitDepthUnavailable(subject.key, "futures-no-depth");
             return;
           }
           contract = resolved;
+        }
+        // Contract swap under an existing key (e.g. user picked a different
+        // VIX expiry): cancel the live ticket so startDepthSubscription re-reqs
+        // on the new conId. Without this it short-circuits ("already streaming")
+        // and the book stays pinned to the prior contract.
+        const existing = symbolDepthStates.get(subject.key);
+        if (existing && existing.depthTickerId != null && existing.contract && contract && existing.contract.conId !== contract.conId) {
+          stopDepthSubscription(subject.key, { keepState: true });
+          stopTapeSubscription(subject.key);
         }
         startDepthSubscription(subject.key, contract, { kind: subject.kind, isFutures: subject.isFutures });
         startTapeSubscription(subject.key, contract);
