@@ -281,3 +281,23 @@ export function getMarketStateFromDate(now: Date = new Date()): MarketState {
   }
   return "closed";
 }
+
+export type MarketPhase = "pre" | "open" | "after" | "closed";
+
+/**
+ * Finer-grained sibling of getMarketStateFromDate that splits "extended"
+ * into "pre" (04:00-09:30 ET) and "after" (16:00-20:00 ET) so the Day P&L
+ * card can name the correct session. Pure, no React, testable with a
+ * pinned clock.
+ */
+export function getMarketPhaseFromDate(now: Date = new Date()): MarketPhase {
+  const et = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
+  const day = et.getDay(); // 0=Sun, 6=Sat
+  if (day === 0 || day === 6) return "closed";
+
+  const minutes = et.getHours() * 60 + et.getMinutes();
+  if (minutes >= 9 * 60 + 30 && minutes <= 16 * 60) return "open";
+  if (minutes >= 4 * 60 && minutes < 9 * 60 + 30) return "pre";
+  if (minutes > 16 * 60 && minutes <= 20 * 60) return "after";
+  return "closed";
+}

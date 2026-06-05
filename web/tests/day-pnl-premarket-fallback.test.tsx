@@ -30,7 +30,7 @@ beforeAll(() => {
   }
 });
 
-afterEach(() => cleanup());
+afterEach(() => { vi.useRealTimers(); cleanup(); });
 
 vi.mock("@/lib/useMarketHours", () => ({
   useMarketHours: () => ({ state: "closed", isOpen: false }),
@@ -134,7 +134,9 @@ describe("Day P&L card — pre-market fallback to client-computed aggregate", ()
     expect(cardText).not.toContain("WAITING FOR IB");
   });
 
-  it("falls back to client-computed aggregate when daily_pnl is null + prices present", () => {
+  it('labels the fallback "ESTIMATED (LIVE)" during regular trading hours', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-05T18:30:00Z")); // Fri 14:30 ET
     const portfolio = buildPortfolio({ daily_pnl: null });
     const { container } = render(
       React.createElement(MetricCards, {
@@ -149,9 +151,47 @@ describe("Day P&L card — pre-market fallback to client-computed aggregate", ()
     expect(cardText).toContain("Day P&L");
     // AAPL: 100 long × ($190 - $180) = +$1,000
     expect(cardText).toContain("+$1,000");
-    expect(cardText).toContain("ESTIMATED (PRE-MARKET)");
+    expect(cardText).toContain("ESTIMATED (LIVE)");
+    expect(cardText).not.toContain("PRE-MARKET");
     expect(cardText).not.toContain("MARKET CLOSED");
-    expect(cardText).not.toContain("WAITING FOR IB");
+  });
+
+  it('labels the fallback "ESTIMATED (PRE-MARKET)" during the pre-market session', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-05T12:00:00Z")); // Fri 08:00 ET
+    const portfolio = buildPortfolio({ daily_pnl: null });
+    const { container } = render(
+      React.createElement(MetricCards, {
+        portfolio,
+        prices: buildPrices(),
+        realizedPnl: 0,
+        section: "portfolio",
+      } as unknown as Parameters<typeof MetricCards>[0]),
+    );
+
+    const cardText = dayPnlCardText(container);
+    expect(cardText).toContain("Day P&L");
+    expect(cardText).toContain("+$1,000");
+    expect(cardText).toContain("ESTIMATED (PRE-MARKET)");
+  });
+
+  it('labels the fallback "ESTIMATED (AFTER HOURS)" during the after-hours session', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-05T21:00:00Z")); // Fri 17:00 ET
+    const portfolio = buildPortfolio({ daily_pnl: null });
+    const { container } = render(
+      React.createElement(MetricCards, {
+        portfolio,
+        prices: buildPrices(),
+        realizedPnl: 0,
+        section: "portfolio",
+      } as unknown as Parameters<typeof MetricCards>[0]),
+    );
+
+    const cardText = dayPnlCardText(container);
+    expect(cardText).toContain("Day P&L");
+    expect(cardText).toContain("+$1,000");
+    expect(cardText).toContain("ESTIMATED (AFTER HOURS)");
   });
 
   it('keeps "---" + "MARKET CLOSED" when both IB daily_pnl is null AND no prices/positions feed the fallback', () => {

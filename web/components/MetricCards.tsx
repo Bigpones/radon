@@ -5,6 +5,7 @@ import type { PortfolioData, AccountSummary, ExecutedOrder } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { computeExposureDetailed, type ExposureDataWithBreakdown } from "@/lib/exposureBreakdown";
 import { computeDayMoveBreakdown } from "@/lib/dayMoveBreakdown";
+import { getMarketPhaseFromDate } from "@/lib/serviceHealthWindows";
 import {
   computeLeverageRatio,
   classifyLeverageBias,
@@ -161,15 +162,28 @@ function AccountRow({
   const displayValue = ibDaily ?? fallback;
   // Label precedence:
   //   1. "TODAY"               — IB streamed dailyPnL (regular trading hours)
-  //   2. "ESTIMATED (PRE-MARKET)" — IB silent but we still have live quotes
-  //      and at least one position contributed a day-move
+  //   2. "ESTIMATED (LIVE | PRE-MARKET | AFTER HOURS)" — IB silent but live
+  //      quotes give a day-move; the parenthetical names the current ET session
   //   3. "WAITING FOR IB"      — positions exist but the WS prices feed is
   //      empty, so the IB Gateway is unreachable (not "closed")
   //   4. "MARKET CLOSED"       — no positions, or all positions stale (the
   //      honest "nothing to compute" state)
   let displayLabel: string;
   if (ibDaily != null) displayLabel = "TODAY";
-  else if (fallback != null) displayLabel = "ESTIMATED (PRE-MARKET)";
+  else if (fallback != null) {
+    // IB's reqPnL aggregate is silent but live quotes give us a day-move
+    // estimate. Name the SESSION honestly instead of always saying
+    // PRE-MARKET; during RTH this is a live estimate, not pre-market.
+    const phase = getMarketPhaseFromDate();
+    displayLabel =
+      phase === "open"
+        ? "ESTIMATED (LIVE)"
+        : phase === "after"
+          ? "ESTIMATED (AFTER HOURS)"
+          : phase === "pre"
+            ? "ESTIMATED (PRE-MARKET)"
+            : "ESTIMATED";
+  }
   else if (hasPositions && !hasPrices) displayLabel = "WAITING FOR IB";
   else displayLabel = "MARKET CLOSED";
 
