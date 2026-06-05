@@ -25,6 +25,10 @@ from datetime import date, datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+
+from utils.card_screenshot import screenshot_card  # noqa: E402
+
 DATA_DIR = PROJECT_ROOT / "data"
 CACHE_PATH = DATA_DIR / "gex.json"
 REPORTS_DIR = PROJECT_ROOT / "reports"
@@ -643,23 +647,6 @@ function copyImg(id,btn){{
 </body></html>"""
 
 
-# ── Screenshot ────────────────────────────────────────────────────
-
-def screenshot_card(html_path: str, png_path: str) -> bool:
-    try:
-        r1 = subprocess.run(
-            ["agent-browser", "open", f"file://{html_path}"],
-            capture_output=True, text=True, timeout=15,
-        )
-        if r1.returncode != 0:
-            return False
-        r2 = subprocess.run(
-            ["agent-browser", "screenshot", ".card", png_path],
-            capture_output=True, text=True, timeout=15,
-        )
-        return r2.returncode == 0 and Path(png_path).exists()
-    except Exception:
-        return False
 
 
 # ── Main ──────────────────────────────────────────────────────────

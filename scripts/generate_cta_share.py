@@ -24,6 +24,10 @@ from pathlib import Path
 from typing import Optional
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+
+from utils.card_screenshot import screenshot_card  # noqa: E402
+
 CACHE_DIR = PROJECT_ROOT / "data" / "menthorq_cache"
 REPORTS_DIR = PROJECT_ROOT / "reports"
 REPORTS_DIR.mkdir(exist_ok=True)
@@ -373,23 +377,6 @@ def card4_bonds(data: dict, ds: str) -> str:
     return card_html("Bond Short Extreme", body, 4, 4, ds)
 
 
-# ── Screenshot via browser automation ────────────────────────────────────────
-
-def screenshot_card(html_path: str, png_path: str) -> bool:
-    try:
-        result = subprocess.run(
-            ["agent-browser", "open", f"file://{html_path}"],
-            capture_output=True, text=True, timeout=15
-        )
-        if result.returncode != 0:
-            return False
-        result2 = subprocess.run(
-            ["agent-browser", "screenshot", ".card", png_path],
-            capture_output=True, text=True, timeout=15
-        )
-        return result2.returncode == 0 and Path(png_path).exists()
-    except Exception:
-        return False
 
 
 # ── Preview HTML ──────────────────────────────────────────────────────────────
