@@ -45,8 +45,8 @@ export const headerLinks = [
 export const proofItems: ProofItem[] = [
   {
     label: "Active Strategies",
-    value: "7",
-    detail: "Defined, undefined, and overlay structures surfaced in one terminal.",
+    value: "6",
+    detail: "Six catalogued strategies plus overlay signals surfaced in one terminal.",
     tone: "core",
   },
   {
@@ -84,8 +84,8 @@ export const heroCommandItems = [
 export const heroMetrics = [
   { label: "COR1M", value: "28.97", detail: "Implied correlation" },
   { label: "VIX", value: "22.77", detail: "Volatility state" },
-  { label: "Kelly Cap", value: "7.5%", detail: "Sizing discipline" },
-  { label: "Signal Stack", value: "7", detail: "Deployable modules" },
+  { label: "Kelly Cap", value: "2.5%", detail: "Sizing discipline" },
+  { label: "Signal Stack", value: "6", detail: "Deployable modules" },
 ];
 
 export type ModuleTab = "flow" | "performance" | "structure" | "execution";
@@ -102,8 +102,8 @@ export const moduleContents: Record<ModuleTab, ModuleContent> = {
     metrics: [
       { label: "COR1M", value: "28.97", detail: "Implied correlation" },
       { label: "VIX", value: "22.77", detail: "Volatility state" },
-      { label: "Kelly Cap", value: "7.5%", detail: "Sizing discipline" },
-      { label: "Signal Stack", value: "7", detail: "Deployable modules" },
+      { label: "Kelly Cap", value: "2.5%", detail: "Sizing discipline" },
+      { label: "Signal Stack", value: "6", detail: "Deployable modules" },
     ],
     commands: [
       { label: "Dark Pool Flow", state: "Defined", command: "evaluate AAPL" },
@@ -148,7 +148,7 @@ export const moduleContents: Record<ModuleTab, ModuleContent> = {
       { label: "Gates", value: "4", detail: "Sequential filters" },
       { label: "Fill Path", value: "IB", detail: "Direct routing" },
       { label: "Audit", value: "Full", detail: "Post-trade log" },
-      { label: "Guard", value: "Active", detail: "Naked short block" },
+      { label: "Warnings", value: "Surfaced", detail: "Undefined-risk flags" },
     ],
     commands: [
       { label: "Order Placement", state: "Operator-led", command: "execute" },
@@ -156,7 +156,7 @@ export const moduleContents: Record<ModuleTab, ModuleContent> = {
       { label: "Exit Service", state: "Pending", command: "exit-orders" },
     ],
     commandLabel: "Execution Surface",
-    commandPill: "Gate Protected",
+    commandPill: "Risk-Gated",
   },
 };
 
@@ -270,8 +270,8 @@ export const executionItems: ExecutionItem[] = [
   {
     step: "Execute",
     summary:
-      "Execution remains visible and operator-led. Naked short protection blocks uncovered calls and stock shorts before the order reaches the exchange.",
-    metadata: "IB quotes, live pricing, fill path, naked short guard, trade log",
+      "Execution remains visible and operator-led. The order builder surfaces undefined-risk and unbounded-loss warnings on uncovered shorts so the operator decides with full max-loss context.",
+    metadata: "IB quotes, live pricing, fill path, risk-gate warnings, trade log",
   },
   {
     step: "Track",
