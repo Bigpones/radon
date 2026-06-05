@@ -15,6 +15,7 @@ export default defineConfig({
     include: [
       "lib/tools/__tests__/**/*.test.ts",
       "site/lib/**/*.test.ts",
+      "scripts/lib/**/*.test.js",
       "web/tests/**/*.test.ts",
       "web/tests/**/*.test.tsx",
     ],

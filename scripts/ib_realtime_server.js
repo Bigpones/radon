@@ -34,6 +34,12 @@ import {
 } from "./ib_tick_handler.js";
 import { LRUCache } from "./lib/lru-cache.js";
 import { RateLimiter } from "./lib/rate-limiter.js";
+import {
+  decideStaleAction,
+  isFarmStateCode,
+  STALE_DATA_THRESHOLD_MS,
+  STALE_CHECK_INTERVAL_MS,
+} from "./lib/staleDataMachine.js";
 
 const DEFAULT_WS_PORT = 8765;
 const DEFAULT_IB_HOST = process.env.IB_GATEWAY_HOST || "127.0.0.1";
@@ -513,13 +519,32 @@ let ibConnectionIssue = null;
  * IB Gateway can enter a state where the TCP connection is alive but the
  * data plane stops delivering ticks. Detect this by tracking the last tick
  * timestamp: if we have active subscriptions during market hours but haven't
- * received a tick in STALE_DATA_THRESHOLD_MS, restart IB Gateway.
+ * received a tick in STALE_DATA_THRESHOLD_MS, run the bounded recovery ladder.
+ *
+ * STALE_DATA_THRESHOLD_MS / STALE_CHECK_INTERVAL_MS / the K-cycle ladder +
+ * escalation cooldown all live in lib/staleDataMachine.js — the decision is
+ * pure; this layer wires the real IB socket, timer, and service_health write.
  */
-const STALE_DATA_THRESHOLD_MS = 45_000; // 45s without a tick during market hours
-const STALE_CHECK_INTERVAL_MS = 30_000; // Check every 30s
 let lastTickTimestamp = Date.now();
 let staleCheckTimer = null;
 let ibGatewayRestarting = false;
+// Consecutive reconnect cycles this stale episode (reset when ticks resume).
+let staleReconnectCycles = 0;
+// Last IB market-data farm info code seen (2103/2104/2105/2106/2108/2158).
+let lastFarmStateCode = null;
+// Epoch ms of the last escalation alert — rate-limits the escalate action.
+let lastEscalationAt = null;
+// True once we've written the relay's service_health row to "error" so we
+// only clear it (and reset counters) on the recovery edge.
+let relayHealthInError = false;
+// False until this process has written its first "ok" row. The in-memory
+// error flag does NOT survive a restart, so a prior process that escalated
+// (then got deploy-restarted before recovering) leaves a stale "error" row
+// that recovery-from-error alone would never clear. We write "ok" once on the
+// first healthy tick of each process. See feedback_service_health_heartbeat.
+let relayHealthInitialized = false;
+
+const RELAY_HEALTH_SERVICE = "ib-realtime-relay";
 
 function isUSMarketHours() {
   // Convert to ET and check if within 9:30-16:00 Mon-Fri
@@ -536,25 +561,90 @@ function isUSMarketHours() {
 
 const GATEWAY_MODE = process.env.IB_GATEWAY_MODE || "docker";
 
-async function restartIBGateway() {
-  if (ibGatewayRestarting) return;
-  ibGatewayRestarting = true;
-  console.log("\x1b[31m[stale-data] No ticks received during market hours — handling stale data\x1b[0m");
-
-  if (GATEWAY_MODE === "cloud" || GATEWAY_MODE === "docker") {
-    // Cloud/Docker — no local restart capability. Just reconnect the IB socket.
-    console.log(`[stale-data] ${GATEWAY_MODE} mode — disconnecting and scheduling reconnect`);
-  } else {
-    // Local launchd mode — do NOT restart IBC from the relay.
-    // Repeated local restarts thrash the auth session and can trigger more 2FA prompts.
-    console.log("[stale-data] launchd mode — reconnecting IB socket only; manual IBC restart required if Gateway stays down");
+/* Best-effort relay health write. The relay must never stall ticks on a DB
+ * hiccup, so the writer import + call are dynamic + try/catch'd. NO_REPLICA
+ * is forced on so the relay writes direct-to-cloud (no embedded replica). */
+async function writeRelayHealth(state, error) {
+  process.env.RADON_DB_NO_REPLICA = process.env.RADON_DB_NO_REPLICA || "1";
+  try {
+    const { recordServiceHealth } = await import("./db/writer.js");
+    await recordServiceHealth(RELAY_HEALTH_SERVICE, state, error ? { error } : {});
+  } catch (err) {
+    console.warn(`\x1b[33m[stale-data] relay health write failed: ${String(err?.message ?? err)}\x1b[0m`);
   }
+}
 
+// Re-issue reqMktData for every desired symbol without bouncing the socket.
+// Used when a farm-OK signal says the connection is healthy but ticks lapsed.
+function resubscribeAll() {
+  console.log("[stale-data] farm connection OK — resubscribing market data without socket bounce");
+  // Consume the farm-OK hint. If this resubscribe doesn't restore ticks, the
+  // next stale cycle sees farmState=null and falls through to the bounded
+  // reconnect ladder → escalate, rather than resubscribing forever in silence.
+  lastFarmStateCode = null;
+  cleanupSymbolStateForReconnect();
+  if (DEPTH_ENABLED) cleanupDepthForReconnect();
+  restoreSubscriptions();
+  if (DEPTH_ENABLED) restoreDepthSubscriptions();
+}
+
+// Bounce the IB socket; the connected handler restores fresh subscriptions.
+function reconnectIBSocket() {
+  staleReconnectCycles += 1;
+  if (GATEWAY_MODE === "cloud" || GATEWAY_MODE === "docker") {
+    console.log(`[stale-data] ${GATEWAY_MODE} mode — disconnecting and scheduling reconnect (cycle ${staleReconnectCycles})`);
+  } else {
+    // Local launchd mode — do NOT restart IBC from the relay. Repeated local
+    // restarts thrash the auth session and can trigger more 2FA prompts.
+    console.log(`[stale-data] launchd mode — reconnecting IB socket only (cycle ${staleReconnectCycles}); manual IBC restart required if Gateway stays down`);
+  }
   try { ib.disconnect(); } catch { /* ignore */ }
   scheduleReconnect();
+}
 
-  // Allow another attempt after 120s cooldown
+// K reconnect cycles failed during RTH. Write the relay's service_health row
+// to error (the watchdog turns this into a single alert) and let the
+// operator / ib-watchdog drive the 2FA-locked Gateway restart. Alert-only:
+// the relay never restarts the Gateway itself.
+function escalateStaleData(elapsedMs, activeSubscriptions) {
+  if (ibGatewayRestarting) return;
+  ibGatewayRestarting = true;
+  lastEscalationAt = Date.now();
+  relayHealthInError = true;
+  console.log("\x1b[31m[stale-data] escalating — relay market data dead through bounded reconnect ladder during RTH\x1b[0m");
+  void writeRelayHealth("error", {
+    message: `No ticks for ${Math.round(elapsedMs / 1000)}s with ${activeSubscriptions} active subscriptions after ${staleReconnectCycles} reconnect cycles during market hours`,
+    farm_state: lastFarmStateCode,
+  });
+  // Allow another reconnect ladder after the cooldown; the escalation itself
+  // is independently rate-limited by lastEscalationAt in the decision core.
   setTimeout(() => { ibGatewayRestarting = false; }, 120_000);
+}
+
+// Ticks resumed — clear the error row + reset the ladder so a future episode
+// starts fresh. Only writes "ok" if we had previously latched an error.
+function onTicksRecovered() {
+  if (staleReconnectCycles > 0 || relayHealthInError) {
+    staleReconnectCycles = 0;
+    if (relayHealthInError) {
+      relayHealthInError = false;
+      console.log("\x1b[32m[stale-data] ticks resumed — clearing relay error state\x1b[0m");
+      void writeRelayHealth("ok");
+    }
+  }
+}
+
+// Single chokepoint for every inbound tick: refresh the staleness clock and
+// run the recovery-reset edge. All tick/depth/tape handlers call this.
+function markTick() {
+  lastTickTimestamp = Date.now();
+  // First healthy tick of this process: write "ok" once to clear any stale
+  // "error" row a prior (escalated, then restarted) process may have latched.
+  if (!relayHealthInitialized) {
+    relayHealthInitialized = true;
+    void writeRelayHealth("ok");
+  }
+  onTicksRecovered();
 }
 
 /* ─── Batched Price Relay ──────────────────────────────────────────────────
@@ -1282,6 +1372,13 @@ function cleanupDepthForReconnect() {
     state.ladders.ask.length = 0;
   }
   cleanupTapeForReconnect();
+  // Defensively drop any reverse-map entries that outlived their state (a
+  // depth/tape ticker that was cancelled without a matching state row would
+  // otherwise route post-reconnect depth/tape events to a dead tickerId,
+  // producing the "Can't find EId" / stale-ladder signature). The per-state
+  // loops above already cleared live mappings; this clears orphans.
+  depthRequestIdToSymbol.clear();
+  tapeRequestIdToSymbol.clear();
 }
 
 // Restore the focused depth ticket(s) + tape after a reconnect.
@@ -1472,7 +1569,7 @@ function hydrateAndBroadcast(symbol) {
 }
 
 function onTickPrice(tickerId, tickType, price) {
-  lastTickTimestamp = Date.now();
+  markTick();
   const symbol = requestIdToSymbol.get(tickerId);
   const liveState = symbol ? symbolStates.get(symbol) : null;
   const snapshotState = snapshotRequests.get(tickerId);
@@ -1492,7 +1589,7 @@ function onTickPrice(tickerId, tickType, price) {
 }
 
 function onTickSize(tickerId, sizeType, size) {
-  lastTickTimestamp = Date.now();
+  markTick();
   const symbol = requestIdToSymbol.get(tickerId);
   const liveState = symbol ? symbolStates.get(symbol) : null;
   const snapshotState = snapshotRequests.get(tickerId);
@@ -2034,6 +2131,18 @@ function wireIBEvents() {
     }
   });
 
+  // Market-data farm status info codes (2103/2104/2105/2106/2108/2158).
+  // @stoqey/ib delivers these as EventName.info (message, code) rather than
+  // errors. Feed the latest farm code into the stale-data decision core so a
+  // farm-OK signal steers recovery toward a fresh resubscribe over a socket
+  // bounce. Non-farm info codes are ignored here.
+  ib.on(EventName.info, (message, code) => {
+    if (typeof code === "number" && isFarmStateCode(code)) {
+      lastFarmStateCode = code;
+      verbose(`IB farm info ${code}: ${message}`);
+    }
+  });
+
   ib.on(EventName.tickPrice, (tickerId, tickType, price) => {
     onTickPrice(tickerId, tickType, price);
   });
@@ -2120,7 +2229,7 @@ function wireIBEvents() {
     ib.on(EventName.updateMktDepth, (id, position, operation, side, price, size) => {
       const key = depthRequestIdToSymbol.get(id);
       if (!key) return;
-      lastTickTimestamp = Date.now();
+      markTick();
       applyDepthDelta(key, position, null, operation, side, price, size);
     });
 
@@ -2130,7 +2239,7 @@ function wireIBEvents() {
     ib.on(EventName.updateMktDepthL2, (id, position, marketMaker, operation, side, price, size, _isSmartDepth) => {
       const key = depthRequestIdToSymbol.get(id);
       if (!key) return;
-      lastTickTimestamp = Date.now();
+      markTick();
       applyDepthDelta(key, position, marketMaker, operation, side, price, size);
     });
 
@@ -2140,7 +2249,7 @@ function wireIBEvents() {
     ib.on(EventName.tickByTickAllLast, (reqId, _tickType, time, price, size, _tickAttribLast, exchange, _specialConditions) => {
       const key = tapeRequestIdToSymbol.get(reqId);
       if (!key) return;
-      lastTickTimestamp = Date.now();
+      markTick();
       const seconds = Number(time);
       const iso = Number.isFinite(seconds) ? new Date(seconds * 1000).toISOString() : nowIso();
       applyTrade(key, price, size, exchange, iso);
@@ -2220,22 +2329,41 @@ statusBroadcastTick = setInterval(() => {
 }, 5000);
 
 /* ─── Stale Data Health Check ──────────────────────────────────────────────
- * If connected to IB with active subscriptions during market hours but no
- * ticks received in STALE_DATA_THRESHOLD_MS, auto-restart IB Gateway.
+ * Delegate the decision to the pure machine; this layer only supplies the
+ * live snapshot + executes the chosen action against the real IB socket /
+ * subscriptions / service_health row. The bounded ladder (K reconnects →
+ * escalate-and-alert) and the escalation cooldown live in the machine.
  */
 staleCheckTimer = setInterval(() => {
-  if (!ibConnected || shuttingDown || ibGatewayRestarting) return;
-  if (!isUSMarketHours()) return;
+  if (shuttingDown || ibGatewayRestarting) return;
 
+  const now = Date.now();
   const activeSubscriptions = symbolSubscribers.size;
-  if (activeSubscriptions === 0) return;
+  const elapsed = now - lastTickTimestamp;
 
-  const elapsed = Date.now() - lastTickTimestamp;
-  if (elapsed > STALE_DATA_THRESHOLD_MS) {
-    console.warn(
-      `\x1b[33m[stale-data] No ticks for ${Math.round(elapsed / 1000)}s with ${activeSubscriptions} active subscriptions during market hours\x1b[0m`,
-    );
-    restartIBGateway();
+  const action = decideStaleAction({
+    now,
+    lastTickAt: lastTickTimestamp,
+    ibConnected,
+    isMarketHours: isUSMarketHours(),
+    activeSubscriptions,
+    reconnectCycles: staleReconnectCycles,
+    farmState: lastFarmStateCode,
+    lastEscalationAt,
+  });
+
+  if (action === "none") return;
+
+  console.warn(
+    `\x1b[33m[stale-data] No ticks for ${Math.round(elapsed / 1000)}s with ${activeSubscriptions} active subscriptions during market hours → ${action}\x1b[0m`,
+  );
+
+  if (action === "resubscribe") {
+    resubscribeAll();
+  } else if (action === "reconnect") {
+    reconnectIBSocket();
+  } else if (action === "escalate") {
+    escalateStaleData(elapsed, activeSubscriptions);
   }
 }, STALE_CHECK_INTERVAL_MS);
 

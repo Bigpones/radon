@@ -81,6 +81,13 @@ SCHEDULED_SERVICES: dict[str, FreshnessWindow] = {
     # It MONITORS IB but does not depend on IB being healthy to run, so
     # requires_ib=False (suppressing it during an IB outage would defeat it).
     "ib-watchdog":      {"open": 5 * _MIN, "closed": 5 * _MIN, "requires_ib": False},
+    # ib-realtime-relay is an event-driven writer: the WS relay records a row
+    # only when its bounded stale-tick ladder escalates (error) or ticks
+    # resume (ok). 24h window mirrors web/lib/serviceHealthWindows.ts so a
+    # silent-but-healthy relay isn't flagged stale. requires_ib=False is
+    # load-bearing: the relay error IS the IB-data-plane-dead signal, so
+    # grouping it under IB-outage suppression would mute the alert.
+    "ib-realtime-relay": {"open": 24 * _HOUR, "closed": 24 * _HOUR, "requires_ib": False},
     # Event-driven writer — only records a row when it heals. Match
     # the 24h window from web/lib/serviceHealthWindows.ts so the dash
     # banner and the watchdog agree on what "stale" means here.
@@ -108,6 +115,10 @@ BUCKETS: dict[str, list[str]] = {
         "journal-sync",
         # Always-on heartbeat (writes service_health every 60s cycle).
         "ib-watchdog",
+        # Event-driven relay health (error on stale-tick escalation, ok on
+        # recovery). The error bucket below catches the escalation; including
+        # it in continuous lets the 24h staleness window flag a dead relay.
+        "ib-realtime-relay",
     ],
     "daily": [
         "cash-flow-sync",
