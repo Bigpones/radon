@@ -2,8 +2,10 @@
  * @vitest-environment jsdom
  *
  * Component tests for the new column-toggle additions:
- * Structure, Direction, P&L, and Expiry columns are now user-toggleable
- * (default ON). Only `ticker` remains mandatory.
+ * Structure, Direction, P&L, P&L %, and Expiry columns are now user-toggleable
+ * (default ON). Only `ticker` remains mandatory. The P&L % percentage lives in
+ * its own dedicated column — the P&L (dollar) cell no longer carries an inline
+ * "(...%)" suffix.
  */
 
 import React from "react";
@@ -121,29 +123,39 @@ function makeVisibility(overrides: Partial<PositionColumnVisibility> = {}): Posi
 }
 
 describe("PositionTable — POSITION_COLUMNS exposes the new toggleable keys", () => {
-  it("includes structure, direction, pnl, and expiry as toggleable entries", () => {
+  it("includes structure, direction, pnl, pnl_pct, and expiry as toggleable entries", () => {
     const keys = POSITION_COLUMNS.map((c) => c.key);
     expect(keys).toContain("structure");
     expect(keys).toContain("direction");
     expect(keys).toContain("pnl");
+    expect(keys).toContain("pnl_pct");
     expect(keys).toContain("expiry");
   });
 
-  it("defaults all four new toggleable columns to ON for a fresh install", () => {
+  it("positions the P&L % entry immediately after the P&L entry", () => {
+    const keys = POSITION_COLUMNS.map((c) => c.key);
+    expect(keys.indexOf("pnl_pct")).toBe(keys.indexOf("pnl") + 1);
+    const pnlPctEntry = POSITION_COLUMNS.find((c) => c.key === "pnl_pct");
+    expect(pnlPctEntry?.label).toBe("P&L %");
+  });
+
+  it("defaults the new toggleable columns to ON for a fresh install", () => {
     expect(POSITION_COLUMN_DEFAULTS.structure).toBe(true);
     expect(POSITION_COLUMN_DEFAULTS.direction).toBe(true);
     expect(POSITION_COLUMN_DEFAULTS.pnl).toBe(true);
+    expect(POSITION_COLUMN_DEFAULTS.pnl_pct).toBe(true);
     expect(POSITION_COLUMN_DEFAULTS.expiry).toBe(true);
   });
 });
 
 describe("PositionTable — default render shows new columns", () => {
-  it("renders Structure, Direction, P&L, and Expiry headers by default", () => {
+  it("renders Structure, Direction, P&L, P&L %, and Expiry headers by default", () => {
     render(<PositionTable positions={[AMD_LONG_PUT]} prices={{}} />);
     const ths = getThTexts();
     expect(ths.some((t) => t === "Structure")).toBe(true);
     expect(ths.some((t) => t === "Direction")).toBe(true);
     expect(ths.some((t) => t === "P&L")).toBe(true);
+    expect(ths.some((t) => t === "P&L %")).toBe(true);
     expect(ths.some((t) => t === "Expiry")).toBe(true);
   });
 
@@ -218,10 +230,40 @@ describe("PositionTable — controlled column visibility hides new columns", () 
     const ths = getThTexts();
     // Exact "P&L" header (not "Today P&L") should be absent.
     expect(ths.some((t) => t === "P&L")).toBe(false);
-    // The position-row P&L cell renders a "(...%)" suffix — assert the
-    // percentage marker is absent from the row when the column is off.
+  });
+
+  it("hides the P&L % header and the position-row percent cell when columns.pnl_pct === false", () => {
+    render(
+      <PositionTable
+        positions={[AMD_LONG_PUT]}
+        prices={{}}
+        columnVisibility={makeVisibility({ pnl_pct: false })}
+      />,
+    );
+    const ths = getThTexts();
+    expect(ths.some((t) => t === "P&L %")).toBe(false);
+    // With P&L % hidden, no percentage marker should appear in the row.
     const tr = screen.getByText("AMD").closest("tr")!;
-    expect(/\(-?\d+(\.\d+)?%\)/.test(tr.textContent ?? "")).toBe(false);
+    expect(/-?\d+(\.\d+)?%/.test(tr.textContent ?? "")).toBe(false);
+  });
+});
+
+describe("PositionTable — P&L dollar cell no longer carries the inline percent", () => {
+  it("renders the P&L % in the dedicated column, not parenthesised inside the P&L cell", () => {
+    render(
+      <PositionTable
+        positions={[VERTICAL_SPREAD]}
+        prices={{}}
+        columnVisibility={makeVisibility()}
+      />,
+    );
+    const tr = screen.getByText("NVDA").closest("tr")!;
+    const text = tr.textContent ?? "";
+    // The position row P&L: MV 6000 − EC 5000 = +$1,000 (+20.0%).
+    expect(text).toContain("+$1,000");
+    // Percent renders bare in its own column — never as a "(...%)" suffix.
+    expect(/\(-?\d+(\.\d+)?%\)/.test(text)).toBe(false);
+    expect(text).toContain("+20.0%");
   });
 });
 

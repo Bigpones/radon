@@ -172,6 +172,19 @@ function AccountRow({
   else if (fallback != null) displayLabel = "ESTIMATED (PRE-MARKET)";
   else if (hasPositions && !hasPrices) displayLabel = "WAITING FOR IB";
   else displayLabel = "MARKET CLOSED";
+
+  // Day P&L %, shown alongside the notional. Denominator is the prior session's
+  // net liq (start-of-day account value = current NLV minus today's P&L), per
+  // the "Day Chg % off yesterday's value, never entry cost" rule.
+  const priorNetLiq = displayValue != null ? acct.net_liquidation - displayValue : null;
+  const dayPnlPct =
+    displayValue != null && priorNetLiq != null && priorNetLiq > 0
+      ? (displayValue / priorNetLiq) * 100
+      : null;
+  const dayPnlChange =
+    dayPnlPct != null
+      ? `${dayPnlPct >= 0 ? "+" : ""}${dayPnlPct.toFixed(2)}% · ${displayLabel}`
+      : displayLabel;
   return (
     <>
       <SectionHeader label="ACCOUNT" collapsed={collapsed} onToggle={onToggle} />
@@ -184,7 +197,7 @@ function AccountRow({
           card={{
             label: "Day P&L",
             value: displayValue != null ? fmtSignedExact(displayValue) : "---",
-            change: displayLabel,
+            change: dayPnlChange,
             tone: displayValue != null ? tone(displayValue) : "neutral",
           }}
           onClick={onDayPnlClick}

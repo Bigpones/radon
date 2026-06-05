@@ -60,7 +60,7 @@ function getOptionRtMv(pos: PortfolioPosition, prices?: Record<string, PriceData
 
 /* ─── Sort extract factory ─────────────────────────────── */
 
-export type PositionSortKey = "ticker" | "structure" | "qty" | "direction" | "underlying" | "avg_entry" | "last_price" | "implied" | "implied_market_value" | "daily_chg" | "today_pnl" | "initial_value" | "entry_cost" | "market_value" | "pnl" | "expiry";
+export type PositionSortKey = "ticker" | "structure" | "qty" | "direction" | "underlying" | "avg_entry" | "last_price" | "implied" | "implied_market_value" | "daily_chg" | "today_pnl" | "initial_value" | "entry_cost" | "market_value" | "pnl" | "pnl_pct" | "expiry";
 
 /** User-toggleable columns. `ticker` is the only always-on identity column —
  *  rows are keyed off it. `structure`/`direction`/`pnl`/`expiry` default ON
@@ -80,6 +80,7 @@ export type PositionToggleableColumnKey =
   | "entry_cost"
   | "market_value"
   | "pnl"
+  | "pnl_pct"
   | "expiry";
 
 // Internal alias retained so the existing JSX/cell gating reads the same.
@@ -99,6 +100,7 @@ export const POSITION_COLUMNS: readonly ColumnsToggleEntry<PositionToggleableCol
   { key: "entry_cost", label: "Entry Cost" },
   { key: "initial_value", label: "Initial Value" },
   { key: "pnl", label: "P&L" },
+  { key: "pnl_pct", label: "P&L %" },
   { key: "expiry", label: "Expiry" },
 ];
 
@@ -119,6 +121,7 @@ export const POSITION_COLUMN_DEFAULTS: Record<PositionToggleableColumnKey, boole
   entry_cost: false,
   market_value: true,
   pnl: true,
+  pnl_pct: true,
   expiry: true,
 };
 
@@ -157,6 +160,11 @@ function makePositionExtract(prices?: Record<string, PriceData>, riskFreeRate = 
       case "entry_cost": return resolveEntryCost(pos);
       case "market_value": return mv;
       case "pnl": return mv != null ? mv - resolveEntryCost(pos) : null;
+      case "pnl_pct": {
+        const ec = resolveEntryCost(pos);
+        const p = mv != null ? mv - ec : null;
+        return p != null && ec !== 0 ? (p / Math.abs(ec)) * 100 : null;
+      }
       case "expiry": return pos.expiry === "N/A" ? null : pos.expiry;
       default: return null;
     }
@@ -261,6 +269,7 @@ function LegRow({
           {legPnl != null ? `${legPnl >= 0 ? "+" : "-"}${fmtUsd(Math.abs(legPnl))}` : "—"}
         </td>
       )}
+      {columns.pnl_pct && <td></td>}
       {showExpiry && columns.expiry && <td></td>}
     </tr>
   );
@@ -435,7 +444,12 @@ function PositionRow({ pos, showExpiry = true, showUnderlying = false, showImpli
         {columns.initial_value && <td className="right">{fmtUsd(Math.abs(entryCost))}</td>}
         {columns.pnl && (
           <td className={`right ${pnl != null ? (pnl >= 0 ? "positive" : "negative") : ""}`}>
-            {pnl != null ? `${pnl >= 0 ? "+" : "-"}${fmtUsd(Math.abs(pnl))} (${pnlPct!.toFixed(1)}%)` : "—"}
+            {pnl != null ? `${pnl >= 0 ? "+" : "-"}${fmtUsd(Math.abs(pnl))}` : "—"}
+          </td>
+        )}
+        {columns.pnl_pct && (
+          <td className={`right ${pnlPct != null ? (pnlPct >= 0 ? "positive" : "negative") : ""}`}>
+            {pnlPct != null ? `${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%` : "—"}
           </td>
         )}
         {showExpiry && columns.expiry && <td>{pos.expiry !== "N/A" ? pos.expiry : "—"}</td>}
@@ -566,6 +580,7 @@ export default function PositionTable({
             {columns.entry_cost && <SortTh<PositionSortKey> label="Entry Cost" sortKey="entry_cost" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />}
             {columns.initial_value && <SortTh<PositionSortKey> label="Initial Value" sortKey="initial_value" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />}
             {columns.pnl && <SortTh<PositionSortKey> label="P&L" sortKey="pnl" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />}
+            {columns.pnl_pct && <SortTh<PositionSortKey> label="P&L %" sortKey="pnl_pct" className="right" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />}
             {showExpiry && columns.expiry && <SortTh<PositionSortKey> label="Expiry" sortKey="expiry" activeKey={sort.key} direction={sort.direction} onToggle={toggle} />}
           </tr>
         </thead>

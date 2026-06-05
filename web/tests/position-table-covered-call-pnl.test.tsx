@@ -136,7 +136,11 @@ describe("PositionTable covered call P&L", () => {
     expect(text).toContain("$28.67");
     expect(text).toContain("$42,427");
     expect(text).toContain("$28,670");
-    expect(text).toContain("-$13,757 (-32.4%)");
+    // P&L dollar (own cell) + P&L % (dedicated cell) — no longer combined as
+    // "-$13,757 (-32.4%)" inline.
+    expect(text).toContain("-$13,757");
+    expect(text).toContain("-32.4%");
+    expect(text).not.toContain("-$13,757 (-32.4%)");
     expect(text).not.toContain("+$3,332,443");
   });
 });
