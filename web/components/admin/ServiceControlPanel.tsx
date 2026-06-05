@@ -65,6 +65,7 @@ export default function ServiceControlPanel({
         <header className="admin-card-header">
           <span className="admin-card-title">Service Control</span>
         </header>
+        <div className="admin-table-scroll">
         <table className="admin-services-table">
           <thead>
             <tr>
@@ -85,6 +86,7 @@ export default function ServiceControlPanel({
             ))}
           </tbody>
         </table>
+        </div>
       </section>
     );
   }
@@ -116,6 +118,7 @@ export default function ServiceControlPanel({
           : "Read-only: this browser is not on the Hetzner VPS, so controls are disabled."}
       </p>
 
+      <div className="admin-table-scroll">
       <table className="admin-services-table">
         <thead>
           <tr>
@@ -138,6 +141,7 @@ export default function ServiceControlPanel({
           ))}
         </tbody>
       </table>
+      </div>
 
       <p className="admin-services-help">
         Daemon stuck or pool disconnected after 2FA? Use Restart All Services. A

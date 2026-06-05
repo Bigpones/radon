@@ -11458,25 +11458,6 @@ body[data-mobile="true"] td.right {
   font-family: var(--font-sans);
 }
 
-.admin-mobile-guard {
-  padding: 32px 20px;
-  background-color: var(--bg-base);
-  color: var(--text-primary);
-  min-height: 100vh;
-}
-
-.admin-mobile-guard h1 {
-  font-size: 20px;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-
-.admin-mobile-guard p {
-  color: var(--text-secondary);
-  font-size: 14px;
-  line-height: 1.5;
-}
-
 .admin-page {
   flex: 1;
   padding: 24px 28px 48px;
@@ -11629,6 +11610,13 @@ body[data-mobile="true"] td.right {
      row height stable instead of pushing the value out the side. */
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+/* Scroll container for the wide admin tables. On desktop it is a transparent
+   passthrough (tables fit the card); on narrow viewports it lets the table
+   scroll horizontally inside the card instead of widening the page. */
+.admin-table-scroll {
+  max-width: 100%;
 }
 
 .admin-pool-table,
@@ -11967,6 +11955,72 @@ body[data-mobile="true"] td.right {
 }
 @media (max-width: 900px) {
   .admin-ib-row { grid-template-columns: 1fr; }
+}
+
+/* ============================================================
+ * Operator panel on mobile (393px). Activates with the MobileShell
+ * chrome (useViewport <= 640). The .admin-grid is already a single
+ * column, so the work here is: tighten page padding, scroll the wide
+ * tables horizontally inside their cards (page never scrolls sideways),
+ * and grow the action controls to 44px touch targets that wrap.
+ * Desktop is untouched: every rule is gated behind this query.
+ * ============================================================ */
+@media (max-width: 640px) {
+  /* The page already sits inside MobileShell's padded .content (top/bottom
+     padding clears the app bar + tab bar). Drop the admin-shell min-height
+     and the desktop side padding so the cards run edge to edge at 393px. */
+  .admin-shell {
+    min-height: 0;
+  }
+
+  .admin-page {
+    padding: 0 0 16px;
+    max-width: 100%;
+  }
+
+  .admin-page-header {
+    margin-bottom: 16px;
+  }
+
+  /* Wide tables (Service Control, Writer Freshness) scroll horizontally
+     inside their card instead of forcing the whole page sideways. */
+  .admin-table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    max-width: 100%;
+  }
+
+  .admin-table-scroll .admin-services-table {
+    /* Keep columns legible while scrolling rather than crushing them. */
+    min-width: 520px;
+  }
+
+  /* Per-service start/stop/restart controls: wrap to a second line rather
+     than truncating, and let each button meet the 44px touch target the
+     global mobile rule already sets via min-height/min-width. */
+  .admin-row-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .admin-row-actions .admin-btn-sm {
+    /* Bump the small variant up to a comfortable tap target. */
+    font-size: 12px;
+    padding: 10px 14px;
+  }
+
+  /* IB control buttons (restart / force-2fa / reset-backoff) wrap instead
+     of overflowing the card edge at 393px. */
+  .admin-actions-row {
+    gap: 8px;
+  }
+
+  .admin-actions-row .admin-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
 }
 
 /* --- Services table verdict cell --- */

@@ -28,6 +28,7 @@ export default function WriterFreshnessTable({
       </p>
 
       {loading ? (
+        <div className="admin-table-scroll">
         <table className="admin-services-table">
           <tbody>
             {Array.from({ length: 5 }).map((_, i) => (
@@ -41,11 +42,13 @@ export default function WriterFreshnessTable({
             ))}
           </tbody>
         </table>
+        </div>
       ) : !reachable ? (
         <p className="admin-card-empty">Edge health unreachable. Writer freshness unavailable.</p>
       ) : rows.length === 0 ? (
         <p className="admin-card-empty">No writer health rows reported.</p>
       ) : (
+        <div className="admin-table-scroll">
         <table className="admin-services-table">
           <thead>
             <tr>
@@ -62,6 +65,7 @@ export default function WriterFreshnessTable({
               .map((r) => <WriterRow key={r.service} row={r} />)}
           </tbody>
         </table>
+        </div>
       )}
     </section>
   );

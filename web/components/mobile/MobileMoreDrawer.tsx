@@ -11,8 +11,6 @@ type DrawerLink = {
   label: string;
   href: string;
   icon: typeof BarChart3;
-  /** Hidden on mobile — routes to a desktop-only surface (AdminWorkspace guard dead-end). */
-  desktopOnly?: boolean;
 };
 
 const OVERFLOW_LINKS: DrawerLink[] = [
@@ -22,7 +20,7 @@ const OVERFLOW_LINKS: DrawerLink[] = [
   { label: "Journal", href: "/journal", icon: Wrench },
   { label: "Regime", href: "/regime/cri", icon: Shield },
   { label: "CTA", href: "/cta", icon: Activity },
-  { label: "Operator", href: "/admin", icon: Settings2, desktopOnly: true },
+  { label: "Operator", href: "/admin", icon: Settings2 },
 ];
 
 const BUILD_VERSION = process.env.NEXT_PUBLIC_BUILD_VERSION ?? null;
@@ -129,7 +127,7 @@ function MobileMoreDrawerView({
         </div>
 
         <nav className="mobile-drawer__nav" aria-label="Overflow navigation">
-          {OVERFLOW_LINKS.filter((link) => !link.desktopOnly).map((link) => {
+          {OVERFLOW_LINKS.map((link) => {
             const Icon = link.icon;
             return (
               <Link

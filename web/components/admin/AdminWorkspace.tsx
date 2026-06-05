@@ -15,7 +15,6 @@ export type FlashTarget = {
   at: number;
   ok: boolean;
 };
-import { useViewport } from "@/lib/useViewport";
 import IbGatewayCard from "./IbGatewayCard";
 import Ib2faControls from "./Ib2faControls";
 import ServiceControlPanel from "./ServiceControlPanel";
@@ -45,12 +44,15 @@ const FLASH_DURATION_MS = 2_000;
  *   - polled IB Gateway health (every 5s)
  *   - radon-* unit catalogue (on mount + after each service action)
  *   - in-memory action log (last 5 entries)
- *   - mobile guard banner (admin tools are desktop-only)
+ *
+ * Renders responsively: the same panel serves desktop and mobile (393px). On
+ * mobile it sits inside the MobileShell chrome; the wide tables scroll
+ * horizontally and controls grow to 44px touch targets via the .admin-*
+ * mobile media query in globals.css.
  *
  * Keeps the page-level component thin: child components are render-only.
  */
 export default function AdminWorkspace() {
-  const { isMobile, hasMounted } = useViewport();
   const [health, setHealth] = useState<AdminHealthPayload | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [healthLoading, setHealthLoading] = useState(true);
@@ -318,18 +320,6 @@ export default function AdminWorkspace() {
   // "Unknown"/"Loading..." text.
   const edgeFirstLoading = !edgeLoaded;
   const reliabilityLoading = (servicesLoading && !services) || edgeFirstLoading;
-
-  if (hasMounted && isMobile) {
-    return (
-      <main className="admin-mobile-guard" data-testid="admin-mobile-guard">
-        <h1>Operator</h1>
-        <p>
-          Admin tools require a larger screen. Open this page on a desktop or
-          tablet to manage IB Gateway and Radon services.
-        </p>
-      </main>
-    );
-  }
 
   return (
     <div className="admin-shell" data-testid="admin-page">
