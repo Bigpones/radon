@@ -1,10 +1,12 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { PriceData } from "@/lib/pricesProtocol";
 import type { PortfolioPosition } from "@/lib/types";
 import { fmtPrice } from "@/lib/positionUtils";
 import { toneClass } from "@/lib/format";
+import { useWatchlist } from "@/lib/useWatchlist";
+import StarToggle from "@/components/StarToggle";
 import type { DeckKey } from "./AssetCockpit";
 
 type CockpitHeaderProps = {
@@ -59,9 +61,29 @@ export default function CockpitHeader({
 
   const chipLabel = position ? position.structure : "FLAT";
 
+  const { isWatched, toggleWatch } = useWatchlist();
+  const [watchBusy, setWatchBusy] = useState(false);
+
+  const handleToggleWatch = useCallback(async () => {
+    setWatchBusy(true);
+    try {
+      await toggleWatch(ticker);
+    } catch {
+      // hook already rolled back the optimistic state
+    } finally {
+      setWatchBusy(false);
+    }
+  }, [ticker, toggleWatch]);
+
   return (
     <div className="cockpit-head">
       <span className="ckh-sym mono">{ticker}</span>
+      <StarToggle
+        active={isWatched(ticker)}
+        busy={watchBusy}
+        onToggle={handleToggleWatch}
+        size="sm"
+      />
       <span className="ckh-kind">{KIND_LABEL[kind]}</span>
       <span className="ckh-sep" />
       <span className={`ckh-last mono ${deltaTone}`}>

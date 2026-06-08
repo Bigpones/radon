@@ -1,0 +1,145 @@
+import { NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
+import { getDb } from "@/lib/db";
+import { getRequestId, jsonApiError, setNoStoreResponseHeaders } from "@/lib/apiContracts";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+const USERNAME_PATTERN = /^[A-Za-z0-9_\- ]{1,32}$/;
+const MAX_AVATAR_LENGTH = 256 * 1024; // ~256KB — keep Turso rows sane
+
+type ProfileRow = {
+  username: string | null;
+  avatar_url: string | null;
+};
+
+function validateUsername(raw: unknown): { value: string } | { error: string } {
+  if (raw === undefined || raw === null) return { value: "" };
+  if (typeof raw !== "string") return { error: "username must be a string" };
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return { value: "" };
+  if (!USERNAME_PATTERN.test(trimmed)) {
+    return { error: "username must be 1-32 chars: letters, numbers, _, -, space" };
+  }
+  return { value: trimmed };
+}
+
+function validateAvatarUrl(raw: unknown): { value: string | null } | { error: string } {
+  if (raw === undefined || raw === null) return { value: null };
+  if (typeof raw !== "string") return { error: "avatar_url must be a string" };
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return { value: null };
+  if (trimmed.length > MAX_AVATAR_LENGTH) return { error: "avatar_url exceeds size limit" };
+  if (!/^data:/.test(trimmed) && !/^https:\/\//.test(trimmed)) {
+    return { error: "avatar_url must be a data: URL or https URL" };
+  }
+  return { value: trimmed };
+}
+
+async function readProfile(userId: string): Promise<ProfileRow> {
+  const db = getDb();
+  const result = await db.execute({
+    sql: `SELECT username, avatar_url FROM user_profiles WHERE user_id = ? LIMIT 1`,
+    args: [userId],
+  });
+  if (result.rows.length === 0) return { username: null, avatar_url: null };
+  const row = result.rows[0] as unknown as ProfileRow;
+  return { username: row.username ?? null, avatar_url: row.avatar_url ?? null };
+}
+
+export async function GET(): Promise<Response> {
+  const requestId = getRequestId();
+  const { userId } = await auth();
+  if (!userId) {
+    return setNoStoreResponseHeaders(
+      jsonApiError({ status: 401, code: "UNAUTHORIZED", message: "Sign in required", requestId }),
+      requestId,
+    );
+  }
+  try {
+    const profile = await readProfile(userId);
+    return setNoStoreResponseHeaders(NextResponse.json(profile), requestId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return setNoStoreResponseHeaders(
+      jsonApiError({ status: 500, code: "INTERNAL_ERROR", message: "Failed to read profile", detail: message, requestId }),
+      requestId,
+    );
+  }
+}
+
+export async function PUT(req: Request): Promise<Response> {
+  const requestId = getRequestId();
+  const { userId } = await auth();
+  if (!userId) {
+    return setNoStoreResponseHeaders(
+      jsonApiError({ status: 401, code: "UNAUTHORIZED", message: "Sign in required", requestId }),
+      requestId,
+    );
+  }
+
+  let body: { username?: unknown; avatar_url?: unknown };
+  try {
+    body = (await req.json()) as typeof body;
+  } catch {
+    return setNoStoreResponseHeaders(
+      jsonApiError({ status: 400, code: "BAD_REQUEST", message: "Invalid JSON body", requestId }),
+      requestId,
+    );
+  }
+
+  // PATCH semantics: only fields explicitly present in the body are changed.
+  // An absent field is preserved (a username-only save must not wipe the
+  // avatar, and vice versa); an explicit empty string clears the field.
+  const hasUsername = body.username !== undefined;
+  const hasAvatar = body.avatar_url !== undefined;
+
+  let nextUsername: string | null = null;
+  if (hasUsername) {
+    const usernameResult = validateUsername(body.username);
+    if ("error" in usernameResult) {
+      return setNoStoreResponseHeaders(
+        jsonApiError({ status: 400, code: "VALIDATION_ERROR", message: usernameResult.error, requestId }),
+        requestId,
+      );
+    }
+    nextUsername = usernameResult.value.length > 0 ? usernameResult.value : null;
+  }
+
+  let nextAvatar: string | null = null;
+  if (hasAvatar) {
+    const avatarResult = validateAvatarUrl(body.avatar_url);
+    if ("error" in avatarResult) {
+      return setNoStoreResponseHeaders(
+        jsonApiError({ status: 400, code: "VALIDATION_ERROR", message: avatarResult.error, requestId }),
+        requestId,
+      );
+    }
+    nextAvatar = avatarResult.value;
+  }
+
+  try {
+    const db = getDb();
+    const current = await readProfile(userId);
+    const username = hasUsername ? nextUsername : current.username;
+    const avatarUrl = hasAvatar ? nextAvatar : current.avatar_url;
+    await db.execute({
+      sql: `INSERT INTO user_profiles (user_id, username, avatar_url, updated_at)
+            VALUES (?, ?, ?, datetime('now'))
+            ON CONFLICT(user_id) DO UPDATE SET
+              username = excluded.username,
+              avatar_url = excluded.avatar_url,
+              updated_at = excluded.updated_at`,
+      args: [userId, username, avatarUrl],
+    });
+    const saved = await readProfile(userId);
+    return setNoStoreResponseHeaders(NextResponse.json(saved), requestId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return setNoStoreResponseHeaders(
+      jsonApiError({ status: 500, code: "INTERNAL_ERROR", message: "Failed to save profile", detail: message, requestId }),
+      requestId,
+    );
+  }
+}

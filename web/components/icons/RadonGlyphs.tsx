@@ -183,6 +183,18 @@ export function OperatorGlyph(p: GlyphProps) {
   );
 }
 
+/* Profile — operator ring with a centred figure, matching the instrument
+   language of the rest of the nav glyph set. */
+export function ProfileGlyph(p: GlyphProps) {
+  return (
+    <Glyph {...p}>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="9.5" r="3" />
+      <path d="M6.5 18.5 C7.5 15.5 10 14.5 12 14.5 C14 14.5 16.5 15.5 17.5 18.5" />
+    </Glyph>
+  );
+}
+
 /* Performance — spectral bars stacked vertically. Kept available for
    when the Performance route is unhidden in lib/data.ts. */
 export function PerformanceGlyph(p: GlyphProps) {

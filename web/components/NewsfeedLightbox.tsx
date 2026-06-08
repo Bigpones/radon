@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import { ChevronLeft, ChevronRight, Link as LinkIcon } from "lucide-react";
 import type { MarketEarPost } from "@/components/DashboardNewsFeed";
 import { formatAbsolute, formatRelative, formatTime } from "@/lib/newsfeedTime";
 import { useDialogChrome } from "@/lib/useDialogChrome";
+import { useBookmarks } from "@/lib/useBookmarks";
+import StarToggle from "@/components/StarToggle";
 
 export type NewsfeedLightboxFocus = {
   post: MarketEarPost & { href: string; isoTimestamp: string };
@@ -51,6 +53,8 @@ export default function NewsfeedLightbox({
 }: NewsfeedLightboxProps) {
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
+  const { isBookmarked, toggleBookmark } = useBookmarks();
+  const [bookmarkBusy, setBookmarkBusy] = useState(false);
 
   // Scroll-lock, focus trap, and focus restore come from the shared chrome.
   // Escape + the ←/→ arrow nav stay local (the hook opts out via
@@ -84,6 +88,27 @@ export default function NewsfeedLightbox({
       document.removeEventListener("keydown", onKey);
     };
   }, [focus, onDismiss, onNavigate, canNavigatePrev, canNavigateNext]);
+
+  const handleToggleBookmark = useCallback(async () => {
+    if (!focus) return;
+    const { post } = focus;
+    setBookmarkBusy(true);
+    try {
+      await toggleBookmark({
+        id: post.id,
+        snapshot: {
+          title: post.title,
+          source: post.href,
+          timestamp: post.isoTimestamp,
+          image: post.images?.[0] ?? focus.imageUrl,
+        },
+      });
+    } catch {
+      // hook already rolled back the optimistic state
+    } finally {
+      setBookmarkBusy(false);
+    }
+  }, [focus, toggleBookmark]);
 
   if (!focus || !portalTarget) return null;
 
@@ -206,6 +231,12 @@ export default function NewsfeedLightbox({
                 <LinkIcon size={12} />
                 <span>Open original</span>
               </a>
+              <StarToggle
+                active={isBookmarked(post.id)}
+                busy={bookmarkBusy}
+                onToggle={handleToggleBookmark}
+                label="Save"
+              />
               <span className="newsfeed-lightbox__timestamp" title={absolute}>
                 {absolute}
               </span>

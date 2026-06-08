@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useUser } from "@clerk/nextjs";
 import type { WorkspaceSection } from "@/lib/types";
 import { navItems } from "@/lib/data";
+import { useProfile } from "@/lib/useProfile";
 import { useIBStatusContext, type IBDisplayStatus } from "@/lib/IBStatusContext";
 
 type SidebarProps = {
@@ -34,12 +36,29 @@ function statusLabel(status: IBDisplayStatus): { text: string; cls: "live" | "wa
   }
 }
 
+function monogramFor(name: string | null, email: string | null): string {
+  const source = (name ?? email ?? "").trim();
+  if (!source) return "·";
+  const parts = source.replace(/@.*$/, "").split(/[\s._-]+/).filter(Boolean);
+  if (parts.length === 0) return source.slice(0, 2).toUpperCase();
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
 export default function Sidebar({ activeSection, actionTone, lastSync }: SidebarProps) {
   const { displayStatus } = useIBStatusContext();
   const { text, cls } = statusLabel(displayStatus);
   const dotClass =
     cls === "live" ? "status-dot-live" : cls === "warn" ? "status-dot-warn" : "status-dot-dead";
   const syncTime = lastSync ? new Date(lastSync).toLocaleTimeString() : "—";
+
+  const { profile } = useProfile();
+  const { user } = useUser();
+  const email = user?.primaryEmailAddress?.emailAddress ?? null;
+  const displayName = profile?.username ?? user?.username ?? email ?? "Profile";
+  const avatarUrl = profile?.avatar_url ?? user?.imageUrl ?? null;
+  const monogram = monogramFor(profile?.username ?? null, email);
+  const profileActive = activeSection === "profile";
 
   return (
     <aside className="sidebar">
@@ -75,6 +94,29 @@ export default function Sidebar({ activeSection, actionTone, lastSync }: Sidebar
           );
         })}
       </nav>
+
+      <Link
+        href="/profile"
+        className={`sidebar-user-card${profileActive ? " sidebar-user-card--active" : ""}`}
+        aria-current={profileActive ? "page" : undefined}
+      >
+        <span className="sidebar-user-card__avatar">
+          {avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={avatarUrl} alt="" width={28} height={28} />
+          ) : (
+            <span className="sidebar-user-card__monogram">{monogram}</span>
+          )}
+        </span>
+        <span className="sidebar-user-card__text">
+          <span className="sidebar-user-card__name">{displayName}</span>
+          {email && email !== displayName ? (
+            <span className="sidebar-user-card__email">{email}</span>
+          ) : (
+            <span className="sidebar-user-card__email">View profile</span>
+          )}
+        </span>
+      </Link>
 
       <div className="sidebar-footer">
         <div className="status-row">

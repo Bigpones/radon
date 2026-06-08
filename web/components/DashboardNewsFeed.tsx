@@ -6,8 +6,21 @@ import { ChevronLeft, ChevronRight, Link as LinkIcon, RefreshCw, Radio } from "l
 
 import { formatAbsolute, formatRelative, formatTime } from "../lib/newsfeedTime";
 import { useNewsfeedTagFilter } from "../lib/useNewsfeedTagFilter";
+import { useBookmarks } from "../lib/useBookmarks";
 import NewsfeedTagBar from "./NewsfeedTagBar";
 import NewsfeedLightbox, { type NewsfeedLightboxFocus } from "./NewsfeedLightbox";
+import StarToggle from "./StarToggle";
+
+/** Compact snapshot persisted with a bookmark so the profile list can render
+ *  the saved post without the live feed being loaded. */
+function buildPostSnapshot(post: NormalisedPost) {
+  return {
+    title: post.title,
+    source: post.href,
+    timestamp: post.isoTimestamp,
+    image: post.images?.[0] ?? null,
+  };
+}
 
 const POSTS_ENDPOINT = "/api/newsfeed/posts";
 const POSTS_FALLBACK_ENDPOINT = "/data/posts.json";
@@ -205,6 +218,27 @@ export default function DashboardNewsFeed() {
   }, [loadPosts]);
 
   const { selectedTags, toggleTag, clearTags } = useNewsfeedTagFilter();
+
+  const { isBookmarked, toggleBookmark } = useBookmarks();
+  const [bookmarkBusy, setBookmarkBusy] = useState<Set<string>>(new Set());
+
+  const handleToggleBookmark = useCallback(
+    async (post: NormalisedPost) => {
+      setBookmarkBusy((prev) => new Set(prev).add(post.id));
+      try {
+        await toggleBookmark({ id: post.id, snapshot: buildPostSnapshot(post) });
+      } catch {
+        // hook already rolled back the optimistic state
+      } finally {
+        setBookmarkBusy((prev) => {
+          const next = new Set(prev);
+          next.delete(post.id);
+          return next;
+        });
+      }
+    },
+    [toggleBookmark],
+  );
 
   const filteredPosts = useMemo(() => {
     if (selectedTags.size === 0) return posts;
@@ -411,6 +445,11 @@ export default function DashboardNewsFeed() {
                       {relative}
                       {time ? ` at ${time}` : ""}
                     </span>
+                    <StarToggle
+                      active={isBookmarked(post.id)}
+                      busy={bookmarkBusy.has(post.id)}
+                      onToggle={() => handleToggleBookmark(post)}
+                    />
                   </div>
                 </li>
               );

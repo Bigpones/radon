@@ -10,6 +10,8 @@ import {
 } from "react";
 import { createReconnectStrategy, type ReconnectState } from "@/lib/reconnectStrategy";
 import { useDismissablePopover } from "@/lib/useDismissablePopover";
+import { useWatchlist } from "@/lib/useWatchlist";
+import StarToggle from "@/components/StarToggle";
 
 type SearchResult = {
   conId: number;
@@ -59,6 +61,28 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
     const [activeIndex, setActiveIndex] = useState(-1);
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [watchBusy, setWatchBusy] = useState<Set<string>>(new Set());
+
+    const { isWatched, toggleWatch } = useWatchlist();
+
+    const handleToggleWatch = useCallback(
+      async (symbol: string) => {
+        const key = symbol.toUpperCase();
+        setWatchBusy((prev) => new Set(prev).add(key));
+        try {
+          await toggleWatch(symbol);
+        } catch {
+          // hook already rolled back the optimistic state
+        } finally {
+          setWatchBusy((prev) => {
+            const next = new Set(prev);
+            next.delete(key);
+            return next;
+          });
+        }
+      },
+      [toggleWatch],
+    );
 
     useImperativeHandle(ref, () => inputRef.current!, []);
 
@@ -437,6 +461,24 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
                   }}
                 >
                   {r.primaryExchange}
+                </span>
+
+                {/* Watchlist star — stop propagation so starring doesn't
+                    select the row / navigate to the ticker. */}
+                <span
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ display: "inline-flex" }}
+                >
+                  <StarToggle
+                    active={isWatched(r.symbol)}
+                    busy={watchBusy.has(r.symbol.toUpperCase())}
+                    onToggle={() => handleToggleWatch(r.symbol)}
+                    size="sm"
+                  />
                 </span>
               </div>
             ))}

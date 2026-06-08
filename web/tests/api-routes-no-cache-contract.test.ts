@@ -28,6 +28,9 @@ const DYNAMIC_ROUTES = [
   "app/api/cash-flows/route.ts",
   "app/api/llm-token-index/route.ts",
   "app/api/service-health/route.ts",
+  "app/api/profile/route.ts",
+  "app/api/bookmarks/route.ts",
+  "app/api/watchlist/route.ts",
 ];
 
 // Client-side fetch sites that hit a disk-backed dynamic route. Each fetch
@@ -147,6 +150,11 @@ const NO_STORE_ROUTES = [
   "app/api/internals/route.ts",
   "app/api/orders/route.ts",
   "app/api/scanner/route.ts",
+  "app/api/profile/route.ts",
+  "app/api/bookmarks/route.ts",
+  "app/api/bookmarks/[post_id]/route.ts",
+  "app/api/watchlist/route.ts",
+  "app/api/watchlist/[symbol]/route.ts",
 ];
 
 describe("API route handlers — every response must set Cache-Control: no-store", () => {

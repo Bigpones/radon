@@ -10,6 +10,7 @@ import {
   PortfolioGlyph,
   RegimeGlyph,
   ScannerGlyph,
+  ProfileGlyph,
 } from "@/components/icons/RadonGlyphs";
 import type { WorkspaceNavItem, WorkspaceSection } from "./types";
 
@@ -37,6 +38,10 @@ export const navItems: WorkspaceNavItem[] = [
   { label: "Regime", route: "regime", href: "/regime/cri", icon: RegimeGlyph },
   { label: "CTA", route: "cta", href: "/cta", icon: CTAGlyph },
   { label: "Operator", route: "admin", href: "/admin", icon: OperatorGlyph },
+  // Profile is reached via the dedicated user card above the sidebar footer,
+  // not the main nav list — hidden keeps it out of the primary loop while
+  // still exposing the route/label/icon to consumers that resolve by route.
+  { label: "Profile", route: "profile", href: "/profile", icon: ProfileGlyph, hidden: true },
 ];
 
 export const quickPromptsBySection: Record<WorkspaceSection, string[]> = {
@@ -51,6 +56,7 @@ export const quickPromptsBySection: Record<WorkspaceSection, string[]> = {
   regime: ["cri-scan", "portfolio", "scan --top 12", "help"],
   cta: ["menthorq-cta", "cri-scan", "portfolio", "help"],
   admin: ["help"],
+  profile: ["portfolio", "scan --top 12", "help"],
   "ticker-detail": ["portfolio", "scan --top 12", "help"],
 };
 
@@ -66,5 +72,6 @@ export const sectionDescription: Record<WorkspaceSection, string> = {
   regime: "Crash Risk Index — real-time CTA deleveraging monitor.",
   cta: "CTA positioning, vol-targeting exposure model and institutional flow.",
   admin: "Operator controls for IB Gateway 2FA and Radon services.",
+  profile: "Your account, saved articles and symbol watchlist.",
   "ticker-detail": "Instrument research surface — company, book, chain, position, orders, news, ratings, seasonality.",
 };
