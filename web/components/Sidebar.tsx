@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useUser } from "@clerk/nextjs";
 import type { WorkspaceSection } from "@/lib/types";
 import { navItems } from "@/lib/data";
 import { useProfile } from "@/lib/useProfile";
@@ -52,12 +51,13 @@ export default function Sidebar({ activeSection, actionTone, lastSync }: Sidebar
     cls === "live" ? "status-dot-live" : cls === "warn" ? "status-dot-warn" : "status-dot-dead";
   const syncTime = lastSync ? new Date(lastSync).toLocaleTimeString() : "—";
 
+  // Sidebar identity comes from our own profile store (fetch-based, no Clerk
+  // context needed here). The account email + Clerk avatar fallback live on
+  // the Profile page, which always renders within ClerkProvider.
   const { profile } = useProfile();
-  const { user } = useUser();
-  const email = user?.primaryEmailAddress?.emailAddress ?? null;
-  const displayName = profile?.username ?? user?.username ?? email ?? "Profile";
-  const avatarUrl = profile?.avatar_url ?? user?.imageUrl ?? null;
-  const monogram = monogramFor(profile?.username ?? null, email);
+  const displayName = profile?.username ?? "Profile";
+  const avatarUrl = profile?.avatar_url ?? null;
+  const monogram = monogramFor(profile?.username ?? null, null);
   const profileActive = activeSection === "profile";
 
   return (
@@ -110,11 +110,7 @@ export default function Sidebar({ activeSection, actionTone, lastSync }: Sidebar
         </span>
         <span className="sidebar-user-card__text">
           <span className="sidebar-user-card__name">{displayName}</span>
-          {email && email !== displayName ? (
-            <span className="sidebar-user-card__email">{email}</span>
-          ) : (
-            <span className="sidebar-user-card__email">View profile</span>
-          )}
+          <span className="sidebar-user-card__email">View profile</span>
         </span>
       </Link>
 

@@ -171,6 +171,7 @@ describe("navItems", () => {
       "regime",
       "cta",
       "admin",
+      "profile", // hidden: true, reached via the sidebar user card
     ]);
   });
 });
@@ -193,6 +194,7 @@ describe("quickPromptsBySection", () => {
     "cta",
     "admin",
     "ticker-detail",
+    "profile",
   ];
 
   it("covers all WorkspaceSection keys", () => {
@@ -243,6 +245,7 @@ describe("sectionDescription", () => {
     "cta",
     "admin",
     "ticker-detail",
+    "profile",
   ];
 
   it("covers all WorkspaceSection keys", () => {
