@@ -1,17 +1,15 @@
 import {
-  CTAGlyph,
-  DashboardGlyph,
-  DiscoverGlyph,
-  FlowGlyph,
-  JournalGlyph,
-  OperatorGlyph,
-  OrdersGlyph,
-  PerformanceGlyph,
-  PortfolioGlyph,
-  RegimeGlyph,
-  ScannerGlyph,
-  ProfileGlyph,
-} from "@/components/icons/RadonGlyphs";
+  Activity,
+  BarChart3,
+  Circle,
+  ClipboardList,
+  LayoutDashboard,
+  LineChart,
+  Search,
+  Shield,
+  Sparkles,
+  Wrench,
+} from "lucide-react";
 import type { WorkspaceNavItem, WorkspaceSection } from "./types";
 
 export const PI_COMMANDS = ["scan", "discover", "evaluate", "portfolio", "journal", "sync", "leap-scan", "help"] as const;
@@ -27,21 +25,17 @@ export const PI_COMMAND_ALIASES: Record<string, string> = {
 };
 
 export const navItems: WorkspaceNavItem[] = [
-  { label: "Dashboard", route: "dashboard", href: "/dashboard", icon: DashboardGlyph },
-  { label: "Portfolio", route: "portfolio", href: "/portfolio", icon: PortfolioGlyph },
-  { label: "Performance", route: "performance", href: "/performance", icon: PerformanceGlyph, hidden: true },
-  { label: "Orders", route: "orders", href: "/orders", icon: OrdersGlyph },
-  { label: "Scanner", route: "scanner", href: "/scanner", icon: ScannerGlyph },
-  { label: "Discover", route: "discover", href: "/discover", icon: DiscoverGlyph },
-  { label: "Flow Analysis", route: "flow-analysis", href: "/flow-analysis", icon: FlowGlyph },
-  { label: "Journal", route: "journal", href: "/journal", icon: JournalGlyph },
-  { label: "Regime", route: "regime", href: "/regime/cri", icon: RegimeGlyph },
-  { label: "CTA", route: "cta", href: "/cta", icon: CTAGlyph },
-  { label: "Operator", route: "admin", href: "/admin", icon: OperatorGlyph },
-  // Profile is reached via the dedicated user card above the sidebar footer,
-  // not the main nav list — hidden keeps it out of the primary loop while
-  // still exposing the route/label/icon to consumers that resolve by route.
-  { label: "Profile", route: "profile", href: "/profile", icon: ProfileGlyph, hidden: true },
+  { label: "Dashboard", route: "dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Flow Analysis", route: "flow-analysis", href: "/flow-analysis", icon: LineChart },
+  { label: "Portfolio", route: "portfolio", href: "/portfolio", icon: Circle },
+  { label: "Performance", route: "performance", href: "/performance", icon: BarChart3, hidden: true },
+  { label: "Orders", route: "orders", href: "/orders", icon: ClipboardList },
+  { label: "Scanner", route: "scanner", href: "/scanner", icon: Sparkles },
+  { label: "Discover", route: "discover", href: "/discover", icon: Search },
+  { label: "Journal", route: "journal", href: "/journal", icon: Wrench },
+  { label: "Regime", route: "regime", href: "/regime", icon: Shield },
+  { label: "CTA", route: "cta", href: "/cta", icon: Activity },
+  // { label: "Internals", route: "internals", href: "/internals", icon: Activity },
 ];
 
 export const quickPromptsBySection: Record<WorkspaceSection, string[]> = {
@@ -55,8 +49,6 @@ export const quickPromptsBySection: Record<WorkspaceSection, string[]> = {
   journal: ["journal --limit 25", "portfolio", "analyze nfLx", "help"],
   regime: ["cri-scan", "portfolio", "scan --top 12", "help"],
   cta: ["menthorq-cta", "cri-scan", "portfolio", "help"],
-  admin: ["help"],
-  profile: ["portfolio", "scan --top 12", "help"],
   "ticker-detail": ["portfolio", "scan --top 12", "help"],
 };
 
@@ -71,7 +63,5 @@ export const sectionDescription: Record<WorkspaceSection, string> = {
   journal: "Trade decision logs and history review.",
   regime: "Crash Risk Index — real-time CTA deleveraging monitor.",
   cta: "CTA positioning, vol-targeting exposure model and institutional flow.",
-  admin: "Operator controls for IB Gateway 2FA and Radon services.",
-  profile: "Your account, saved articles and symbol watchlist.",
   "ticker-detail": "Instrument research surface — company, book, chain, position, orders, news, ratings, seasonality.",
 };

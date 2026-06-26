@@ -82,7 +82,7 @@ function formatExpiryShort(expiry: string): string {
   return `${month}/${day}`;
 }
 
-export function findPortfolioLegDirection(
+function findPortfolioLegDirection(
   positions: readonly PortfolioPosition[] | undefined,
   symbol: string,
   expiry: string,
@@ -91,13 +91,10 @@ export function findPortfolioLegDirection(
 ): "LONG" | "SHORT" | null {
   if (!positions) return null;
   const targetSymbol = symbol.toUpperCase();
-  // IB reports OPT contract expiry as "YYYYMMDD" while the portfolio stores
-  // "YYYY-MM-DD". Strip dashes from both sides so the match works regardless
-  // of which path delivered the contract.
-  const targetExpiry = expiry.replace(/-/g, "");
+  const targetExpiry = expiry;
   for (const position of positions) {
     if (position.ticker.toUpperCase() !== targetSymbol) continue;
-    if (position.expiry.replace(/-/g, "") !== targetExpiry) continue;
+    if (position.expiry !== targetExpiry) continue;
     for (const leg of position.legs) {
       if (leg.type !== (right === "C" ? "Call" : "Put")) continue;
       if (leg.strike !== strike) continue;

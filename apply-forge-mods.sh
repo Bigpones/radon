@@ -11,7 +11,7 @@
 # ----------------
 #   cd ~/radon
 #   git fetch upstream main
-#   git checkout upstream/main -- .     # pull Joe's code (ib_historical.py + forge_ohlcv.py survive)
+#   git checkout upstream/main -- scripts/   # ONLY scripts/ (Python/FastAPI) — NOT web/
 #   ./apply-forge-mods.sh               # re-apply the changes below
 #   cd web && npm run dev               # test: curl 'localhost:8321/historical?symbol=AAPL'
 #
@@ -22,6 +22,12 @@
 # WHAT THIS SCRIPT RE-APPLIES (Joe's files overwrite these every update):
 #   1. server.py: import + include the forge_ohlcv router (2 lines)
 #   2. scripts/dev + web/package.json: venv python path + IB_GATEWAY_MODE=native
+#
+# WHY web/ STAYS ON OUR VERSION:
+#   Joe upgraded Radon's web dashboard to Next.js 16 (Turbopack). Forge does
+#   NOT use Radon's dashboard (port 3000) — Forge only calls the FastAPI backend
+#   (port 8321). So we keep web/ on Next 15.5 (stable) and only pull Joe's
+#   scripts/ improvements. Never `git checkout upstream/main -- web/`.
 #
 # NOTE: Clerk-optional and launchd IB-gateway mode are now NATIVE in Joe's code
 # (is_trusted_local_request + IB_GATEWAY_MODE env var), so they no longer need
@@ -62,6 +68,15 @@ if grep -q 'python3.13 -m uvicorn scripts.api.server:app' "$WEB_PKG"; then
   echo "  ✓ web/package.json: venv path + IB_GATEWAY_MODE applied"
 else
   echo "  • web/package.json already patched"
+fi
+
+
+# ── 4. bash 3.2 compat: empty-array expansion in scripts/dev (macOS ships bash 3.2) ─
+if grep -q 'concurrently "\${HIDE_ARGS\[@\]}"' "$DEV"; then
+  perl -pi -e 's{concurrently "\$\{HIDE_ARGS\[\@\]\}"}{concurrently \$\{HIDE_ARGS[\@]+"\$\{HIDE_ARGS[\@]\}"\}}g' "$DEV"
+  echo "  ✓ scripts/dev: bash 3.2 empty-array fix applied"
+else
+  echo "  • scripts/dev bash 3.2 fix already present"
 fi
 
 echo "→ Forge mods applied. Test: curl 'http://localhost:8321/historical?symbol=AAPL'"

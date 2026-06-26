@@ -21,15 +21,6 @@ export type PriceData = {
   vega: number | null;
   impliedVol: number | null;
   undPrice: number | null;
-  // Forward price: for forward-priced indices (VIX) the relay publishes the
-  // front-month future last/mid here so option pricing uses the tradeable
-  // forward instead of the (after-hours-frozen) cash index. Null otherwise.
-  fwd?: number | null;
-  // Per-expiry forward curve, keyed by the OPTION expiry (YYYYMMDD) the relay
-  // matched to a VIX future. Each held VIX option leg is priced off the future
-  // of its own expiry via fwdCurve[legExpiry]; falls back to `fwd` (front
-  // month) then cash. The relay owns the option->future matching.
-  fwdCurve?: Record<string, number> | null;
   timestamp: string;
 };
 
@@ -101,87 +92,6 @@ export type WSBatchMessage = {
   updates: Record<string, PriceData>;
 };
 
-/* ─── Depth-of-book (L2) types ─────────────────────────── */
-
-export type DepthSide = "bid" | "ask";
-
-/** One book row. marketMaker/exchange null for futures (no venue attribution). */
-export type DepthLevel = {
-  price: number;
-  size: number;
-  marketMaker: string | null; // MPID (NASDAQ TotalView) — equities direct
-  exchange: string | null; // venue code (SMART equities, options BBO)
-  /**
-   * Options only: this venue row sets the NBBO (best bid / best ask across
-   * exchanges). The relay flags it per row; ties at the inside mark every
-   * matching venue. Absent on stock/future books, which key best on position.
-   */
-  nbbo?: boolean;
-};
-
-/**
- * Cross-venue NBBO summary for an option montage. The relay derives this from
- * the inside (best bid / best ask) venue rows and attaches it to option books
- * only — it is the authoritative top-of-book for the header on the Book tab.
- */
-export type DepthNbbo = {
-  bestBid: number | null;
-  bestAsk: number | null;
-  mid: number | null;
-  bidSize: number;
-  askSize: number;
-};
-
-export type DepthBook = {
-  symbol: string; // same keyspace as PriceData.symbol (ticker | optionKey | future)
-  kind: "stock" | "option" | "future";
-  bid: DepthLevel[]; // index 0 = inside/best
-  ask: DepthLevel[]; // index 0 = inside/best
-  isSmartDepth: boolean; // true equities/options, false futures
-  feed: string | null; // head-pill label, e.g. "SMART DEPTH · TOTALVIEW"
-  entitled: boolean; // false → render L1 fallback
-  /** Options only: cross-venue NBBO summary derived by the relay. */
-  nbbo?: DepthNbbo;
-  timestamp: string;
-};
-
-/** Time & Sales tape row. */
-export type Trade = {
-  price: number;
-  size: number;
-  exchange: string | null;
-  time: string;
-};
-
-export type WSDepthMessage = {
-  type: "depth";
-  symbol: string;
-  data: DepthBook;
-};
-
-export type WSDepthBatchMessage = {
-  type: "depth-batch";
-  updates: Record<string, DepthBook>;
-};
-
-export type WSDepthUnavailableMessage = {
-  type: "depth-unavailable";
-  symbol: string;
-  reason: "no-entitlement" | "futures-no-depth" | "recycled";
-  code?: number;
-};
-
-/**
- * Time & Sales batch. Rides the SAME `subscribe-depth` as the depth channel
- * (the relay seeds the tape for the focused depth symbol — no separate client
- * action). Trades are newest-first within each symbol's array; the hook merges
- * and bounds to the most recent rows per symbol.
- */
-export type WSTapeBatchMessage = {
-  type: "tape-batch";
-  updates: Record<string, Trade[]>;
-};
-
 export type WSMessage =
   | WSPriceMessage
   | WSFundamentalsMessage
@@ -192,11 +102,7 @@ export type WSMessage =
   | WSErrorMessage
   | WSPingMessage
   | WSPongMessage
-  | WSStatusMessage
-  | WSDepthMessage
-  | WSDepthBatchMessage
-  | WSDepthUnavailableMessage
-  | WSTapeBatchMessage;
+  | WSStatusMessage;
 
 /* ─── Option contract types & helpers ─────────────────── */
 
@@ -233,24 +139,6 @@ export function optionKey(c: OptionContract): string {
     return `${normalized.symbol}_${normalized.expiry}_${normalized.strike}_${normalized.right}`;
   }
   return `${c.symbol.trim().toUpperCase()}_${c.expiry.trim()}_${c.strike}_${c.right}`;
-}
-
-/**
- * Inverse of `optionKey`: parse a composite key `SYMBOL_YYYYMMDD_STRIKE_RIGHT`
- * back into an OptionContract. Returns null for anything that is not a
- * well-formed option key (e.g. a bare stock ticker or futures root), so callers
- * can branch on instrument kind. The symbol segment never contains "_" (tickers
- * are alphanumerics), so splitting on the trailing three "_" segments is safe.
- */
-export function parseOptionKey(key: string): OptionContract | null {
-  const parts = key.trim().split("_");
-  if (parts.length < 4) return null;
-  const right = parts[parts.length - 1];
-  if (right !== "C" && right !== "P") return null;
-  const strike = Number(parts[parts.length - 2]);
-  const expiry = parts[parts.length - 3];
-  const symbol = parts.slice(0, parts.length - 3).join("_");
-  return normalizeOptionContract({ symbol, expiry, strike, right });
 }
 
 export function uniqueOptionContracts(contracts: OptionContract[]): OptionContract[] {

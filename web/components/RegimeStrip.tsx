@@ -6,8 +6,8 @@ export type BadgeVariant = "live" | "daily";
 export function LiveBadge({ live, variant }: { live: boolean; variant?: BadgeVariant }) {
   const resolved: BadgeVariant = variant ?? (live ? "live" : "daily");
   const bg =
-    resolved === "live" ? "color-mix(in srgb, var(--positive) 15%, transparent)"
-    : "color-mix(in srgb, var(--text-primary) 6%, transparent)";
+    resolved === "live" ? "rgba(5,173,152,0.15)"
+    : "rgba(226,232,240,0.06)";
   const color =
     resolved === "live" ? "var(--positive)"
     : "var(--text-muted)";

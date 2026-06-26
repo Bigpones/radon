@@ -87,32 +87,3 @@ describe("isGexDataStale — missing/invalid data", () => {
     expect(isGexDataStale({ scan_time: "not-a-date" }, TODAY, true)).toBe(true);
   });
 });
-
-describe("isGexDataStale — naive ISO scan_time (UTC-host producer)", () => {
-  // Hetzner runs UTC and Python writes datetime.now().isoformat() without an
-  // offset. JS would parse those as local time and roll the ET session date
-  // forward as soon as UTC midnight passes — the bug the user hit at 22:03 ET
-  // on 2026-05-08 (UTC ≈ 02:03 on 2026-05-09).
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-    // 2026-05-08 22:03 ET == 2026-05-09 02:03 UTC.
-    vi.setSystemTime(new Date("2026-05-09T02:03:00Z"));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("NOT stale when naive scan_time matches the current ET session and market is closed", () => {
-    // 2026-05-09T01:58:36 UTC == 2026-05-08 21:58 ET → today's session.
-    const naiveScanTime = "2026-05-09T01:58:36.144211";
-    expect(isGexDataStale({ scan_time: naiveScanTime }, "2026-05-08", false)).toBe(false);
-  });
-
-  it("stale when naive scan_time is from yesterday's ET session", () => {
-    // 2026-05-08T01:00:00 UTC == 2026-05-07 21:00 ET → previous session.
-    const naiveScanTime = "2026-05-08T01:00:00.000000";
-    expect(isGexDataStale({ scan_time: naiveScanTime }, "2026-05-08", false)).toBe(true);
-  });
-});

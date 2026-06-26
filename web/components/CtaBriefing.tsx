@@ -47,32 +47,32 @@ function deriveEquityPosture(main: CtaRow[]): {
   if (pctile <= 5 || z <= -2.0) return {
     label: "EXTREME SHORT",
     cssColor: "var(--negative)",
-    borderColor: "color-mix(in srgb, var(--fault) 40%, transparent)",
-    bgColor: "color-mix(in srgb, var(--fault) 5%, transparent)",
+    borderColor: "rgba(232,93,108,0.4)",
+    bgColor: "rgba(232,93,108,0.05)",
   };
   if (pctile <= 15 || z <= -1.5) return {
     label: "HEAVY SHORT",
     cssColor: "var(--negative)",
-    borderColor: "color-mix(in srgb, var(--fault) 30%, transparent)",
-    bgColor: "color-mix(in srgb, var(--fault) 4%, transparent)",
+    borderColor: "rgba(232,93,108,0.3)",
+    bgColor: "rgba(232,93,108,0.04)",
   };
   if (pctile <= 30) return {
     label: "SHORT",
     cssColor: "var(--warning)",
-    borderColor: "color-mix(in srgb, var(--warning) 35%, transparent)",
-    bgColor: "color-mix(in srgb, var(--warning) 4%, transparent)",
+    borderColor: "rgba(245,166,35,0.35)",
+    bgColor: "rgba(245,166,35,0.04)",
   };
   if (pctile >= 95 || z >= 2.0) return {
     label: "EXTREME LONG",
     cssColor: "var(--positive)",
-    borderColor: "color-mix(in srgb, var(--signal-core) 40%, transparent)",
-    bgColor: "color-mix(in srgb, var(--signal-core) 5%, transparent)",
+    borderColor: "rgba(5,173,152,0.4)",
+    bgColor: "rgba(5,173,152,0.05)",
   };
   if (pctile >= 80 || z >= 1.5) return {
     label: "HEAVY LONG",
     cssColor: "var(--positive)",
-    borderColor: "color-mix(in srgb, var(--signal-core) 30%, transparent)",
-    bgColor: "color-mix(in srgb, var(--signal-core) 4%, transparent)",
+    borderColor: "rgba(5,173,152,0.3)",
+    bgColor: "rgba(5,173,152,0.04)",
   };
   return {
     label: "NEUTRAL",
@@ -129,16 +129,16 @@ function deriveSignalTags(tables: CtaTables): Array<{ label: string; cssColor: s
     tags.push({
       label: "SHORT EQUITIES",
       cssColor: "var(--negative)",
-      borderColor: "color-mix(in srgb, var(--fault) 30%, transparent)",
-      bgColor: "color-mix(in srgb, var(--fault) 12%, transparent)",
+      borderColor: "rgba(232,93,108,0.3)",
+      bgColor: "rgba(232,93,108,0.12)",
     });
   }
   if (spx && (pctile(spx.percentile_3m) ?? -1) >= 80) {
     tags.push({
       label: "LONG EQUITIES",
       cssColor: "var(--positive)",
-      borderColor: "color-mix(in srgb, var(--signal-core) 30%, transparent)",
-      bgColor: "color-mix(in srgb, var(--signal-core) 10%, transparent)",
+      borderColor: "rgba(5,173,152,0.3)",
+      bgColor: "rgba(5,173,152,0.1)",
     });
   }
 
@@ -152,8 +152,8 @@ function deriveSignalTags(tables: CtaTables): Array<{ label: string; cssColor: s
     tags.push({
       label: "SHORT BONDS",
       cssColor: "var(--negative)",
-      borderColor: "color-mix(in srgb, var(--fault) 25%, transparent)",
-      bgColor: "color-mix(in srgb, var(--fault) 10%, transparent)",
+      borderColor: "rgba(232,93,108,0.25)",
+      bgColor: "rgba(232,93,108,0.1)",
     });
   }
 
@@ -168,8 +168,8 @@ function deriveSignalTags(tables: CtaTables): Array<{ label: string; cssColor: s
     tags.push({
       label: "LONG ENERGY",
       cssColor: "var(--signal-core)",
-      borderColor: "color-mix(in srgb, var(--signal-core) 30%, transparent)",
-      bgColor: "color-mix(in srgb, var(--signal-core) 10%, transparent)",
+      borderColor: "rgba(5,173,152,0.3)",
+      bgColor: "rgba(5,173,152,0.1)",
     });
   }
 
@@ -178,8 +178,8 @@ function deriveSignalTags(tables: CtaTables): Array<{ label: string; cssColor: s
     tags.push({
       label: "SQUEEZE WATCH",
       cssColor: "var(--warning)",
-      borderColor: "color-mix(in srgb, var(--warning) 30%, transparent)",
-      bgColor: "color-mix(in srgb, var(--warning) 10%, transparent)",
+      borderColor: "rgba(245,166,35,0.3)",
+      bgColor: "rgba(245,166,35,0.1)",
     });
   }
 
@@ -188,22 +188,22 @@ function deriveSignalTags(tables: CtaTables): Array<{ label: string; cssColor: s
     tags.push({
       label: "FX DISPERSION",
       cssColor: "var(--warning)",
-      borderColor: "color-mix(in srgb, var(--warning) 30%, transparent)",
-      bgColor: "color-mix(in srgb, var(--warning) 10%, transparent)",
+      borderColor: "rgba(245,166,35,0.3)",
+      bgColor: "rgba(245,166,35,0.1)",
     });
   } else if (fx.shorts.length >= 2) {
     tags.push({
       label: "DEFENSIVE FX",
       cssColor: "var(--negative)",
-      borderColor: "color-mix(in srgb, var(--fault) 25%, transparent)",
-      bgColor: "color-mix(in srgb, var(--fault) 10%, transparent)",
+      borderColor: "rgba(232,93,108,0.25)",
+      bgColor: "rgba(232,93,108,0.1)",
     });
   } else if (fx.longs.length >= 2) {
     tags.push({
       label: "FX LONGS CROWDED",
       cssColor: "var(--signal-core)",
-      borderColor: "color-mix(in srgb, var(--signal-core) 30%, transparent)",
-      bgColor: "color-mix(in srgb, var(--signal-core) 10%, transparent)",
+      borderColor: "rgba(5,173,152,0.3)",
+      bgColor: "rgba(5,173,152,0.1)",
     });
   }
 

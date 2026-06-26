@@ -43,20 +43,11 @@ describe("app/global-error", () => {
     cleanup();
   });
 
-  it("renders the bare application-error shell with a reload instruction", () => {
-    // global-error is intentionally pure HTML with NO retry button / hooks:
-    // Next.js 16 prerender of /_global-error crashes if client context is
-    // needed (see web/CLAUDE.md "Production Build Constraint"). The shell only
-    // shows a reload instruction; there is no interactive reset control.
+  it("renders application error shell and retry", () => {
     const reset = vi.fn();
     render(<GlobalError error={new Error("root")} reset={reset} />);
     expect(screen.getByText("Application Error")).toBeTruthy();
-    expect(screen.getByText(/Reload the page/i)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /retry/i })).toBeNull();
-  });
-
-  it("renders the error digest when present", () => {
-    render(<GlobalError error={Object.assign(new Error("root"), { digest: "deadbeef" })} reset={vi.fn()} />);
-    expect(screen.getByText(/Digest: deadbeef/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+    expect(reset).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,14 +1,11 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { Activity, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { useGex, type GexData, type GexBucket, type GexLevel, type GexHistoryEntry, type IvData, type MqLevels, type SourceDelta, type SourceDeltaEntry } from "@/lib/useGex";
-import { isGexDataStale } from "@/lib/gexStaleness";
 import { MarketState } from "@/lib/useMarketHours";
 import InfoTooltip from "./InfoTooltip";
 import ShareReportModal from "./ShareReportModal";
-import GexLaplaceContour from "./instruments/GexLaplaceContour";
-import SpectralLoader from "./SpectralLoader";
 
 type GexPanelProps = {
   marketState?: MarketState;
@@ -62,9 +59,9 @@ function levelColor(gamma: number | undefined): string {
 
 function SourceBadge({ source }: { source: "uw" | "mq" | "both" }) {
   const styles: Record<string, React.CSSProperties> = {
-    uw:   { background: "color-mix(in srgb, var(--signal-core) 18%, transparent)",  color: "var(--signal-core)",  border: "1px solid color-mix(in srgb, var(--signal-core) 40%, transparent)" },
-    mq:   { background: "color-mix(in srgb, var(--gex-mq-accent) 15%, transparent)", color: "var(--gex-mq-accent)", border: "1px solid color-mix(in srgb, var(--gex-mq-accent) 35%, transparent)" },
-    both: { background: "color-mix(in srgb, var(--signal-core) 12%, transparent)", color: "var(--signal-core)",  border: "1px solid color-mix(in srgb, var(--signal-core) 30%, transparent)" },
+    uw:   { background: "rgba(15,110,86,0.18)",  color: "var(--signal-core)",  border: "0.5px solid rgba(15,110,86,0.4)" },
+    mq:   { background: "rgba(56,138,221,0.15)", color: "#85b7eb",             border: "0.5px solid rgba(56,138,221,0.35)" },
+    both: { background: "rgba(93,202,165,0.12)", color: "var(--signal-core)",  border: "0.5px solid rgba(93,202,165,0.3)" },
   };
   const labels = { uw: "UW", mq: "MQ", both: "UW+MQ" };
   return (
@@ -127,10 +124,137 @@ function LevelCard({ label, level, labelColor }: {
   );
 }
 
-/* ─── GEX Profile sort helper (consumed by GexLaplaceContour upstream) ─ */
+/* ─── GEX Profile Bar Chart ──────────────────────────── */
 
-export function getDisplayProfile(profile: GexBucket[]): GexBucket[] {
-  return [...profile].sort((a, b) => b.strike - a.strike);
+function GexProfileChart({ profile, spot }: { profile: GexBucket[]; spot: number }) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const chartData = useMemo(() => {
+    if (!profile.length) return { buckets: [], maxAbs: 1 };
+    const maxAbs = Math.max(...profile.map((b) => Math.abs(b.net_gex)), 1);
+    return { buckets: profile, maxAbs };
+  }, [profile]);
+
+  const barHeight = 22;
+  const labelWidth = 80;
+  const rightLabelWidth = 160;
+  const chartWidth = 600;
+  const barAreaWidth = chartWidth - labelWidth - rightLabelWidth;
+  const midX = labelWidth + barAreaWidth / 2;
+  const totalHeight = chartData.buckets.length * (barHeight + 4) + 8;
+
+  return (
+    <div ref={containerRef} className="gex-profile-chart" style={{ overflowX: "auto" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+        <span className="gex-chart-title">GEX Profile &mdash; Net gamma by strike</span>
+        <span className="gex-chart-legend">
+          <span style={{ color: "var(--signal-core)" }}>&#9632; Positive (stabilizing)</span>
+          {" "}
+          <span style={{ color: "var(--fault)" }}>&#9632; Negative (destabilizing)</span>
+        </span>
+      </div>
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${chartWidth} ${totalHeight}`}
+        width="100%"
+        height={totalHeight}
+        style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}
+      >
+        {/* Center line */}
+        <line x1={midX} y1={0} x2={midX} y2={totalHeight} stroke="var(--border-dim)" strokeWidth={1} />
+
+        {chartData.buckets.map((bucket, i) => {
+          const y = i * (barHeight + 4) + 4;
+          const barWidthPx = (Math.abs(bucket.net_gex) / chartData.maxAbs) * (barAreaWidth / 2);
+          const isPositive = bucket.net_gex >= 0;
+          const barX = isPositive ? midX : midX - barWidthPx;
+          const barColor = isPositive ? "var(--signal-core)" : "var(--fault)";
+
+          const isSpot = bucket.tag === "SPOT";
+          const tagColor = bucket.tag === "GEX FLIP" ? "var(--warning)"
+            : bucket.tag === "SPOT" ? "var(--signal-strong)"
+            : bucket.tag?.includes("MAGNET") ? "var(--signal-core)"
+            : bucket.tag?.includes("ACCEL") ? "var(--fault)"
+            : "var(--text-secondary)";
+
+          return (
+            <g key={bucket.strike}>
+              {/* Strike label (left) */}
+              <text
+                x={labelWidth - 8}
+                y={y + barHeight / 2 + 4}
+                textAnchor="end"
+                fill={isSpot ? "var(--signal-strong)" : "var(--text-secondary)"}
+                fontWeight={isSpot ? 700 : 400}
+              >
+                {bucket.strike.toLocaleString()}
+              </text>
+              {/* Pct from spot */}
+              <text
+                x={4}
+                y={y + barHeight / 2 + 4}
+                textAnchor="start"
+                fill="var(--text-muted)"
+                fontSize={9}
+              >
+                {fmtPct(bucket.pct_from_spot)}
+              </text>
+              {/* Bar */}
+              <rect
+                x={barX}
+                y={y}
+                width={Math.max(barWidthPx, 1)}
+                height={barHeight}
+                fill={barColor}
+                rx={2}
+                opacity={0.85}
+              />
+              {/* Right label: GEX value + tag */}
+              <text
+                x={chartWidth - rightLabelWidth + 8}
+                y={y + barHeight / 2 + 4}
+                textAnchor="start"
+                fill={isPositive ? "var(--signal-core)" : "var(--fault)"}
+                fontSize={10}
+              >
+                {fmtGex(bucket.net_gex)}
+              </text>
+              {bucket.tag && (
+                <text
+                  x={chartWidth - 8}
+                  y={y + barHeight / 2 + 4}
+                  textAnchor="end"
+                  fill={tagColor}
+                  fontWeight={700}
+                  fontSize={10}
+                >
+                  {bucket.tag === "MAX MAGNET" ? "MAX MAGNET \u25B2"
+                    : bucket.tag === "MAX ACCELERATOR" ? "MAX ACCEL \u25BC"
+                    : bucket.tag === "GEX FLIP" ? "GEX FLIP \u25C4"
+                    : bucket.tag === "SPOT" ? "\u25C4 SPOT"
+                    : bucket.tag}
+                </text>
+              )}
+              {/* Spot indicator line */}
+              {isSpot && (
+                <line
+                  x1={labelWidth}
+                  y1={y + barHeight + 2}
+                  x2={chartWidth - rightLabelWidth}
+                  y2={y + barHeight + 2}
+                  stroke="var(--signal-strong)"
+                  strokeWidth={1}
+                  strokeDasharray="4 2"
+                  opacity={0.5}
+                />
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
 }
 
 /* ─── Expected Range Bar ─────────────────────────────── */
@@ -154,61 +278,26 @@ function ExpectedRangeBar({ data }: { data: GexData }) {
   const range = maxVal - minVal || 1;
   const pct = (v: number) => ((v - minVal) / range) * 100;
 
-  // Anchor every level at its pct on the bar. Each anchor renders as a
-  // value+label stack centered on its position. To avoid horizontal
-  // collisions when two levels sit close together, anchors are assigned to
-  // alternating rows (top/bottom) — pre-sorted by pct, then placed greedy.
-  type Anchor = { pct: number; value: number; label: string; color?: string };
-  const anchors: Anchor[] = [];
-  anchors.push({ pct: pct(low), value: low, label: "RANGE LOW" });
-  if (accel) anchors.push({ pct: pct(accel), value: accel, label: "MAX ACCEL", color: "var(--accelerator, var(--fault))" });
-  if (flip) anchors.push({ pct: pct(flip), value: flip, label: "GEX FLIP", color: "var(--warning)" });
-  anchors.push({ pct: pct(spot), value: spot, label: "CLOSE", color: "var(--signal-strong)" });
-  if (magnet) anchors.push({ pct: pct(magnet), value: magnet, label: "MAX MAGNET", color: "var(--signal-core)" });
-  anchors.push({ pct: pct(high), value: high, label: "RANGE HIGH" });
-  anchors.sort((a, b) => a.pct - b.pct);
-
-  // Greedy three-row collision avoidance. Each anchor renders as a
-  // value-above-label stack centred on its pct. Real label widths in
-  // production are ~12 % of the bar (mono values like "7,432.97" plus the
-  // uppercase label below clip ~110 px on a 900 px bar), so the previous
-  // 8 % gap was too tight — clusters of three anchors at the low end of
-  // the range (e.g. MAX ACCEL / RANGE LOW / GEX FLIP) silently stacked on
-  // the same row and read as a garbled blob (commit f79fd5d follow-up).
-  //
-  // A third row handles the 3-anchor cluster cleanly; if a cluster ever
-  // exceeds three, the overflow falls back to the bottom row and accepts
-  // the visual collision rather than dropping the label outright.
-  const COLLISION_PCT = 12;
-  const lastPctByRow: number[] = [-Infinity, -Infinity, -Infinity];
-  const placed = anchors.map((a) => {
-    const row = lastPctByRow.findIndex((p) => a.pct - p >= COLLISION_PCT);
-    const finalRow = row === -1 ? lastPctByRow.length - 1 : row; // overflow → bottom row
-    lastPctByRow[finalRow] = a.pct;
-    return { ...a, row: finalRow };
-  });
-
   return (
     <div className="gex-range-container">
       <div className="gex-range-title">EXPECTED RANGE &mdash; {data.data_date}</div>
       <div className="gex-range-bar">
         <div className="gex-range-fill" style={{ left: `${pct(low)}%`, width: `${pct(high) - pct(low)}%` }} />
-        {accel && <div className="gex-range-marker" style={{ left: `${pct(accel)}%`, borderColor: "var(--accelerator, var(--fault))" }} title={`MAX ACCEL: ${fmtPrice(accel)}`} />}
+        {/* Markers */}
         {flip && <div className="gex-range-marker" style={{ left: `${pct(flip)}%`, borderColor: "var(--warning)" }} title={`GEX FLIP: ${fmtPrice(flip)}`} />}
-        <div className="gex-range-marker" style={{ left: `${pct(spot)}%`, borderColor: "var(--signal-strong)" }} title={`CLOSE: ${fmtPrice(spot)}`} />
-        {magnet && <div className="gex-range-marker" style={{ left: `${pct(magnet)}%`, borderColor: "var(--signal-core)" }} title={`MAX MAGNET: ${fmtPrice(magnet)}`} />}
+        <div className="gex-range-marker" style={{ left: `${pct(spot)}%`, borderColor: "var(--signal-strong)" }} title={`SPOT: ${fmtPrice(spot)}`} />
+        {magnet && <div className="gex-range-marker" style={{ left: `${pct(magnet)}%`, borderColor: "var(--signal-core)" }} title={`MAGNET: ${fmtPrice(magnet)}`} />}
       </div>
-      <div className="gex-range-anchors">
-        {placed.map((a) => (
-          <div
-            key={a.label}
-            className={`gex-range-anchor gex-range-anchor-row-${a.row}`}
-            style={{ left: `${a.pct}%` }}
-          >
-            <div className="gex-range-anchor-value" style={a.color ? { color: a.color } : undefined}>{fmtPrice(a.value)}</div>
-            <div className="gex-range-anchor-label">{a.label}</div>
-          </div>
-        ))}
+      <div className="gex-range-labels">
+        <span>{fmtPrice(low)}</span>
+        {flip && <span style={{ left: `${pct(flip)}%`, color: "var(--warning)" }}>{fmtPrice(flip)}</span>}
+        <span style={{ marginLeft: "auto" }}>{fmtPrice(high)}</span>
+      </div>
+      <div className="gex-range-sublabels">
+        {accel && <span>MAX ACCEL</span>}
+        {flip && <span>GEX FLIP</span>}
+        <span>CLOSE</span>
+        {magnet && <span>MAX MAGNET</span>}
       </div>
     </div>
   );
@@ -244,7 +333,7 @@ function MqLevelsPanel({ mq, sourceDelta }: { mq: MqLevels; sourceDelta: SourceD
         {sign}{e.delta.toFixed(1)} &nbsp;
         <span style={{ color: "var(--signal-core)", fontSize: 9 }}>{e.uw.toFixed(0)}</span>
         <span style={{ color: "var(--text-muted)", fontSize: 9 }}> vs </span>
-        <span style={{ color: "var(--gex-mq-accent)", fontSize: 9 }}>{e.mq.toFixed(0)}</span>
+        <span style={{ color: "#85b7eb", fontSize: 9 }}>{e.mq.toFixed(0)}</span>
       </span>
     );
   }
@@ -279,7 +368,7 @@ function MqLevelsPanel({ mq, sourceDelta }: { mq: MqLevels; sourceDelta: SourceD
             ].map(({ label, val }) => (
               <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 5, fontFamily: "var(--font-mono)" }}>
                 <span style={{ color: "var(--text-secondary)", fontSize: 10 }}>{label}</span>
-                <span style={{ color: "var(--gex-mq-accent)", fontWeight: 500 }}>{val != null ? fmtPrice(val) : "—"}</span>
+                <span style={{ color: "#85b7eb", fontWeight: 500 }}>{val != null ? fmtPrice(val) : "—"}</span>
               </div>
             ))}
             {mq.top_gex_strikes.length > 0 && (
@@ -288,8 +377,8 @@ function MqLevelsPanel({ mq, sourceDelta }: { mq: MqLevels; sourceDelta: SourceD
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {mq.top_gex_strikes.map((s) => (
                     <span key={s} style={{
-                      background: "color-mix(in srgb, var(--gex-mq-accent) 12%, transparent)", color: "var(--gex-mq-accent)",
-                      border: "1px solid color-mix(in srgb, var(--gex-mq-accent) 30%, transparent)",
+                      background: "rgba(56,138,221,0.12)", color: "#85b7eb",
+                      border: "0.5px solid rgba(56,138,221,0.3)",
                       fontSize: 10, padding: "1px 6px", borderRadius: 2, fontFamily: "var(--font-mono)",
                     }}>
                       {fmtPrice(s)}
@@ -329,7 +418,7 @@ function MqLevelsPanel({ mq, sourceDelta }: { mq: MqLevels; sourceDelta: SourceD
                 {mq.iv30d != null && (
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 4, fontFamily: "var(--font-mono)" }}>
                     <span style={{ color: "var(--text-secondary)", fontSize: 10 }}>IV 30D</span>
-                    <span style={{ color: "var(--gex-mq-accent)", fontWeight: 500 }}>{(mq.iv30d * 100).toFixed(2)}%</span>
+                    <span style={{ color: "#85b7eb", fontWeight: 500 }}>{(mq.iv30d * 100).toFixed(2)}%</span>
                   </div>
                 )}
                 {mq.hv30 != null && (
@@ -441,7 +530,7 @@ function GexHistoryTable({ history }: { history: GexHistoryEntry[] }) {
 /* ─── Main component ─────────────────────────────────── */
 
 export default function GexPanel({ marketState }: GexPanelProps) {
-  const { data, loading, error, lastSync, syncing } = useGex(marketState ?? null);
+  const { data, loading, error, lastSync } = useGex(marketState ?? null);
 
   if (loading && !data) {
     return (
@@ -452,8 +541,10 @@ export default function GexPanel({ marketState }: GexPanelProps) {
             Gamma Exposure Levels
           </div>
         </div>
-        <div className="section-body">
-          <SpectralLoader label="Sampling gamma exposure by strike" />
+        <div className="section-body" style={{ padding: "24px", textAlign: "center" }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-muted)" }}>
+            Loading GEX scan...
+          </span>
         </div>
       </div>
     );
@@ -500,20 +591,12 @@ export default function GexPanel({ marketState }: GexPanelProps) {
 
   const netGexColor = data.net_gex >= 0 ? "var(--signal-core)" : "var(--fault)";
   const netDexColor = data.net_dex >= 0 ? "var(--signal-core)" : "var(--fault)";
-  const gexIsStale = isGexDataStale(data);
-  const freshnessBadge = syncing
-    ? { label: "SYNCING", className: "gex-status-badge gex-status-badge-syncing" }
-    : gexIsStale
-      ? { label: "STALE", className: "gex-status-badge gex-status-badge-stale" }
-      : data.market_open
-        ? { label: "LIVE", className: "gex-status-badge gex-status-badge-live" }
-        : { label: "FRESH", className: "gex-status-badge gex-status-badge-fresh" };
 
   return (
-    <div className="section gex-panel regime-relationship-panel">
+    <div className="section gex-panel">
       {/* ── Header ── */}
-      <div className="regime-relationship-panel-head">
-        <div className="regime-panel-title">
+      <div className="section-header">
+        <div className="section-title">
           <Activity size={14} />
           {data.ticker} Gamma Exposure Levels &mdash; {data.data_date}
           <InfoTooltip
@@ -523,15 +606,12 @@ export default function GexPanel({ marketState }: GexPanelProps) {
           />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span className={freshnessBadge.className} data-testid="gex-freshness-badge">
-            {freshnessBadge.label}
-          </span>
           {daysCount > 0 && (
             <span
               className="gex-day-badge"
               style={{
                 background: daysAbove > 0 ? "var(--signal-deep)" : "var(--fault)",
-                color: "var(--text-on-accent)",
+                color: "#fff",
               }}
             >
               DAY {daysCount} {daysSide} GEX FLIP
@@ -552,7 +632,7 @@ export default function GexPanel({ marketState }: GexPanelProps) {
         </div>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="section-body" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         {/* ── Metrics Row ── */}
         <div className="gex-metrics-row">
           <MetricCard
@@ -616,27 +696,8 @@ export default function GexPanel({ marketState }: GexPanelProps) {
           <MqLevelsPanel mq={data.mq as MqLevels} sourceDelta={data.source_delta as SourceDelta | null} />
         )}
 
-        {/* ── GEX Profile Chart — Laplace curvature field ── */}
-        <div className="gex-profile-chart" data-testid="gex-laplace-chart">
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-            <span className="gex-chart-title">GEX Profile &mdash; curvature field by strike</span>
-            <span className="gex-chart-legend">
-              <span style={{ color: "var(--signal-core)" }}>&#9632; Positive curvature (stabilizing)</span>
-              {" "}
-              <span style={{ color: "var(--dislocation)" }}>&#9632; Negative curvature (destabilizing)</span>
-            </span>
-          </div>
-          <GexLaplaceContour
-            profile={data.profile}
-            spotPrice={data.spot}
-            flipStrike={levels.gex_flip?.strike ?? null}
-            maxMagnet={levels.max_magnet?.strike ?? null}
-            maxAccelerator={levels.max_accelerator?.strike ?? null}
-            putWall={levels.put_wall?.strike ?? null}
-            callWall={levels.call_wall?.strike ?? null}
-            ticker={data.ticker}
-          />
-        </div>
+        {/* ── GEX Profile Chart ── */}
+        <GexProfileChart profile={data.profile} spot={data.spot} />
 
         {/* ── Bottom Row: Expected Range + Bias ── */}
         <div className="gex-bottom-row">

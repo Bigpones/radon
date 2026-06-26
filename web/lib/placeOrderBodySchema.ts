@@ -28,7 +28,6 @@ export const PlaceOrderBodySchema = Type.Object({
     Type.Literal("stock"),
     Type.Literal("option"),
     Type.Literal("combo"),
-    Type.Literal("future"),
   ])),
   symbol: Type.String({ minLength: 1 }),
   action: Type.Union([Type.Literal("BUY"), Type.Literal("SELL")]),
@@ -39,9 +38,6 @@ export const PlaceOrderBodySchema = Type.Object({
   strike: Type.Optional(Type.Number()),
   right: Type.Optional(OptionRightSchema),
   legs: Type.Optional(Type.Array(PlaceOrderComboLegSchema)),
-  /** Futures: caller can pass IB conId directly (preferred — from /futures/chain) OR expiry. */
-  conId: Type.Optional(Type.Number()),
-  exchange: Type.Optional(Type.String()),
 });
 
 export type PlaceOrderBodyValidated = Static<typeof PlaceOrderBodySchema>;

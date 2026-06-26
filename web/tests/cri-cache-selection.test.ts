@@ -77,33 +77,4 @@ describe("CRI cache candidate selection", () => {
 
     expect(selectPreferredCriCandidate(scheduled, legacy)).toBe(scheduled);
   });
-
-  it("treats naive ISO scan_time as UTC when ranking ties go to recency", () => {
-    // Hetzner Python wrote naive `scan_time` strings.  When both candidates
-    // tie on completeness/length, ranking falls through to scan_time.  A
-    // naive "2026-05-09T02:03:00" must be parsed as UTC, not local — else
-    // the tiebreaker shifts by hours and may flip the winner.
-    const scheduled = makeCandidate({
-      path: "/tmp/cri-2026-05-09T02-04.json",
-      mtimeMs: Date.parse("2026-05-09T02:05:00Z"),
-      data: {
-        date: "2026-05-09",
-        scan_time: "2026-05-09T02:03:00.144211", // naive — Hetzner UTC
-        history: makeHistory(20, true),
-      },
-    });
-    const legacy = makeCandidate({
-      path: "/tmp/cri.json",
-      mtimeMs: Date.parse("2026-05-09T02:05:30Z"),
-      data: {
-        date: "2026-05-09",
-        scan_time: "2026-05-09T02:01:00.000000", // earlier UTC
-        history: makeHistory(20, true),
-      },
-    });
-
-    // The newer scan_time (02:03 UTC) should win over the older (02:01 UTC),
-    // regardless of the runner's local TZ.
-    expect(selectPreferredCriCandidate(scheduled, legacy)).toBe(scheduled);
-  });
 });

@@ -2,7 +2,6 @@
 
 import { useSyncHook, type UseSyncReturn } from "./useSyncHook";
 import { MarketState } from "./useMarketHours";
-import { isGexDataStale } from "./gexStaleness";
 
 /* ─── GEX types (match gex_scan.py JSON output) ──────────────── */
 
@@ -123,9 +122,18 @@ export type GexData = {
 
 /* ─── Staleness check ────────────────────────────────────────── */
 
-export function needsGexRetry(data: GexData | null | undefined): boolean {
-  if (!data) return true;
-  return isGexDataStale(data);
+function todayET(): string {
+  return new Date().toLocaleDateString("sv", { timeZone: "America/New_York" });
+}
+
+function needsGexRetry(data: GexData | null | undefined): boolean {
+  if (!data?.scan_time) return true;
+  try {
+    const scanDate = new Date(data.scan_time).toLocaleDateString("sv", { timeZone: "America/New_York" });
+    return scanDate !== todayET();
+  } catch {
+    return true;
+  }
 }
 
 /* ─── Hook ───────────────────────────────────────────────────── */
@@ -133,7 +141,7 @@ export function needsGexRetry(data: GexData | null | undefined): boolean {
 const GEX_SYNC_CONFIG = {
   endpoint: "/api/gex",
   interval: 60_000,
-  hasPost: true,
+  hasPost: false,
   extractTimestamp: (d: GexData) => d.scan_time || null,
   shouldRetry: (d: GexData) => needsGexRetry(d),
   retryIntervalMs: 5000,
@@ -141,17 +149,18 @@ const GEX_SYNC_CONFIG = {
 };
 
 export function useGex(marketState: MarketState | null = null): UseSyncReturn<GexData> {
-  const active = true;
-
-  const interval = marketState === MarketState.CLOSED
-    ? 0
-    : marketState === MarketState.EXTENDED
-      ? 300_000
-      : 60_000;
+  let active: boolean;
+  if (marketState === MarketState.OPEN || marketState === MarketState.EXTENDED) {
+    active = true;
+  } else if (marketState === MarketState.CLOSED) {
+    active = false;
+  } else {
+    active = true;
+  }
 
   const config = {
     ...GEX_SYNC_CONFIG,
-    interval,
+    interval: marketState === MarketState.EXTENDED ? 300_000 : 60_000,
   };
 
   return useSyncHook(config, active);

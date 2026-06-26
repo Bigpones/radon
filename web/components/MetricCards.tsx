@@ -1,17 +1,10 @@
 "use client";
 
-import { useState, useCallback, type ReactNode } from "react";
+import { useState, useCallback } from "react";
 import type { PortfolioData, AccountSummary, ExecutedOrder } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { computeExposureDetailed, type ExposureDataWithBreakdown } from "@/lib/exposureBreakdown";
 import { computeDayMoveBreakdown } from "@/lib/dayMoveBreakdown";
-import { getMarketPhaseFromDate } from "@/lib/serviceHealthWindows";
-import {
-  computeLeverageRatio,
-  classifyLeverageBias,
-  formatLeveragePct,
-  formatLeverageMultiplier,
-} from "@/lib/dollarDeltaLeverage";
 import ExposureBreakdownModal, { type ExposureMetric } from "./ExposureBreakdownModal";
 import FillsModal from "./FillsModal";
 import PnlBreakdownModal, { type PnlBreakdownRow } from "./PnlBreakdownModal";
@@ -78,21 +71,13 @@ function computeTodayUnrealizedPnl(
 
 /* ─── Metric card helper ─────────────────────────────────── */
 
-type CardDef = {
-  label: string;
-  value: string;
-  change: string;
-  tone: "positive" | "negative" | "neutral";
-  /** Optional subtitle rendered between value and change line. */
-  subtitle?: ReactNode;
-};
+type CardDef = { label: string; value: string; change: string; tone: "positive" | "negative" | "neutral" };
 
 function MetricCard({ card, onClick }: { card: CardDef; onClick?: () => void }) {
   return (
     <div className={`metric-card${onClick ? " metric-card-clickable" : ""}`} onClick={onClick}>
       <div className="metric-label">{card.label}</div>
       <div className={`metric-value ${card.tone !== "neutral" ? card.tone : ""}`}>{card.value}</div>
-      {card.subtitle ? <div className="metric-subtitle">{card.subtitle}</div> : null}
       <div className={`metric-change ${card.tone}`}>{card.change}</div>
     </div>
   );
@@ -122,9 +107,6 @@ function SectionHeader({ label, collapsed, onToggle }: { label: string; collapse
 
 function AccountRow({
   acct,
-  todayUnrealized,
-  hasPositions,
-  hasPrices,
   collapsed,
   onToggle,
   onNetLiqClick,
@@ -133,20 +115,6 @@ function AccountRow({
   onDividendsClick,
 }: {
   acct: AccountSummary;
-  /** Client-computed day-move aggregate, used as the pre-market /
-   *  off-hours fallback when IB's `dailyPnL` stream is not active.
-   *  Pre-market (04:00-09:30 ET) and after-hours, IB returns NaN for
-   *  `reqPnL().dailyPnL`, so `acct.daily_pnl` lands as null. The
-   *  per-leg `last`/`close` math in `computeTodayUnrealizedPnl` still
-   *  works because pre-market quotes populate `prices[*].last` — the
-   *  Today's P&L breakout further down the page already uses this. */
-  todayUnrealized: { pnl: number; positionsWithData: number } | null;
-  /** True when the portfolio has at least one open position. */
-  hasPositions: boolean;
-  /** True when the WS prices map has at least one entry. Used to
-   *  distinguish "IB unreachable" (positions exist but no prices)
-   *  from "market closed" (no live ticks because markets are dark). */
-  hasPrices: boolean;
   collapsed: boolean;
   onToggle: () => void;
   onNetLiqClick: () => void;
@@ -154,51 +122,7 @@ function AccountRow({
   onUnrealizedClick: () => void;
   onDividendsClick: () => void;
 }) {
-  const ibDaily = acct.daily_pnl;
-  const fallback =
-    ibDaily == null && todayUnrealized != null && todayUnrealized.positionsWithData > 0
-      ? todayUnrealized.pnl
-      : null;
-  const displayValue = ibDaily ?? fallback;
-  // Label precedence:
-  //   1. "TODAY"               — IB streamed dailyPnL (regular trading hours)
-  //   2. "ESTIMATED (LIVE | PRE-MARKET | AFTER HOURS)" — IB silent but live
-  //      quotes give a day-move; the parenthetical names the current ET session
-  //   3. "WAITING FOR IB"      — positions exist but the WS prices feed is
-  //      empty, so the IB Gateway is unreachable (not "closed")
-  //   4. "MARKET CLOSED"       — no positions, or all positions stale (the
-  //      honest "nothing to compute" state)
-  let displayLabel: string;
-  if (ibDaily != null) displayLabel = "TODAY";
-  else if (fallback != null) {
-    // IB's reqPnL aggregate is silent but live quotes give us a day-move
-    // estimate. Name the SESSION honestly instead of always saying
-    // PRE-MARKET; during RTH this is a live estimate, not pre-market.
-    const phase = getMarketPhaseFromDate();
-    displayLabel =
-      phase === "open"
-        ? "ESTIMATED (LIVE)"
-        : phase === "after"
-          ? "ESTIMATED (AFTER HOURS)"
-          : phase === "pre"
-            ? "ESTIMATED (PRE-MARKET)"
-            : "ESTIMATED";
-  }
-  else if (hasPositions && !hasPrices) displayLabel = "WAITING FOR IB";
-  else displayLabel = "MARKET CLOSED";
-
-  // Day P&L %, shown alongside the notional. Denominator is the prior session's
-  // net liq (start-of-day account value = current NLV minus today's P&L), per
-  // the "Day Chg % off yesterday's value, never entry cost" rule.
-  const priorNetLiq = displayValue != null ? acct.net_liquidation - displayValue : null;
-  const dayPnlPct =
-    displayValue != null && priorNetLiq != null && priorNetLiq > 0
-      ? (displayValue / priorNetLiq) * 100
-      : null;
-  const dayPnlChange =
-    dayPnlPct != null
-      ? `${dayPnlPct >= 0 ? "+" : ""}${dayPnlPct.toFixed(2)}% · ${displayLabel}`
-      : displayLabel;
+  const dailyAvailable = acct.daily_pnl != null;
   return (
     <>
       <SectionHeader label="ACCOUNT" collapsed={collapsed} onToggle={onToggle} />
@@ -208,18 +132,9 @@ function AccountRow({
           onClick={onNetLiqClick}
         />
         <MetricCard
-          card={{
-            label: "Day P&L",
-            value: displayValue != null ? fmtSignedExact(displayValue) : "---",
-            change: dayPnlChange,
-            tone: displayValue != null ? tone(displayValue) : "neutral",
-          }}
+          card={{ label: "Day P&L", value: dailyAvailable ? fmtSignedExact(acct.daily_pnl!) : "---", change: dailyAvailable ? "TODAY" : "MARKET CLOSED", tone: dailyAvailable ? tone(acct.daily_pnl!) : "neutral" }}
           onClick={onDayPnlClick}
         />
-        {/* When the fallback fires, the card is still clickable — the
-            Day P&L modal already uses the client-computed breakdown
-            via computeDayMoveBreakdown, so the drill-down is accurate
-            even when IB's aggregate is unavailable. */}
         <MetricCard
           card={{ label: "Unrealized P&L", value: fmtSignedExact(acct.unrealized_pnl), change: "OPEN POSITIONS", tone: acct.unrealized_pnl !== 0 ? tone(acct.unrealized_pnl) : "neutral" }}
           onClick={onUnrealizedClick}
@@ -367,66 +282,17 @@ function CapitalRow({
 
 /* ─── Exposure row (real-time computed, clickable) ────────── */
 
-function buildDollarDeltaSubtitle(
-  exposure: ExposureDataWithBreakdown,
-  netLiquidation: number | undefined,
-  hasApprox: boolean,
-): { subtitle: ReactNode | undefined; change: string } {
-  const leverage = netLiquidation != null
-    ? computeLeverageRatio(exposure.dollarDelta, netLiquidation)
-    : null;
-  if (!leverage) return { subtitle: undefined, change: "NOTIONAL EXPOSURE" };
-
-  const bias = classifyLeverageBias(leverage.pct);
-  const biasLabel = bias === "long"
-    ? "long-biased"
-    : bias === "short"
-      ? "short-biased"
-      : "market-neutral";
-  const biasClass = `metric-subtitle-${bias}`;
-
-  return {
-    subtitle: (
-      <span className={`metric-subtitle-leverage ${biasClass}`} data-testid="dd-card-leverage">
-        <span className="metric-subtitle-pct" data-testid="dd-card-leverage-pct">
-          {formatLeveragePct(leverage.pct)} of NLV
-        </span>
-        <span className="metric-subtitle-divider" aria-hidden="true">/</span>
-        <span className="metric-subtitle-multiplier" data-testid="dd-card-leverage-multiplier">
-          {formatLeverageMultiplier(leverage.multiplier)} {biasLabel}
-        </span>
-        {hasApprox && (
-          <span className="metric-subtitle-approx" data-testid="dd-card-leverage-approx">
-            APPROX
-          </span>
-        )}
-      </span>
-    ),
-    change: "NOTIONAL EXPOSURE",
-  };
-}
-
 function ExposureRow({
   exposure,
-  netLiquidation,
   collapsed,
   onToggle,
   onCardClick,
 }: {
   exposure: ExposureDataWithBreakdown | null;
-  netLiquidation: number | undefined;
   collapsed: boolean;
   onToggle: () => void;
   onCardClick: (metric: ExposureMetric) => void;
 }) {
-  const ddCard = exposure
-    ? buildDollarDeltaSubtitle(
-        exposure,
-        netLiquidation,
-        exposure.rows.some((r) => r.deltaSource === "approx"),
-      )
-    : { subtitle: undefined, change: "NOTIONAL EXPOSURE" };
-
   return (
     <>
       <SectionHeader label="EXPOSURE" collapsed={collapsed} onToggle={onToggle} />
@@ -441,13 +307,7 @@ function ExposureRow({
             onClick={() => onCardClick("netShort")}
           />
           <MetricCard
-            card={{
-              label: "Dollar Delta",
-              value: fmtSigned(exposure.dollarDelta),
-              change: ddCard.change,
-              tone: tone(exposure.dollarDelta),
-              subtitle: ddCard.subtitle,
-            }}
+            card={{ label: "Dollar Delta", value: fmtSigned(exposure.dollarDelta), change: "NOTIONAL EXPOSURE", tone: tone(exposure.dollarDelta) }}
             onClick={() => onCardClick("dollarDelta")}
           />
           <MetricCard
@@ -670,9 +530,6 @@ export default function MetricCards({ portfolio, prices, realizedPnl, executedOr
       {acct ? (
         <AccountRow
           acct={acct}
-          todayUnrealized={todayUnrealized}
-          hasPositions={portfolio.positions.length > 0}
-          hasPrices={!!hasPrices}
           collapsed={collapsed.account}
           onToggle={() => toggle("account")}
           onNetLiqClick={() => setNetLiqModalOpen(true)}
@@ -724,13 +581,7 @@ export default function MetricCards({ portfolio, prices, realizedPnl, executedOr
       )}
 
       {/* Row 5: EXPOSURE (real-time, all 4 clickable) */}
-      <ExposureRow
-        exposure={exposure}
-        netLiquidation={acct?.net_liquidation}
-        collapsed={collapsed.exposure}
-        onToggle={() => toggle("exposure")}
-        onCardClick={setActiveMetric}
-      />
+      <ExposureRow exposure={exposure} collapsed={collapsed.exposure} onToggle={() => toggle("exposure")} onCardClick={setActiveMetric} />
 
       {/* Row 6: TODAY'S P&L — renamed "Unrealized" → "Day Move" */}
       <TodayPnlRow
@@ -755,7 +606,6 @@ export default function MetricCards({ portfolio, prices, realizedPnl, executedOr
           metric={activeMetric}
           exposure={exposure}
           bankroll={portfolio.bankroll}
-          netLiquidation={acct?.net_liquidation}
           onClose={() => setActiveMetric(null)}
         />
       )}

@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type MouseEvent as ReactMouseEvent,
-} from "react";
+import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import * as d3 from "d3";
 import InfoTooltip from "./InfoTooltip";
 import ChartLegend from "./charts/ChartLegend";
@@ -29,35 +23,8 @@ type RegimeRelationshipViewProps = {
 
 const CHART_WIDTH = 760;
 const CHART_HEIGHT = 240;
-const BRUSH_HEIGHT = 40;
-const BRUSH_HANDLE_WIDTH = 8;
 const MARGIN = { top: 16, right: 20, bottom: 32, left: 44 };
 const DATE_FORMATTER = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
-
-type RangePresetSlug = "1m" | "3m" | "6m" | "1y" | "all";
-type ActiveRange = RangePresetSlug | "custom";
-
-const RANGE_PRESETS: ReadonlyArray<{ slug: RangePresetSlug; label: string; sessions: number }> = [
-  { slug: "1m", label: "1M", sessions: 21 },
-  { slug: "3m", label: "3M", sessions: 63 },
-  { slug: "6m", label: "6M", sessions: 126 },
-  { slug: "1y", label: "1Y", sessions: 252 },
-  { slug: "all", label: "All", sessions: Number.POSITIVE_INFINITY },
-];
-
-const DEFAULT_PRESET: RangePresetSlug = "1y";
-
-function presetSessions(slug: RangePresetSlug): number {
-  const preset = RANGE_PRESETS.find((entry) => entry.slug === slug);
-  return preset?.sessions ?? Number.POSITIVE_INFINITY;
-}
-
-function presetRange(slug: RangePresetSlug, total: number): [number, number] {
-  if (total === 0) return [0, 0];
-  const sessions = Math.min(presetSessions(slug), total);
-  const start = Math.max(0, total - sessions);
-  return [start, total - 1];
-}
 
 function fmtSigned(value: number, digits = 2): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(digits)}`;
@@ -69,7 +36,7 @@ function formatDateLabel(value: string): string {
   return DATE_FORMATTER.format(date);
 }
 
-export function buildTickIndices(length: number, count = 4): number[] {
+function buildTickIndices(length: number, count = 4): number[] {
   if (length <= count) {
     return Array.from({ length }, (_, index) => index);
   }
@@ -79,13 +46,7 @@ export function buildTickIndices(length: number, count = 4): number[] {
   for (let tick = 0; tick < count; tick += 1) {
     indices.add(Math.round(step * tick));
   }
-  indices.add(0);
-  indices.add(length - 1);
   return Array.from(indices).sort((a, b) => a - b);
-}
-
-export function resolveRelationshipTickCount(innerWidth: number): number {
-  return Math.max(4, Math.min(7, Math.floor(innerWidth / 110)));
 }
 
 function spreadStateColor(state: string): string {
@@ -143,28 +104,12 @@ type ZScoreHoverState = {
   height: number;
 };
 
-type SpreadHoverState = ZScoreHoverState;
-
-type BrushDragMode = "left" | "right" | "window";
-
-type BrushDragState = {
-  mode: BrushDragMode;
-  pointerId: number;
-  originX: number;
-  originStart: number;
-  originEnd: number;
-};
-
 export default function RegimeRelationshipView({
   history,
   liveValues,
 }: RegimeRelationshipViewProps) {
   const zScoreSvgRef = useRef<SVGSVGElement>(null);
-  const spreadSvgRef = useRef<SVGSVGElement>(null);
-  const brushRef = useRef<HTMLDivElement>(null);
-  const dragStateRef = useRef<BrushDragState | null>(null);
   const [zScoreHover, setZScoreHover] = useState<ZScoreHoverState | null>(null);
-  const [spreadHover, setSpreadHover] = useState<SpreadHoverState | null>(null);
   const entries = useMemo(
     () => buildRegimeRelationshipEntries(history, liveValues),
     [history, liveValues],
@@ -174,110 +119,17 @@ export default function RegimeRelationshipView({
     [entries],
   );
 
-  // Initial range covers the last 252 sessions (or all when shorter).
-  // We persist [startIdx, endIdx] inclusive into the full `entries` array.
-  const [range, setRange] = useState<[number, number]>(() =>
-    presetRange(DEFAULT_PRESET, Math.max(entries.length, 1)),
-  );
-  const [activeRange, setActiveRange] = useState<ActiveRange>(DEFAULT_PRESET);
-
-  // Re-clamp the range when the upstream history shrinks/grows.
-  useEffect(() => {
-    if (entries.length === 0) return;
-    setRange(([start, end]) => {
-      const maxIdx = entries.length - 1;
-      const clampedEnd = Math.min(end, maxIdx);
-      const clampedStart = Math.max(0, Math.min(start, clampedEnd));
-      if (clampedStart === start && clampedEnd === end) return [start, end];
-      return [clampedStart, clampedEnd];
-    });
-  }, [entries.length]);
-
-  // Global pointer move/up listeners while a brush drag is in flight.
-  // Listeners read the latest `range` via a closure-captured ref so the math
-  // is stable across re-renders.
-  useEffect(() => {
-    function indexFromClientX(clientX: number): number {
-      const rect = brushRef.current?.getBoundingClientRect();
-      if (!rect || rect.width <= 0) return 0;
-      const ratio = (clientX - rect.left) / rect.width;
-      const clamped = Math.max(0, Math.min(1, ratio));
-      return Math.round(clamped * Math.max(entries.length - 1, 0));
-    }
-
-    function handleMove(event: PointerEvent) {
-      const drag = dragStateRef.current;
-      if (!drag || drag.pointerId !== event.pointerId) return;
-
-      const total = entries.length;
-      if (total === 0) return;
-      const maxIdx = total - 1;
-      const idx = indexFromClientX(event.clientX);
-
-      let nextStart = drag.originStart;
-      let nextEnd = drag.originEnd;
-      if (drag.mode === "left") {
-        nextStart = Math.max(0, Math.min(idx, drag.originEnd - 1));
-      } else if (drag.mode === "right") {
-        nextEnd = Math.max(drag.originStart + 1, Math.min(idx, maxIdx));
-      } else {
-        const originIdx = indexFromClientX(drag.originX);
-        const deltaIdx = idx - originIdx;
-        const windowSize = drag.originEnd - drag.originStart;
-        nextStart = Math.max(0, Math.min(maxIdx - windowSize, drag.originStart + deltaIdx));
-        nextEnd = nextStart + windowSize;
-      }
-
-      setRange((prev) =>
-        prev[0] === nextStart && prev[1] === nextEnd ? prev : [nextStart, nextEnd],
-      );
-      setActiveRange("custom");
-    }
-
-    function handleEnd(event: PointerEvent) {
-      const drag = dragStateRef.current;
-      if (!drag || drag.pointerId !== event.pointerId) return;
-      dragStateRef.current = null;
-    }
-
-    window.addEventListener("pointermove", handleMove);
-    window.addEventListener("pointerup", handleEnd);
-    window.addEventListener("pointercancel", handleEnd);
-    return () => {
-      window.removeEventListener("pointermove", handleMove);
-      window.removeEventListener("pointerup", handleEnd);
-      window.removeEventListener("pointercancel", handleEnd);
-    };
-  }, [entries.length]);
-
   if (!summary || entries.length < 2) {
     return null;
   }
 
   const innerWidth = CHART_WIDTH - MARGIN.left - MARGIN.right;
   const innerHeight = CHART_HEIGHT - MARGIN.top - MARGIN.bottom;
-
-  // Slice the entries to the active range for the spread chart only.
-  // Z-score and scatter charts continue to consume the full history.
-  const visibleStart = Math.max(0, Math.min(range[0], entries.length - 1));
-  const visibleEnd = Math.max(visibleStart, Math.min(range[1], entries.length - 1));
-  const visibleEntries = entries.slice(visibleStart, visibleEnd + 1);
-  const visibleCount = visibleEntries.length;
-
-  const spreadXScale = d3
-    .scaleLinear()
-    .domain([0, Math.max(visibleCount - 1, 1)])
-    .range([0, innerWidth]);
-  const spreadTickIndices = buildTickIndices(
-    visibleCount,
-    resolveRelationshipTickCount(innerWidth),
-  );
-
   const xScale = d3.scaleLinear().domain([0, entries.length - 1]).range([0, innerWidth]);
-  const tickIndices = buildTickIndices(entries.length, resolveRelationshipTickCount(innerWidth));
+  const tickIndices = buildTickIndices(entries.length);
 
   const spreadMax = Math.max(
-    ...visibleEntries.map((entry) => Math.abs(entry.spread)),
+    ...entries.map((entry) => Math.abs(entry.spread)),
     Math.abs(summary.meanSpread),
     1,
   );
@@ -286,10 +138,10 @@ export default function RegimeRelationshipView({
     .domain([-(spreadMax * 1.15), spreadMax * 1.15])
     .range([innerHeight, 0]);
   const spreadLine = d3
-    .line<RegimeRelationshipEntry>()
-    .x((_entry, index) => spreadXScale(index))
+    .line<(typeof entries)[number]>()
+    .x((entry, index) => xScale(index))
     .y((entry) => spreadScale(entry.spread))
-    .curve(d3.curveMonotoneX)(visibleEntries);
+    .curve(d3.curveMonotoneX)(entries);
 
   const realizedExtent = d3.extent(entries, (entry) => entry.realizedVol) as [number, number];
   const cor1mExtent = d3.extent(entries, (entry) => entry.cor1m) as [number, number];
@@ -327,7 +179,6 @@ export default function RegimeRelationshipView({
     .curve(d3.curveMonotoneX)(entries);
 
   const latest = entries[entries.length - 1];
-  const latestVisible = visibleEntries[visibleCount - 1] ?? latest;
   const spreadColor = spreadStateColor(summary.spreadState);
   const quadrantColor = quadrantTone(summary.latestQuadrant);
   const latestQuadrantColor = quadrantTone(latest.quadrant);
@@ -339,22 +190,6 @@ export default function RegimeRelationshipView({
   const zScoreTooltipTop = zScoreHover
     ? Math.max(12, Math.min(zScoreHover.y - 54, zScoreHover.height - 96))
     : 0;
-  const spreadTooltipSideStyle = spreadHover
-    ? spreadHover.x > spreadHover.width / 2
-      ? { right: spreadHover.width - spreadHover.x + 12 }
-      : { left: spreadHover.x + 12 }
-    : {};
-  const spreadTooltipTop = spreadHover
-    ? Math.max(12, Math.min(spreadHover.y - 54, spreadHover.height - 96))
-    : 0;
-
-  // Brush window dimensions as percentages of the brush track.
-  const totalSpan = Math.max(entries.length - 1, 1);
-  const brushLeftPct = (visibleStart / totalSpan) * 100;
-  const brushWidthPct = Math.max(
-    ((visibleEnd - visibleStart) / totalSpan) * 100,
-    0.5,
-  );
 
   function updateZScoreHover(clientX: number, clientY: number) {
     const svgRect = zScoreSvgRef.current?.getBoundingClientRect();
@@ -381,59 +216,6 @@ export default function RegimeRelationshipView({
 
   function handleZScoreHover(event: ReactMouseEvent<HTMLElement | SVGRectElement>) {
     updateZScoreHover(event.clientX, event.clientY);
-  }
-
-  function updateSpreadHover(clientX: number, clientY: number) {
-    const svgRect = spreadSvgRef.current?.getBoundingClientRect();
-    if (!svgRect || visibleCount === 0) return;
-
-    const pointerX = clientX - svgRect.left;
-    const pointerY = clientY - svgRect.top;
-    const chartX = (pointerX / svgRect.width) * CHART_WIDTH;
-    const clampedInnerX = Math.max(0, Math.min(innerWidth, chartX - MARGIN.left));
-    const localIndex = Math.max(
-      0,
-      Math.min(
-        visibleCount - 1,
-        Math.round((clampedInnerX / innerWidth) * Math.max(visibleCount - 1, 1)),
-      ),
-    );
-
-    setSpreadHover({
-      entry: visibleEntries[localIndex],
-      index: localIndex,
-      x: pointerX,
-      y: pointerY,
-      width: svgRect.width,
-      height: svgRect.height,
-    });
-  }
-
-  function handleSpreadHover(event: ReactMouseEvent<HTMLElement | SVGRectElement>) {
-    updateSpreadHover(event.clientX, event.clientY);
-  }
-
-  function applyPreset(slug: RangePresetSlug) {
-    setRange(presetRange(slug, entries.length));
-    setActiveRange(slug);
-  }
-
-  function handleBrushPointerDown(mode: BrushDragMode) {
-    return (event: React.PointerEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      try {
-        (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
-      } catch {
-        // jsdom may not implement setPointerCapture; ignore.
-      }
-      dragStateRef.current = {
-        mode,
-        pointerId: event.pointerId,
-        originX: event.clientX,
-        originStart: range[0],
-        originEnd: range[1],
-      };
-    };
   }
 
   return (
@@ -483,268 +265,91 @@ export default function RegimeRelationshipView({
             </div>
           </div>
 
-          <div
-            className="regime-spread-range-chips"
-            data-testid="regime-spread-range-chips"
-            role="group"
-            aria-label="Visible date range"
+          <svg
+            className="regime-relationship-chart"
+            data-testid="regime-spread-chart"
+            viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+            role="img"
+            aria-label="COR1M minus RVOL spread over the last 20 sessions"
           >
-            {RANGE_PRESETS.map((preset) => {
-              const isActive = activeRange === preset.slug;
-              return (
-                <button
-                  key={preset.slug}
-                  type="button"
-                  className="regime-spread-range-chip"
-                  data-testid={`regime-spread-range-${preset.slug}`}
-                  data-active={isActive ? "true" : "false"}
-                  onClick={() => applyPreset(preset.slug)}
-                >
-                  {preset.label}
-                </button>
-              );
-            })}
-            {activeRange === "custom" ? (
-              <span
-                className="regime-spread-range-chip regime-spread-range-chip-custom"
-                data-testid="regime-spread-range-custom"
-                data-active="true"
-                aria-label="Custom range from brush selection"
-              >
-                Custom
-              </span>
-            ) : null}
-          </div>
+            <g transform={`translate(${MARGIN.left},${MARGIN.top})`}>
+              {spreadScale.ticks(5).map((tick) => (
+                <g key={`spread-grid-${tick}`}>
+                  <line
+                    x1={0}
+                    x2={innerWidth}
+                    y1={spreadScale(tick)}
+                    y2={spreadScale(tick)}
+                    className="regime-relationship-grid-line"
+                  />
+                  <text
+                    x={-10}
+                    y={spreadScale(tick) + 4}
+                    textAnchor="end"
+                    className="regime-relationship-axis-label"
+                  >
+                    {fmtSigned(tick, 1)}
+                  </text>
+                </g>
+              ))}
 
-          <div
-            className="regime-relationship-chart-shell"
-            data-testid="regime-spread-chart-shell"
-            onPointerMove={handleSpreadHover}
-            onPointerLeave={() => setSpreadHover(null)}
-          >
-            <svg
-              ref={spreadSvgRef}
-              className="regime-relationship-chart"
-              data-testid="regime-spread-chart"
-              viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-              role="img"
-              aria-label="COR1M minus RVOL spread across the visible history window"
-            >
-              <g transform={`translate(${MARGIN.left},${MARGIN.top})`}>
-                {spreadScale.ticks(5).map((tick) => (
-                  <g key={`spread-grid-${tick}`}>
-                    <line
-                      x1={0}
-                      x2={innerWidth}
-                      y1={spreadScale(tick)}
-                      y2={spreadScale(tick)}
-                      className="regime-relationship-grid-line"
-                    />
-                    <text
-                      x={-10}
-                      y={spreadScale(tick) + 4}
-                      textAnchor="end"
-                      className="regime-relationship-axis-label"
-                    >
-                      {fmtSigned(tick, 1)}
-                    </text>
-                  </g>
-                ))}
-
-                <line
-                  x1={0}
-                  x2={innerWidth}
-                  y1={spreadScale(0)}
-                  y2={spreadScale(0)}
-                  className="regime-relationship-baseline"
-                />
-
-                {visibleEntries.map((entry, index) => {
-                  const x = spreadXScale(index);
-                  const zeroY = spreadScale(0);
-                  const y = spreadScale(entry.spread);
-                  const width = Math.max(innerWidth / Math.max(visibleCount, 1) - 6, 1);
-                  const fill = entry.spread >= 0 ? "var(--positive)" : "var(--negative)";
-                  return (
-                    <rect
-                      key={`spread-bar-${entry.date}`}
-                      data-testid={`regime-spread-bar-${entry.date}`}
-                      x={x - width / 2}
-                      y={Math.min(y, zeroY)}
-                      width={width}
-                      height={Math.max(Math.abs(zeroY - y), 1)}
-                      fill={fill}
-                      opacity={0.22}
-                    />
-                  );
-                })}
-
-                <path d={spreadLine ?? ""} className="regime-relationship-line regime-relationship-line-spread" />
-
-                <circle
-                  cx={spreadXScale(Math.max(visibleCount - 1, 0))}
-                  cy={spreadScale(latestVisible.spread)}
-                  r={5}
-                  className="regime-relationship-marker regime-relationship-marker-spread"
-                />
-
-                {spreadTickIndices.map((index) => (
-                  <g key={`spread-x-${visibleEntries[index]?.date}`}>
-                    <line
-                      x1={spreadXScale(index)}
-                      x2={spreadXScale(index)}
-                      y1={innerHeight}
-                      y2={innerHeight + 6}
-                      className="regime-relationship-axis-tick"
-                    />
-                    <text
-                      x={spreadXScale(index)}
-                      y={innerHeight + 20}
-                      textAnchor="middle"
-                      className="regime-relationship-axis-label"
-                    >
-                      {formatDateLabel(visibleEntries[index]?.date ?? "")}
-                    </text>
-                  </g>
-                ))}
-
-                {spreadHover && (
-                  <>
-                    <line
-                      x1={spreadXScale(spreadHover.index)}
-                      x2={spreadXScale(spreadHover.index)}
-                      y1={0}
-                      y2={innerHeight}
-                      className="regime-relationship-hover-line"
-                    />
-                    <circle
-                      cx={spreadXScale(spreadHover.index)}
-                      cy={spreadScale(spreadHover.entry.spread)}
-                      r={5}
-                      className="regime-relationship-marker regime-relationship-marker-spread"
-                    />
-                  </>
-                )}
-
-                <rect
-                  x={0}
-                  y={0}
-                  width={innerWidth}
-                  height={innerHeight}
-                  fill="transparent"
-                  pointerEvents="all"
-                  className="regime-relationship-chart-overlay"
-                  data-testid="regime-spread-chart-overlay"
-                  onPointerMove={handleSpreadHover}
-                />
-              </g>
-            </svg>
-
-            {spreadHover && (
-              <div
-                className="chart-tooltip regime-relationship-chart-tooltip"
-                data-testid="regime-spread-hover-tooltip"
-                style={{
-                  top: `${spreadTooltipTop}px`,
-                  ...spreadTooltipSideStyle,
-                }}
-              >
-                <div className="chart-tooltip-date" data-testid="regime-spread-hover-date">
-                  {formatDateLabel(spreadHover.entry.date)}
-                </div>
-                <div className="chart-tooltip-row">
-                  <span className="chart-tooltip-label">Spread</span>
-                  <span className="chart-tooltip-value">{fmtSigned(spreadHover.entry.spread)}</span>
-                </div>
-                <div className="chart-tooltip-row">
-                  <span className="chart-tooltip-label">RVOL z</span>
-                  <span className="chart-tooltip-value">{fmtSigned(spreadHover.entry.realizedVolZ)}σ</span>
-                </div>
-                <div className="chart-tooltip-row">
-                  <span className="chart-tooltip-label">COR1M z</span>
-                  <span className="chart-tooltip-value">{fmtSigned(spreadHover.entry.cor1mZ)}σ</span>
-                </div>
-                <div className="chart-tooltip-row">
-                  <span className="chart-tooltip-label">Quadrant</span>
-                  <span className="chart-tooltip-value">{spreadHover.entry.quadrant}</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div
-            ref={brushRef}
-            className="regime-spread-brush"
-            data-testid="regime-spread-brush"
-            style={{ height: `${BRUSH_HEIGHT}px` }}
-            aria-label="Range brush minimap"
-            role="group"
-          >
-            <svg
-              className="regime-spread-brush-context"
-              viewBox={`0 0 ${CHART_WIDTH} ${BRUSH_HEIGHT}`}
-              preserveAspectRatio="none"
-              aria-hidden="true"
-            >
-              <path
-                d={
-                  d3
-                    .line<RegimeRelationshipEntry>()
-                    .x((_entry, index) => (index / Math.max(entries.length - 1, 1)) * CHART_WIDTH)
-                    .y((entry) => {
-                      const max = Math.max(
-                        ...entries.map((e) => Math.abs(e.spread)),
-                        1,
-                      );
-                      return BRUSH_HEIGHT / 2 - (entry.spread / max) * (BRUSH_HEIGHT / 2 - 4);
-                    })
-                    .curve(d3.curveMonotoneX)(entries) ?? ""
-                }
-                className="regime-spread-brush-line"
+              <line
+                x1={0}
+                x2={innerWidth}
+                y1={spreadScale(0)}
+                y2={spreadScale(0)}
+                className="regime-relationship-baseline"
               />
-            </svg>
 
-            <div
-              className="regime-spread-brush-window"
-              data-testid="regime-spread-brush-window"
-              style={{
-                left: `${brushLeftPct}%`,
-                width: `${brushWidthPct}%`,
-              }}
-              onPointerDown={handleBrushPointerDown("window")}
-            />
+              {entries.map((entry, index) => {
+                const x = xScale(index);
+                const zeroY = spreadScale(0);
+                const y = spreadScale(entry.spread);
+                const width = Math.max(innerWidth / entries.length - 6, 6);
+                const fill = entry.spread >= 0 ? "var(--positive)" : "var(--negative)";
+                return (
+                  <rect
+                    key={`spread-bar-${entry.date}`}
+                    x={x - width / 2}
+                    y={Math.min(y, zeroY)}
+                    width={width}
+                    height={Math.max(Math.abs(zeroY - y), 1)}
+                    fill={fill}
+                    opacity={0.22}
+                  />
+                );
+              })}
 
-            <div
-              className="regime-spread-brush-handle regime-spread-brush-handle-left"
-              data-testid="regime-spread-brush-handle-left"
-              style={{
-                left: `calc(${brushLeftPct}% - ${BRUSH_HANDLE_WIDTH / 2}px)`,
-                width: `${BRUSH_HANDLE_WIDTH}px`,
-              }}
-              onPointerDown={handleBrushPointerDown("left")}
-              role="slider"
-              aria-label="Start of visible range"
-              aria-valuemin={0}
-              aria-valuemax={entries.length - 1}
-              aria-valuenow={visibleStart}
-              tabIndex={0}
-            />
-            <div
-              className="regime-spread-brush-handle regime-spread-brush-handle-right"
-              data-testid="regime-spread-brush-handle-right"
-              style={{
-                left: `calc(${brushLeftPct + brushWidthPct}% - ${BRUSH_HANDLE_WIDTH / 2}px)`,
-                width: `${BRUSH_HANDLE_WIDTH}px`,
-              }}
-              onPointerDown={handleBrushPointerDown("right")}
-              role="slider"
-              aria-label="End of visible range"
-              aria-valuemin={0}
-              aria-valuemax={entries.length - 1}
-              aria-valuenow={visibleEnd}
-              tabIndex={0}
-            />
-          </div>
+              <path d={spreadLine ?? ""} className="regime-relationship-line regime-relationship-line-spread" />
+
+              <circle
+                cx={xScale(entries.length - 1)}
+                cy={spreadScale(latest.spread)}
+                r={5}
+                className="regime-relationship-marker regime-relationship-marker-spread"
+              />
+
+              {tickIndices.map((index) => (
+                <g key={`spread-x-${entries[index]?.date}`}>
+                  <line
+                    x1={xScale(index)}
+                    x2={xScale(index)}
+                    y1={innerHeight}
+                    y2={innerHeight + 6}
+                    className="regime-relationship-axis-tick"
+                  />
+                  <text
+                    x={xScale(index)}
+                    y={innerHeight + 20}
+                    textAnchor="middle"
+                    className="regime-relationship-axis-label"
+                  >
+                    {formatDateLabel(entries[index]?.date ?? "")}
+                  </text>
+                </g>
+              ))}
+            </g>
+          </svg>
         </section>
 
         <section className="regime-relationship-panel" data-testid="regime-quadrant-card">
@@ -932,8 +537,8 @@ export default function RegimeRelationshipView({
           <div
             className="regime-relationship-chart-shell"
             data-testid="regime-zscore-chart-shell"
-            onPointerMove={handleZScoreHover}
-            onPointerLeave={() => setZScoreHover(null)}
+            onMouseMove={handleZScoreHover}
+            onMouseLeave={() => setZScoreHover(null)}
           >
             <svg
               ref={zScoreSvgRef}
@@ -1041,7 +646,7 @@ export default function RegimeRelationshipView({
                   pointerEvents="all"
                   className="regime-relationship-chart-overlay"
                   data-testid="regime-zscore-chart-overlay"
-                  onPointerMove={handleZScoreHover}
+                  onMouseMove={handleZScoreHover}
                 />
               </g>
             </svg>

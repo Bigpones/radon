@@ -6,7 +6,6 @@ import {
   jsonApiError,
   setCacheResponseHeaders,
 } from "@/lib/apiContracts";
-import { canReuseUwInfo, hasAnyTickerData, isPopulated, pickUwInfo } from "@/lib/tickerInfoCache";
 
 export const runtime = "nodejs";
 
@@ -62,7 +61,6 @@ function isStatsExpired(entry: CacheEntry): boolean {
 function hasProfile(entry: CacheEntry): boolean {
   return Object.keys(entry.exa_profile).length > 0;
 }
-
 
 /* ─── Exa parsing ─── */
 
@@ -216,12 +214,8 @@ export async function GET(request: Request): Promise<Response> {
   const profileCached = cached && hasProfile(cached);
   const statsCached = cached && !isStatsExpired(cached);
 
-  // If profile + stats + uw_info are all cached, just refresh stock-state
-  // (intraday). uw_info MUST be non-empty to take this fast path — a prior
-  // transient UW failure leaves uw_info: {} which would otherwise re-serve an
-  // empty market cap / beta for the full 24h stats window
-  // (see feedback_dont_cache_empty_results).
-  if (profileCached && statsCached && isPopulated(cached?.uw_info)) {
+  // If both profile and stats are cached, just refresh stock-state (intraday)
+  if (profileCached && statsCached) {
     let stockState = cached.stock_state;
     if (token) {
       const freshState = await fetchUWStockState(symbol, token);
@@ -258,18 +252,11 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   try {
-    // 2. Fetch UW data (always fresh for stock-state).
-    // Reuse cached uw_info only when it actually carries data — never let an
-    // empty {} from a past failure short-circuit the re-fetch behind the 24h
-    // stats TTL.
-    const reuseUwInfo = canReuseUwInfo(cached?.uw_info, !!statsCached);
-    const [fetchedUwInfo, stockState] = await Promise.all([
-      reuseUwInfo && cached ? Promise.resolve(cached.uw_info) : fetchUWStockInfo(symbol, token),
+    // 2. Fetch UW data (always fresh for stock-state)
+    const [uwInfo, stockState] = await Promise.all([
+      statsCached && cached ? Promise.resolve(cached.uw_info) : fetchUWStockInfo(symbol, token),
       fetchUWStockState(symbol, token),
     ]);
-    // Don't downgrade a populated cache to empty on a transient UW failure:
-    // prefer the fresh fetch, fall back to the last-good cached value.
-    const uwInfo = pickUwInfo(fetchedUwInfo, cached?.uw_info);
 
     // 3. Fetch Exa data if needed, with Yahoo Finance fallback for 52W stats
     let exaProfile: Record<string, unknown> = cached?.exa_profile ?? {};
@@ -292,11 +279,7 @@ export async function GET(request: Request): Promise<Response> {
       }
     }
 
-    // 4. Write cache. Never persist an all-empty payload behind the 24h stats
-    // TTL — that is exactly the poisoning that strands a ticker with "---"
-    // until the window expires. Skipping the write makes the next request
-    // retry immediately.
-    const hasAnyData = hasAnyTickerData(uwInfo, exaProfile, exaStats);
+    // 4. Write cache
     const entry: CacheEntry = {
       ticker: symbol,
       profile_expires: null, // never
@@ -307,7 +290,7 @@ export async function GET(request: Request): Promise<Response> {
       exa_stats: exaStats,
       fetched_at: new Date().toISOString(),
     };
-    if (hasAnyData) await writeCache(entry);
+    await writeCache(entry);
 
     const response = NextResponse.json({
       uw_info: uwInfo,

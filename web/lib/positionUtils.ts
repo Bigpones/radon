@@ -4,13 +4,8 @@ import { optionKey } from "@/lib/pricesProtocol";
 
 /* ─── Formatters ──────────────────────────────────────────── */
 
-function normalizeRoundedZero(n: number, fractionDigits: number): number {
-  const threshold = 0.5 / (10 ** fractionDigits);
-  return Math.abs(n) < threshold ? 0 : n;
-}
-
-export const fmtUsd = (n: number) => `$${normalizeRoundedZero(n, 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-export const fmtPrice = (n: number) => `$${normalizeRoundedZero(n, 2).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+export const fmtUsd = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+export const fmtPrice = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 export const fmtPriceOrCalculated = (n: number, isCalculated: boolean) => isCalculated ? `C${fmtPrice(n)}` : fmtPrice(n);
 
 type ResolvedRealtimePrice = {
@@ -65,15 +60,6 @@ export function resolveRealtimePrice(
     return { price: fallbackPrice, isCalculated: fallbackIsCalculated };
   }
 
-  // Final fallback: previous-session close. WS broadcasts close on every tick
-  // (with disk-cache backfill in scripts/ib_realtime_server.js), so even on a
-  // dead market or a sync that fetched no live quote we still surface the most
-  // recent known price instead of "—".
-  const close = isPositiveNumber(priceData?.close) ? priceData.close : null;
-  if (close != null) {
-    return { price: close, isCalculated: true };
-  }
-
   return { price: null, isCalculated: false };
 }
 
@@ -94,12 +80,8 @@ export function resolveMarketValue(pos: PortfolioPosition): number | null {
   return single?.market_value ?? null;
 }
 
-function getLegMultiplier(leg: { type: string }): number {
-  return leg.type === "Stock" ? 1 : 100;
-}
-
 export function getMultiplier(pos: PortfolioPosition): number {
-  return pos.structure_type === "Stock" || pos.legs.some((leg) => leg.type === "Stock") ? 1 : 100;
+  return pos.structure_type === "Stock" ? 1 : 100;
 }
 
 export function resolveEntryCost(pos: PortfolioPosition): number {
@@ -256,7 +238,7 @@ function computeRtMv(pos: PortfolioPosition, prices?: Record<string, PriceData>)
     const current = resolveRealtimePrice(lp, leg.market_price, Boolean(leg.market_price_is_calculated)).price;
     if (current == null) return null;
     const sign = leg.direction === "LONG" ? 1 : -1;
-    rtMv += sign * current * leg.contracts * getLegMultiplier(leg);
+    rtMv += sign * current * leg.contracts * 100;
   }
   return rtMv;
 }
@@ -290,9 +272,8 @@ export function getOptionDailyChg(pos: PortfolioPosition, prices?: Record<string
     if (current == null) return null;
     const sign = leg.direction === "LONG" ? 1 : -1;
     if (lp?.close != null && lp.close > 0) {
-      const multiplier = getLegMultiplier(leg);
-      wsDailyPnl += sign * (current - lp.close) * leg.contracts * multiplier;
-      closeValue += sign * lp.close * leg.contracts * multiplier;
+      wsDailyPnl += sign * (current - lp.close) * leg.contracts * 100;
+      closeValue += sign * lp.close * leg.contracts * 100;
       hasClose = true;
     }
   }
@@ -334,7 +315,7 @@ export function getTodayPnlDollars(pos: PortfolioPosition, prices?: Record<strin
     const close = lp?.close;
     if (close != null && close > 0) {
       const sign = leg.direction === "LONG" ? 1 : -1;
-      pnl += sign * (last - close) * leg.contracts * getLegMultiplier(leg);
+      pnl += sign * (last - close) * leg.contracts * 100;
       hasClose = true;
     }
   }

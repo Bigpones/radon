@@ -1,10 +1,6 @@
 "use client";
 
-import MetricBreakdownModal, {
-  type MetricBreakdownColumn,
-  type MetricBreakdownRow,
-} from "./MetricBreakdownModal";
-import { fmtSigned, fmtPct } from "@/lib/format/money";
+import Modal from "./Modal";
 
 export type PnlBreakdownRow = {
   id: string | number;
@@ -29,48 +25,76 @@ type Props = {
   className?: string;
 };
 
+function fmtSigned(n: number, decimals = 0) {
+  const abs = Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  return `${n >= 0 ? "+" : "-"}$${abs}`;
+}
+
+function fmtPct(n: number) {
+  return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
+}
+
 export default function PnlBreakdownModal({
   open, title, formula, col1Header, col2Header, rows, total, totalLabel = "TOTAL", onClose, className = "",
 }: Props) {
-  const columns: MetricBreakdownColumn[] = [
-    { header: "TICKER" },
-    { header: "STRUCTURE" },
-    { header: col1Header, className: "text-right" },
-    { header: col2Header, className: "text-right" },
-    { header: "P&L", className: "text-right" },
-    { header: "%", className: "text-right" },
-  ];
+  if (!open) return null;
 
-  const breakdownRows: MetricBreakdownRow[] = rows.map((row) => ({
-    id: row.id,
-    sortValue: row.pnl,
-    cells: [
-      { content: row.ticker, className: "eb-ticker" },
-      { content: row.structure, className: "eb-structure" },
-      { content: row.col1, className: "eb-mono" },
-      { content: row.col2, className: "eb-mono" },
-      { content: fmtSigned(row.pnl, 2), className: "eb-mono", tone: row.pnl >= 0 ? "positive" : "negative" },
-      { content: row.pnlPct != null ? fmtPct(row.pnlPct) : "---", className: "eb-mono", tone: row.pnl >= 0 ? "positive" : "negative" },
-    ],
-  }));
+  const sorted = [...rows].sort((a, b) => Math.abs(b.pnl) - Math.abs(a.pnl));
 
   return (
-    <MetricBreakdownModal
-      open={open}
-      onClose={onClose}
-      title={title}
-      className={`pnl-breakdown-modal ${className}`}
-      value={fmtSigned(total, 2)}
-      valueTone={total >= 0 ? "positive" : "negative"}
-      formula={formula}
-      columns={columns}
-      rows={breakdownRows}
-      footer={[
-        { content: totalLabel, className: "pb-total-label", colSpan: 4 },
-        { content: fmtSigned(total, 2), className: "eb-mono", tone: total >= 0 ? "positive" : "negative" },
-        { content: "" },
-      ]}
-      emptyMessage="No position data available. Sync portfolio from IB."
-    />
+    <Modal open onClose={onClose} title={title} className={`pnl-breakdown-modal ${className}`}>
+      {/* Total */}
+      <div className="eb-total">
+        <span className={`eb-total-value ${total >= 0 ? "positive" : "negative"}`}>
+          {fmtSigned(total, 2)}
+        </span>
+      </div>
+
+      {/* Formula proof */}
+      <div className="eb-formula">
+        <code>{formula}</code>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="eb-empty">No position data available — sync portfolio from IB</div>
+      ) : (
+        <table className="eb-table">
+          <thead>
+            <tr>
+              <th>TICKER</th>
+              <th>STRUCTURE</th>
+              <th className="text-right">{col1Header}</th>
+              <th className="text-right">{col2Header}</th>
+              <th className="text-right">P&L</th>
+              <th className="text-right">%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((row) => (
+              <tr key={row.id} className="eb-row">
+                <td className="eb-ticker">{row.ticker}</td>
+                <td className="eb-structure">{row.structure}</td>
+                <td className="eb-mono">{row.col1}</td>
+                <td className="eb-mono">{row.col2}</td>
+                <td className={`eb-mono ${row.pnl >= 0 ? "positive" : "negative"}`}>
+                  {fmtSigned(row.pnl, 2)}
+                </td>
+                <td className={`eb-mono ${row.pnl >= 0 ? "positive" : "negative"}`}>
+                  {row.pnlPct != null ? fmtPct(row.pnlPct) : "---"}
+                </td>
+              </tr>
+            ))}
+            {/* Total row */}
+            <tr className="pb-total-row">
+              <td colSpan={4} className="pb-total-label">{totalLabel}</td>
+              <td className={`eb-mono ${total >= 0 ? "positive" : "negative"}`}>
+                {fmtSigned(total, 2)}
+              </td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+      )}
+    </Modal>
   );
 }

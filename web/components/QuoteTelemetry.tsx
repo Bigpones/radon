@@ -4,7 +4,6 @@ import { ArrowDown, ArrowUp } from "lucide-react";
 import type { PriceData } from "@/lib/pricesProtocol";
 import {
   buildQuoteTelemetryModel,
-  type QuoteFallback,
   type QuoteTelemetryFieldKey,
   type QuoteTelemetryModel,
 } from "@/lib/quoteTelemetry";
@@ -77,15 +76,13 @@ function QuoteTelemetryPanel({
 export function TickerQuoteTelemetry({
   priceData,
   label,
-  fallback,
 }: {
   priceData: PriceData | null;
   label?: string;
-  fallback?: QuoteFallback | null;
 }) {
   return (
     <QuoteTelemetryPanel
-      model={buildQuoteTelemetryModel(priceData, fallback ?? null)}
+      model={buildQuoteTelemetryModel(priceData)}
       label={label}
       fields={BAR_FIELDS}
       variant="bar"

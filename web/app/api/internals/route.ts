@@ -1,4 +1,3 @@
-
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
@@ -9,12 +8,6 @@ import { selectPreferredCriCandidate, type CriCacheCandidate } from "@/lib/criCa
 import { backfillRealizedVolHistory, type RegimeHistoryEntry } from "@/lib/regimeHistory";
 import { radonFetch } from "@/lib/radonApi";
 import { isSkewCacheFresh } from "@/lib/internalsSkewCache";
-import { getRequestId, setNoStoreResponseHeaders } from "@/lib/apiContracts";
-
-// Disable Next.js static caching: this handler reads live disk state
-// (data/*.json, cache files). Without this, the framework freezes the
-// first response and serves stale data until the dev server restarts.
-export const dynamic = "force-dynamic";
 
 const DATA_DIR = join(process.cwd(), "..", "data");
 const CACHE_PATH = join(DATA_DIR, "cri.json");
@@ -582,7 +575,6 @@ function triggerBackgroundScan(): void {
 }
 
 export async function GET(): Promise<Response> {
-  const requestId = getRequestId();
   const result = await readLatestCri();
   const [menthorqCache, menthorqSkewHistory] = await Promise.all([
     readLatestMenthorqCache(),
@@ -600,11 +592,10 @@ export async function GET(): Promise<Response> {
     triggerBackgroundScan();
   }
 
-  return setNoStoreResponseHeaders(NextResponse.json(data), requestId);
+  return NextResponse.json(data);
 }
 
 export async function POST(): Promise<Response> {
-  const requestId = getRequestId();
   try {
     const rawData = await radonFetch<Record<string, unknown>>("/regime/scan", {
       method: "POST",
@@ -615,12 +606,9 @@ export async function POST(): Promise<Response> {
       readInternalsSkewHistory(),
     ]);
     const data = normalizeCriPayload(rawData, menthorqCache, menthorqSkewHistory);
-    return setNoStoreResponseHeaders(NextResponse.json(data), requestId);
+    return NextResponse.json(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : "CRI scan failed";
-    return setNoStoreResponseHeaders(
-      NextResponse.json({ error: message }, { status: 502 }),
-      requestId,
-    );
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }

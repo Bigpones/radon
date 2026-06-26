@@ -2,9 +2,7 @@
 
 import { useMemo } from "react";
 import { useSyncHook, type UseSyncReturn } from "./useSyncHook";
-import { isCriDataStale } from "./criStaleness";
 import { MarketState } from "./useMarketHours";
-import { parseScanTime } from "./parseScanTime";
 
 export type CriHistoryEntry = {
   date: string;
@@ -87,17 +85,10 @@ function todayET(now = new Date()): string {
 }
 
 export function needsCurrentEtSessionRetry(
-  data: Pick<CriData, "date" | "scan_time" | "market_open"> | null | undefined,
+  data: Pick<CriData, "date"> | null | undefined,
   now = new Date(),
 ): boolean {
-  if (!data?.scan_time) return true;
-  const scanDate = parseScanTime(data.scan_time);
-  if (!scanDate) return true;
-  return isCriDataStale(
-    { date: data.date, market_open: data.market_open },
-    scanDate.getTime(),
-    todayET(now),
-  );
+  return Boolean(data?.date && data.date !== todayET(now));
 }
 
 export const REGIME_STALE_RETRY_MS = 5000;
@@ -105,7 +96,7 @@ export const REGIME_STALE_RETRY_MS = 5000;
 export const REGIME_SYNC_CONFIG = {
   endpoint: "/api/regime",
   interval: 60_000,
-  hasPost: true,
+  hasPost: false,
   extractTimestamp: (d: CriData) => d.scan_time || null,
   shouldRetry: (d: CriData) => needsCurrentEtSessionRetry(d),
   retryIntervalMs: REGIME_STALE_RETRY_MS,
@@ -138,6 +129,8 @@ export function useRegime(marketState: boolean | MarketState | null = null, opti
     actualState === MarketState.EXTENDED ? 300_000 :
     0;
 
+  const isActive = actualState !== MarketState.CLOSED;
+
   const endpoint = options.endpoint ?? REGIME_SYNC_CONFIG.endpoint;
   const stableConfig = useMemo(() => ({
     ...REGIME_SYNC_CONFIG,
@@ -145,5 +138,5 @@ export function useRegime(marketState: boolean | MarketState | null = null, opti
     interval: adaptiveInterval, // Override default interval
   }), [endpoint, adaptiveInterval]);
 
-  return useSyncHook<CriData>(stableConfig, true);
+  return useSyncHook<CriData>(stableConfig, isActive);
 }

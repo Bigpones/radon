@@ -178,8 +178,8 @@ test.describe("SPXU combo order — rejection surfaces as error (RED → GREEN)"
     await expect(errorMsg).toBeVisible();
     await expect(errorMsg).toContainText(/rejected|Cancelled/i);
 
-    // Success toast should NOT appear
-    await expect(page.locator(".toast-success")).not.toBeVisible();
+    // Success message should NOT appear
+    await expect(page.locator(".order-success")).not.toBeVisible();
   });
 
   test("GREEN: IB acceptance shows success message", async ({ page }) => {
@@ -222,9 +222,8 @@ test.describe("SPXU combo order — rejection surfaces as error (RED → GREEN)"
     await openSpxuOrderTab(page);
     await fillComboForm(page, "2.25");
 
-    // Should show a success toast (order feedback routes through the global
-    // toast system, not an inline banner)
-    const successMsg = page.locator(".toast-success");
+    // Should show success
+    const successMsg = page.locator(".order-success");
     await successMsg.waitFor({ timeout: 5_000 });
     await expect(successMsg).toBeVisible();
     await expect(successMsg).toContainText(/Combo order placed.*\$2\.25/i);
@@ -251,7 +250,7 @@ test.describe("SPXU combo order — rejection surfaces as error (RED → GREEN)"
     const errorMsg = page.locator(".order-error");
     await errorMsg.waitFor({ timeout: 5_000 });
     await expect(errorMsg).toBeVisible();
-    await expect(page.locator(".toast-success")).not.toBeVisible();
+    await expect(page.locator(".order-success")).not.toBeVisible();
   });
 
   test("GREEN: noisy upstream margin rejection is rendered as concise operator copy", async ({ page }) => {

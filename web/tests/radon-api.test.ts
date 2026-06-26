@@ -73,9 +73,7 @@ describe("radonFetch — success", () => {
     const [, opts] = mockFetch.mock.calls[0];
     expect(opts.method).toBe("POST");
     expect(opts.cache).toBe("no-store");
-    // radonFetch normalizes init.headers into a Headers instance (so it can
-    // inject Authorization), so assert via the Headers API, not deep-equal.
-    expect(new Headers(opts.headers).get("Content-Type")).toBe("application/json");
+    expect(opts.headers).toEqual({ "Content-Type": "application/json" });
     expect(opts.body).toContain("AAPL");
   });
 
@@ -161,56 +159,6 @@ describe("radonFetch — error handling", () => {
       expect(e.status).toBe(400);
       expect(e.detail).toContain("error");
     }
-  });
-});
-
-// =============================================================================
-// Structured error detail (e.g. /admin/services returns {detail: {...}})
-// Regression for the bug where the UI rendered "Radon API 502: [object Object]"
-// because body.detail was an object and template literal stringified it.
-// =============================================================================
-
-describe("radonFetch — structured error detail", () => {
-  it("extracts nested .detail string from object-shaped HTTPException", async () => {
-    mockFetch.mockResolvedValue(
-      jsonResponse(
-        {
-          detail: {
-            unit: "radon-cta-sync.service",
-            action: "start",
-            ok: false,
-            detail: "Failed to start radon-cta-sync.service: Interactive authentication required.",
-            returncode: 1,
-          },
-        },
-        502,
-      ),
-    );
-
-    await expect(radonFetch("/admin/services/radon-cta-sync.service/start", { method: "POST" })).rejects.toMatchObject({
-      status: 502,
-      detail: "Failed to start radon-cta-sync.service: Interactive authentication required.",
-      message: expect.stringContaining("Interactive authentication required"),
-    });
-  });
-
-  it("does not produce [object Object] for unrecognised object shapes", async () => {
-    mockFetch.mockResolvedValue(jsonResponse({ detail: { foo: "bar", baz: 1 } }, 500));
-    try {
-      await radonFetch("/anything");
-      throw new Error("should have thrown");
-    } catch (err) {
-      expect(err).toBeInstanceOf(RadonApiError);
-      expect((err as Error).message).not.toContain("[object Object]");
-      expect((err as RadonApiError).detail).toContain("foo");
-    }
-  });
-
-  it("extracts string detail when detail is already a string (FastAPI HTTPException default)", async () => {
-    mockFetch.mockResolvedValue(jsonResponse({ detail: "Plain string error" }, 400));
-    await expect(radonFetch("/anything")).rejects.toMatchObject({
-      detail: "Plain string error",
-    });
   });
 });
 

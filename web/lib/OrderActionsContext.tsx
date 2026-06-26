@@ -23,7 +23,7 @@ export type PendingModify = {
 
 type ModifyRequestWithOutsideRth = ModifyOrderRequest & { outsideRth?: boolean };
 
-export type Notification = {
+type Notification = {
   type: "error" | "warning" | "success";
   message: string;
   duration?: number;
@@ -35,8 +35,6 @@ type OrderActionsContextValue = {
   cancelledOrders: CancelledOrder[];
   requestCancel: (order: OpenOrder) => Promise<void>;
   requestModify: (order: OpenOrder, request: ModifyOrderRequest) => Promise<void>;
-  /** Queue a toast notification (drained into the global toast system by WorkspaceShell). */
-  pushNotification: (n: Notification) => void;
   drainNotifications: () => Notification[];
   setOrdersUpdater: (fn: ((data: OrdersData) => void) | null) => void;
 };
@@ -347,7 +345,6 @@ export function OrderActionsProvider({ children }: { children: ReactNode }) {
         cancelledOrders,
         requestCancel,
         requestModify,
-        pushNotification,
         drainNotifications,
         setOrdersUpdater,
       }}
@@ -361,14 +358,4 @@ export function useOrderActions(): OrderActionsContextValue {
   const ctx = useContext(OrderActionsContext);
   if (!ctx) throw new Error("useOrderActions must be used within OrderActionsProvider");
   return ctx;
-}
-
-/**
- * Non-throwing variant for surfaces that only need best-effort access (e.g. an
- * order form that wants to push a success toast). Returns null when rendered
- * outside the provider — production always has it via WorkspaceShell, but unit
- * tests that render a form in isolation should not be forced to wrap it.
- */
-export function useOrderActionsOptional(): OrderActionsContextValue | null {
-  return useContext(OrderActionsContext);
 }

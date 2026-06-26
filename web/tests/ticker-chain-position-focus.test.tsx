@@ -6,18 +6,8 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 
 import TickerDetailContent from "../components/TickerDetailContent";
 import { TickerDetailProvider } from "../lib/TickerDetailContext";
-import { OrderActionsProvider } from "../lib/OrderActionsContext";
 import type { OrdersData, PortfolioData } from "../lib/types";
 import type { PriceData } from "../lib/pricesProtocol";
-
-// OptionsChainTab deep-links its filters via useChainUrlState (next/navigation).
-// Empty search params here means no ?expiry override, so the focused-position
-// expiry still wins — exactly what this test asserts.
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(""),
-  usePathname: () => "/PLTR",
-  useRouter: () => ({ replace: vi.fn(), push: vi.fn(), prefetch: vi.fn(), back: vi.fn(), forward: vi.fn(), refresh: vi.fn() }),
-}));
 
 vi.mock("../components/PriceChart", () => ({
   default: () => React.createElement("div", { "data-testid": "price-chart" }),
@@ -133,12 +123,6 @@ describe("Ticker chain position focus", () => {
     } else {
       vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => {});
     }
-    // jsdom does not implement Element.prototype.scrollTo — the chain auto-scroll
-    // (OptionsChainTab) calls wrapper.scrollTo({ behavior: "smooth" }).
-    Object.defineProperty(Element.prototype, "scrollTo", {
-      configurable: true,
-      value: vi.fn(),
-    });
 
     fetchMock.mockImplementation((input) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : String(input.url);
@@ -166,15 +150,6 @@ describe("Ticker chain position focus", () => {
           }),
         );
       }
-      // useRiskFreeRate (called from OptionsChainTab to drive Implied col)
-      if (url.includes("/api/risk-free-rate")) {
-        return Promise.resolve(
-          new Response(JSON.stringify({ rate: 0 }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }),
-        );
-      }
       throw new Error(`Unexpected fetch: ${url}`);
     });
   });
@@ -187,23 +162,19 @@ describe("Ticker chain position focus", () => {
   it("uses the deep-linked position expiry instead of the generic >=7d default on the chain tab", async () => {
     render(
       React.createElement(
-        OrderActionsProvider,
+        TickerDetailProvider,
         null,
-        React.createElement(
-          TickerDetailProvider,
-          null,
-          React.createElement(TickerDetailContent, {
-            ticker: "PLTR",
-            positionId: 16,
-            activeTab: "c", // deck key for Chain (cockpit nav contract; opens the Chain deck)
-            onTabChange: vi.fn(),
-            prices: { PLTR: PLTR_PRICE },
-            fundamentals: {},
-            portfolio: PORTFOLIO,
-            orders: ORDERS,
-            theme: "dark",
-          }),
-        ),
+        React.createElement(TickerDetailContent, {
+          ticker: "PLTR",
+          positionId: 16,
+          activeTab: "chain",
+          onTabChange: vi.fn(),
+          prices: { PLTR: PLTR_PRICE },
+          fundamentals: {},
+          portfolio: PORTFOLIO,
+          orders: ORDERS,
+          theme: "dark",
+        }),
       ),
     );
 

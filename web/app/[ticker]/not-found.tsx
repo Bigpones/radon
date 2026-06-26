@@ -1,6 +1,4 @@
-// Plain anchor, no next/link — Next.js 16 prerenders /_not-found in a
-// worker without a layout-router context, and Link triggers a useContext
-// invariant during static generation.
+import Link from "next/link";
 
 export default function TickerNotFound() {
   return (
@@ -20,8 +18,7 @@ export default function TickerNotFound() {
       <span style={{ fontSize: "12px" }}>
         The requested ticker path is not a valid instrument identifier.
       </span>
-      {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- next/link triggers a useContext invariant during /_not-found prerender */}
-      <a
+      <Link
         href="/dashboard"
         style={{
           fontSize: "11px",
@@ -32,7 +29,7 @@ export default function TickerNotFound() {
         }}
       >
         Return to Dashboard
-      </a>
+      </Link>
     </div>
   );
 }

@@ -1,5 +1,3 @@
-import { scanTimeToEtDate } from "./parseScanTime";
-
 type PerformanceFreshness = {
   as_of?: string | null;
   last_sync?: string | null;
@@ -7,48 +5,29 @@ type PerformanceFreshness = {
 
 const ET_TIME_ZONE = "America/New_York";
 
-/**
- * `last_sync` is a wall-clock timestamp produced by `scripts/ib_sync.py`.
- * On Hetzner (UTC host) older builds wrote `datetime.now().isoformat()` —
- * a naive ISO string. Naive slicing of those strings rolls the ET session
- * date forward the moment UTC midnight passes (~20:00 ET), even though
- * it is still the same trading day in ET.
- *
- * Treat naive strings as UTC and convert to the ET calendar day so the
- * portfolio freshness gate matches the trading session a human would.
- */
 export function portfolioAsOfFromLastSync(lastSync: string | null | undefined): string | null {
   if (!lastSync || lastSync.length < 10) return null;
-  return scanTimeToEtDate(lastSync);
+  return lastSync.slice(0, 10);
+}
+
+function toEtDate(now: Date): Date {
+  return new Date(now.toLocaleString("en-US", { timeZone: ET_TIME_ZONE }));
 }
 
 function formatEtDate(value: Date): string {
   return value.toLocaleDateString("sv", { timeZone: ET_TIME_ZONE });
 }
 
-/**
- * Weekday evaluated IN ET from the true instant. Never re-parse a
- * toLocaleString() rendering back into a Date: that interprets ET wall
- * time as a host-local instant and the next ET conversion shifts it a
- * second time, rolling the session date early near ET midnight (the
- * offset depends on the host timezone, so the bug is invisible on UTC
- * CI and live on a PT laptop).
- */
-function isTradingWeekdayEt(value: Date): boolean {
-  const weekday = new Intl.DateTimeFormat("en-US", {
-    timeZone: ET_TIME_ZONE,
-    weekday: "short",
-  }).format(value);
-  return weekday !== "Sat" && weekday !== "Sun";
+function isTradingWeekday(value: Date): boolean {
+  const day = value.getDay();
+  return day !== 0 && day !== 6;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 export function latestPortfolioTargetDateET(now: Date = new Date()): string {
-  let candidate = now;
+  const candidate = toEtDate(now);
 
-  while (!isTradingWeekdayEt(candidate)) {
-    candidate = new Date(candidate.getTime() - DAY_MS);
+  while (!isTradingWeekday(candidate)) {
+    candidate.setDate(candidate.getDate() - 1);
   }
 
   return formatEtDate(candidate);

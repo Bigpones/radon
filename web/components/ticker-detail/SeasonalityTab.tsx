@@ -1,8 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CalendarRange } from "lucide-react";
-import SectionEmptyState from "@/components/SectionEmptyState";
 
 /* ─── Types matching UW /api/seasonality/{ticker}/monthly ─── */
 
@@ -143,15 +141,7 @@ export default function SeasonalityTab({ ticker, active }: SeasonalityTabProps) 
   }
 
   if (fetched && months.length === 0) {
-    return (
-      <div className="tab-empty">
-        <SectionEmptyState
-          icon={CalendarRange}
-          headline={`No seasonality data for ${ticker}`}
-          variant="compact"
-        />
-      </div>
-    );
+    return <div className="tab-empty">No seasonality data for {ticker}</div>;
   }
 
   if (months.length === 0) return null;

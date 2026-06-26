@@ -4,7 +4,7 @@
 
 import React from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import PositionTab from "../components/ticker-detail/PositionTab";
 import type { PortfolioPosition } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
@@ -129,8 +129,8 @@ describe("PositionTab leg sign display", () => {
   it("renders short legs as negative/red and long legs as positive/green in the legs table", () => {
     render(React.createElement(PositionTab, { position: POSITION, prices: PRICES }));
 
-    // Legs are expanded by default now (the legs are the actionable surface for
-    // a combo); no toggle click needed.
+    fireEvent.click(screen.getByRole("button", { name: /Legs \(2\)/i }));
+
     const longRow = screen.getByText("LONG").closest("tr");
     expect(longRow?.textContent).toContain("$3.46");
     // last=3.63 > ask=3.46 → resolveRealtimePrice uses mid=(3.40+3.46)/2=3.43

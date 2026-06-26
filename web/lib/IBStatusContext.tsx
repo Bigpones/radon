@@ -9,63 +9,29 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useAuth } from "@clerk/nextjs";
+// When Clerk is not configured, stub useAuth so IBStatusProvider can mount
+// without a ClerkProvider in the tree. buildAuthenticatedUrl already handles
+// a null token by connecting without auth — so the stub is fully safe.
+const useAuth: () => { getToken: () => Promise<string | null> } =
+  process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    ? require("@clerk/nextjs").useAuth
+    : () => ({ getToken: async () => null });
 import { createReconnectStrategy, type ReconnectState } from "./reconnectStrategy";
 
 /* ─── Types ───────────────────────────────────────────── */
 
 export type ConnectionState = "connected" | "ib_offline" | "relay_offline";
 
-/** Authoritative IB auth state from FastAPI /health.ib_gateway.auth_state.
- *  Mirrors scripts/api/ib_gateway.py auth-state machine. */
-export type IBAuthState =
-  | "authenticated"
-  | "awaiting_2fa"
-  | "unreachable"
-  | "unknown"
-  | "remote";
-
-/** Authoritative IB service state from FastAPI /health.ib_gateway.service_state. */
-export type IBServiceState = "healthy" | "unhealthy" | "starting" | "unknown";
-
-/** Display-level status the footer/banner derive from the combined signal.
- *  Single source of truth so footer (sidebar) and banner (ConnectionBanner)
- *  never disagree again. Resolution priority (highest first):
- *    relay_offline > unreachable > awaiting_2fa > unhealthy > ib_offline > connected
- */
-export type IBDisplayStatus =
-  | "connected"
-  | "awaiting_2fa"
-  | "unhealthy"
-  | "unreachable"
-  | "ib_offline"
-  | "relay_offline";
-
 export type IBStatusState = {
   /** WebSocket to our realtime server is open */
   wsConnected: boolean;
-  /** IB Gateway is connected (reported by relay WS) — DO NOT trust this for
-   *  UI labels; the WS flag derives from the relay's long-held ib_insync
-   *  socket which can stay "connected" while IB Gateway is actually sitting
-   *  at the 2FA prompt (half-open socket, TCP alive but API mute). The
-   *  authoritative signal is `authState` below, polled from FastAPI /health
-   *  which checks Docker container health, pool client managed_accounts,
-   *  and ibc auth_state. */
+  /** IB Gateway is connected (reported by server) */
   ibConnected: boolean;
   /** Timestamp when connection was lost (null = connected) */
   disconnectedSince: number | null;
-  /** Derived three-state legacy connection status (WS+ibConnected). Kept
-   *  for ConnectionBanner backward-compat. New consumers should read
-   *  `displayStatus` instead. */
+  /** Derived three-state connection status */
   connectionState: ConnectionState;
-  /** Authoritative IB auth state from FastAPI /health. */
-  authState: IBAuthState | null;
-  /** Authoritative IB service state from FastAPI /health. */
-  serviceState: IBServiceState | null;
-  /** True when FastAPI cannot reach IB Gateway (port closed or API mute). */
-  upstreamDead: boolean | null;
-  /** Single derived label for the footer / banner. */
-  displayStatus: IBDisplayStatus;
 };
 
 type StatusMessage = {
@@ -84,138 +50,20 @@ const IBStatusContext = createContext<IBStatusState>({
   ibConnected: false,
   disconnectedSince: null,
   connectionState: "relay_offline",
-  authState: null,
-  serviceState: null,
-  upstreamDead: null,
-  displayStatus: "relay_offline",
 });
 
 /* ─── Staleness constants ─────────────────────────────── */
 
 const STALENESS_CHECK_INTERVAL_MS = 15_000;
 const STALENESS_THRESHOLD_MS = 60_000;
-const HEALTH_POLL_MS = 15_000;
-
-type HealthPayload = {
-  ib_gateway?: {
-    auth_state?: IBAuthState;
-    service_state?: IBServiceState;
-    upstream_dead?: boolean;
-  };
-};
-
-function deriveDisplayStatus(args: {
-  wsConnected: boolean;
-  ibConnected: boolean;
-  authState: IBAuthState | null;
-  serviceState: IBServiceState | null;
-  upstreamDead: boolean | null;
-}): IBDisplayStatus {
-  // /health is the source of truth when we have it. Order matters — pick the
-  // most severe applicable state first.
-  if (!args.wsConnected) return "relay_offline";
-  if (args.upstreamDead === true || args.authState === "unreachable") return "unreachable";
-  if (args.authState === "awaiting_2fa") return "awaiting_2fa";
-  if (args.serviceState === "unhealthy") return "unhealthy";
-  if (args.authState === "authenticated" && args.serviceState === "healthy") return "connected";
-  // Fall back to the legacy WS-relay flag when /health hasn't responded yet.
-  if (args.ibConnected) return "connected";
-  return "ib_offline";
-}
-
-type IbHealthFields = {
-  authState: IBAuthState | null;
-  serviceState: IBServiceState | null;
-  upstreamDead: boolean | null;
-};
-
-// The isolated daemon's /edge-health/status nests IB state under the radon-api
-// probe; the rich /api/admin/health proxy returns it flat under ib_gateway.
-type EdgeHealthPayload = {
-  probes?: Record<string, { state?: string; payload?: HealthPayload["ib_gateway"] }>;
-};
-
-function readGatewayFields(gw: NonNullable<HealthPayload["ib_gateway"]>): IbHealthFields {
-  return {
-    authState: gw.auth_state ?? null,
-    serviceState: gw.service_state ?? null,
-    upstreamDead: typeof gw.upstream_dead === "boolean" ? gw.upstream_dead : null,
-  };
-}
-
-// Normalise either health-source shape into the three IB fields the chip needs.
-// Returns null when the source can't determine IB state, so the caller falls
-// back (e.g. /edge-health reports the radon-api probe as "unknown" on a probe
-// timeout — that's indeterminate, not "down").
-export function parseIbHealth(
-  payload: (HealthPayload & EdgeHealthPayload) | null | undefined,
-): IbHealthFields | null {
-  if (!payload) return null;
-  const probe = payload.probes?.["radon-api"];
-  if (probe) {
-    if (probe.state === "up" && probe.payload) return readGatewayFields(probe.payload);
-    if (probe.state === "down") {
-      // The isolated daemon confirms radon-api is unreachable.
-      return { authState: "unreachable", serviceState: null, upstreamDead: null };
-    }
-    return null; // indeterminate ("unknown") — let the caller fall back
-  }
-  if (payload.ib_gateway) return readGatewayFields(payload.ib_gateway);
-  return null;
-}
 
 /* ─── Provider ────────────────────────────────────────── */
 
 export function IBStatusProvider({ children }: { children: ReactNode }) {
-  if (
-    process.env.NEXT_PUBLIC_RADON_AUTHLESS_TEST === "1" ||
-    process.env.RADON_AUTHLESS_TEST === "1"
-  ) {
-    return (
-      <IBStatusContext.Provider
-        value={{
-          wsConnected: true,
-          ibConnected: true,
-          disconnectedSince: null,
-          connectionState: "connected",
-          authState: "authenticated",
-          serviceState: "healthy",
-          upstreamDead: false,
-          displayStatus: "connected",
-        }}
-      >
-        {children}
-      </IBStatusContext.Provider>
-    );
-  }
-  return <AuthenticatedIBStatusProvider>{children}</AuthenticatedIBStatusProvider>;
-}
-
-function AuthenticatedIBStatusProvider({ children }: { children: ReactNode }) {
-  if (process.env.NODE_ENV === "test") {
-    return <IBStatusCoreProvider getToken={undefined}>{children}</IBStatusCoreProvider>;
-  }
-  return <ClerkIBStatusProvider>{children}</ClerkIBStatusProvider>;
-}
-
-function ClerkIBStatusProvider({ children }: { children: ReactNode }) {
   const { getToken } = useAuth();
-  return <IBStatusCoreProvider getToken={getToken}>{children}</IBStatusCoreProvider>;
-}
-
-function IBStatusCoreProvider({
-  children,
-  getToken,
-}: {
-  children: ReactNode;
-  getToken: (() => Promise<string | null>) | undefined;
-}) {
   const [wsConnected, setWsConnected] = useState(false);
   const [ibConnected, setIbConnected] = useState(true); // assume connected until told otherwise
   const [disconnectedSince, setDisconnectedSince] = useState<number | null>(null);
-  const [authState, setAuthState] = useState<IBAuthState | null>(null);
-  const [serviceState, setServiceState] = useState<IBServiceState | null>(null);
-  const [upstreamDead, setUpstreamDead] = useState<boolean | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const mountedRef = useRef(true);
@@ -275,7 +123,10 @@ function IBStatusCoreProvider({
 
     const gen = ++socketGenRef.current;
 
-    const openSocket = (url: string) => {
+    (async () => {
+      const url = await buildAuthenticatedUrl(socketUrl);
+      if (gen !== socketGenRef.current) return; // stale connect attempt
+
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
@@ -350,17 +201,6 @@ function IBStatusCoreProvider({
       if (!mountedRef.current) return;
       ws.close();
     };
-    };
-
-    if (!getTokenRef.current) {
-      openSocket(socketUrl);
-      return;
-    }
-
-    (async () => {
-      const url = await buildAuthenticatedUrl(socketUrl);
-      if (gen !== socketGenRef.current) return; // stale connect attempt
-      openSocket(url);
     })();
   }, [socketUrl, clearReconnectTimer, clearStalenessTimer, buildAuthenticatedUrl]);
 
@@ -381,56 +221,7 @@ function IBStatusCoreProvider({
     };
   }, [connect, clearReconnectTimer, clearStalenessTimer]);
 
-  // Poll the authoritative IB state — the only signal that catches the "TCP
-  // socket alive but session sitting at 2FA prompt" case, which the relay WS
-  // (long-held ib_insync socket) structurally can't distinguish.
-  //
-  // In production we read the ISOLATED edge surface: /edge-health/status is
-  // served Caddy -> standalone health daemon, so the chip keeps reporting even
-  // when radon-api / Next.js are down. Dev has no Caddy, so we use the rich
-  // /api/admin/health proxy, which is also the prod safety-net fallback. Both
-  // reads are side-effect-free now; the 2FA pool-recovery heartbeat runs
-  // server-side in FastAPI, not on this poll.
-  useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    const fetchParsed = async (url: string): Promise<IbHealthFields | null> => {
-      try {
-        const res = await fetch(url, { cache: "no-store" });
-        if (!res.ok) return null;
-        return parseIbHealth((await res.json()) as HealthPayload & EdgeHealthPayload);
-      } catch {
-        return null;
-      }
-    };
-
-    const poll = async () => {
-      const isLocal = /^(localhost|127\.0\.0\.1|\[::1\])/.test(window.location.hostname);
-      const primary = isLocal ? "/api/admin/health" : "/edge-health/status";
-      const fallback = "/api/admin/health";
-
-      let parsed = await fetchParsed(primary);
-      if (!parsed && primary !== fallback) parsed = await fetchParsed(fallback);
-
-      // Keep previous cached state on a total failure — a transient blip
-      // shouldn't flip the chip; the next poll resolves it.
-      if (!cancelled && parsed) {
-        setAuthState(parsed.authState);
-        setServiceState(parsed.serviceState);
-        setUpstreamDead(parsed.upstreamDead);
-      }
-      if (!cancelled) timer = setTimeout(poll, HEALTH_POLL_MS);
-    };
-
-    poll();
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, []);
-
-  // Derive three-state connection status (legacy)
+  // Derive three-state connection status
   const connectionState: ConnectionState =
     wsConnected && ibConnected
       ? "connected"
@@ -438,26 +229,9 @@ function IBStatusCoreProvider({
         ? "ib_offline"
         : "relay_offline";
 
-  const displayStatus = deriveDisplayStatus({
-    wsConnected,
-    ibConnected,
-    authState,
-    serviceState,
-    upstreamDead,
-  });
-
   return (
     <IBStatusContext.Provider
-      value={{
-        wsConnected,
-        ibConnected,
-        disconnectedSince,
-        connectionState,
-        authState,
-        serviceState,
-        upstreamDead,
-        displayStatus,
-      }}
+      value={{ wsConnected, ibConnected, disconnectedSince, connectionState }}
     >
       {children}
     </IBStatusContext.Provider>

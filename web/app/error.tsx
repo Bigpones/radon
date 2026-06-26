@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect } from "react";
 
 type AppError = Error & { digest?: string };
@@ -56,8 +57,7 @@ export default function ErrorBoundary({ error, reset }: { error: AppError; reset
         >
           Retry
         </button>
-        {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- next/link triggers a useContext invariant during /_global-error prerender */}
-        <a
+        <Link
           href="/dashboard"
           style={{
             fontSize: "11px",
@@ -69,7 +69,7 @@ export default function ErrorBoundary({ error, reset }: { error: AppError; reset
           }}
         >
           Return to Dashboard
-        </a>
+        </Link>
       </div>
     </div>
   );

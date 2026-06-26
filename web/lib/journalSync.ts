@@ -23,7 +23,6 @@ export interface ReconciliationTrade {
   strike?: number;
   expiry?: string;
   right?: string; // "C" or "P"
-  ib_exec_id?: string; // Stable IB executionId — preferred dedupe key
 }
 
 interface ReconciliationData {
@@ -47,7 +46,6 @@ interface TradeEntry {
   shares?: number;
   realized_pnl?: number;
   commission?: number;
-  ib_exec_id?: string;
   notes?: string;
   [key: string]: unknown;
 }
@@ -58,30 +56,15 @@ interface TradeLogData {
 
 /* ─── Helpers ────────────────────────────────────────── */
 
-/** Coarse fingerprint — used only when neither side has an ib_exec_id. */
+/** Fingerprint for duplicate detection: ticker|date|action|abs(quantity) */
 function fingerprint(ticker: string, date: string, action: string, qty: number): string {
   return `${ticker}|${date}|${action}|${Math.abs(qty)}`;
-}
-
-/** Expand a possibly-composite ib_exec_id ("A+B") into its parts. */
-function execIdParts(id: string | undefined): string[] {
-  if (!id) return [];
-  const parts = id.split("+").filter(Boolean);
-  return parts.length > 0 ? [id, ...parts] : [id];
 }
 
 /** Map sec_type + action + optional contract details to a human-readable structure string */
 function resolveStructure(secType: string, action: string, strike?: number, expiry?: string, right?: string): string {
   const typeLabel = secType === "STK" ? "Stock" : secType === "OPT" ? "Option" : secType === "BAG" ? "Spread" : secType;
-  // A sold-to-open call is a Short position, not a Closed one. Only a
-  // close-long sell (SELL_OPTION) or a round-trip (CLOSED) reads "Closed".
-  const side = action.includes("BUY")
-    ? "Long"
-    : action === "SELL_TO_OPEN"
-      ? "Short"
-      : action.includes("SELL") || action === "CLOSED"
-        ? "Closed"
-        : action;
+  const side = action.includes("BUY") ? "Long" : action.includes("SELL") || action === "CLOSED" ? "Closed" : action;
 
   // Include contract details for options when available
   if ((secType === "OPT" || secType === "BAG") && strike && right) {
@@ -117,13 +100,9 @@ export function syncNewTrades(
   existingTrades: TradeEntry[],
   newTrades: ReconciliationTrade[]
 ): SyncResult {
-  // ib_exec_id is the preferred dedupe key; fingerprint is the legacy fallback.
-  const existingExecIds = new Set<string>();
+  // Build fingerprint set from existing trades
   const existingFp = new Set<string>();
   for (const t of existingTrades) {
-    for (const part of execIdParts(t.ib_exec_id)) {
-      existingExecIds.add(part);
-    }
     const qty = t.contracts ?? t.shares ?? 0;
     existingFp.add(fingerprint(t.ticker, t.date, t.action ?? t.decision, qty));
   }
@@ -138,12 +117,8 @@ export function syncNewTrades(
   const importedTrades: TradeEntry[] = [];
 
   for (const nt of newTrades) {
-    const execIds = execIdParts(nt.ib_exec_id);
-    const matchedById = execIds.some((id) => existingExecIds.has(id));
     const fp = fingerprint(nt.symbol, nt.date, nt.action, nt.net_quantity);
-
-    // Prefer execId match; fall back to legacy fingerprint when execId absent.
-    if (matchedById || (execIds.length === 0 && existingFp.has(fp))) {
+    if (existingFp.has(fp)) {
       skipped++;
       continue;
     }
@@ -162,14 +137,12 @@ export function syncNewTrades(
         ? { contracts: Math.abs(nt.net_quantity) }
         : { shares: Math.abs(nt.net_quantity) }),
       commission: nt.commission,
-      ...(nt.ib_exec_id ? { ib_exec_id: nt.ib_exec_id } : {}),
       ...(nt.realized_pnl !== 0 ? { realized_pnl: nt.realized_pnl } : {}),
       notes: `Auto-imported from IB reconciliation on ${new Date().toISOString().split("T")[0]}`,
     };
 
     importedTrades.push(entry);
-    for (const part of execIds) existingExecIds.add(part);
-    existingFp.add(fp);
+    existingFp.add(fp); // prevent dupes within same batch
     imported++;
   }
 

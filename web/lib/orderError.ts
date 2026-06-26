@@ -3,31 +3,12 @@ export type FormattedOrderError = {
   details: string[];
 };
 
-function normaliseLineBreaks(message: string): string {
-  // IBKR rejection text embeds soft breaks as literal "<br>" tokens.
-  // Convert every variant to a real newline before whitespace collapse so the
-  // detail row can render with `white-space: pre-line` instead of leaking
-  // angle-bracket text into the UI.
-  return message.replace(/<br\s*\/?>/gi, "\n");
-}
-
-function collapseHorizontalWhitespace(message: string): string {
-  // Preserve newlines so the line-break normalisation above survives, but
-  // squash runs of spaces/tabs that IB tends to leave around the breaks.
-  return message
-    .replace(/[ \t]+/g, " ")
-    .replace(/ ?\n ?/g, "\n")
-    .replace(/\n{2,}/g, "\n")
-    .trim();
-}
-
 function stripTransportWrappers(message: string): string {
-  const withRealBreaks = normaliseLineBreaks(message);
-  return collapseHorizontalWhitespace(
-    withRealBreaks
-      .replace(/^Radon API \d+:\s*/i, "")
-      .replace(/^IB error \d+:\s*/i, ""),
-  );
+  return message
+    .replace(/^Radon API \d+:\s*/i, "")
+    .replace(/^IB error \d+:\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function stripRejectedPrefix(message: string): string {

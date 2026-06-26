@@ -13,48 +13,16 @@ describe("ib_realtime_server.js preserves typed contracts for cold-start restore
     expect(source).toContain("function ensureSymbolState");
 
     const stockBlock = source.match(/\/\/ Stock subscriptions[\s\S]*?\/\/ Option contract subscriptions/s)?.[0] ?? "";
-    // Stock symbols seed a stock contract; a futures ROOT seeds the resolved
-    // front-month future for L1 (so the quote bar matches the depth ladder).
-    expect(stockBlock).toContain('stockContract(symbol, "SMART", "USD")');
-    expect(stockBlock).toContain("resolveFuturesFrontMonth(symbol)");
+    expect(stockBlock).toContain('const ibContract = ib.contract.stock(symbol, "SMART", "USD")');
     expect(stockBlock).toContain("ensureSymbolState(symbol, ibContract);");
 
     const optionBlock = source.match(/\/\/ Option contract subscriptions[\s\S]*?\/\/ Index subscriptions/s)?.[0] ?? "";
-    expect(optionBlock).toContain("const ibContract = optionContract(c.symbol, c.expiry, c.strike, c.right);");
+    expect(optionBlock).toContain("const ibContract = ib.contract.option(c.symbol, c.expiry, c.strike, c.right);");
     expect(optionBlock).toContain("ensureSymbolState(key, ibContract);");
 
     const indexBlock = source.match(/\/\/ Index subscriptions[\s\S]*?sendSubscribedConfirmation/s)?.[0] ?? "";
-    expect(indexBlock).toContain('const ibContract = indexContract(idx.symbol, "USD", idx.exchange);');
+    expect(indexBlock).toContain('const ibContract = ib.contract.index(idx.symbol, "USD", idx.exchange);');
     expect(indexBlock).toContain("ensureSymbolState(key, ibContract);");
-  });
-
-  it("uses the @stoqey/ib API surface (IBApi + EventName) instead of the dead ib@0.2.9 package", () => {
-    expect(source).toMatch(/import \{ IBApi, EventName, SecType, OptionType(, TickByTickDataType)? \} from "@stoqey\/ib";/);
-    expect(source).not.toMatch(/from ["']ib["']/);
-    expect(source).toContain("new IBApi({");
-    // Contracts are plain object literals built from the @stoqey enums.
-    expect(source).toContain("secType: SecType.STK");
-    expect(source).toContain("secType: SecType.OPT");
-    expect(source).toContain("secType: SecType.IND");
-    expect(source).toContain("lastTradeDateOrContractMonth: expiry");
-    expect(source).toContain("right: right === \"C\" ? OptionType.Call : OptionType.Put");
-    // Events wired via the EventName enum.
-    expect(source).toContain("ib.on(EventName.connected");
-    expect(source).toContain("ib.on(EventName.tickPrice");
-    expect(source).toContain("ib.on(EventName.error");
-    // @stoqey error arity is (error, code, reqId) — reqId maps to tickerId.
-    expect(source).toContain("ib.on(EventName.error, (error, code, reqId) =>");
-  });
-
-  it("reads symbolSamples from the @stoqey nested c.contract shape (search regression guard)", () => {
-    // @stoqey ContractDescription nests fields under c.contract and renames
-    // primaryExchange → primaryExch. Reading flat c.* (the old ib@0.2.9 shape)
-    // put secType:undefined on the wire and TickerSearch filtered everything
-    // out → "No results" (regressed at f69c0d4). Pin the nested read.
-    const block = source.match(/EventName\.symbolSamples[\s\S]*?verbose\(`search/s)?.[0] ?? "";
-    expect(block).toContain("const k = c.contract ?? c;");
-    expect(block).toContain("secType: k.secType");
-    expect(block).toContain("primaryExchange: k.primaryExch ?? k.primaryExchange");
   });
 
   it("restores subscriptions from the stored contract instead of rebuilding everything as stocks", () => {

@@ -93,7 +93,7 @@ if [[ "$PROFILE" == "cloud-thin" ]]; then
   exec next dev
 fi
 
-exec npx concurrently "${HIDE_ARGS[@]}" \
+exec npx concurrently ${HIDE_ARGS[@]+"${HIDE_ARGS[@]}"} \
   -n next,ib,api,scraper \
   -c cyan,yellow,green,magenta \
   "next dev" \

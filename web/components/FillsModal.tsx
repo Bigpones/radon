@@ -1,8 +1,5 @@
 "use client";
 
-import { Receipt } from "lucide-react";
-import Modal from "./Modal";
-import SectionEmptyState from "./SectionEmptyState";
 import type { ExecutedOrder } from "@/lib/types";
 
 type Props = {
@@ -33,21 +30,26 @@ const fmtTime = (iso: string) => {
 const fmtPct = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 
 export default function FillsModal({ open, fills, totalRealizedPnl, netLiquidation, onClose }: Props) {
+  if (!open) return null;
+
   const fillsWithPnl = fills.filter((f) => f.realizedPNL != null);
   const hasFills = fills.length > 0;
 
   return (
-    <Modal open={open} onClose={onClose} title="TODAY'S FILLS" className="fills-modal">
-      {!hasFills ? (
-        <SectionEmptyState
-          icon={Receipt}
-          headline="No fills this session"
-          secondary="Realized P&L = $0.00"
-          testId="fills-empty"
-        />
-      ) : (
-        <>
-          <div className="table-wrap">
+    <div className="fills-modal modal-backdrop" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <span className="modal-title">TODAY&apos;S FILLS</span>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+
+        {!hasFills ? (
+          <div className="fills-empty">
+            <p>No fills this session.</p>
+            <p className="fills-empty-sub">Realized P&L = $0.00</p>
+          </div>
+        ) : (
+          <>
             <table className="fills-table">
               <thead>
                 <tr>
@@ -76,33 +78,33 @@ export default function FillsModal({ open, fills, totalRealizedPnl, netLiquidati
                 ))}
               </tbody>
             </table>
-          </div>
 
-          <div className="fills-summary">
-            <div className="fills-summary-formula">
-              {fillsWithPnl.map((f, i) => (
-                <span key={f.execId}>
-                  {i > 0 && <span className="fills-op">{f.realizedPNL! >= 0 ? " + " : " "}</span>}
-                  <span className={f.realizedPNL! >= 0 ? "positive" : "negative"}>
-                    {fmtPnl(f.realizedPNL)}
+            <div className="fills-summary">
+              <div className="fills-summary-formula">
+                {fillsWithPnl.map((f, i) => (
+                  <span key={f.execId}>
+                    {i > 0 && <span className="fills-op">{f.realizedPNL! >= 0 ? " + " : " "}</span>}
+                    <span className={f.realizedPNL! >= 0 ? "positive" : "negative"}>
+                      {fmtPnl(f.realizedPNL)}
+                    </span>
+                    <span className="fills-label"> ({f.symbol})</span>
                   </span>
-                  <span className="fills-label"> ({f.symbol})</span>
+                ))}
+                {fillsWithPnl.length === 0 && <span className="fills-label">No closed positions this session</span>}
+              </div>
+              <div className="fills-summary-total">
+                <span className="fills-total-label">REALIZED P&L</span>
+                <span className={`fills-total-value ${totalRealizedPnl >= 0 ? "positive" : "negative"}`}>
+                  {fmtPnl(totalRealizedPnl)}
+                  {netLiquidation != null && netLiquidation > 0 && (
+                    <span className="fills-total-pct"> ({fmtPct(totalRealizedPnl / netLiquidation * 100)})</span>
+                  )}
                 </span>
-              ))}
-              {fillsWithPnl.length === 0 && <span className="fills-label">No closed positions this session</span>}
+              </div>
             </div>
-            <div className="fills-summary-total">
-              <span className="fills-total-label">REALIZED P&L</span>
-              <span className={`fills-total-value ${totalRealizedPnl >= 0 ? "positive" : "negative"}`}>
-                {fmtPnl(totalRealizedPnl)}
-                {netLiquidation != null && netLiquidation > 0 && (
-                  <span className="fills-total-pct"> ({fmtPct(totalRealizedPnl / netLiquidation * 100)})</span>
-                )}
-              </span>
-            </div>
-          </div>
-        </>
-      )}
-    </Modal>
+          </>
+        )}
+      </div>
+    </div>
   );
 }

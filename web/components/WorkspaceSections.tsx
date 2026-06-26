@@ -6,12 +6,11 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   Circle,
   ClipboardList,
   ArrowDown,
   ArrowUp,
-  History,
-  Inbox,
   Loader2,
   Search,
   Sparkles,
@@ -20,7 +19,6 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react";
-import SectionEmptyState from "./SectionEmptyState";
 import type { BlotterTrade, DiscoverCandidate, ExecutedOrder, FlowAnalysisPosition, OpenOrder, OrdersData, PortfolioData, PortfolioPosition, ScannerSignal, TradeEntry, WorkspaceSection } from "@/lib/types";
 import { useOrderActions } from "@/lib/OrderActionsContext";
 import type { PriceData } from "@/lib/pricesProtocol";
@@ -30,53 +28,30 @@ import { useDiscover } from "@/lib/useDiscover";
 import { useFlowAnalysis } from "@/lib/useFlowAnalysis";
 import { useScanner } from "@/lib/useScanner";
 import { useBlotter } from "@/lib/useBlotter";
-import { formatTradeDate } from "@/lib/blotter/formatTradeDate";
-import CashFlowsSection from "@/components/CashFlowsSection";
-import { useSort } from "@/lib/useSort";
+import { useSort, type SortDirection } from "@/lib/useSort";
 import { useTableFilter } from "@/lib/useTableFilter";
 import TableSearch from "./TableSearch";
-import SortTh from "./SortTh";
-import { usePriceDirection } from "@/lib/usePriceDirection";
 import { fmtPrice, fmtUsd, legPriceKey } from "@/lib/positionUtils";
 import {
   buildOpenOrderDisplayRows,
   type OpenOrderDisplayRow,
   buildExecutedGroupDescription,
   resolveOpenOrderComboPrice,
-  findPortfolioLegDirection,
 } from "@/lib/openOrderCombos";
-import { computeLegImpliedValue, computeOrderImpliedValue } from "@/lib/impliedValue";
-import { useRiskFreeRate } from "@/lib/useRiskFreeRate";
-import { useColumnVisibility } from "@/lib/useColumnVisibility";
-import { useViewport } from "@/lib/useViewport";
-import { ColumnsToggle, type ColumnsToggleEntry } from "./ColumnsToggle";
-import MobileOrderList from "./mobile/MobileOrderList";
-import MobileBlotterList from "./mobile/MobileBlotterList";
-import MobileExecutedList from "./mobile/MobileExecutedList";
-import MobileJournalList from "./mobile/MobileJournalList";
-import SignalCard from "./mobile/SignalCard";
 import { buildGroupedComboModifyTarget } from "@/lib/openOrderComboModify";
-import PositionTable, {
-  POSITION_COLUMNS,
-  POSITION_COLUMN_DEFAULTS,
-  type PositionToggleableColumnKey,
-} from "./PositionTable";
-import SpectralLoader from "./SpectralLoader";
+import PositionTable from "./PositionTable";
+import { TableSkeleton } from "@/components/ui/Skeleton";
 import CancelOrderDialog from "./CancelOrderDialog";
 import ModifyOrderModal from "./ModifyOrderModal";
 import type { ModifyOrderRequest } from "@/lib/orderModify";
 import RegimePanel from "./RegimePanel";
 import CtaPage from "./CtaPage";
-import AdminWorkspace from "./admin/AdminWorkspace";
-import ProfileContent from "./profile/ProfileContent";
 import PerformancePanel from "./PerformancePanel";
 import InfoTooltip from "./InfoTooltip";
 import SharePnlButton, { type SharePnlData } from "./SharePnlButton";
 import { SECTION_TOOLTIPS } from "@/lib/sectionTooltips";
 import TickerLink from "./TickerLink";
 import TickerWorkspace from "./TickerWorkspace";
-import TickerFlowReport from "./flow-analysis/TickerFlowReport";
-import FlowAnalysisTickerInput from "./flow-analysis/FlowAnalysisTickerInput";
 import { MarketState } from "@/lib/useMarketHours";
 
 /* ─── Re-exports for backward compat ──────────────────── */
@@ -238,46 +213,6 @@ function resolveOpeningLegBasis(
   };
 }
 
-/** Net cash received by a group's closing option fills in dollars
- *  (SLD positive, BOT negative). Null when any fill is unpriced or sideless. */
-function closedGroupCloseCash(group: PositionFillGroup): number | null {
-  const optFills = group.fills.filter((f) => f.contract.secType === "OPT");
-  if (optFills.length === 0) return null;
-  let closeCash = 0;
-  for (const fill of optFills) {
-    if (fill.avgPrice == null || !Number.isFinite(fill.avgPrice)) return null;
-    const cashSign = fill.side === "SLD" || fill.side === "SELL"
-      ? 1
-      : fill.side === "BOT" || fill.side === "BUY"
-        ? -1
-        : 0;
-    if (cashSign === 0) return null;
-    closeCash += cashSign * fill.avgPrice * Math.abs(fill.quantity) * 100;
-  }
-  return closeCash;
-}
-
-/** Entry cash implied by the realized-P&L identity openCash = pnl − closeCash,
- *  in dollars (credit positive, debit negative). Sign-correct for both long
- *  (debit) and short (credit) entries — a buy-to-close ADDS the cover cost to
- *  the basis instead of subtracting it. */
-function closedGroupOpenCash(group: PositionFillGroup): number | null {
-  if (group.totalPnL == null) return null;
-  const closeCash = closedGroupCloseCash(group);
-  if (closeCash == null) return null;
-  const openCash = group.totalPnL - closeCash;
-  return Math.abs(openCash) < 0.01 ? null : openCash;
-}
-
-/** Return on risk % for a closed fill group: realized P&L over the entry basis
- *  implied by the P&L identity. Shared by the Executed Orders table cell and
- *  the share-card fallback so both surfaces always agree. */
-export function closedGroupReturnPct(group: PositionFillGroup): number | null {
-  const openCash = closedGroupOpenCash(group);
-  if (openCash == null || group.totalPnL == null) return null;
-  return (group.totalPnL / Math.abs(openCash)) * 100;
-}
-
 /** Build share data for a position group (aggregated fills).
  *  For BAG/combo closing groups, uses the matching opening group's net combo
  *  price as cost basis for accurate P&L % (e.g. risk reversal opened at $0.25
@@ -327,38 +262,24 @@ export function positionGroupShareData(
       // on the same underlying (e.g., new PLTR Bull Call Spread vs closed PLTR Long Call).
       // Extract key structure words from the group description for fuzzy matching.
       const descWords = group.description.replace(/[()$,]/g, " ").toLowerCase().split(/\s+/).filter(Boolean);
-      const closeStrikes = new Set(
-        group.fills
-          .filter((f) => f.contract.secType === "OPT")
-          .map((f) => f.contract.strike)
-          .filter((s): s is number => s != null),
-      );
       const matchingPosition = portfolioPositions.find((p) => {
         if (p.ticker !== group.symbol) return false;
-        // Every strike in the closed group must exist on the candidate's legs —
-        // word overlap alone matched a closed MU $1000 Call to a live $1050 Call.
-        if (closeStrikes.size > 0) {
-          const legStrikes = new Set(p.legs.map((l) => l.strike).filter((s): s is number => s != null));
-          if (![...closeStrikes].every((strike) => legStrikes.has(strike))) return false;
-        }
         const posWords = p.structure.replace(/[()$,]/g, " ").toLowerCase().split(/\s+/).filter(Boolean);
         // At least 2 key words must overlap (e.g., "long" + "call", or "bull" + "spread")
         const overlap = posWords.filter((w) => descWords.includes(w));
         return overlap.length >= 2;
       });
       if (matchingPosition) {
-        // PortfolioLeg.avg_cost is per-contract for options (already × 100) and per-share for stocks.
-        // entryPrice + entryNotional in this function follow the per-share convention,
-        // so divide by the leg's multiplier when constructing entryPrice from avg_cost.
-        const legMultiplier = (leg: typeof matchingPosition.legs[number]) => (leg.type === "Stock" ? 1 : 100);
+        // Calculate per-unit entry price from legs
+        // For single-leg positions, use avg_cost directly
+        // For multi-leg, sum up the leg costs and divide by contracts
         if (matchingPosition.legs.length === 1) {
-          const onlyLeg = matchingPosition.legs[0];
-          entryPrice = onlyLeg.avg_cost / legMultiplier(onlyLeg);
+          entryPrice = matchingPosition.legs[0].avg_cost;
         } else if (matchingPosition.legs.length > 1 && matchingPosition.contracts > 0) {
-          // Net entry price for combo = sum of (direction-adjusted per-share avg_cost per leg)
+          // Net entry price for combo = sum of (direction-adjusted avg_cost per leg)
           const netCost = matchingPosition.legs.reduce((sum, leg) => {
             const sign = leg.direction === "LONG" ? -1 : 1; // Long = paid, Short = received
-            return sum + sign * (leg.avg_cost / legMultiplier(leg));
+            return sum + sign * leg.avg_cost;
           }, 0);
           entryPrice = netCost;
         }
@@ -368,22 +289,28 @@ export function positionGroupShareData(
         }
         // Calculate notional for P&L %
         if (entryNotional === 0 && entryPrice != null) {
-          const positionMultiplier = matchingPosition.legs.some((leg) => leg.type !== "Stock") ? 100 : 1;
-          entryNotional = Math.abs(entryPrice) * (matchingPosition.contracts || group.totalQuantity) * positionMultiplier;
+          entryNotional = Math.abs(entryPrice) * (matchingPosition.contracts || group.totalQuantity) * 100;
         }
       }
     }
 
-    // Fallback for fully-closed positions no longer in portfolio: derive the
-    // entry basis from the realized-P&L identity (openCash = pnl − closeCash),
-    // which is sign-correct for both debit (long) and credit (short) entries.
-    if (entryPrice == null) {
-      const openCash = closedGroupOpenCash(group);
-      if (openCash != null) {
-        const comboUnits = Math.max(group.totalQuantity, 1);
-        entryPrice = -(openCash / 100) / comboUnits;
+    // Fallback for fully-closed positions no longer in portfolio:
+    // derive entry price from exit price and realized P&L.
+    // entryPrice = exitPrice - realizedPNL / (quantity * multiplier)
+    if (entryPrice == null && group.totalPnL != null) {
+      const optFills = group.fills.filter((f) => f.contract.secType === "OPT");
+      const totalQty = optFills.reduce((sum, f) => sum + f.quantity, 0);
+      // Derive exit price: BAG netPrice, or weighted avg of OPT fills
+      let exitPx = group.netPrice;
+      if (exitPx == null && totalQty > 0) {
+        const weightedSum = optFills.reduce((s, f) => s + (f.avgPrice ?? 0) * f.quantity, 0);
+        exitPx = weightedSum / totalQty;
+      }
+      if (totalQty > 0 && exitPx != null) {
+        const mult = optFills[0]?.contract.secType === "OPT" ? 100 : 1;
+        entryPrice = exitPx - (group.totalPnL / (totalQty * mult));
         if (entryNotional === 0) {
-          entryNotional = Math.abs(openCash);
+          entryNotional = Math.abs(entryPrice) * totalQty * mult;
         }
       }
     }
@@ -391,7 +318,18 @@ export function positionGroupShareData(
     if (entryNotional > 0) {
       pnlPct = (group.totalPnL / entryNotional) * 100;
     } else {
-      pnlPct = closedGroupReturnPct(group);
+      // Fallback: derive entry notional from exit notional - P&L
+      // Return on Risk = P&L / Capital at Risk (entry cost)
+      const optFills = group.fills.filter((f) => f.contract.secType === "OPT");
+      const exitNotional = optFills.reduce((sum, f) => {
+        const mult = f.contract.secType === "OPT" ? 100 : 1;
+        return sum + Math.abs((f.avgPrice ?? 0) * f.quantity * mult);
+      }, 0);
+      const derivedEntry = Math.abs(exitNotional - (group.totalPnL ?? 0));
+      if (derivedEntry > 0) {
+        entryNotional = derivedEntry;
+        pnlPct = (group.totalPnL / derivedEntry) * 100;
+      }
     }
   }
 
@@ -453,79 +391,8 @@ function groupExecutedOrders(
   const cancelled = fills.filter((f) => f.side === "CANCELLED");
   const real = fills.filter((f) => f.side !== "CANCELLED");
 
-  // ── Close detection ────────────────────────────────────────────────────
-  // IB's commission report (which carries realizedPNL) arrives async,
-  // sometimes seconds after the execution event. When it hasn't landed yet
-  // realizedPNL is null on the fill, and the naive "realizedPNL > 0" check
-  // mis-classifies a buy-to-close on a short put as opening a new long put.
-  // Fall back to portfolio context: if the fill direction opposes an existing
-  // leg, the trade reduces (closes) that leg.
-  const fillNormalizedRight = (
-    fill: ExecutedOrder,
-  ): "C" | "P" | null => {
-    const r = fill.contract.right;
-    if (r === "C" || r === "CALL") return "C";
-    if (r === "P" || r === "PUT") return "P";
-    return null;
-  };
-
-  const portfolioLegBasisFor = (
-    fill: ExecutedOrder,
-  ): { direction: "LONG" | "SHORT"; avgCost: number } | null => {
-    if (fill.contract.secType !== "OPT") return null;
-    const right = fillNormalizedRight(fill);
-    if (!right || fill.contract.expiry == null || fill.contract.strike == null) return null;
-    const dir = findPortfolioLegDirection(
-      portfolioPositions,
-      fill.contract.symbol,
-      fill.contract.expiry,
-      fill.contract.strike,
-      right,
-    );
-    if (!dir) return null;
-    if (!portfolioPositions) return null;
-    const targetExpiry = fill.contract.expiry?.replace(/-/g, "") ?? "";
-    const target = portfolioPositions.find(
-      (p) => p.ticker.toUpperCase() === fill.contract.symbol.toUpperCase()
-        && p.expiry.replace(/-/g, "") === targetExpiry,
-    );
-    const leg = target?.legs.find(
-      (l) => l.type === (right === "C" ? "Call" : "Put") && l.strike === fill.contract.strike,
-    );
-    return { direction: dir, avgCost: leg?.avg_cost != null ? Math.abs(leg.avg_cost) : 0 };
-  };
-
-  const isClosingFill = (fill: ExecutedOrder): boolean => {
-    if (fill.contract.secType !== "OPT") return false;
-    // Primary signal: IB populated realizedPNL on the commission report.
-    if (fill.realizedPNL != null && Math.abs(fill.realizedPNL) > 0.01) return true;
-    // Fallback: this fill closes against an existing portfolio leg.
-    // BOT against a SHORT leg, or SLD against a LONG leg = reduces the position.
-    const basis = portfolioLegBasisFor(fill);
-    if (!basis) return false;
-    if ((fill.side === "BOT" || fill.side === "BUY") && basis.direction === "SHORT") return true;
-    if ((fill.side === "SLD" || fill.side === "SELL") && basis.direction === "LONG") return true;
-    return false;
-  };
-
-  // For a detected close where IB hasn't returned realizedPNL yet, compute
-  // P&L from the portfolio leg's avg_cost (per-contract, already × multiplier
-  // per IB convention). Returns null when no basis is available (fully-closed
-  // position whose original open was in a prior session).
-  const fallbackPnlFor = (fill: ExecutedOrder): number | null => {
-    if (fill.realizedPNL != null && Math.abs(fill.realizedPNL) > 0.01) return null;
-    const basis = portfolioLegBasisFor(fill);
-    if (!basis || basis.avgCost <= 0) return null;
-    if (fill.avgPrice == null || !Number.isFinite(fill.avgPrice)) return null;
-    const closePerContract = fill.avgPrice * 100;
-    const qty = Math.abs(fill.quantity);
-    if (basis.direction === "LONG") {
-      // Closed long: profit when close price > entry premium
-      return (closePerContract - basis.avgCost) * qty;
-    }
-    // Closed short: profit when entry premium > close price (paid less to buy back)
-    return (basis.avgCost - closePerContract) * qty;
-  };
+  const isClosingFill = (fill: ExecutedOrder): boolean =>
+    fill.contract.secType === "OPT" && fill.realizedPNL != null && Math.abs(fill.realizedPNL) > 0.01;
 
   type MinuteBucket = {
     symbol: string;
@@ -610,22 +477,9 @@ function groupExecutedOrders(
     }
 
     const totalCommission = optFills.reduce((sum, f) => sum + (f.commission ?? 0), 0);
-    let totalPnL: number | null = null;
-    if (isClosing) {
-      totalPnL = optFills.reduce((sum, f) => {
-        if (f.realizedPNL != null && Math.abs(f.realizedPNL) > 0.01) return sum + f.realizedPNL;
-        // realizedPNL not delivered (commission report still in flight or
-        // session restart lost it). Fall back to portfolio basis for the leg.
-        const fallback = fallbackPnlFor(f);
-        return sum + (fallback ?? 0);
-      }, 0);
-      // If every fill in the group failed both signals, surface null instead
-      // of a misleading $0.
-      const anySignal = optFills.some(
-        (f) => (f.realizedPNL != null && Math.abs(f.realizedPNL) > 0.01) || fallbackPnlFor(f) != null,
-      );
-      if (!anySignal) totalPnL = null;
-    }
+    const totalPnL = isClosing
+      ? optFills.reduce((sum, f) => sum + (f.realizedPNL ?? 0), 0)
+      : null;
 
     const latestTime = groupFills.reduce((maxTime, f) => {
       const current = Date.parse(f.time);
@@ -730,10 +584,7 @@ function groupExecutedOrders(
 
 function blotterShareData(t: BlotterTrade): SharePnlData {
   const lastExec = t.executions.length > 0 ? t.executions[t.executions.length - 1] : null;
-  const realizedPnl = t.realized_pnl ?? 0;
-  const realizedBasisRaw = t.realized_cost_basis ?? t.cost_basis;
-  const realizedBasis = realizedBasisRaw != null ? Math.abs(realizedBasisRaw) : 0;
-  const pnlPct = realizedBasis > 0 ? (realizedPnl / realizedBasis) * 100 : null;
+  const pnlPct = t.cost_basis !== 0 ? (t.realized_pnl / Math.abs(t.cost_basis)) * 100 : null;
   // Derive per-unit entry/exit from execution prices (weighted average)
   let entryPrice: number | null = null;
   let exitPrice: number | null = null;
@@ -779,7 +630,7 @@ function blotterShareData(t: BlotterTrade): SharePnlData {
 
   return {
     description: t.contract_desc || t.symbol,
-    pnl: realizedPnl,
+    pnl: t.realized_pnl,
     pnlPct,
     commission: t.total_commission,
     fillPrice: lastExec?.price ?? null,
@@ -789,6 +640,90 @@ function blotterShareData(t: BlotterTrade): SharePnlData {
     exitTime,
     time: lastExec?.time ? new Date(lastExec.time).toLocaleString() : "",
   };
+}
+
+/* ─── Sortable header cell ──────────────────────────────── */
+
+function SortTh<K extends string>({
+  label,
+  sortKey,
+  activeKey,
+  direction,
+  onToggle,
+  className,
+}: {
+  label: string;
+  sortKey: K;
+  activeKey: K | null;
+  direction: SortDirection;
+  onToggle: (key: K) => void;
+  className?: string;
+}) {
+  const active = activeKey === sortKey;
+  const ariaSort = active ? (direction === "asc" ? "ascending" : "descending") : undefined;
+  return (
+    <th
+      className={`sortable-th ${className ?? ""} ${active ? "sort-active" : ""}`}
+      onClick={() => onToggle(sortKey)}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(sortKey); } }}
+      tabIndex={0}
+      role="columnheader"
+      aria-sort={ariaSort}
+    >
+      <span className="sort-label">
+        {label}
+        <span className="sort-icon">
+          {active ? (
+            direction === "asc" ? <ChevronUp size={10} /> : <ChevronDown size={10} />
+          ) : (
+            <ChevronDown size={10} className="sort-icon-idle" />
+          )}
+        </span>
+      </span>
+    </th>
+  );
+}
+
+/* ─── Price direction hook (local, used by OrderPriceCell) ── */
+
+function usePriceDirection(price: number | null): {
+  direction: "up" | "down" | null;
+  flashDirection: "up" | "down" | null;
+} {
+  const [direction, setDirection] = useState<"up" | "down" | null>(null);
+  const [flashDirection, setFlashDirection] = useState<"up" | "down" | null>(null);
+  const previousPrice = useRef<number | null>(null);
+
+  useEffect(() => {
+    const previous = previousPrice.current;
+
+    if (previous == null || price == null) {
+      setDirection(null);
+      setFlashDirection(null);
+      previousPrice.current = price;
+      return undefined;
+    }
+
+    if (price > previous) {
+      setDirection("up");
+      setFlashDirection("up");
+    } else if (price < previous) {
+      setDirection("down");
+      setFlashDirection("down");
+    } else {
+      setFlashDirection(null);
+    }
+
+    previousPrice.current = price;
+
+    if (price !== previous) {
+      const timer = setTimeout(() => setFlashDirection(null), 2500);
+      return () => clearTimeout(timer);
+    }
+    return undefined;
+  }, [price]);
+
+  return { direction, flashDirection };
 }
 
 /* ─── Flow tables ───────────────────────────────────────── */
@@ -847,117 +782,8 @@ function FlowTable({ rows, lastColumn }: { rows: FlowAnalysisPosition[]; lastCol
   );
 }
 
-/* ── Inline buy_ratio sparkline (mobile) ── */
-function MobileFlowSparkline({ ratios }: { ratios?: { date: string; buy_ratio: number | null }[] }) {
-  if (!ratios || ratios.length === 0) return null;
-  const maxH = 18;
-  return (
-    <svg
-      width={ratios.length * 5}
-      height={maxH + 2}
-      aria-hidden="true"
-      style={{ display: "inline-block", verticalAlign: "middle", marginLeft: 4 }}
-    >
-      {ratios.map((d, i) => {
-        const r = d.buy_ratio;
-        const h = r == null ? 2 : Math.max(2, Math.round(r * maxH));
-        const fill = r == null ? "var(--text-muted)" : r >= 0.55 ? "var(--positive)" : r <= 0.45 ? "var(--negative)" : "var(--warn)";
-        return (
-          <rect
-            key={i}
-            x={i * 5}
-            y={maxH + 2 - h}
-            width={3}
-            height={h}
-            rx={1}
-            fill={fill}
-          />
-        );
-      })}
-    </svg>
-  );
-}
-
-function flowLabelTone(flowClass: string): "pos" | "neg" | "warn" | "mut" {
-  if (flowClass === "accum" || flowClass === "bullish") return "pos";
-  if (flowClass === "distrib" || flowClass === "bearish") return "neg";
-  if (flowClass === "lean-bullish" || flowClass === "lean-bearish") return "warn";
-  return "mut";
-}
-
-function FlowMobileCards({ rows }: { rows: FlowAnalysisPosition[] }) {
-  const { sorted } = useSort(rows, flowPosExtract);
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }} data-testid="mobile-flow-list">
-      {sorted.map((item) => {
-        const buyPct = item.buy_ratio != null ? Math.round(item.buy_ratio * 100) : null;
-        return (
-          <SignalCard
-            key={`${item.ticker}-${item.position}`}
-            ticker={item.ticker}
-            score={Math.min(100, Math.max(0, Math.round(item.strength)))}
-            signals={[
-              {
-                label: item.flow_label,
-                tone: flowLabelTone(item.flow_class),
-              },
-            ]}
-            stats={[
-              {
-                label: "Position",
-                value: item.position,
-              },
-              {
-                label: "Buy Ratio",
-                value: buyPct != null ? `${buyPct}%` : "---",
-              },
-              {
-                label: "Strength",
-                value: String(item.strength),
-              },
-            ]}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-function ResponsiveFlowTable({ rows, lastColumn }: { rows: FlowAnalysisPosition[]; lastColumn: string }) {
-  const { isMobile, hasMounted } = useViewport();
-  if (hasMounted && isMobile) {
-    return <FlowMobileCards rows={rows} />;
-  }
-  return (
-    <div className="table-wrap">
-      <FlowTable rows={rows} lastColumn={lastColumn} />
-    </div>
-  );
-}
-
-function FlowSections({ tickerParam }: { tickerParam?: string }) {
-  if (tickerParam) {
-    return (
-      <>
-        <FlowAnalysisTickerInput initialTicker={tickerParam} />
-        <TickerFlowReport ticker={tickerParam} />
-      </>
-    );
-  }
-  return (
-    <>
-      <FlowAnalysisTickerInput />
-      <FlowSectionsBody />
-    </>
-  );
-}
-
-type FlowSegment = "supports" | "against" | "watch" | "neutral";
-
-function FlowSectionsBody() {
+function FlowSections() {
   const { data, syncing, error, lastSync } = useFlowAnalysis(true);
-  const { isMobile, hasMounted } = useViewport();
-  const [activeSegment, setActiveSegment] = useState<FlowSegment>("supports");
 
   const supportsArr = data?.supports ?? [];
   const againstArr = data?.against ?? [];
@@ -965,91 +791,8 @@ function FlowSectionsBody() {
   const neutralArr = data?.neutral ?? [];
   const totalScanned = data?.positions_scanned ?? 0;
 
+  // Action items = against positions (flow contradicts trade direction)
   const actionItems = againstArr.filter((p) => p.strength >= 15);
-
-  if (hasMounted && isMobile) {
-    const segmentRows: Record<FlowSegment, FlowAnalysisPosition[]> = {
-      supports: supportsArr,
-      against: againstArr,
-      watch: watchArr,
-      neutral: neutralArr,
-    };
-    const segmentLabels: { key: FlowSegment; label: string }[] = [
-      { key: "supports", label: "Supports" },
-      { key: "against", label: "Against" },
-      { key: "watch", label: "Watch" },
-      { key: "neutral", label: "Neutral" },
-    ];
-
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-        {error && (
-          <div style={{ padding: "8px 16px" }}>
-            <div className="alert-item bearish">{error}</div>
-          </div>
-        )}
-        {actionItems.length > 0 && (
-          <div style={{ margin: "8px 16px" }}>
-            <div className="alert-box">
-              <div className="alert-title">
-                <TriangleAlert size={14} />
-                ACTION ITEMS
-              </div>
-              {actionItems.map((item) => (
-                <div key={`${item.ticker}-${item.position}`} className="alert-item">
-                  <span className="alert-ticker">{item.ticker}</span> — {item.position}: {item.note}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Segment control */}
-        <div className="m-segment" role="tablist" aria-label="Flow sections">
-          {segmentLabels.map(({ key, label }) => (
-            <button
-              key={key}
-              role="tab"
-              aria-selected={activeSegment === key}
-              className={`m-segment__item${activeSegment === key ? " m-segment__item--active" : ""}`}
-              onClick={() => setActiveSegment(key)}
-              type="button"
-            >
-              {label}
-              {segmentRows[key].length > 0 && (
-                <span
-                  style={{
-                    marginLeft: 4,
-                    fontSize: 10,
-                    fontFamily: "var(--font-mono)",
-                    opacity: 0.7,
-                  }}
-                >
-                  {segmentRows[key].length}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        <div style={{ padding: "12px 16px" }}>
-          {segmentRows[activeSegment].length > 0 ? (
-            <FlowMobileCards rows={segmentRows[activeSegment]} />
-          ) : (
-            <div className="alert-item" style={{ textAlign: "center", padding: "24px 0" }}>
-              {syncing ? "Scanning portfolio flow..." : `No ${activeSegment} positions`}
-            </div>
-          )}
-        </div>
-
-        {lastSync && (
-          <div className="report-meta" style={{ padding: "0 16px 12px", margin: 0 }}>
-            {new Date(lastSync).toLocaleTimeString()} · {totalScanned} positions
-          </div>
-        )}
-      </div>
-    );
-  }
 
   return (
     <>
@@ -1095,7 +838,7 @@ function FlowSectionsBody() {
         </div>
         <div className="section-body">
           {supportsArr.length > 0 ? (
-            <ResponsiveFlowTable rows={supportsArr} lastColumn="Signal" />
+            <FlowTable rows={supportsArr} lastColumn="Signal" />
           ) : (
             <div className="alert-item">{syncing ? "Scanning portfolio flow..." : "No supporting flow detected"}</div>
           )}
@@ -1113,9 +856,9 @@ function FlowSectionsBody() {
         </div>
         <div className="section-body">
           {againstArr.length > 0 ? (
-            <ResponsiveFlowTable rows={againstArr} lastColumn="Concern" />
+            <FlowTable rows={againstArr} lastColumn="Concern" />
           ) : (
-            <SectionEmptyState icon={TrendingDown} headline="No contradicting flow detected" />
+            <div className="alert-item">No contradicting flow detected</div>
           )}
         </div>
       </div>
@@ -1131,9 +874,9 @@ function FlowSectionsBody() {
         </div>
         <div className="section-body">
           {neutralArr.length > 0 ? (
-            <ResponsiveFlowTable rows={neutralArr} lastColumn="Note" />
+            <FlowTable rows={neutralArr} lastColumn="Note" />
           ) : (
-            <SectionEmptyState icon={Circle} headline="No neutral positions" />
+            <div className="alert-item">No neutral positions</div>
           )}
         </div>
       </div>
@@ -1149,9 +892,9 @@ function FlowSectionsBody() {
         </div>
         <div className="section-body">
           {watchArr.length > 0 ? (
-            <ResponsiveFlowTable rows={watchArr} lastColumn="Note" />
+            <FlowTable rows={watchArr} lastColumn="Note" />
           ) : (
-            <SectionEmptyState icon={Bell} headline="No watch items" />
+            <div className="alert-item">No watch items</div>
           )}
         </div>
       </div>
@@ -1183,41 +926,6 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
   const undefinedFilter = useTableFilter(undefinedPositions, extractPositionSearchText);
   const equityFilter = useTableFilter(equityPositions, extractPositionSearchText);
 
-  // Column visibility per section. Each section gets its own localStorage
-  // bucket so toggling one doesn't affect the others. The toggle UI is
-  // rendered inside each section-header (left of TableSearch).
-  const definedCols = useColumnVisibility<PositionToggleableColumnKey>("positions-defined", POSITION_COLUMN_DEFAULTS);
-  const undefinedCols = useColumnVisibility<PositionToggleableColumnKey>("positions-undefined", POSITION_COLUMN_DEFAULTS);
-  const equityCols = useColumnVisibility<PositionToggleableColumnKey>("positions-equity", POSITION_COLUMN_DEFAULTS);
-
-  const definedHasOptions = useMemo(
-    () => definedFilter.filtered.some((p) => p.structure_type !== "Stock"),
-    [definedFilter.filtered],
-  );
-  const undefinedHasOptions = useMemo(
-    () => undefinedFilter.filtered.some((p) => p.structure_type !== "Stock"),
-    [undefinedFilter.filtered],
-  );
-  const equityHasOptions = useMemo(
-    () => equityFilter.filtered.some((p) => p.structure_type !== "Stock"),
-    [equityFilter.filtered],
-  );
-
-  const filterEntries = (hasOptions: boolean, hasExpiry: boolean) => {
-    let cols = POSITION_COLUMNS as readonly ColumnsToggleEntry<PositionToggleableColumnKey>[];
-    if (!hasOptions) {
-      cols = cols.filter((c) => c.key !== "implied" && c.key !== "implied_market_value");
-    }
-    if (!hasExpiry) {
-      cols = cols.filter((c) => c.key !== "expiry");
-    }
-    return cols;
-  };
-  const definedColEntries = useMemo(() => filterEntries(definedHasOptions, true), [definedHasOptions]);
-  const undefinedColEntries = useMemo(() => filterEntries(undefinedHasOptions, true), [undefinedHasOptions]);
-  // Equity Positions section: stocks have no expiry, so omit the toggle entry.
-  const equityColEntries = useMemo(() => filterEntries(equityHasOptions, false), [equityHasOptions]);
-
   if (!portfolio) {
     return (
       <div className="section">
@@ -1246,13 +954,7 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
               Defined Risk Positions
               <InfoTooltip text={SECTION_TOOLTIPS["Defined Risk Positions"]} />
             </div>
-            <div className="section-header-actions">
-              <ColumnsToggle<PositionToggleableColumnKey>
-                columns={definedColEntries}
-                visible={definedCols.visible}
-                onToggle={definedCols.toggle}
-                onReset={definedCols.reset}
-              />
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <TableSearch
                 query={definedFilter.query}
                 setQuery={definedFilter.setQuery}
@@ -1264,7 +966,7 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
             </div>
           </div>
           <div className="section-body">
-            <PositionTable positions={definedFilter.filtered} showUnderlying={true} prices={prices} tableId="positions-defined" columnVisibility={definedCols.visible} />
+            <PositionTable positions={definedFilter.filtered} showUnderlying={true} prices={prices} />
           </div>
         </div>
       )}
@@ -1277,13 +979,7 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
               Undefined Risk Positions
               <InfoTooltip text={SECTION_TOOLTIPS["Undefined Risk Positions"]} />
             </div>
-            <div className="section-header-actions">
-              <ColumnsToggle<PositionToggleableColumnKey>
-                columns={undefinedColEntries}
-                visible={undefinedCols.visible}
-                onToggle={undefinedCols.toggle}
-                onReset={undefinedCols.reset}
-              />
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <TableSearch
                 query={undefinedFilter.query}
                 setQuery={undefinedFilter.setQuery}
@@ -1295,7 +991,7 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
             </div>
           </div>
           <div className="section-body">
-            <PositionTable positions={undefinedFilter.filtered} showUnderlying={true} prices={prices} tableId="positions-undefined" columnVisibility={undefinedCols.visible} />
+            <PositionTable positions={undefinedFilter.filtered} showUnderlying={true} prices={prices} />
           </div>
         </div>
       )}
@@ -1308,13 +1004,7 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
               Equity Positions
               <InfoTooltip text={SECTION_TOOLTIPS["Equity Positions"]} />
             </div>
-            <div className="section-header-actions">
-              <ColumnsToggle<PositionToggleableColumnKey>
-                columns={equityColEntries}
-                visible={equityCols.visible}
-                onToggle={equityCols.toggle}
-                onReset={equityCols.reset}
-              />
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <TableSearch
                 query={equityFilter.query}
                 setQuery={equityFilter.setQuery}
@@ -1326,14 +1016,14 @@ function PortfolioSections({ portfolio, prices }: { portfolio: PortfolioData | n
             </div>
           </div>
           <div className="section-body">
-            <PositionTable positions={equityFilter.filtered} showExpiry={false} prices={prices} tableId="positions-equity" columnVisibility={equityCols.visible} />
+            <PositionTable positions={equityFilter.filtered} showExpiry={false} prices={prices} />
           </div>
         </div>
       )}
 
       <div className="section">
         <div className="report-meta">
-          Last Sync: {new Date(portfolio.last_sync).toLocaleString()} • Source: IB Gateway
+          Last Sync: {new Date(portfolio.last_sync).toLocaleString()} • Source: IB Gateway (7497)
         </div>
       </div>
     </>
@@ -1358,24 +1048,10 @@ const scannerSigExtract = (item: ScannerSignal, key: ScannerSortKey): string | n
   }
 };
 
-function scannerSignalTone(signal: string): "pos" | "warn" | "neg" {
-  if (signal === "STRONG") return "pos";
-  if (signal === "MODERATE") return "warn";
-  return "neg";
-}
-
-function scannerDirTone(dir: string): "pos" | "neg" | "mut" {
-  if (dir === "ACCUMULATION") return "pos";
-  if (dir === "DISTRIBUTION") return "neg";
-  return "mut";
-}
-
 function ScannerSections() {
-  const { data, syncing, error, lastSync, syncNow } = useScanner(true);
+  const { data, syncing, error, lastSync } = useScanner(true);
   const signals = data?.top_signals ?? [];
   const { sorted, sort, toggle } = useSort(signals, scannerSigExtract);
-  const { isMobile, hasMounted } = useViewport();
-  const [sortKey, setSortKey] = useState<ScannerSortKey>("score");
 
   const signalClass = (signal: string) => {
     if (signal === "STRONG") return "bullish";
@@ -1388,173 +1064,6 @@ function ScannerSections() {
     if (dir === "DISTRIBUTION") return "distrib";
     return "neutral";
   };
-
-  const mobileSortKeys: { key: ScannerSortKey; label: string }[] = [
-    { key: "score", label: "Score" },
-    { key: "strength", label: "Strength" },
-    { key: "buy_ratio", label: "Buy %" },
-    { key: "num_prints", label: "Prints" },
-  ];
-
-  if (hasMounted && isMobile) {
-    const mobileSorted = [...signals].sort((a, b) => {
-      const av = scannerSigExtract(a, sortKey) ?? 0;
-      const bv = scannerSigExtract(b, sortKey) ?? 0;
-      return typeof av === "number" && typeof bv === "number" ? bv - av : String(av).localeCompare(String(bv));
-    });
-
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-        {/* Mobile section header strip */}
-        <div className="m-scanner-header">
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Sparkles size={13} style={{ color: "var(--text-muted)" }} />
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", color: "var(--text-primary)", textTransform: "uppercase" }}>
-              Scanner
-            </span>
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                fontWeight: 600,
-                padding: "1px 6px",
-                borderRadius: 4,
-                background: "color-mix(in srgb, var(--positive) 14%, transparent)",
-                color: "var(--positive)",
-                border: "1px solid color-mix(in srgb, var(--positive) 28%, transparent)",
-              }}
-            >
-              {data?.signals_found ?? 0}
-            </span>
-            {lastSync && (
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-muted)", marginLeft: 4 }}>
-                {new Date(lastSync).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-              </span>
-            )}
-          </div>
-          <button
-            type="button"
-            className="tap-target"
-            onClick={syncNow}
-            disabled={syncing}
-            aria-label="Rescan"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              fontWeight: 600,
-              color: syncing ? "var(--text-muted)" : "var(--signal-core)",
-              background: "none",
-              border: "none",
-              cursor: syncing ? "default" : "pointer",
-              padding: "0 4px",
-            }}
-          >
-            <Loader2 size={12} style={{ opacity: syncing ? 1 : 0.6, animation: syncing ? "spin 1s linear infinite" : "none" }} />
-            {syncing ? "SCANNING" : "RESCAN"}
-          </button>
-        </div>
-
-        {error && (
-          <div style={{ padding: "8px 16px" }}>
-            <div className="alert-item bearish">{error}</div>
-          </div>
-        )}
-
-        {/* Sort bar */}
-        {signals.length > 0 && (
-          <div className="m-sortbar">
-            {mobileSortKeys.map(({ key, label }) => (
-              <button
-                key={key}
-                type="button"
-                className={`m-chip${sortKey === key ? " m-chip--active" : ""}`}
-                onClick={() => setSortKey(key)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {signals.length === 0 && !syncing && !error && (
-          <div style={{ padding: "24px 16px" }}>
-            <SectionEmptyState icon={Sparkles} headline="No scanner signals" secondary="Waiting for initial scan..." />
-          </div>
-        )}
-
-        {mobileSorted.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "8px 16px 16px" }} data-testid="mobile-scanner-list">
-            {mobileSorted.map((row) => {
-              const dirTone = scannerDirTone(row.direction);
-              const dirLabel = row.direction === "ACCUMULATION" ? "ACCUM" : row.direction === "DISTRIBUTION" ? "DISTRIB" : row.direction;
-              const sustainedSuffix = row.sustained_days > 0 ? ` ${row.sustained_days}d` : "";
-              return (
-                <SignalCard
-                  key={`scanner-mobile-${row.ticker}`}
-                  ticker={row.ticker}
-                  score={Math.round(row.score)}
-                  signals={[
-                    {
-                      label: `${dirLabel}${sustainedSuffix}`,
-                      tone: dirTone,
-                    },
-                    {
-                      label: row.signal,
-                      tone: scannerSignalTone(row.signal),
-                    },
-                  ]}
-                  stats={[
-                    {
-                      label: "Buy Ratio",
-                      value: row.buy_ratio != null ? `${(row.buy_ratio * 100).toFixed(1)}%` : "---",
-                    },
-                    {
-                      label: "Strength",
-                      value: row.strength.toFixed(1),
-                    },
-                    {
-                      label: "Prints",
-                      value: row.num_prints.toLocaleString(),
-                    },
-                  ]}
-                />
-              );
-            })}
-          </div>
-        )}
-
-        {/* Sticky scan CTA */}
-        <div className="m-sticky-cta">
-          <button
-            type="button"
-            onClick={syncNow}
-            disabled={syncing}
-            style={{
-              width: "100%",
-              minHeight: 44,
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
-              fontWeight: 700,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              background: syncing
-                ? "color-mix(in srgb, var(--text-muted) 12%, transparent)"
-                : "color-mix(in srgb, var(--signal-core) 14%, transparent)",
-              color: syncing ? "var(--text-muted)" : "var(--signal-core)",
-              border: `1px solid ${syncing ? "transparent" : "color-mix(in srgb, var(--signal-core) 30%, transparent)"}`,
-              borderRadius: 4,
-              cursor: syncing ? "default" : "pointer",
-            }}
-          >
-            {syncing ? "Scanning..." : "Run Scan"}
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <>
@@ -1578,13 +1087,7 @@ function ScannerSections() {
         </div>
         {error && <div className="section-body"><div className="alert-item bearish">{error}</div></div>}
         {signals.length === 0 && !syncing && !error && (
-          <div className="section-body">
-            <SectionEmptyState
-              icon={Sparkles}
-              headline="No scanner signals"
-              secondary="Waiting for initial scan..."
-            />
-          </div>
+          <div className="section-body"><div className="alert-item">No scanner signals. Waiting for initial scan...</div></div>
         )}
         {signals.length > 0 && (
           <div className="section-body table-wrap">
@@ -1651,24 +1154,10 @@ const discoverExtract = (item: DiscoverCandidate, key: DiscoverSortKey): string 
   }
 };
 
-function discoverDpTone(dir: string): "pos" | "neg" | "warn" | "mut" {
-  if (dir === "ACCUMULATION") return "pos";
-  if (dir === "DISTRIBUTION") return "neg";
-  return "mut";
-}
-
-function discoverBiasTone(bias: string): "pos" | "neg" | "warn" | "mut" {
-  if (bias === "BULLISH" || bias === "CALLS") return "pos";
-  if (bias === "BEARISH" || bias === "PUTS") return "neg";
-  return "mut";
-}
-
 function DiscoverSections() {
   const { data, syncing, error, lastSync } = useDiscover(true);
   const candidates = data?.candidates ?? [];
   const { sorted, sort, toggle } = useSort<DiscoverCandidate, DiscoverSortKey>(candidates, discoverExtract, "score", "desc");
-  const { isMobile, hasMounted } = useViewport();
-  const [discoverSortKey, setDiscoverSortKey] = useState<DiscoverSortKey>("score");
 
   const fmtPremium = (v: number) => {
     if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
@@ -1694,94 +1183,6 @@ function DiscoverSections() {
     return "bearish";
   };
 
-  const discoverMobileSortKeys: { key: DiscoverSortKey; label: string }[] = [
-    { key: "score", label: "Score" },
-    { key: "dp_buy_ratio", label: "Buy %" },
-    { key: "total_premium", label: "Premium" },
-    { key: "sweeps", label: "Sweeps" },
-    { key: "alerts", label: "Alerts" },
-  ];
-
-  if (hasMounted && isMobile) {
-    const mobileSortedCandidates = [...candidates].sort((a, b) => {
-      const av = discoverExtract(a, discoverSortKey) ?? 0;
-      const bv = discoverExtract(b, discoverSortKey) ?? 0;
-      return typeof av === "number" && typeof bv === "number" ? bv - av : String(av).localeCompare(String(bv));
-    });
-
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-        {error && (
-          <div style={{ padding: "8px 16px" }}>
-            <div className="alert-item bearish">{error}</div>
-          </div>
-        )}
-
-        {candidates.length === 0 && !syncing && !error && (
-          <div style={{ padding: "24px 16px" }}>
-            <SectionEmptyState icon={Search} headline="No candidates found" secondary="Waiting for initial scan..." />
-          </div>
-        )}
-
-        {/* Sort bar */}
-        {candidates.length > 0 && (
-          <div className="m-sortbar">
-            {discoverMobileSortKeys.map(({ key, label }) => (
-              <button
-                key={key}
-                type="button"
-                className={`m-chip${discoverSortKey === key ? " m-chip--active" : ""}`}
-                onClick={() => setDiscoverSortKey(key)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {mobileSortedCandidates.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "8px 16px 16px" }} data-testid="mobile-discover-list">
-            {mobileSortedCandidates.map((c) => (
-              <SignalCard
-                key={`discover-mobile-${c.ticker}`}
-                ticker={c.ticker}
-                score={Math.round(c.score)}
-                signals={[
-                  {
-                    label: c.dp_direction === "ACCUMULATION" ? "ACCUM" : c.dp_direction === "DISTRIBUTION" ? "DISTRIB" : c.dp_direction,
-                    tone: discoverDpTone(c.dp_direction),
-                  },
-                  {
-                    label: c.options_bias,
-                    tone: discoverBiasTone(c.options_bias),
-                  },
-                ]}
-                stats={[
-                  {
-                    label: "Buy Ratio",
-                    value: `${(c.dp_buy_ratio * 100).toFixed(1)}%`,
-                  },
-                  {
-                    label: "Premium",
-                    value: fmtPremium(c.total_premium),
-                  },
-                  {
-                    label: "Sweeps",
-                    value: String(c.sweeps),
-                  },
-                  {
-                    label: "Alerts",
-                    value: String(c.alerts),
-                  },
-                ]}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
-
   return (
     <>
       <div className="section">
@@ -1804,13 +1205,7 @@ function DiscoverSections() {
         </div>
         {error && <div className="section-body"><div className="alert-item bearish">{error}</div></div>}
         {candidates.length === 0 && !syncing && !error && (
-          <div className="section-body">
-            <SectionEmptyState
-              icon={Search}
-              headline="No candidates found"
-              secondary="Waiting for initial scan..."
-            />
-          </div>
+          <div className="section-body"><div className="alert-item">No candidates found. Waiting for initial scan...</div></div>
         )}
         {candidates.length > 0 && (
           <div className="section-body table-wrap">
@@ -1877,8 +1272,6 @@ function JournalSections() {
   const { data, loading, error, syncWithIB, syncing, lastSyncResult } = useJournal();
   const [syncError, setSyncError] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
-  const { isMobile, hasMounted } = useViewport();
-  const showMobileJournal = isMobile && hasMounted;
   const trades = useMemo(() => {
     if (!data?.trades) return [];
     return [...data.trades].sort((a, b) => b.id - a.id);
@@ -1937,7 +1330,7 @@ function JournalSections() {
             Trade Journal
             <InfoTooltip text={SECTION_TOOLTIPS["Trade Journal"]} />
           </div>
-          <div className="section-header-actions">
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <button
               className="btn-sync"
               onClick={handleSync}
@@ -1967,18 +1360,11 @@ function JournalSections() {
         </div>
         {error && <div className="section-body"><div className="alert-item bearish">{error}</div></div>}
         {syncError && <div className="section-body"><div className="alert-item bearish">IB Sync: {syncError}</div></div>}
-        {loading && <div className="section-body p-6"><SpectralLoader label="Loading journal" /></div>}
+        {loading && <div className="section-body p-6"><TableSkeleton rows={4} columns={6} /></div>}
         {!loading && trades.length === 0 && !error && (
-          <div className="section-body">
-            <SectionEmptyState icon={Wrench} headline="No trades in journal" />
-          </div>
+          <div className="section-body"><div className="alert-item">No trades in journal.</div></div>
         )}
-        {trades.length > 0 && showMobileJournal && (
-          <div className="section-body">
-            <MobileJournalList trades={sortedTrades} />
-          </div>
-        )}
-        {trades.length > 0 && !showMobileJournal && (
+        {trades.length > 0 && (
           <div className="section-body table-wrap">
             <table>
               <thead>
@@ -2062,38 +1448,7 @@ function JournalSections() {
 
 /* ─── Orders tables ────────────────────────────────────── */
 
-type OpenOrderKey = "symbol" | "action" | "orderType" | "totalQuantity" | "limitPrice" | "lastPrice" | "implied" | "implied_mv" | "status" | "tif" | "actions";
-
-type OrderToggleableKey =
-  | "orderType"
-  | "totalQuantity"
-  | "limitPrice"
-  | "lastPrice"
-  | "implied"
-  | "implied_mv"
-  | "tif";
-
-const ORDER_COLUMNS: readonly ColumnsToggleEntry<OrderToggleableKey>[] = [
-  { key: "orderType", label: "Type" },
-  { key: "totalQuantity", label: "Quantity" },
-  { key: "limitPrice", label: "Limit Price" },
-  { key: "lastPrice", label: "Last Price" },
-  { key: "implied", label: "Implied" },
-  { key: "implied_mv", label: "Implied MV" },
-  { key: "tif", label: "TIF" },
-];
-
-const ORDER_COLUMN_DEFAULTS: Record<OrderToggleableKey, boolean> = {
-  orderType: true,
-  totalQuantity: true,
-  limitPrice: true,
-  lastPrice: true,
-  implied: true,
-  implied_mv: false,
-  tif: true,
-};
-
-type OrderColumnVisibility = Record<OrderToggleableKey, boolean>;
+type OpenOrderKey = "symbol" | "action" | "orderType" | "totalQuantity" | "limitPrice" | "lastPrice" | "status" | "tif" | "actions";
 
 /** Build the prices-map key for an order's contract (option key for options, symbol for stocks). */
 function orderPriceKey(contract: OpenOrder["contract"]): string | null {
@@ -2154,7 +1509,6 @@ function resolveOrderLastPrice(
 function makeOpenOrderExtract(
   prices?: Record<string, PriceData>,
   portfolio?: PortfolioData | null,
-  riskFreeRate = 0,
 ) {
   return (item: OpenOrderDisplayRow, key: OpenOrderKey): string | number | null => {
     switch (key) {
@@ -2169,16 +1523,6 @@ function makeOpenOrderExtract(
         return item.kind === "combo"
           ? resolveOpenOrderComboPrice(item.orders, prices)
           : resolveOrderLastPrice(item.order, prices, portfolio);
-      case "implied":
-        if (!prices) return null;
-        return item.kind === "combo"
-          ? computeOrderImpliedValue(item.orders, prices, { riskFreeRate }).netPerContract
-          : resolveOrderImpliedValue(item.order, prices, riskFreeRate);
-      case "implied_mv":
-        if (!prices) return null;
-        return item.kind === "combo"
-          ? resolveComboImpliedMv(item.orders, prices, riskFreeRate)
-          : resolveSingleOrderImpliedMv(item.order, prices, riskFreeRate);
       case "status": return item.kind === "combo" ? item.status : item.order.status;
       case "tif": return item.kind === "combo" ? item.tif : item.order.tif;
       case "actions": return null;
@@ -2195,84 +1539,6 @@ function OrderPriceCell({ price }: { price: number | null }) {
       {price != null ? fmtPrice(price) : "—"}
       {direction === "up" && <ArrowUp size={11} className="price-trend-icon price-trend-up" aria-label="price up" />}
       {direction === "down" && <ArrowDown size={11} className="price-trend-icon price-trend-down" aria-label="price down" />}
-    </td>
-  );
-}
-
-/** Black-Scholes implied per-share value of an order's contract. Single OPT only;
- *  STK and BAG return null (BAG aggregation is handled at the combo row level
- *  via `computeOrderImpliedValue`). */
-function resolveOrderImpliedValue(
-  order: OpenOrder,
-  prices: Record<string, PriceData>,
-  riskFreeRate = 0,
-): number | null {
-  const c = order.contract;
-  if (c.secType !== "OPT") return null;
-  if (c.strike == null || !c.right || !c.expiry) return null;
-  const type: "Call" | "Put" | null =
-    c.right === "C" || c.right === "CALL" ? "Call" : c.right === "P" || c.right === "PUT" ? "Put" : null;
-  if (!type) return null;
-  return computeLegImpliedValue(
-    {
-      ticker: c.symbol,
-      expiry: c.expiry,
-      strike: c.strike,
-      type,
-      direction: order.action === "BUY" ? "LONG" : "SHORT",
-      contracts: Math.abs(order.totalQuantity),
-    },
-    prices,
-    { riskFreeRate },
-  ).perContract;
-}
-
-function OrderImpliedCell({ price }: { price: number | null }) {
-  return (
-    <td className="right cell-muted" title="Black-Scholes implied value at current spot">
-      {price != null ? fmtPrice(price) : "—"}
-    </td>
-  );
-}
-
-/** Implied dollar notional for a combo order: net per-share × baseQuantity × 100,
- *  using the same baseQuantity convention as resolveOpenOrderComboPrice (Math.min
- *  across leg sizes). Sign reflects net debit (positive) vs credit (negative). */
-function resolveComboImpliedMv(
-  orders: OpenOrder[],
-  prices: Record<string, PriceData>,
-  riskFreeRate = 0,
-): number | null {
-  const r = computeOrderImpliedValue(orders, prices, { riskFreeRate });
-  if (r.netPerContract == null) return null;
-  const sizes = orders.map((o) => Math.abs(o.totalQuantity)).filter((q) => q > 0);
-  if (sizes.length === 0) return null;
-  const base = Math.min(...sizes);
-  return r.netPerContract * base * 100;
-}
-
-/** Implied dollar notional for a single OPT order: per-share × |qty| × 100,
- *  signed by BUY/SELL action. STK/BAG/null on missing inputs. */
-function resolveSingleOrderImpliedMv(
-  order: OpenOrder,
-  prices: Record<string, PriceData>,
-  riskFreeRate = 0,
-): number | null {
-  const perShare = resolveOrderImpliedValue(order, prices, riskFreeRate);
-  if (perShare == null) return null;
-  const sign = order.action === "BUY" ? 1 : -1;
-  return sign * perShare * Math.abs(order.totalQuantity) * 100;
-}
-
-function OrderImpliedMvCell({ value }: { value: number | null }) {
-  return (
-    <td
-      className={`right ${value != null ? (value >= 0 ? "positive" : "negative") : "cell-muted"}`}
-      title="Implied market value: BS price × contracts × 100, signed"
-    >
-      {value != null
-        ? `${value >= 0 ? "+" : "-"}${fmtUsd(Math.abs(value))}`
-        : "—"}
     </td>
   );
 }
@@ -2302,27 +1568,7 @@ function OrdersSections({
   portfolio?: PortfolioData | null;
 }) {
   const { pendingCancels, pendingModifies, cancelledOrders, requestCancel, requestModify } = useOrderActions();
-  const { isMobile, hasMounted } = useViewport();
-  const showMobileOrders = isMobile && hasMounted;
-  const riskFreeRate = useRiskFreeRate();
-  const openOrderExtract = useMemo(() => makeOpenOrderExtract(prices, portfolio, riskFreeRate), [prices, portfolio, riskFreeRate]);
-  // Implied columns only meaningful when at least one open order is an option.
-  const showImplied = useMemo(
-    () =>
-      (orders?.open_orders ?? []).some(
-        (o) => o.contract.secType === "OPT" || o.contract.secType === "BAG",
-      ),
-    [orders],
-  );
-  const { visible: orderColumns, toggle: toggleOrderColumn, reset: resetOrderColumns } =
-    useColumnVisibility<OrderToggleableKey>("orders-open", ORDER_COLUMN_DEFAULTS);
-  const visibleOrderColumnEntries = useMemo<readonly ColumnsToggleEntry<OrderToggleableKey>[]>(
-    () =>
-      showImplied
-        ? ORDER_COLUMNS
-        : ORDER_COLUMNS.filter((c) => c.key !== "implied" && c.key !== "implied_mv"),
-    [showImplied],
-  );
+  const openOrderExtract = useMemo(() => makeOpenOrderExtract(prices, portfolio), [prices, portfolio]);
   const openOrderRows = useMemo(() => {
     if (!orders) return [];
     return buildOpenOrderDisplayRows(orders.open_orders, portfolio?.positions);
@@ -2426,7 +1672,7 @@ function OrdersSections({
 
   if (!orders) {
     return (
-      <div className="section" data-testid="orders-loading">
+      <div className="section">
         <div className="section-header">
           <div className="section-title">
             <ClipboardList size={14} />
@@ -2435,8 +1681,8 @@ function OrdersSections({
           </div>
           <span className="pill neutral">LOADING</span>
         </div>
-        <div className="section-body p-6">
-          <SpectralLoader label="Loading orders" />
+        <div className="section-body">
+          <div className="alert-item">Waiting for orders data...</div>
         </div>
       </div>
     );
@@ -2470,67 +1716,25 @@ function OrdersSections({
             <InfoTooltip text={SECTION_TOOLTIPS["Open Orders"]} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <ColumnsToggle<OrderToggleableKey>
-              columns={visibleOrderColumnEntries}
-              visible={orderColumns}
-              onToggle={toggleOrderColumn}
-              onReset={resetOrderColumns}
-            />
             <TableSearch query={openFilter.query} setQuery={openFilter.setQuery} placeholder="Filter orders..." resultCount={openFilter.filtered.length} totalCount={openSort.sorted.length} />
             <span className="pill defined">{orders.open_count} ORDERS</span>
           </div>
         </div>
         <div className="section-body">
           {openOrderRows.length === 0 ? (
-            <SectionEmptyState
-              icon={Inbox}
-              headline="No working orders"
-              secondary="Place an order from any ticker view to populate this list."
-              testId="open-orders-empty"
-            />
-          ) : showMobileOrders ? (
-            <MobileOrderList
-              rows={openFilter.filtered}
-              pendingCancelPermIds={pendingCancels}
-              pendingModifyPermIds={pendingModifies}
-              canModify={canModify}
-              onRequestCancel={(single, combo) => {
-                if (single) setCancelTarget(single);
-                else if (combo) handleCancelCombo(combo);
-              }}
-              onRequestModify={(single, combo) => {
-                if (single) {
-                  setModifyTarget({ modalOrder: single, requestOrder: single });
-                } else if (combo && combo.length > 0) {
-                  const comboRow = openFilter.filtered.find(
-                    (row) => row.kind === "combo" && row.orders === combo,
-                  );
-                  if (comboRow && comboRow.kind === "combo") {
-                    const target = buildGroupedComboModifyTarget(comboRow);
-                    setModifyTarget({
-                      modalOrder: target.modalOrder,
-                      requestOrder: combo[0],
-                      cancelOrders: target.cancelOrders,
-                    });
-                  }
-                }
-              }}
-            />
+            <div className="alert-item">No open orders</div>
           ) : (
-            <div className="table-wrap">
             <table>
               <thead>
                 <tr>
                   <SortTh<OpenOrderKey> label="Symbol" sortKey="symbol" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />
                   <SortTh<OpenOrderKey> label="Action" sortKey="action" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />
-                  {orderColumns.orderType && <SortTh<OpenOrderKey> label="Type" sortKey="orderType" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />}
-                  {orderColumns.totalQuantity && <SortTh<OpenOrderKey> label="Quantity" sortKey="totalQuantity" className="right" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />}
-                  {orderColumns.limitPrice && <SortTh<OpenOrderKey> label="Limit Price" sortKey="limitPrice" className="right" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />}
-                  {orderColumns.lastPrice && <SortTh<OpenOrderKey> label="Last Price" sortKey="lastPrice" className="right" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />}
-                  {showImplied && orderColumns.implied && <SortTh<OpenOrderKey> label="Implied" sortKey="implied" className="right" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />}
-                  {showImplied && orderColumns.implied_mv && <SortTh<OpenOrderKey> label="Implied MV" sortKey="implied_mv" className="right" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />}
+                  <SortTh<OpenOrderKey> label="Type" sortKey="orderType" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />
+                  <SortTh<OpenOrderKey> label="Quantity" sortKey="totalQuantity" className="right" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />
+                  <SortTh<OpenOrderKey> label="Limit Price" sortKey="limitPrice" className="right" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />
+                  <SortTh<OpenOrderKey> label="Last Price" sortKey="lastPrice" className="right" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />
                   <SortTh<OpenOrderKey> label="Status" sortKey="status" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />
-                  {orderColumns.tif && <SortTh<OpenOrderKey> label="TIF" sortKey="tif" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />}
+                  <SortTh<OpenOrderKey> label="TIF" sortKey="tif" activeKey={openSort.sort.key} direction={openSort.sort.direction} onToggle={openSort.toggle} />
                   <th className="actions-th">Actions</th>
                 </tr>
               </thead>
@@ -2569,28 +1773,14 @@ function OrdersSections({
                         <td>
                           <span className="pill neutral">COMBO</span>
                         </td>
-                        {orderColumns.orderType && <td>{o.structure}</td>}
-                        {orderColumns.totalQuantity && <td className="right">{o.totalQuantity}</td>}
-                        {orderColumns.limitPrice && (
-                          <td className="right">
-                            <span className={isPendingModify ? "status-modifying" : ""}>
-                              {isPendingModify ? "—" : o.limitPrice != null ? fmtPrice(o.limitPrice) : "—"}
-                            </span>
-                          </td>
-                        )}
-                        {orderColumns.lastPrice && (
-                          <OrderPriceCell price={resolveOpenOrderComboPrice(o.orders, prices)} />
-                        )}
-                        {showImplied && orderColumns.implied && (
-                          <OrderImpliedCell
-                            price={prices ? computeOrderImpliedValue(o.orders, prices, { riskFreeRate }).netPerContract : null}
-                          />
-                        )}
-                        {showImplied && orderColumns.implied_mv && (
-                          <OrderImpliedMvCell
-                            value={prices ? resolveComboImpliedMv(o.orders, prices, riskFreeRate) : null}
-                          />
-                        )}
+                        <td>{o.structure}</td>
+                        <td className="right">{o.totalQuantity}</td>
+                        <td className="right">
+                          <span className={isPendingModify ? "status-modifying" : ""}>
+                            {isPendingModify ? "—" : o.limitPrice != null ? fmtPrice(o.limitPrice) : "—"}
+                          </span>
+                        </td>
+                        <OrderPriceCell price={resolveOpenOrderComboPrice(o.orders, prices)} />
                         <td>
                           {isPendingCancel ? (
                             <span className="status-cancelling">Cancelling...</span>
@@ -2600,7 +1790,7 @@ function OrdersSections({
                             o.status
                           )}
                         </td>
-                        {orderColumns.tif && <td>{o.tif}</td>}
+                        <td>{o.tif}</td>
                         <td className="actions-cell">
                           {isPending ? (
                             <span className="cancel-pending-label">PENDING</span>
@@ -2664,30 +1854,16 @@ function OrdersSections({
                           {o.order.action}
                         </span>
                       </td>
-                      {orderColumns.orderType && <td>{o.order.orderType}</td>}
-                      {orderColumns.totalQuantity && <td className="right">{o.order.totalQuantity}</td>}
-                      {orderColumns.limitPrice && (
-                        <td className="right">
-                          {isPendingModify && o.order.orderType === "STP LMT" ? (
-                            <span className="status-modifying">Modifying...</span>
-                          ) : (
-                            o.order.limitPrice != null ? fmtPrice(o.order.limitPrice) : "—"
-                          )}
-                        </td>
-                      )}
-                      {orderColumns.lastPrice && (
-                        <OrderPriceCell price={resolveOrderLastPrice(o.order, prices, portfolio)} />
-                      )}
-                      {showImplied && orderColumns.implied && (
-                        <OrderImpliedCell
-                          price={prices ? resolveOrderImpliedValue(o.order, prices, riskFreeRate) : null}
-                        />
-                      )}
-                      {showImplied && orderColumns.implied_mv && (
-                        <OrderImpliedMvCell
-                          value={prices ? resolveSingleOrderImpliedMv(o.order, prices, riskFreeRate) : null}
-                        />
-                      )}
+                      <td>{o.order.orderType}</td>
+                      <td className="right">{o.order.totalQuantity}</td>
+                      <td className="right">
+                        {isPendingModify && o.order.orderType === "STP LMT" ? (
+                          <span className="status-modifying">Modifying...</span>
+                        ) : (
+                          o.order.limitPrice != null ? fmtPrice(o.order.limitPrice) : "—"
+                        )}
+                      </td>
+                      <OrderPriceCell price={resolveOrderLastPrice(o.order, prices, portfolio)} />
                       <td>
                         {isPendingCancel ? (
                           <span className="status-cancelling">Cancelling...</span>
@@ -2697,7 +1873,7 @@ function OrdersSections({
                           o.order.status
                         )}
                       </td>
-                      {orderColumns.tif && <td>{o.order.tif}</td>}
+                      <td>{o.order.tif}</td>
                       <td className="actions-cell">
                         {isPending ? (
                           <span className="cancel-pending-label">PENDING</span>
@@ -2728,7 +1904,6 @@ function OrdersSections({
                 })}
               </tbody>
             </table>
-            </div>
           )}
         </div>
       </div>
@@ -2747,14 +1922,7 @@ function OrdersSections({
         </div>
         <div className="section-body">
           {positionGroups.length === 0 ? (
-            <SectionEmptyState
-              icon={History}
-              headline="No fills today"
-              secondary="Executions during today's session will appear here as orders fill."
-              testId="today-executed-empty"
-            />
-          ) : showMobileOrders ? (
-            <MobileExecutedList groups={execFilter.filtered} />
+            <div className="alert-item">No fills this session</div>
           ) : (
             <table>
               <thead>
@@ -2774,9 +1942,6 @@ function OrdersSections({
                 {execFilter.filtered.map((group) => {
                   const isExpanded = expandedGroups.has(group.id);
                   const isCancelled = group.fills[0]?.side === "CANCELLED";
-                  const shareData = group.isClosing && group.totalPnL != null
-                    ? positionGroupShareData(group, positionGroups, portfolio?.positions, portfolio?.trade_log_dates)
-                    : null;
                   return (
                     <React.Fragment key={group.id}>
                       {/* Position group header row */}
@@ -2809,15 +1974,18 @@ function OrdersSections({
                         <td className="right">{group.totalCommission !== 0 ? fmtPrice(group.totalCommission) : "—"}</td>
                         <td className={`right ${group.totalPnL != null ? (group.totalPnL >= 0 ? "positive" : "negative") : ""}`}>
                           {group.totalPnL != null ? (() => {
-                            // Same Return on Risk % the share card carries — single source of truth.
-                            const pct = shareData?.pnlPct ?? closedGroupReturnPct(group);
+                            // Return on Risk: P&L / entry notional. Entry = exit - P&L.
+                            const optFills = group.fills.filter((f) => f.contract.secType === "OPT");
+                            const exitNotional = optFills.reduce((sum, f) => sum + Math.abs((f.avgPrice ?? 0) * f.quantity * 100), 0);
+                            const entryNotional = Math.abs(exitNotional - group.totalPnL);
+                            const pct = entryNotional > 0 ? (group.totalPnL / entryNotional) * 100 : null;
                             return `${group.totalPnL >= 0 ? "+" : ""}${fmtPrice(group.totalPnL)}${pct != null ? ` (${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%)` : ""}`;
                           })() : "—"}
                         </td>
                         <td>{new Date(group.time).toLocaleTimeString()}</td>
                         <td>
-                          {shareData != null && (
-                            <SharePnlButton data={shareData} />
+                          {group.isClosing && group.totalPnL != null && (
+                            <SharePnlButton data={positionGroupShareData(group, positionGroups, portfolio?.positions, portfolio?.trade_log_dates)} />
                           )}
                         </td>
                       </tr>
@@ -2863,14 +2031,12 @@ function OrdersSections({
       {orders.last_sync && (
         <div className="section">
           <div className="report-meta">
-            Last Sync: {new Date(orders.last_sync).toLocaleString()} • Source: IB Gateway
+            Last Sync: {new Date(orders.last_sync).toLocaleString()} • Source: IB Gateway (7497)
           </div>
         </div>
       )}
 
       <HistoricalTradesSection />
-
-      <CashFlowsSection />
     </>
   );
 }
@@ -2878,22 +2044,12 @@ function OrdersSections({
 /* ─── Historical Trades (Flex Query) ───────────────────── */
 
 const BLOTTER_PAGE_SIZE = 15;
-const BLOTTER_STALE_THRESHOLD_DAYS = 1;
 
 type BlotterSortKey = "date" | "symbol" | "contract_desc" | "sec_type" | "status" | "net_quantity" | "total_commission" | "realized_pnl" | "cost_basis" | "proceeds";
 
 function getTradeDate(item: BlotterTrade): string {
   if (item.executions.length === 0) return "";
   return item.executions[item.executions.length - 1].time;
-}
-
-function blotterStalenessAgeDays(asOf: string | undefined | null): number | null {
-  if (!asOf) return null;
-  const asOfTime = Date.parse(asOf);
-  if (Number.isNaN(asOfTime)) return null;
-  const diffMs = Date.now() - asOfTime;
-  if (diffMs <= 0) return 0;
-  return Math.floor(diffMs / (24 * 60 * 60 * 1000));
 }
 
 const blotterExtract = (item: BlotterTrade, key: BlotterSortKey): string | number | null => {
@@ -2915,10 +2071,6 @@ const blotterExtract = (item: BlotterTrade, key: BlotterSortKey): string | numbe
 export function HistoricalTradesSection() {
   const { data, loading, syncing, error, syncNow } = useBlotter(true);
   const [page, setPage] = useState(0);
-  const [expanded, setExpanded] = useState(true);
-  const { isMobile, hasMounted } = useViewport();
-  const showMobileBlotter = isMobile && hasMounted;
-  const stopToggle = (e: React.SyntheticEvent) => e.stopPropagation();
 
   const allTrades = useMemo(() => {
     if (!data) return [];
@@ -2949,35 +2101,11 @@ export function HistoricalTradesSection() {
 
   const totalCount = allTrades.length;
   const hasData = data && (data.as_of || totalCount > 0);
-  const stalenessAgeDays = blotterStalenessAgeDays(data?.as_of);
-  const isStale = stalenessAgeDays !== null && stalenessAgeDays > BLOTTER_STALE_THRESHOLD_DAYS;
 
   return (
-    <div className="section" data-testid="historical-trades-section">
-      <div
-        className="section-header cash-flows-header"
-        role="button"
-        tabIndex={0}
-        aria-expanded={expanded}
-        aria-controls="historical-trades-body"
-        data-testid="historical-trades-toggle"
-        onClick={() => setExpanded((v) => !v)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            setExpanded((v) => !v);
-          }
-        }}
-        style={{ cursor: "pointer", userSelect: "none" }}
-      >
+    <div className="section">
+      <div className="section-header">
         <div className="section-title">
-          <ChevronDown
-            size={12}
-            style={{
-              transform: expanded ? "rotate(0deg)" : "rotate(-90deg)",
-              transition: "transform 150ms ease",
-            }}
-          />
           <ClipboardList size={14} />
           Historical Trades (30 Days)
           <InfoTooltip text={SECTION_TOOLTIPS["Historical Trades (30 Days)"]} />
@@ -2988,91 +2116,32 @@ export function HistoricalTradesSection() {
               {new Date(data.as_of).toLocaleDateString()}
             </span>
           )}
-          {isStale && stalenessAgeDays !== null && (
-            <span
-              className="pill bearish"
-              title="Blotter has not been refreshed from IB Flex for more than a day. Click Refresh to pull the latest trades."
-            >
-              STALE · {stalenessAgeDays}d
-            </span>
-          )}
           {allTrades.length > 0 ? (
-            <span onClick={stopToggle} onKeyDown={stopToggle}>
-              <TableSearch
-                query={query}
-                setQuery={setQuery}
-                placeholder="Filter historical trades..."
-                resultCount={filtered.length}
-                totalCount={allTrades.length}
-              />
-            </span>
+            <TableSearch
+              query={query}
+              setQuery={setQuery}
+              placeholder="Filter historical trades..."
+              resultCount={filtered.length}
+              totalCount={allTrades.length}
+            />
           ) : null}
           <span className="pill neutral">{totalCount} TRADES</span>
           <button
             className="sync-button"
             disabled={syncing}
-            onClick={(e) => {
-              e.stopPropagation();
-              syncNow();
-            }}
+            onClick={() => syncNow()}
           >
             {syncing ? <><Loader2 size={12} className="spin" /> Syncing...</> : "Refresh"}
           </button>
         </div>
       </div>
-      {expanded && (
-      <div id="historical-trades-body" className="section-body">
-        {error && (
-          <SectionEmptyState
-            icon={TriangleAlert}
-            tone="danger"
-            headline="Couldn't load historical trades"
-            secondary={error}
-            action={{ label: syncing ? "Refreshing…" : "Refresh", onClick: syncNow, disabled: syncing }}
-            testId="historical-trades-error"
-          />
+      <div className="section-body">
+        {error && <div className="alert-item section-message bearish">{error}</div>}
+        {loading && <div className="p-6"><TableSkeleton rows={5} columns={8} /></div>}
+        {!loading && !hasData && !error && (
+          <div className="alert-item section-message">No historical trades. Click REFRESH to fetch from IB.</div>
         )}
-        {loading && <div className="p-6"><SpectralLoader label="Loading historical trades" /></div>}
-        {!loading && !error && totalCount === 0 && (
-          <SectionEmptyState
-            icon={History}
-            headline="No historical trades"
-            secondary={
-              hasData
-                ? "No fills in the last 30 days. Click Refresh to pull again from IB Flex."
-                : "Pull the last 30 days of IB Flex trades to populate this list."
-            }
-            action={{ label: syncing ? "Refreshing…" : "Refresh from IB", onClick: syncNow, disabled: syncing }}
-            testId="historical-trades-empty"
-          />
-        )}
-        {!loading && pageRows.length > 0 && showMobileBlotter && (
-          <>
-            <MobileBlotterList trades={pageRows} />
-            {totalPages > 1 && (
-              <div className="pagination" style={{ marginTop: 8 }}>
-                <button
-                  className="page-button"
-                  disabled={safePage === 0}
-                  onClick={() => setPage((p) => Math.max(0, p - 1))}
-                >
-                  Prev
-                </button>
-                <span className="page-meta">
-                  Page {safePage + 1} of {totalPages}
-                </span>
-                <button
-                  className="page-button"
-                  disabled={safePage >= totalPages - 1}
-                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                >
-                  Next
-                </button>
-              </div>
-            )}
-          </>
-        )}
-        {!loading && pageRows.length > 0 && !showMobileBlotter && (
+        {!loading && pageRows.length > 0 && (
           <>
             <table>
               <thead>
@@ -3091,44 +2160,34 @@ export function HistoricalTradesSection() {
                 </tr>
               </thead>
               <tbody>
-                {pageRows.map((t, i) => {
-                  const realizedBasis = t.realized_cost_basis != null ? Math.abs(t.realized_cost_basis) : (t.cost_basis != null ? Math.abs(t.cost_basis) : 0);
-                  const realizedPct = t.realized_pnl != null && realizedBasis > 0 ? (t.realized_pnl / realizedBasis) * 100 : null;
-                  const partiallyRealized = !t.is_closed && (t.realized_quantity ?? 0) > 0;
-                  const realizedLabel = partiallyRealized
-                    ? `${t.realized_quantity} ${t.net_quantity >= 0 ? "sold" : "covered"}`
-                    : null;
-
-                  return (
-                    <tr key={`${t.symbol}-${t.contract_desc}-${i}`}>
-                      <td>{getTradeDate(t) ? formatTradeDate(getTradeDate(t)) : "—"}</td>
-                      <td><TickerLink ticker={t.symbol} /></td>
-                      <td>{t.contract_desc}</td>
-                      <td>{t.sec_type}</td>
-                      <td>
-                        <span className={`pill ${t.is_closed ? "neutral" : "defined"}`}>
-                          {t.is_closed ? "Closed" : "Open"}
-                        </span>
-                      </td>
-                      <td className="right">{t.total_quantity ?? t.net_quantity}</td>
-                      <td className="right">{t.total_commission != null ? fmtPrice(t.total_commission) : "---"}</td>
-                      <td className={`right ${(t.realized_pnl ?? 0) >= 0 ? "positive" : "negative"}`}>
-                        {t.realized_pnl != null ? (
-                          <>
-                            {t.realized_pnl >= 0 ? "+" : ""}{fmtPrice(t.realized_pnl)}
-                            {realizedPct != null ? ` (${realizedPct >= 0 ? "+" : ""}${realizedPct.toFixed(1)}%)` : ""}
-                            {realizedLabel ? ` · ${realizedLabel}` : ""}
-                          </>
-                        ) : "---"}
-                      </td>
-                      <td className="right">{t.cost_basis != null ? fmtPrice(t.cost_basis) : "---"}</td>
-                      <td className="right">{t.proceeds != null ? fmtPrice(t.proceeds) : "---"}</td>
-                      <td>
-                        {t.is_closed && <SharePnlButton data={blotterShareData(t)} />}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {pageRows.map((t, i) => (
+                  <tr key={`${t.symbol}-${t.contract_desc}-${i}`}>
+                    <td>{getTradeDate(t) ? new Date(getTradeDate(t)).toLocaleDateString() : "—"}</td>
+                    <td><TickerLink ticker={t.symbol} /></td>
+                    <td>{t.contract_desc}</td>
+                    <td>{t.sec_type}</td>
+                    <td>
+                      <span className={`pill ${t.is_closed ? "neutral" : "defined"}`}>
+                        {t.is_closed ? "Closed" : "Open"}
+                      </span>
+                    </td>
+                    <td className="right">{t.total_quantity ?? t.net_quantity}</td>
+                    <td className="right">{t.total_commission != null ? fmtPrice(t.total_commission) : "---"}</td>
+                    <td className={`right ${(t.realized_pnl ?? 0) >= 0 ? "positive" : "negative"}`}>
+                      {t.realized_pnl != null ? (
+                        <>
+                          {t.realized_pnl >= 0 ? "+" : ""}{fmtPrice(t.realized_pnl)}
+                          {t.cost_basis != null && Math.abs(t.cost_basis) > 0 ? ` (${((t.realized_pnl / Math.abs(t.cost_basis)) * 100) >= 0 ? "+" : ""}${((t.realized_pnl / Math.abs(t.cost_basis)) * 100).toFixed(1)}%)` : ""}
+                        </>
+                      ) : "---"}
+                    </td>
+                    <td className="right">{t.cost_basis != null ? fmtPrice(t.cost_basis) : "---"}</td>
+                    <td className="right">{t.proceeds != null ? fmtPrice(t.proceeds) : "---"}</td>
+                    <td>
+                      {t.is_closed && <SharePnlButton data={blotterShareData(t)} />}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
             {totalPages > 1 && (
@@ -3145,7 +2204,6 @@ export function HistoricalTradesSection() {
           </>
         )}
       </div>
-      )}
     </div>
   );
 }
@@ -3168,7 +2226,7 @@ export default function WorkspaceSections({ section, portfolio, portfolioLastSyn
     case "dashboard":
       return null;
     case "flow-analysis":
-      return <FlowSections tickerParam={tickerParam} />;
+      return <FlowSections />;
     case "portfolio":
       return <PortfolioSections portfolio={portfolio ?? null} prices={prices} />;
     case "performance":
@@ -3185,15 +2243,11 @@ export default function WorkspaceSections({ section, portfolio, portfolioLastSyn
       return <RegimePanel prices={prices ?? {}} marketState={marketState} />;
     case "cta":
       return <CtaPage />;
-    case "admin":
-      return <AdminWorkspace />;
-    case "profile":
-      return <ProfileContent prices={prices} />;
     case "ticker-detail":
       return tickerParam ? (
         <TickerWorkspace ticker={tickerParam} theme={theme ?? "dark"} />
       ) : null;
     default:
-      return <FlowSections tickerParam={tickerParam} />;
+      return <FlowSections />;
   }
 }

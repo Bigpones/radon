@@ -1,21 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { AlertTriangle, TrendingUp, Zap } from "lucide-react";
 import InfoTooltip from "./InfoTooltip";
 import ShareReportModal from "./ShareReportModal";
-import SignalAreaChart from "./SignalAreaChart";
-import HistoryRangeChips from "./HistoryRangeChips";
-import BrushMinimap from "./BrushMinimap";
-import SpectralLoader from "./SpectralLoader";
 import { useVcg, type VcgData, type VcgHistoryEntry } from "@/lib/useVcg";
 import { MarketState } from "@/lib/useMarketHours";
-import {
-  defaultPresetForLength,
-  presetRange,
-  presetSessions,
-  type RangePresetSlug,
-} from "@/lib/historyRange";
 import type { PriceData } from "@/lib/pricesProtocol";
 
 type VcgPanelProps = {
@@ -140,43 +130,6 @@ export default function VcgPanel({ marketState }: VcgPanelProps) {
   const { data, loading, error, lastSync } = useVcg(marketState ?? null);
   const [sortCol, setSortCol] = useState<VcgSortCol | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-  // Chart range: preset chips (1M / 3M / 6M / 1Y / All) OR a custom window from
-  // the brush minimap — mirroring the CRI "Correlation Risk Premium" chart.
-  // Mobile and desktop land on the current regime first, not a year backfill.
-  const historyLength = data?.history?.length ?? 0;
-  const [activeRange, setActiveRange] = useState<RangePresetSlug | "custom">(() =>
-    historyLength >= 21 ? "1m" : defaultPresetForLength(historyLength),
-  );
-  // When the brush drives the view, this holds the raw [start, end]; presets clear it.
-  const [customRange, setCustomRange] = useState<[number, number] | null>(null);
-  const [rangeTouched, setRangeTouched] = useState(false);
-
-  // Re-pick the default preset when history grows past a depth threshold
-  // (e.g. backfill extends 3M → 1Y) — only while the user hasn't touched it.
-  useEffect(() => {
-    if (rangeTouched || activeRange === "custom") return;
-    const ideal = historyLength >= 21 ? "1m" : defaultPresetForLength(historyLength);
-    if (activeRange === "all" && historyLength < 21) return;
-    if (presetSessions(activeRange) > historyLength) {
-      setActiveRange(ideal);
-    } else if (activeRange === "all" && historyLength >= 21) {
-      setActiveRange("1m");
-    }
-  }, [historyLength, activeRange, rangeTouched]);
-
-  // The effective inclusive [start, end] window into data.history. A custom
-  // brush selection is clamped to bounds; presets derive from the slug.
-  const chartRange = useMemo<[number, number]>(() => {
-    if (historyLength < 2) return [0, Math.max(historyLength - 1, 0)];
-    if (activeRange === "custom" && customRange) {
-      const max = historyLength - 1;
-      const end = Math.min(customRange[1], max);
-      const start = Math.max(0, Math.min(customRange[0], end));
-      return [start, end];
-    }
-    const slug: RangePresetSlug = activeRange === "custom" ? "1m" : activeRange;
-    return presetRange(slug, historyLength);
-  }, [activeRange, customRange, historyLength]);
 
   function handleSort(col: VcgSortCol) {
     if (sortCol === col) {
@@ -201,8 +154,8 @@ export default function VcgPanel({ marketState }: VcgPanelProps) {
             Volatility-Credit Gap
           </div>
         </div>
-        <div className="section-body">
-          <SpectralLoader label="Sampling 20-session basis" />
+        <div className="section-body" style={{ padding: "24px", textAlign: "center" }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-muted)" }}>Loading VCG scan...</span>
         </div>
       </div>
     );
@@ -242,31 +195,31 @@ export default function VcgPanel({ marketState }: VcgPanelProps) {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
             {/* Regime badge */}
-            <span className="pill pill--solid" style={{ background: regimeBadgeColor(sig.regime) }}>
+            <span className="pill" style={{ background: regimeBadgeColor(sig.regime), color: "#fff", fontSize: "9px" }}>
               {sig.regime}
             </span>
             {/* RISK-OFF */}
             {sig.ro === 1 && (
-              <span className="pill pill--solid" style={{ background: "var(--fault)" }}>
+              <span className="pill" style={{ background: "var(--fault)", color: "#fff", fontSize: "9px" }}>
                 <AlertTriangle size={10} style={{ marginRight: "3px" }} />
                 RISK-OFF
               </span>
             )}
             {/* EDR (only when not already RISK-OFF) */}
             {sig.edr === 1 && sig.ro !== 1 && (
-              <span className="pill pill--solid" style={{ background: "var(--warning)", fontWeight: 700 }}>
+              <span className="pill" style={{ background: "var(--warning)", color: "#000", fontSize: "9px", fontWeight: 700 }}>
                 EDR
               </span>
             )}
             {/* Tier badge */}
             {sig.tier != null && (
-              <span className="pill pill--solid" style={{ background: tierColor(sig.tier) }}>
+              <span className="pill" style={{ background: tierColor(sig.tier), color: "#fff", fontSize: "9px" }}>
                 T{sig.tier}
               </span>
             )}
             {/* Bounce */}
             {sig.bounce === 1 && (
-              <span className="pill pill--solid" style={{ background: "var(--signal-core)", fontWeight: 700 }}>
+              <span className="pill" style={{ background: "var(--signal-core)", color: "#000", fontSize: "9px", fontWeight: 700 }}>
                 <TrendingUp size={10} style={{ marginRight: "3px" }} />
                 BOUNCE
               </span>
@@ -331,8 +284,12 @@ export default function VcgPanel({ marketState }: VcgPanelProps) {
           </div>
           {/* Overall signal pill */}
           <span
-            className="pill pill--solid"
-            style={{ background: interpColor }}
+            className="pill"
+            style={{
+              background: interpColor,
+              color: sig.interpretation === "NORMAL" || sig.interpretation === "BOUNCE" ? "#000" : "#fff",
+              fontSize: "9px",
+            }}
           >
             {interpretationLabel(sig.interpretation)}
           </span>
@@ -435,87 +392,10 @@ export default function VcgPanel({ marketState }: VcgPanelProps) {
         </div>
       </div>
 
-      {/* ── History Chart ──────────────────────
-          Single-series area chart of VCG z-score over time. Mirrors
-          the "Correlation Risk Premium" treatment on /regime/cri —
-          positive bands above zero (stress rising), negative bands
-          below (bounce territory). Range chips slice the underlying
-          history (1M / 3M / 6M / 1Y / All); vcg_scan emits the full
-          Yahoo intersection so chip clicks reshape without re-fetch. */}
-      {data.history && data.history.length >= 2 && (() => {
-        const [start, end] = chartRange;
-        const slice = data.history.slice(start, end + 1);
-        const points = slice.map((h) => ({ date: h.date, value: h.vcg }));
-        const fmtVcg = (v: number) => (v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2));
-        // Secondary descriptor (mirrors CRI's "<state> | <direction> <delta>"):
-        // interpretation + signed change vs the prior session.
-        const prior =
-          data.history.length >= 2 ? data.history[data.history.length - 2].vcg : null;
-        const deltaVsPrior =
-          prior != null && sig.vcg != null ? sig.vcg - prior : null;
-        const secondary = `${interpretationLabel(sig.interpretation)}${
-          deltaVsPrior != null ? ` · ${fmtVcg(deltaVsPrior)}σ vs prior` : ""
-        }`;
-        return (
-          <div className="section regime-relationship-panel" data-testid="vcg-history-chart-section">
-            <div className="regime-relationship-panel-head">
-              <div>
-                <div className="regime-panel-title">
-                  VCG Z-Score History
-                  <InfoTooltip text="Volatility-Credit Gap z-score over the selected range. Bars above zero = vol cheap relative to credit (stress signal building); bars below zero = vol rich (bounce territory)." />
-                </div>
-                <div className="regime-relationship-note">z = (VCG - 20-session mean) / sigma</div>
-              </div>
-              <div className="regime-relationship-summary">
-                <div
-                  className="regime-relationship-value"
-                  style={{ color: interpColor }}
-                  data-testid="vcg-chart-current-value"
-                >
-                  {fmtZ(sig.vcg)}
-                </div>
-                <div className="regime-relationship-note" style={{ color: interpColor }}>
-                  {secondary}
-                </div>
-              </div>
-            </div>
-            <HistoryRangeChips
-              active={activeRange}
-              onChange={(preset) => {
-                setRangeTouched(true);
-                setCustomRange(null);
-                setActiveRange(preset);
-              }}
-              maxSessions={data.history.length}
-              ariaLabel="VCG chart range"
-              dataTestId="vcg-history-range-chips"
-            />
-            <SignalAreaChart
-              data={points}
-              formatValue={fmtVcg}
-              dataTestId="vcg-signal-area-chart"
-            />
-            <BrushMinimap
-              values={data.history.map((h) => h.vcg ?? 0)}
-              range={chartRange}
-              onRangeChange={(r) => setCustomRange(r)}
-              onCustom={() => {
-                setRangeTouched(true);
-                setActiveRange("custom");
-              }}
-              testIdPrefix="vcg-history-brush"
-              ariaLabel="VCG history range brush"
-            />
-          </div>
-        );
-      })()}
-
-      {/* ── History table (sortable) ──────────────────────
-          Always shows the most recent 20 sessions for a familiar
-          drill-down UX, regardless of the chart's selected range. */}
+      {/* ── History table (sortable) ────────────────────── */}
       <div className="section">
         <div className="section-header">
-          <div className="section-title">VCG History — Recent 20 Sessions</div>
+          <div className="section-title">VCG History (20d)</div>
         </div>
         <div className="section-body table-wrap">
           <table>
@@ -544,7 +424,7 @@ export default function VcgPanel({ marketState }: VcgPanelProps) {
               </tr>
             </thead>
             <tbody>
-              {sortHistory(data.history.slice(-20), sortCol, sortDir).map((h: VcgHistoryEntry) => (
+              {sortHistory(data.history, sortCol, sortDir).map((h: VcgHistoryEntry) => (
                 <tr key={h.date}>
                   <td>{h.date}</td>
                   <td className="right" style={{ color: (h.vcg ?? 0) > 2 ? "var(--fault)" : (h.vcg ?? 0) < -2 ? "var(--warning)" : "var(--text-primary)" }}>

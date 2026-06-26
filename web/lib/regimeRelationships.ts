@@ -112,13 +112,6 @@ export function relationshipBias(value: number, epsilon = 0.15): RelationshipBia
   return "Balanced";
 }
 
-// Z-score statistical window in sessions. Earlier in the project the
-// server only ever sent 20 entries, so computing stats over the full
-// `history` array gave a 20-session z-score by accident. The history
-// payload is now full (~13 months); scope the statistical window
-// explicitly so the "20-session z-score overlay" copy stays accurate.
-const Z_SCORE_WINDOW = 20;
-
 export function buildRegimeRelationshipEntries(
   history: RegimeRelationshipSource[],
   liveValues?: RegimeRelationshipLiveValues,
@@ -130,14 +123,8 @@ export function buildRegimeRelationshipEntries(
 
   if (comparable.length === 0) return [];
 
-  // Stats over the rolling tail. When history is shorter than the window
-  // we fall back to using everything we have, matching the prior behavior.
-  const statsTail =
-    comparable.length > Z_SCORE_WINDOW
-      ? comparable.slice(-Z_SCORE_WINDOW)
-      : comparable;
-  const realizedVolSeries = statsTail.map((entry) => entry.realized_vol);
-  const cor1mSeries = statsTail.map((entry) => entry.cor1m);
+  const realizedVolSeries = comparable.map((entry) => entry.realized_vol);
+  const cor1mSeries = comparable.map((entry) => entry.cor1m);
 
   const realizedVolMean = mean(realizedVolSeries);
   const cor1mMean = mean(cor1mSeries);

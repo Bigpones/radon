@@ -46,7 +46,7 @@ describe("useSyncHook inactive initial load", () => {
 
     expect(result.current.data?.value).toBe(7);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/internals", { method: "GET", cache: "no-store" });
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/internals", { method: "GET" });
   });
 
   it("triggers the first sync when a previously inactive hook becomes active", async () => {
@@ -73,6 +73,6 @@ describe("useSyncHook inactive initial load", () => {
     rerender({ active: true });
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/internals", { method: "POST", cache: "no-store" });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/internals", { method: "POST" });
   });
 });

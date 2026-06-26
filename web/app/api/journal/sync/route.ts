@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { runJournalSync } from "@/lib/journalSync";
-import { radonFetch } from "@/lib/radonApi";
 
 export const runtime = "nodejs";
 
@@ -12,7 +11,6 @@ export const runtime = "nodejs";
  */
 export async function POST(): Promise<Response> {
   try {
-    await radonFetch("/journal/reconcile", { method: "POST", timeout: 130_000 });
     const result = await runJournalSync();
     return NextResponse.json({
       imported: result.imported,

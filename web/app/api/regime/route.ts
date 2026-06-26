@@ -6,11 +6,6 @@ import { selectPreferredCriCandidate, type CriCacheCandidate } from "@/lib/criCa
 import { backfillRealizedVolHistory, type RegimeHistoryEntry } from "@/lib/regimeHistory";
 import { radonFetch } from "@/lib/radonApi";
 import { getRequestId, setCacheResponseHeaders } from "@/lib/apiContracts";
-import { getDb } from "@/lib/db";
-// Disable Next.js static caching: this handler reads live disk state
-// (data/*.json, cache files). Without this, the framework freezes the
-// first response and serves stale data until the dev server restarts.
-export const dynamic = "force-dynamic";
 
 export const runtime = "nodejs";
 
@@ -208,29 +203,8 @@ async function readLatestCri(): Promise<{ data: object; path: string } | null> {
     return null;
   }
 
-  async function readLatestDbCri(): Promise<CriCacheCandidate | null> {
-    try {
-      const db = getDb();
-      const result = await db.execute({
-        sql: `SELECT taken_at, payload FROM cri_snapshots ORDER BY taken_at DESC LIMIT 1`,
-        args: [],
-      });
-      if (result.rows.length === 0) return null;
-      const row = result.rows[0] as unknown as { taken_at: string; payload: string };
-      const mtimeMs = Date.parse(row.taken_at);
-      return {
-        path: `db:cri_snapshots/${row.taken_at}`,
-        mtimeMs: Number.isFinite(mtimeMs) ? mtimeMs : Date.now(),
-        data: JSON.parse(row.payload) as Record<string, unknown>,
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  const dbCandidate = await readLatestDbCri();
   const selected = selectPreferredCriCandidate(
-    dbCandidate ?? (await readLatestScheduledCri()),
+    await readLatestScheduledCri(),
     await readCriCandidate(CACHE_PATH),
   );
 
@@ -240,12 +214,6 @@ async function readLatestCri(): Promise<{ data: object; path: string } | null> {
 /** Check if the latest cached data is stale (market-hours aware). */
 async function isCacheStale(filePath: string, data: Record<string, unknown>): Promise<boolean> {
   try {
-    if (filePath.startsWith("db:cri_snapshots/")) {
-      const takenAtIso = filePath.slice("db:cri_snapshots/".length);
-      const mtimeMs = Date.parse(takenAtIso);
-      if (!Number.isFinite(mtimeMs)) return true;
-      return isCriDataStale(data, mtimeMs, todayET(), isMarketOpenNow());
-    }
     const s = await stat(filePath);
     return isCriDataStale(data, s.mtimeMs, todayET(), isMarketOpenNow());
   } catch {
@@ -308,12 +276,6 @@ export async function POST(): Promise<Response> {
     return NextResponse.json(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : "CRI scan failed";
-    const cached = await readLatestCri();
-    if (cached?.data) {
-      const response = NextResponse.json(normalizeCriPayload(cached.data as Record<string, unknown>));
-      response.headers.set("X-Sync-Warning", `CRI sync failed: ${message}`);
-      return response;
-    }
     return NextResponse.json({ error: message }, { status: 502 });
   }
 }

@@ -1,9 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Building2 } from "lucide-react";
 import type { PriceData, FundamentalsData } from "@/lib/pricesProtocol";
-import SectionEmptyState from "@/components/SectionEmptyState";
 
 type CompanyData = {
   uw_info: Record<string, unknown>;
@@ -82,15 +80,7 @@ export default function CompanyTab({ ticker, active, priceData, fundamentals }: 
     return <div className="tab-error">{error}</div>;
   }
   if (!data) {
-    return (
-      <div className="tab-empty">
-        <SectionEmptyState
-          icon={Building2}
-          headline={`No data for ${ticker}`}
-          variant="compact"
-        />
-      </div>
-    );
+    return <div className="tab-empty">No data for {ticker}</div>;
   }
 
   const info = data.uw_info;
@@ -128,28 +118,12 @@ export default function CompanyTab({ ticker, active, priceData, fundamentals }: 
   const todayLow = state.low;
   const todayVolume = state.volume ?? state.full_day_volume;
 
-  // Equity-only fields — meaningless for ETFs, indexes, futures, etc.
-  // Surface them as `---` for an unrecognized type, suppress them entirely
-  // for instruments that structurally cannot have them.
-  const issueTypeUpper = issueType.toUpperCase();
-  const isFund = /\b(ETF|ETN|FUND|MUTUAL|REIT)\b/.test(issueTypeUpper);
-  const isIndex = /\b(INDEX|IDX)\b/.test(issueTypeUpper);
-  const hideEquityFundamentals = isFund || isIndex;
-  const hideEarnings = hideEquityFundamentals;
-  // Market cap on a leveraged daily ETF is the fund's AUM; keep the row
-  // when UW returns a number, hide when it doesn't (avoids the "---" noise
-  // for instruments where the field has no clean source).
-  const hideMarketCapWhenMissing = hideEquityFundamentals && marketCap == null;
-
   // Stat items
   const statItems: { label: string; value: string }[] = [
-    ...(hideMarketCapWhenMissing ? [] : [{ label: "Market Cap", value: fmtMktCap(marketCap) }]),
-    ...(hideEquityFundamentals ? [] : [
-      { label: "P/E Ratio", value: peRatio != null && !isNaN(Number(peRatio)) ? Number(peRatio).toFixed(2) : "---" },
-      { label: "EPS", value: eps != null && !isNaN(Number(eps)) ? `$${Number(eps).toFixed(2)}` : "---" },
-    ]),
-    // Div Yield: keep for funds/REITs (many pay distributions), drop for indexes.
-    ...(isIndex ? [] : [{ label: "Div Yield", value: dividendYield != null && !isNaN(Number(dividendYield)) ? `${Number(dividendYield).toFixed(2)}%` : "---" }]),
+    { label: "Market Cap", value: fmtMktCap(marketCap) },
+    { label: "P/E Ratio", value: peRatio != null && !isNaN(Number(peRatio)) ? Number(peRatio).toFixed(2) : "---" },
+    { label: "EPS", value: eps != null && !isNaN(Number(eps)) ? `$${Number(eps).toFixed(2)}` : "---" },
+    { label: "Div Yield", value: dividendYield != null && !isNaN(Number(dividendYield)) ? `${Number(dividendYield).toFixed(2)}%` : "---" },
     { label: "Avg Volume", value: fmtVol(avgVolume) },
     { label: "High Today", value: todayHigh != null ? fmtNum(todayHigh) : "---" },
     { label: "Low Today", value: todayLow != null ? fmtNum(todayLow) : "---" },
@@ -157,7 +131,7 @@ export default function CompanyTab({ ticker, active, priceData, fundamentals }: 
     { label: "Volume", value: fmtVol(todayVolume) },
     { label: "52W High", value: week52High != null ? fmtNum(week52High) : "---" },
     { label: "52W Low", value: week52Low != null ? fmtNum(week52Low) : "---" },
-    ...(hideEarnings ? [] : [{ label: "Next Earnings", value: nextEarnings != null ? String(nextEarnings) : "---" }]),
+    { label: "Next Earnings", value: nextEarnings != null ? String(nextEarnings) : "---" },
     { label: "Beta", value: beta != null ? Number(beta).toFixed(2) : "---" },
   ];
 

@@ -219,10 +219,8 @@ test.describe("/cta page", () => {
     const todayHeader = table.locator("th").filter({ hasText: "TODAY" });
     await expect(todayHeader).toBeVisible();
     await todayHeader.click();
-    // After click, the clicked header becomes the active sort column. The shared
-    // SortTh renders a chevron icon + sets aria-sort (asc/desc); assert the
-    // semantic attribute rather than the legacy ▲/▼ glyph.
-    await expect(todayHeader).toHaveAttribute("aria-sort", /ascending|descending/);
+    // After click, the clicked header should show a sort indicator (▲ or ▼)
+    await expect(todayHeader).toContainText(/▲|▼/);
   });
 
   test("clicking column header again reverses sort direction", async ({ page }) => {
@@ -234,12 +232,12 @@ test.describe("/cta page", () => {
 
     const todayHeader = table.locator("th").filter({ hasText: "TODAY" });
     await todayHeader.click();
-    const firstSort = await todayHeader.getAttribute("aria-sort");
+    const firstSort = await table.locator("th").filter({ hasText: /▲|▼/ }).innerText();
 
     await todayHeader.click();
-    const secondSort = await todayHeader.getAttribute("aria-sort");
+    const secondSort = await table.locator("th").filter({ hasText: /▲|▼/ }).innerText();
 
-    // Direction should have flipped (ascending <-> descending).
+    // Direction should have changed
     expect(firstSort).not.toEqual(secondSort);
   });
 

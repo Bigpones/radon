@@ -1,24 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
-import { useTickerDetailOptional } from "@/lib/TickerDetailContext";
 import type { OpenOrder, PortfolioData, PortfolioPosition } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import { optionKey } from "@/lib/pricesProtocol";
-import { useOrderActions, useOrderActionsOptional } from "@/lib/OrderActionsContext";
+import { useOrderActions } from "@/lib/OrderActionsContext";
 import { fmtPrice, legPriceKey, resolveEntryCost } from "@/lib/positionUtils";
-import { computeLegImpliedValue } from "@/lib/impliedValue";
-import { useRiskFreeRate } from "@/lib/useRiskFreeRate";
 import ModifyOrderModal from "@/components/ModifyOrderModal";
 import OrderErrorBanner from "@/components/OrderErrorBanner";
 import type { ModifyOrderRequest } from "@/lib/orderModify";
 import { checkNakedShortRisk, type NakedShortPortfolio, type OrderPayload } from "@/lib/nakedShortGuard";
-import { OrderRiskGate, type OrderRiskInput } from "@/lib/order";
+import { OrderConfirmSummary, type OrderSummary } from "@/lib/order";
 import { fmtSignedPrice, toneClass } from "@/lib/format";
-import { isIndexSymbol, hasFuturesSupport, hasIndexOptionsSupport } from "@/lib/indexSymbols";
-import { FuturesOrderForm } from "@/components/ticker-detail/FuturesOrderForm";
-import { IndexOptionOrderForm } from "@/components/ticker-detail/IndexOptionOrderForm";
 
 type OrderTabProps = {
   ticker: string;
@@ -99,29 +93,6 @@ function ExistingOrderRow({
 
   const priceData = resolveOrderPriceData(order, prices);
   const canModify = order.orderType === "LMT" || order.orderType === "STP LMT";
-  const riskFreeRate = useRiskFreeRate();
-
-  // Black-Scholes implied per-share value at current spot. Single OPT only;
-  // STK and BAG are skipped (BAG implied is shown in the consolidated combo row).
-  const impliedPrice = useMemo(() => {
-    const c = order.contract;
-    if (c.secType !== "OPT" || c.strike == null || !c.right || !c.expiry) return null;
-    const type: "Call" | "Put" | null =
-      c.right === "C" || c.right === "CALL" ? "Call" : c.right === "P" || c.right === "PUT" ? "Put" : null;
-    if (!type) return null;
-    return computeLegImpliedValue(
-      {
-        ticker: c.symbol,
-        expiry: c.expiry,
-        strike: c.strike,
-        type,
-        direction: order.action === "BUY" ? "LONG" : "SHORT",
-        contracts: Math.abs(order.totalQuantity),
-      },
-      prices,
-      { riskFreeRate },
-    ).perContract;
-  }, [order, prices, riskFreeRate]);
 
   const handleCancel = useCallback(async () => {
     setActionLoading(true);
@@ -169,10 +140,6 @@ function ExistingOrderRow({
         <div className="existing-order-detail">
           <span className="pos-stat-label">LAST</span>
           <span className="pos-stat-value">{priceData?.last != null ? fmtPrice(priceData.last) : "---"}</span>
-        </div>
-        <div className="existing-order-detail" title="Black-Scholes implied value at current spot">
-          <span className="pos-stat-label">IMPLIED</span>
-          <span className="pos-stat-value">{impliedPrice != null ? fmtPrice(impliedPrice) : "---"}</span>
         </div>
       </div>
 
@@ -287,113 +254,27 @@ function NewOrderForm({
   const [confirmStep, setConfirmStep] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const orderActions = useOrderActionsOptional();
-
-  // Click-to-fill: when a depth level / tape print is clicked in the book, the
-  // cockpit publishes {price, action?, quantity?} to TickerDetailContext. We
-  // apply it here — keyed ONLY on the nonce so it fires exactly once per click
-  // and never on unrelated re-renders (price ticks, typing). It cannot clobber
-  // a half-typed price unless the user deliberately clicks the book. Action is
-  // applied only when the click was unambiguous; quantity only into an empty
-  // field. Optional context → no-op outside the ticker-detail tree.
-  const tickerDetail = useTickerDetailOptional();
-  const prefillNonce = tickerDetail?.orderPrefill?.nonce;
-  useEffect(() => {
-    const p = tickerDetail?.orderPrefill;
-    if (!p) return;
-    setLimitPrice(p.price.toFixed(2));
-    if (p.action) setAction(p.action);
-    if (p.quantity != null && quantity.trim() === "") setQuantity(String(p.quantity));
-    setConfirmStep(false);
-    // Intentionally keyed on the nonce alone (see comment above).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefillNonce]);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const parsedQty = parseInt(quantity, 10);
   const parsedPrice = parseFloat(limitPrice);
   const isValid = !isNaN(parsedQty) && parsedQty > 0 && !isNaN(parsedPrice) && parsedPrice > 0;
 
-  // Build the chokepoint input. All single-leg risk math + close-out
-  // detection now lives in `useOrderRisk` (via `<OrderRiskGate>` below).
-  // The previous in-line `computeOrderRisk` + close-out short-circuit was
-  // ~80 lines of business logic re-invented per surface; the gate owns it.
-  //
-  // Per-contract avg_cost note (preserved from the previous implementation
-  // for the close-out branch): `onlyLeg.avg_cost` is per-contract for
-  // options (IB's `pos.avgCost` is already multiplied by the contract
-  // multiplier for OPT secType) and per-share for stocks. We compute
-  // `entryCostDollars` here in that same unit so the gate's close-out
-  // path doesn't have to re-derive multipliers.
-  //   Before fix (commit d420c16): cost basis was multiplied by 100 twice,
-  //   producing PnL = −$635,055 on a $19,389.45 USAX winner.
-  const riskInput: OrderRiskInput | null = useMemo(() => {
+  // Calculate order summary for confirmation (single leg: stock or single option)
+  const orderSummary: OrderSummary | null = useMemo(() => {
     if (!isValid) return null;
-    const isOption =
-      position?.legs?.length === 1 &&
-      position.legs[0].strike != null &&
-      (position.legs[0].type === "Call" || position.legs[0].type === "Put");
+    
+    const isOption = position?.legs?.length === 1;
     const multiplier = isOption ? 100 : 1;
     const totalCost = parsedQty * parsedPrice * multiplier;
-    const typeLabel = isOption ? position?.structure ?? "Option" : "Stock";
-    const description = `${action} ${parsedQty}${isOption ? "x" : ""} ${ticker} ${typeLabel} @ ${fmtPrice(parsedPrice)}`;
-
-    // Stock or no-position cases: pass through with no chainLegs payload
-    // (the gate will run augmentation with an empty leg list, yielding a
-    // pure description + totalCost summary, no risk fields).
-    if (!isOption || position == null) {
-      return {
-        ticker,
-        chainLegs: [],
-        netPremium: action === "SELL" ? -parsedPrice : parsedPrice,
-        description,
-        totalCost: action === "SELL" ? -totalCost : totalCost,
-      };
-    }
-
-    const onlyLeg = position.legs[0];
-    const right: "C" | "P" = onlyLeg.type === "Call" ? "C" : "P";
-    const legAction: "BUY" | "SELL" =
-      action === "BUY" ? "BUY" : (onlyLeg.direction === "LONG" ? "SELL" : "BUY");
-    const isClosingLong =
-      legAction === "SELL" &&
-      onlyLeg.direction === "LONG" &&
-      onlyLeg.contracts >= parsedQty;
-
-    if (isClosingLong) {
-      // Pure close (or partial close) of a held LONG. The gate's `closeOut`
-      // branch surfaces proceeds + realized P&L. avg_cost is per-contract
-      // for options, per-share for stocks (see comment above).
-      const proceeds = parsedQty * parsedPrice * multiplier;
-      const entryCostDollars = parsedQty * onlyLeg.avg_cost;
-      return {
-        ticker,
-        chainLegs: [],
-        netPremium: -parsedPrice,
-        description,
-        totalCost: proceeds,
-        totalLabel: "Proceeds:",
-        closeOut: { entryCostDollars },
-      };
-    }
-
-    // Open-fresh path: chain leg carries the order; the augmentation pipe
-    // looks at the held position (it's in `portfolio`) to attach any
-    // cross-strike coverage automatically — same logic that powers the
-    // chain builder.
+    const type = isOption ? position?.structure ?? "Option" : "Stock";
+    const description = `${action} ${parsedQty}${isOption ? "x" : ""} ${ticker} ${type} @ ${fmtPrice(parsedPrice)}`;
+    
     return {
-      ticker,
-      chainLegs: [
-        {
-          action: legAction,
-          right,
-          strike: onlyLeg.strike as number,
-          expiry: position.expiry,
-          quantity: parsedQty,
-        },
-      ],
-      netPremium: legAction === "SELL" ? -parsedPrice : parsedPrice,
       description,
       totalCost: action === "SELL" ? -totalCost : totalCost,
+      // Single options: max loss = premium paid (for buys)
+      ...(isOption && action === "BUY" ? { maxLoss: totalCost } : {}),
     };
   }, [isValid, parsedQty, parsedPrice, action, ticker, position]);
 
@@ -422,6 +303,7 @@ function NewOrderForm({
 
     setLoading(true);
     setError(null);
+    setSuccess(null);
 
     try {
       const payload = buildSingleLegOrderPayload({
@@ -451,7 +333,7 @@ function NewOrderForm({
       if (!res.ok) {
         setError(json.error || "Order placement failed");
       } else {
-        orderActions?.pushNotification({ type: "success", message: `Order placed: ${action} ${parsedQty} ${ticker} @ ${fmtPrice(parsedPrice)}` });
+        setSuccess(`Order placed: ${action} ${parsedQty} ${ticker} @ ${fmtPrice(parsedPrice)}`);
         setConfirmStep(false);
         onOrderPlaced?.();
       }
@@ -532,15 +414,11 @@ function NewOrderForm({
       )}
 
       <OrderErrorBanner error={error} />
+      {success && <div className="order-success">{success}</div>}
 
-      {/* Order Summary (shown in confirm step). Owned by `<OrderRiskGate>`. */}
-      {confirmStep && (
-        <OrderRiskGate
-          input={riskInput}
-          portfolio={portfolio}
-          surface="order-tab-single"
-          variant="info"
-        />
+      {/* Order Summary (shown in confirm step) */}
+      {confirmStep && orderSummary && (
+        <OrderConfirmSummary summary={orderSummary} variant="info" />
       )}
 
       <div className="order-submit">
@@ -588,7 +466,7 @@ function ComboOrderForm({
   const [confirmStep, setConfirmStep] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const orderActions = useOrderActionsOptional();
+  const [success, setSuccess] = useState<string | null>(null);
 
   // Combo leg actions define the SPREAD STRUCTURE, not the trade direction.
   // IB reverses all leg actions when Order.action = SELL.
@@ -603,14 +481,15 @@ function ComboOrderForm({
     });
   }, [position]);
 
-  // Compute net BID / ASK / MID for the combo as a structural fair value.
+  // Compute net BID / ASK / MID for the combo using natural market prices.
+  // IB reverses leg actions when Order.action = SELL, so the EFFECTIVE
+  // execution direction depends on the combo action:
+  //   BUY combo: LONG leg → BUY (pay ask), SHORT leg → SELL (receive bid)
+  //   SELL combo: LONG leg → SELL (receive bid), SHORT leg → BUY (pay ask)
   //
-  // The strip describes the SPREAD itself, not a side of execution, so it
-  // must be invariant to the BUY/SELL action toggle and must agree on sign
-  // with the InstrumentDetail header (which uses `resolveSpreadPriceData`).
-  // Convention: each leg contributes `direction * leg.{bid|ask}` to the net,
-  // long adds, short subtracts. Credit spreads are negative, debit spreads
-  // are positive. Same math as `resolveSpreadPriceData`.
+  // Natural market calculation:
+  //   netBid = what we receive if we SELL at market (best case)
+  //   netAsk = what we pay if we BUY at market (worst case)
   const netPrices = useMemo(() => {
     let netBid = 0;
     let netAsk = 0;
@@ -622,9 +501,18 @@ function ComboOrderForm({
       const lp = prices[key];
       if (!lp || lp.bid == null || lp.ask == null) { allAvailable = false; break; }
 
-      const sign = leg.direction === "LONG" ? 1 : -1;
-      netBid += sign * lp.bid;
-      netAsk += sign * lp.ask;
+      // Effective execution after IB's reversal:
+      const effectivelySelling = (action === "SELL") === (leg.direction === "LONG");
+      
+      if (effectivelySelling) {
+        // We're selling this leg → receive BID
+        netBid += lp.bid;
+        netAsk += lp.ask;
+      } else {
+        // We're buying this leg → pay ASK
+        netBid -= lp.ask;
+        netAsk -= lp.bid;
+      }
     }
 
     if (!allAvailable) return { bid: null, ask: null, mid: null };
@@ -632,7 +520,7 @@ function ComboOrderForm({
     const ask = Math.max(netBid, netAsk);
     const mid = (bid + ask) / 2;
     return { bid, ask, mid };
-  }, [position, prices, ticker]);
+  }, [position, prices, ticker, action]);
 
   const parsedQty = parseInt(quantity, 10);
   const parsedPrice = parseFloat(limitPrice);
@@ -670,6 +558,7 @@ function ComboOrderForm({
 
     setLoading(true);
     setError(null);
+    setSuccess(null);
 
     try {
       const legs = legsWithActions.map((leg) => ({
@@ -714,7 +603,7 @@ function ComboOrderForm({
       if (!res.ok) {
         setError(json.error || "Order placement failed");
       } else {
-        orderActions?.pushNotification({ type: "success", message: `Combo order placed: ${action} ${parsedQty}x ${position.structure} @ ${fmtSignedPrice(parsedPrice)}` });
+        setSuccess(`Combo order placed: ${action} ${parsedQty}x ${position.structure} @ ${fmtSignedPrice(parsedPrice)}`);
         setConfirmStep(false);
         onOrderPlaced?.();
       }
@@ -733,53 +622,50 @@ function ComboOrderForm({
     ? ((parseFloat(spreadWidth) / Math.abs(netPrices.mid)) * 100).toFixed(1)
     : null;
 
-  // Calculate order summary for confirmation. For BUY (opening / adding
-  // to a held combo) we use the per-leg risk model so risk reversals,
-  // short straddles, and ratio spreads surface their true exposure
-  // instead of the legacy "max loss = net debit" assumption.
-  const riskInput: OrderRiskInput | null = useMemo(() => {
+  // Calculate order summary for confirmation
+  const orderSummary: OrderSummary | null = useMemo(() => {
     if (!isValid) return null;
-
+    
     const totalCost = parsedQty * parsedPrice * 100;
     const description = `${action} ${parsedQty}x ${position.structure} @ ${fmtSignedPrice(parsedPrice)}`;
-
-    // SELL is the close/flatten path for a held combo. The gate's `closeOut`
-    // branch surfaces close-credit/close-debit + realized P&L.
-    if (action === "SELL") {
-      const closeCashFlow = totalCost;
-      return {
-        ticker,
-        chainLegs: [],
-        netPremium: parsedPrice,
-        description,
-        totalCost: closeCashFlow,
-        closeOut: { entryCostDollars: resolveEntryCost(position) },
-      };
+    
+    // For vertical spreads, calculate max gain/loss
+    // Bull Call Spread: LONG lower strike call, SHORT higher strike call
+    // Bear Put Spread: LONG higher strike put, SHORT lower strike put
+    const strikes = position.legs.map((l) => l.strike).filter((s): s is number => s != null);
+    const hasSpread = strikes.length === 2 && position.legs.length === 2;
+    
+    if (hasSpread) {
+      const width = Math.abs(strikes[0] - strikes[1]);
+      const maxWidth = width * parsedQty * 100;
+      
+      // For a held combo, SELL is the close/flatten path. Show close-specific
+      // cash-flow semantics instead of generic opening-spread payoff terms.
+      if (action === "SELL") {
+        const closeCashFlow = totalCost;
+        return {
+          description,
+          totalCost: Math.abs(closeCashFlow),
+          totalLabel: `${closeCashFlow >= 0 ? "Close Credit" : "Close Debit"}:`,
+          estimatedPnl: closeCashFlow - resolveEntryCost(position),
+          estimatedPnlLabel: "Est. Realized P&L:",
+        };
+      } else {
+        // Buying to open
+        return {
+          description,
+          totalCost,
+          maxGain: maxWidth - totalCost,
+          maxLoss: totalCost,
+        };
+      }
     }
-
-    // Buying to open: hand the legs to the gate. The augmentation helper
-    // will look at portfolio coverage automatically.
-    const chainLegs = legsWithActions
-      .filter((l) => l.strike != null)
-      .map((l) => ({
-        action: l.legAction,
-        right: l.right,
-        strike: l.strike as number,
-        expiry: l.expiry,
-        // Per-combo ratio = 1 here because `legsWithActions` already encodes
-        // the ratio (one entry per combo unit). `parsedQty` becomes the
-        // combo unit count via the augmentation helper's GCD pass.
-        quantity: parsedQty,
-      }));
-
+    
     return {
-      ticker,
-      chainLegs,
-      netPremium: parsedPrice,
       description,
-      totalCost,
+      totalCost: action === "SELL" ? -totalCost : totalCost,
     };
-  }, [isValid, parsedQty, parsedPrice, action, position, legsWithActions, ticker]);
+  }, [isValid, parsedQty, parsedPrice, action, position]);
 
   return (
     <div className="order-form">
@@ -902,15 +788,11 @@ function ComboOrderForm({
       )}
 
       <OrderErrorBanner error={error} />
+      {success && <div className="order-success">{success}</div>}
 
-      {/* Order Summary (shown in confirm step). Owned by `<OrderRiskGate>`. */}
-      {confirmStep && (
-        <OrderRiskGate
-          input={riskInput}
-          portfolio={portfolio}
-          surface="order-tab-combo"
-          variant="info"
-        />
+      {/* Order Summary (shown in confirm step) */}
+      {confirmStep && orderSummary && (
+        <OrderConfirmSummary summary={orderSummary} variant="info" />
       )}
 
       {/* Submit / Confirm */}
@@ -940,7 +822,6 @@ function ComboOrderForm({
 
 export default function OrderTab({ ticker, position, portfolio, prices, openOrders = [], tickerPriceData }: OrderTabProps) {
   const isCombo = position != null && position.legs.length > 1 && position.structure_type !== "Stock";
-  const isIndex = isIndexSymbol(ticker);
 
   const { requestModify } = useOrderActions();
   const [modifyTarget, setModifyTarget] = useState<OpenOrder | null>(null);
@@ -967,72 +848,20 @@ export default function OrderTab({ ticker, position, portfolio, prices, openOrde
 
       <div className="order-tab">
         {/* NEW ORDER FORM FIRST — always visible above the fold */}
-        {/* Indices are not directly tradeable — show a notice and gate
-           the form. Phase 2 will add a futures order form for the
-           tradeable VIX-future / SPX-future paths. */}
-        {isIndex ? (
+        {/* Combo order form for multi-leg positions */}
+        {isCombo && (
           <div className="new-order-section-top">
-            <div className="existing-orders-title">New Order</div>
-            {hasFuturesSupport(ticker) && <FuturesOrderForm ticker={ticker} portfolio={portfolio} />}
-            {hasIndexOptionsSupport(ticker) && (
-              <div style={{ marginTop: hasFuturesSupport(ticker) ? "24px" : "0" }}>
-                <IndexOptionOrderForm ticker={ticker} portfolio={portfolio} />
-              </div>
-            )}
-            {!hasFuturesSupport(ticker) && !hasIndexOptionsSupport(ticker) && (
-              <div
-                className="index-notice"
-                style={{
-                  padding: "16px",
-                  border: "1px solid var(--line-grid)",
-                  borderRadius: "4px",
-                  background: "color-mix(in srgb, var(--bg-panel-raised) 60%, transparent)",
-                }}
-              >
-                <div
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: "10px",
-                    letterSpacing: "0.12em",
-                    textTransform: "uppercase",
-                    color: "var(--signal-core)",
-                    marginBottom: "8px",
-                  }}
-                >
-                  Index Instrument
-                </div>
-                <div
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: "13px",
-                    color: "var(--text-secondary)",
-                    lineHeight: 1.5,
-                  }}
-                >
-                  {ticker} is an index, not directly tradeable. Futures and options trading paths
-                  for {ticker} are not yet wired.
-                </div>
-              </div>
-            )}
+            <div className="existing-orders-title">Close Position</div>
+            <ComboOrderForm ticker={ticker} position={position!} portfolio={portfolio} prices={prices} />
           </div>
-        ) : (
-          <>
-            {/* Combo order form for multi-leg positions */}
-            {isCombo && (
-              <div className="new-order-section-top">
-                <div className="existing-orders-title">Close Position</div>
-                <ComboOrderForm ticker={ticker} position={position!} portfolio={portfolio} prices={prices} />
-              </div>
-            )}
+        )}
 
-            {/* Stock / single-leg order form */}
-            {!isCombo && (
-              <div className="new-order-section-top">
-                <div className="existing-orders-title">{position ? "Close Position" : "New Order"}</div>
-                <NewOrderForm ticker={ticker} position={position} portfolio={portfolio} tickerPriceData={tickerPriceData} />
-              </div>
-            )}
-          </>
+        {/* Stock / single-leg order form */}
+        {!isCombo && (
+          <div className="new-order-section-top">
+            <div className="existing-orders-title">{position ? "Close Position" : "New Order"}</div>
+            <NewOrderForm ticker={ticker} position={position} portfolio={portfolio} tickerPriceData={tickerPriceData} />
+          </div>
         )}
 
         {/* Existing open orders for this ticker — below the form */}

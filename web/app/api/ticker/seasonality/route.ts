@@ -246,34 +246,36 @@ export async function GET(request: Request): Promise<Response> {
       }
 
       const source = populatedCount > 0 ? "uw+equityclock" : "equityclock";
-      // Only persist when the merge actually carries data — a 12-month array
-      // of hollow (years: 0) entries must not be cached behind the 24h TTL
-      // (feedback_dont_cache_empty_results).
-      const mergedPopulated = merged.filter((m: MonthData) => m.years > 0).length;
-      if (mergedPopulated > 0) {
-        await writeCache({ ticker: symbol, expires: cacheExpiry(), source, data: merged });
-      }
+      const entry: CacheEntry = {
+        ticker: symbol,
+        expires: cacheExpiry(),
+        source,
+        data: merged,
+      };
+      await writeCache(entry);
       const response = NextResponse.json({ data: merged, source, requestId });
       return setCacheResponseHeaders(response, {
-        maxAgeSeconds: mergedPopulated > 0 ? SEASONALITY_CACHE_SECONDS : 30,
-        staleWhileRevalidateSeconds: mergedPopulated > 0 ? STALE_REVALIDATE_SECONDS : 120,
+        maxAgeSeconds: SEASONALITY_CACHE_SECONDS,
+        staleWhileRevalidateSeconds: STALE_REVALIDATE_SECONDS,
         requestId,
         cacheState: "MISS",
         tags: [`ticker-seasonality.${symbol}`],
       });
     }
 
-    // 5. Vision also failed — return UW data as-is (may be partial). Only
-    // persist when at least one month actually has data; caching all-hollow
-    // months behind the 24h TTL strands the chart empty for a full day.
+    // 5. Vision also failed — return UW data as-is (may be partial)
     if (uwData.length > 0) {
-      if (populatedCount > 0) {
-        await writeCache({ ticker: symbol, expires: cacheExpiry(), source: "uw", data: uwData });
-      }
+      const entry: CacheEntry = {
+        ticker: symbol,
+        expires: cacheExpiry(),
+        source: "uw",
+        data: uwData,
+      };
+      await writeCache(entry);
       const response = NextResponse.json({ data: uwData, source: "uw", requestId });
       return setCacheResponseHeaders(response, {
-        maxAgeSeconds: populatedCount > 0 ? SEASONALITY_CACHE_SECONDS : 30,
-        staleWhileRevalidateSeconds: populatedCount > 0 ? STALE_REVALIDATE_SECONDS : 120,
+        maxAgeSeconds: SEASONALITY_CACHE_SECONDS,
+        staleWhileRevalidateSeconds: STALE_REVALIDATE_SECONDS,
         requestId,
         cacheState: "MISS",
         tags: [`ticker-seasonality.${symbol}`],
