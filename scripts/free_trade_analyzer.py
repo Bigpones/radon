@@ -18,10 +18,12 @@ Usage:
     python3 scripts/free_trade_analyzer.py
     python3 scripts/free_trade_analyzer.py --json
     python3 scripts/free_trade_analyzer.py --ticker EWY
+    python3 scripts/free_trade_analyzer.py --source cache
 """
 
 import argparse
 import json
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_HALF_UP
@@ -317,8 +319,35 @@ def parse_portfolio_position(pos: dict) -> Optional[PositionAnalysis]:
     return analysis
 
 
-def load_portfolio() -> list:
-    """Load portfolio from JSON file (with checksum verification)."""
+class PortfolioVerificationError(RuntimeError):
+    """Raised when current holdings cannot be verified against Interactive Brokers."""
+
+
+def refresh_portfolio_from_ib() -> None:
+    """Sync portfolio.json from IB so analysis uses current holdings, not stale cache."""
+    sync_cmd = [
+        sys.executable,
+        str(SCRIPT_DIR / "ib_sync.py"),
+        "--sync",
+        "--skip-audit",
+    ]
+    try:
+        result = subprocess.run(sync_cmd, cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired as exc:
+        raise PortfolioVerificationError("Cannot verify current portfolio via IB: sync timed out") from exc
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "IB sync failed").strip()
+        raise PortfolioVerificationError(f"Cannot verify current portfolio via IB: {detail}")
+    if not PORTFOLIO_FILE.exists():
+        raise PortfolioVerificationError("Cannot verify current portfolio via IB: portfolio sync produced no portfolio file")
+
+
+def load_portfolio(source: str = "ib") -> list:
+    """Load portfolio positions, syncing from IB by default."""
+    if source not in {"ib", "cache"}:
+        raise ValueError(f"Unsupported portfolio source: {source}")
+    if source == "ib":
+        refresh_portfolio_from_ib()
     if not PORTFOLIO_FILE.exists():
         return []
     try:
@@ -330,9 +359,9 @@ def load_portfolio() -> list:
     return data.get("positions", [])
 
 
-def analyze_portfolio(ticker_filter: Optional[str] = None) -> list[PositionAnalysis]:
+def analyze_portfolio(ticker_filter: Optional[str] = None, source: str = "ib") -> list[PositionAnalysis]:
     """Analyze all multi-leg positions in portfolio."""
-    positions = load_portfolio()
+    positions = load_portfolio(source=source)
     results = []
     
     for pos in positions:
@@ -623,10 +652,20 @@ def main():
     parser.add_argument("--ticker", type=str, help="Filter by ticker")
     parser.add_argument("--summary", action="store_true", help="Brief summary for notifications")
     parser.add_argument("--table", action="store_true", help="Compact table format (for startup)")
+    parser.add_argument(
+        "--source",
+        choices=["ib", "cache"],
+        default="ib",
+        help="Portfolio source: sync from IB (default) or use cached portfolio.json",
+    )
     args = parser.parse_args()
-    
-    analyses = analyze_portfolio(ticker_filter=args.ticker)
-    
+
+    try:
+        analyses = analyze_portfolio(ticker_filter=args.ticker, source=args.source)
+    except PortfolioVerificationError as exc:
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
+
     if args.summary:
         summary = get_startup_summary(analyses)
         if summary:
@@ -634,11 +673,11 @@ def main():
         else:
             print("No free trade opportunities found.")
         return
-    
+
     if args.table:
         print(format_table(analyses))
         return
-    
+
     print_analysis(analyses, json_output=args.json)
 
 

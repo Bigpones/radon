@@ -6,17 +6,17 @@
     "OKLO",
     "SWX",
     "TXNM",
-    "POR",
     "NJR",
-    "SR",
     "BKH",
+    "POR",
     "OGS",
+    "SR",
     "BIPC",
     "NWE",
     "OTTR",
     "AVA",
-    "CPK",
     "AWR",
+    "CPK",
     "MGEE",
     "CWT",
     "HE",
@@ -31,8 +31,8 @@
     "CDZI",
     "PCYO",
     "RGCO",
-    "GWRS",
-    "MNTK"
+    "MNTK",
+    "GWRS"
   ],
   "pairs": [
     [
@@ -44,15 +44,15 @@
       "TXNM"
     ],
     [
-      "POR",
-      "NJR"
-    ],
-    [
-      "SR",
+      "NJR",
       "BKH"
     ],
     [
-      "OGS",
+      "POR",
+      "OGS"
+    ],
+    [
+      "SR",
       "BIPC"
     ],
     [
@@ -61,10 +61,10 @@
     ],
     [
       "AVA",
-      "CPK"
+      "AWR"
     ],
     [
-      "AWR",
+      "CPK",
       "MGEE"
     ],
     [
@@ -93,10 +93,10 @@
     ],
     [
       "RGCO",
-      "GWRS"
+      "MNTK"
     ],
     [
-      "MNTK",
+      "GWRS",
       "ORA"
     ]
   ],

@@ -113,27 +113,30 @@ describe("requestModify — outsideRth forwarding", () => {
 });
 
 // =============================================================================
-// TickerDetailContent: passes portfolio to OrderTab for BAG price resolution
+// AssetCockpit: passes portfolio/openOrders/prices to OrderTab for BAG price
+// resolution. OrderTab moved out of TickerDetailContent into the cockpit (the
+// desktop act column) with the cockpit cutover; TickerDetailContent now renders
+// only <AssetCockpit>, threading tickerOrders/prices/portfolio into it.
 // =============================================================================
 
-describe("TickerDetailContent — OrderTab props", () => {
-  let tickerDetailSource: string;
+describe("AssetCockpit — OrderTab props", () => {
+  let cockpitSource: string;
 
   beforeAll(async () => {
-    tickerDetailSource = await readSource("../components/TickerDetailContent.tsx");
+    cockpitSource = await readSource("../components/ticker-detail/AssetCockpit.tsx");
   });
 
   it("renders OrderTab with openOrders prop", () => {
-    expect(tickerDetailSource).toMatch(/openOrders=\{tickerOrders\}/);
+    expect(cockpitSource).toMatch(/openOrders=\{tickerOrders\}/);
   });
 
   it("renders OrderTab with prices prop", () => {
-    expect(tickerDetailSource).toMatch(/prices=\{prices\}/);
+    expect(cockpitSource).toMatch(/prices=\{prices\}/);
   });
 
   it("passes portfolio to OrderTab for BAG price resolution in ModifyOrderModal", () => {
     // OrderTab needs portfolio so it can pass it to ModifyOrderModal for BAG orders
-    expect(tickerDetailSource).toMatch(/portfolio=\{portfolio\}/);
+    expect(cockpitSource).toMatch(/portfolio=\{portfolio\}/);
   });
 });
 

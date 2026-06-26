@@ -219,6 +219,14 @@ export function resolveSectionFromPath(pathname: string | null, fallback: Worksp
     return "regime";
   }
 
+  if (pathname.startsWith("/admin")) {
+    return "admin";
+  }
+
+  if (pathname.startsWith("/profile")) {
+    return "profile";
+  }
+
   // Dynamic ticker route: /AAPL, /GOOG, etc. (1-5 alpha chars)
   if (/^\/[A-Za-z]{1,5}$/.test(pathname)) {
     return "ticker-detail";

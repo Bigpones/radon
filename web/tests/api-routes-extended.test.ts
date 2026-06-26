@@ -67,6 +67,13 @@ vi.mock("@/lib/syncMutex", () => ({
   createSyncMutex: (fn: () => Promise<unknown>) => fn,
 }));
 
+// Mock Clerk server auth — /api/previous-close calls `await auth()` to mint a
+// WS ticket. Without a Clerk middleware context auth() throws → 500. Return a
+// null token so the route connects without a ticket (the WS mock handles it).
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: vi.fn().mockResolvedValue({ getToken: vi.fn().mockResolvedValue(null) }),
+}));
+
 // Mock ws — WebSocket used by /api/previous-close for IB snapshots
 // Default: emit error so IB source fails and tests fall through to UW/Yahoo
 const mockWsInstances: Array<{ handlers: Record<string, Function>; sentMessages: string[] }> = [];
@@ -533,6 +540,14 @@ describe("POST /api/previous-close — extended", () => {
   it("falls back to Yahoo when UW fails", async () => {
     delete process.env.UW_TOKEN;
 
+    // Use the daily-close array shape Yahoo actually returns. The previous
+    // version of this test relied on `meta.chartPreviousClose` which the
+    // route now ignores — see web/tests/previous-close-yahoo-daily-array.test.ts
+    // and route.ts:fetchFromYahoo for the rationale (NAK/RR/MSFT bug).
+    const dayMs = 24 * 60 * 60 * 1000;
+    const yesterdayTs = Math.floor((Date.now() - dayMs) / 1000);
+    const todayTs = Math.floor(Date.now() / 1000);
+
     mockFetch.mockImplementation(async (url: string | URL) => {
       const urlStr = typeof url === "string" ? url : url.toString();
       if (urlStr.includes("yahoo")) {
@@ -540,7 +555,11 @@ describe("POST /api/previous-close — extended", () => {
           ok: true,
           json: async () => ({
             chart: {
-              result: [{ meta: { chartPreviousClose: 175.30 } }],
+              result: [{
+                meta: { regularMarketPreviousClose: 175.30 },
+                timestamp: [yesterdayTs, todayTs],
+                indicators: { quote: [{ close: [175.30, 176.10] }] },
+              }],
             },
           }),
         };
@@ -1275,26 +1294,23 @@ describe("POST /api/orders/place — silent IB rejection states", () => {
 });
 
 // =============================================================================
-// 7. GET /api/ticker/ratings — mocked runScript
+// 7. GET /api/ticker/ratings — mocked radonFetch (FastAPI passthrough)
 // =============================================================================
 
 describe("GET /api/ticker/ratings — extended", () => {
   beforeEach(() => {
     vi.resetModules();
-    mockRunScript.mockReset();
+    mockRadonFetch.mockReset();
   });
 
-  it("returns ratings data when script succeeds", async () => {
-    mockRunScript.mockResolvedValue({
-      ok: true,
-      data: {
-        ticker: "AAPL",
-        consensus: "Buy",
-        buy_count: 25,
-        hold_count: 5,
-        sell_count: 1,
-        price_target_avg: 200,
-      },
+  it("returns ratings data when FastAPI succeeds", async () => {
+    mockRadonFetch.mockResolvedValue({
+      ticker: "AAPL",
+      consensus: "Buy",
+      buy_count: 25,
+      hold_count: 5,
+      sell_count: 1,
+      price_target_avg: 200,
     });
 
     const { GET } = await import("../app/api/ticker/ratings/route");
@@ -1306,12 +1322,8 @@ describe("GET /api/ticker/ratings — extended", () => {
     expect(body.consensus).toBe("Buy");
   });
 
-  it("returns 502 when script fails", async () => {
-    mockRunScript.mockResolvedValue({
-      ok: false,
-      exitCode: 1,
-      stderr: "UW API error",
-    });
+  it("returns 502 when FastAPI fails", async () => {
+    mockRadonFetch.mockRejectedValue(new Error("UW API error"));
 
     const { GET } = await import("../app/api/ticker/ratings/route");
     const res = await GET(new Request("http://localhost/api/ticker/ratings?ticker=XYZ"));

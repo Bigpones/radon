@@ -12,8 +12,11 @@ const CSS_SRC = fs.readFileSync(
 );
 
 describe("OptionsChainTab side filter", () => {
-  it("has sideFilter state with default 'both'", () => {
-    expect(CHAIN_SRC).toContain('useState<"both" | "calls" | "puts">("both")');
+  it("has sideFilter state seeded from the URL (default 'both')", () => {
+    // The side filter is now deep-linked: state seeds from useChainUrlState
+    // (which defaults to "both" when the ?side param is absent/invalid).
+    expect(CHAIN_SRC).toContain("useState<SideFilter>(() => chainUrl.initialSide)");
+    expect(CHAIN_SRC).toContain("useChainUrlState");
   });
 
   it("renders ALL / CALLS / PUTS toggle buttons", () => {

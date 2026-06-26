@@ -9,6 +9,12 @@ import {
   jsonApiError,
   setNoStoreResponseHeaders,
 } from "@/lib/apiContracts";
+import { getDb } from "@/lib/db";
+
+// Disable Next.js static caching: this handler reads live disk state
+// (data/*.json, cache files). Without this, the framework freezes the
+// first response and serves stale data until the dev server restarts.
+export const dynamic = "force-dynamic";
 
 export const runtime = "nodejs";
 
@@ -17,8 +23,59 @@ const CACHE_TTL_MS = 60_000; // 1 minute
 
 const TRADE_LOG_PATH = join(process.cwd(), "..", "data", "trade_log.json");
 
-/** Load ticker → earliest trade date from trade_log.json */
+/** Read the latest portfolio snapshot from Turso, falling back to disk. */
+async function readPortfolioFromDb(): Promise<Record<string, unknown> | null> {
+  try {
+    const db = getDb();
+    const result = await db.execute({
+      sql: `SELECT payload FROM portfolio_snapshots ORDER BY taken_at DESC LIMIT 1`,
+      args: [],
+    });
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0] as unknown as { payload: string };
+    return JSON.parse(row.payload) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+/** Load ticker → latest trade date.
+ *
+ * Phase 4-followup: prefer the canonical `journal` table; fall back to
+ * `data/trade_log.json` only when the DB is empty (cold replica) or
+ * unreachable. Aggregates per-ticker in SQL so we don't pull every row
+ * back to the Node side just to take a max. */
 async function loadTradeLogDates(): Promise<Record<string, string>> {
+  try {
+    const db = getDb();
+    const result = await db.execute({
+      sql: `
+        SELECT
+          json_extract(payload, '$.ticker') AS ticker,
+          MAX(COALESCE(filled_at, json_extract(payload, '$.date'))) AS date
+        FROM journal
+        WHERE json_extract(payload, '$.ticker') IS NOT NULL
+        GROUP BY json_extract(payload, '$.ticker')
+      `,
+      args: [],
+    });
+    if (result.rows.length > 0) {
+      const dates: Record<string, string> = {};
+      for (const row of result.rows) {
+        const r = row as unknown as { ticker?: string; date?: string };
+        if (typeof r.ticker === "string" && typeof r.date === "string") {
+          dates[r.ticker] = r.date;
+        }
+      }
+      return dates;
+    }
+  } catch {
+    // Fall through to disk on any DB error.
+  }
+  return loadTradeLogDatesFromDisk();
+}
+
+async function loadTradeLogDatesFromDisk(): Promise<Record<string, string>> {
   try {
     const raw = JSON.parse(await readFile(TRADE_LOG_PATH, "utf-8"));
     const trades = Array.isArray(raw) ? raw : (raw?.trades ?? []);
@@ -27,7 +84,6 @@ async function loadTradeLogDates(): Promise<Record<string, string>> {
       const ticker = t?.ticker;
       const date = t?.date;
       if (typeof ticker === "string" && typeof date === "string") {
-        // Keep the LATEST date per ticker (most recent entry)
         if (!dates[ticker] || date > dates[ticker]) {
           dates[ticker] = date;
         }
@@ -80,6 +136,15 @@ export async function GET(): Promise<Response> {
   }
 
   try {
+    // Phase 3: prefer the Turso snapshot. Fall back to the JSON file
+    // when the DB is empty (cold replica) or unreachable.
+    const fromDb = await readPortfolioFromDb();
+    if (fromDb) {
+      const tradeLogDates = await loadTradeLogDates();
+      const response = NextResponse.json({ ...fromDb, trade_log_dates: tradeLogDates });
+      return setNoStoreResponseHeaders(response, requestId);
+    }
+
     const result = await readDataFile("data/portfolio.json", PortfolioData);
     if (!result.ok) {
       return setNoStoreResponseHeaders(

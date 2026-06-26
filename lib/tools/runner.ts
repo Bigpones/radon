@@ -71,6 +71,41 @@ export function resolveProjectRoot(): string {
 /** Reset cached root (useful for tests). */
 export function _resetRootCache(): void {
   _cachedRoot = null;
+  _cachedPythonBin = null;
+}
+
+// ── Python binary resolution ──────────────────────────────────────────
+
+let _cachedPythonBin: string | null = null;
+
+/**
+ * Resolve the Python interpreter to spawn.
+ *
+ * Order:
+ *   1. `RADON_PYTHON_BIN` env override (set on Hetzner via
+ *      radon-nextjs.service to point at the venv interpreter)
+ *   2. `python3.13` on PATH (laptop dev fallback — system Python has deps)
+ *
+ * Why not look up `<root>/.venv/bin/python3.13` from source? Turbopack's
+ * static analyzer follows string literals that look like file paths and
+ * attempts to resolve them at build time. On Hetzner the .venv binaries
+ * are symlinks to /usr/bin/python3.13, which lives outside the project
+ * root and trips a "Symlink .venv/bin/python3 is invalid" build error.
+ * Keeping the venv path out of source and in the systemd EnvironmentFile
+ * sidesteps the analyzer entirely. The `cwd` param is retained for API
+ * stability with `runScript` and tests.
+ */
+export function resolvePythonBin(_cwd: string): string {
+  if (_cachedPythonBin) return _cachedPythonBin;
+
+  const envOverride = process.env.RADON_PYTHON_BIN;
+  if (envOverride && existsSync(envOverride)) {
+    _cachedPythonBin = envOverride;
+    return envOverride;
+  }
+
+  _cachedPythonBin = "python3.13";
+  return "python3.13";
 }
 
 // ── Runner ────────────────────────────────────────────────────────────
@@ -109,7 +144,8 @@ export function runScript<T = unknown, S extends TSchema | undefined = undefined
       return;
     }
 
-    const proc: ChildProcess = spawn("python3.13", [scriptPath, ...args], {
+    const pythonBin = resolvePythonBin(cwd);
+    const proc: ChildProcess = spawn(pythonBin, [scriptPath, ...args], {
       cwd,
       env: process.env,
       detached,

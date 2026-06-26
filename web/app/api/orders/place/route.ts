@@ -26,7 +26,7 @@ type ComboLeg = {
 };
 
 type PlaceBody = {
-  type: "stock" | "option" | "combo";
+  type: "stock" | "option" | "combo" | "future";
   symbol: string;
   action: "BUY" | "SELL";
   quantity: number;
@@ -36,6 +36,9 @@ type PlaceBody = {
   strike?: number;
   right?: "C" | "P";
   legs?: ComboLeg[];
+  /** Futures: caller passes IB conId (preferred — from /futures/chain) or expiry+exchange. */
+  conId?: number;
+  exchange?: string;
 };
 
 export async function POST(request: Request): Promise<Response> {
@@ -191,7 +194,27 @@ export async function POST(request: Request): Promise<Response> {
       quantity: body.quantity,
       limitPrice: body.limitPrice,
       tif: body.tif || "DAY",
-      ...(body.type === "option" ? { expiry: body.expiry, strike: body.strike, right: body.right } : {}),
+      ...(body.type === "option"
+        ? {
+            expiry: body.expiry,
+            strike: body.strike,
+            right: body.right,
+            // Index options need conId + exchange="CBOE" to disambiguate
+            // from weeklies (VIXW) and related roots. The chain endpoint
+            // hands these back.
+            ...(body.conId != null ? { conId: body.conId } : {}),
+            ...(body.exchange ? { exchange: body.exchange } : {}),
+          }
+        : {}),
+      ...(body.type === "future"
+        ? {
+            // Futures: prefer conId (unambiguous, from /futures/chain).
+            // Falls back to expiry+exchange if the chain wasn't called.
+            ...(body.conId != null ? { conId: body.conId } : {}),
+            ...(body.expiry ? { expiry: body.expiry } : {}),
+            ...(body.exchange ? { exchange: body.exchange } : {}),
+          }
+        : {}),
       ...(body.type === "combo" && body.legs
         ? {
             legs: body.legs.map((l) => ({
@@ -210,7 +233,12 @@ export async function POST(request: Request): Promise<Response> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(orderPayload),
-      timeout: 20_000,
+      // 30s = 25s FastAPI script budget + 5s network/transport slack.
+      // ib_place_order.py polls IB up to 12s for combo confirmation
+      // before returning either ok-with-permId or the explicit
+      // "stuck-in-PendingSubmit" error. Setting this below the
+      // script timeout would abort before the error could surface.
+      timeout: 30_000,
     });
 
     // IB silent rejection: order was submitted but immediately cancelled/inactive.

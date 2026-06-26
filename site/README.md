@@ -62,13 +62,14 @@ Use `NEXT_PUBLIC_SITE_URL=https://radon.run` in production so canonical URLs, si
 
 The site publishes its crawl/share primitives through App Router metadata routes and a shared SEO helper:
 
-- `site/lib/seo.ts` defines canonical metadata, viewport, Open Graph, Twitter cards, and JSON-LD.
+- site/lib/seo.ts defines canonical metadata, viewport, Open Graph, Twitter cards, and JSON-LD; Open Graph and Twitter cards reference the static share image at public/og-image.png (SOCIAL_IMAGE_PATH).
 - `site/app/robots.ts` emits `robots.txt`.
 - `site/app/sitemap.ts` emits `sitemap.xml`.
 - `site/app/manifest.ts` emits `manifest.webmanifest`.
-- `site/app/opengraph-image.tsx` and `site/app/twitter-image.tsx` generate branded share cards.
 
 ## SEO Audit Report
+
+`site/scripts/seo_audit_report.py` is the site-local audit; `scripts/site_seo_audit.py` is the root-level audit and runs from the repo root.
 
 Generate a live HTML audit report against a running site instance:
 
@@ -80,7 +81,7 @@ If local ports are unavailable, audit the verified static build artifacts instea
 
 ```bash
 cd site
-NEXT_DIST_DIR=.next-build npx next build --webpack
+NEXT_DIST_DIR=.next-build npm run build
 cd ..
 python3.13 scripts/site_seo_audit.py --build-dir site/.next-build/server/app --open
 ```

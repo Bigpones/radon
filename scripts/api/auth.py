@@ -5,13 +5,68 @@ Supports two auth methods:
 2. API key — headless machine-to-machine auth (scoped to read-only data endpoints)
 """
 
+from __future__ import annotations
+
 import hmac
+import ipaddress
 import os
 import logging
 
 from fastapi import Request, HTTPException, Depends
 
 logger = logging.getLogger("radon.auth")
+
+_TAILNET = ipaddress.ip_network("100.64.0.0/10")
+
+
+def is_local_or_tailnet(host: str | None) -> bool:
+    """True for loopback or Tailscale CGNAT (RFC 6598) addresses.
+
+    Tailnet membership is itself an authenticated channel, so tailnet peers
+    are treated as 'local' for server-to-server calls — this is what lets
+    the laptop's Next.js (in cloud-thin mode) reach the Hetzner FastAPI
+    without forwarding a Clerk JWT.
+    """
+    if host in ("127.0.0.1", "::1"):
+        return True
+    if not host:
+        return False
+    try:
+        return ipaddress.ip_address(host) in _TAILNET
+    except ValueError:
+        return False
+
+
+# Headers a reverse proxy adds when it forwards a request. Caddy sets
+# X-Forwarded-For on every reverse_proxy hop by default. A genuine
+# server-to-server call (Next.js → FastAPI on loopback, or the cloud-thin
+# laptop → Hetzner over Tailscale) is made with a plain client and carries
+# none of these.
+_FORWARDING_HEADERS = ("x-forwarded-for", "forwarded", "x-real-ip", "x-forwarded-host")
+
+
+def _arrived_via_proxy(request) -> bool:
+    """True if the request carries reverse-proxy forwarding headers."""
+    headers = getattr(request, "headers", None) or {}
+    present = {key.lower() for key in headers.keys()}
+    return any(name in present for name in _FORWARDING_HEADERS)
+
+
+def is_trusted_local_request(request) -> bool:
+    """True only for genuine server-to-server calls.
+
+    The peer must be loopback/tailnet AND the request must NOT have entered
+    through the public reverse proxy. Caddy's `handle_path /api/ib/*` proxies
+    app.radon.run into FastAPI from loopback, so trusting `client.host` alone
+    would expose the entire admin/order/exec surface to the internet — a remote
+    caller's request reaches FastAPI with `client.host == 127.0.0.1`. Forwarded
+    requests always carry forwarding headers, so we deny the bypass for them and
+    require a real Clerk JWT.
+    """
+    client_host = request.client.host if getattr(request, "client", None) else None
+    if not is_local_or_tailnet(client_host):
+        return False
+    return not _arrived_via_proxy(request)
 
 _jwks_client = None
 _algorithms = ["RS256"]
@@ -48,9 +103,11 @@ async def verify_clerk_jwt(request: Request) -> dict:
     Raises HTTPException(403) for non-allowlisted users.
     Bypasses validation for localhost requests (server-to-server).
     """
-    # Skip auth for server-to-server calls from localhost (Next.js → FastAPI)
-    client_host = request.client.host if request.client else None
-    if client_host in ("127.0.0.1", "::1"):
+    # Skip auth for genuine server-to-server calls from localhost or tailnet
+    # (Next.js → FastAPI; cloud-thin laptop dev → Hetzner FastAPI). Requests
+    # forwarded through the public reverse proxy are NOT trusted — see
+    # is_trusted_local_request.
+    if is_trusted_local_request(request):
         return {"sub": "localhost", "local": True}
 
     import jwt as pyjwt

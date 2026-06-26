@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Fetch options chain and flow data.
-Priority: IB (chain) → UW (chain + flow) → Yahoo (ABSOLUTE LAST RESORT)
+Priority: IB (chain) → UW (chain + flow). Yahoo/yfinance removed 2026-06-01;
+when neither yields a chain, the result reports NO_DATA rather than guessing.
 
 Usage:
     python3 scripts/fetch_options.py RMBS
@@ -361,47 +362,7 @@ def fetch_uw_flow(ticker: str, days: int = 7, _client: UWClient = None) -> Optio
         return {"error": str(e)}
 
 
-def fetch_yahoo_options(ticker: str) -> Optional[Dict]:
-    """ABSOLUTE LAST RESORT: Fetch basic options info from Yahoo Finance."""
-    try:
-        import yfinance as yf
-        stock = yf.Ticker(ticker)
-        
-        expirations = stock.options
-        if not expirations:
-            return {"error": "No options available"}
-        
-        # Get nearest expiration chain
-        chain = stock.option_chain(expirations[0])
-        calls = chain.calls
-        puts = chain.puts
-        
-        call_volume = calls['volume'].sum() if 'volume' in calls else 0
-        put_volume = puts['volume'].sum() if 'volume' in puts else 0
-        call_oi = calls['openInterest'].sum() if 'openInterest' in calls else 0
-        put_oi = puts['openInterest'].sum() if 'openInterest' in puts else 0
-        
-        pc_ratio = put_volume / call_volume if call_volume > 0 else 0
-        
-        return {
-            "source": "yahoo",
-            "expirations": list(expirations[:10]),
-            "nearest_expiry": expirations[0],
-            "call_volume": int(call_volume),
-            "put_volume": int(put_volume),
-            "call_oi": int(call_oi),
-            "put_oi": int(put_oi),
-            "put_call_ratio": round(pc_ratio, 2),
-            "note": "Volume-based only, no premium data"
-        }
-        
-    except ImportError:
-        return {"error": "yfinance not installed"}
-    except Exception as e:
-        return {"error": str(e)}
-
-
-def fetch_options(ticker: str, dte_min: int = 20, dte_max: int = 45, 
+def fetch_options(ticker: str, dte_min: int = 20, dte_max: int = 45,
                   port: int = None, source: str = None) -> Dict:
     """
     Fetch comprehensive options data following source priority.
@@ -422,8 +383,7 @@ def fetch_options(ticker: str, dte_min: int = 20, dte_max: int = 45,
     
     ticker = ticker.upper()
     
-    # Source priority: IB → UW → Yahoo
-    # But for flow data, only UW has it
+    # Source priority: IB → UW (no Yahoo). Flow data is UW-only.
     
     chain_data = None
     flow_data = None
@@ -453,14 +413,9 @@ def fetch_options(ticker: str, dte_min: int = 20, dte_max: int = 45,
     # If forcing IB only, use IB data
     if source == "ib" and ib_info and not chain_data:
         chain_data = {"source": "ib", "available": True, **ib_info}
-    
-    # 3. ABSOLUTE LAST RESORT: Yahoo for chain (only if IB AND UW both failed)
-    if source in (None, "yahoo") and not chain_data:
-        result["sources_tried"].append("yahoo")
-        yahoo_data = fetch_yahoo_options(ticker)
-        if yahoo_data and "error" not in yahoo_data:
-            chain_data = yahoo_data
-    
+
+    # No Yahoo/yfinance fallback (data-source policy: IB → UW only). When neither
+    # yields a chain, chain_data stays None and the analysis reports NO_DATA.
     result["chain"] = chain_data
     result["flow"] = flow_data
     
@@ -611,7 +566,7 @@ def main():
     parser.add_argument("--dte-min", type=int, default=20, help="Minimum days to expiry")
     parser.add_argument("--dte-max", type=int, default=45, help="Maximum days to expiry")
     parser.add_argument("--port", type=int, help="IB port (default: auto-detect)")
-    parser.add_argument("--source", choices=["ib", "uw", "yahoo"], help="Force specific data source")
+    parser.add_argument("--source", choices=["ib", "uw"], help="Force specific data source (IB or UW)")
     parser.add_argument("--json", action="store_true", help="Output raw JSON")
     
     args = parser.parse_args()

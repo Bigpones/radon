@@ -80,18 +80,27 @@ describe("components/SortableCtaTable.tsx — sortable table", () => {
     expect(src).toMatch(/export.*SortableCtaTable|export default.*SortableCtaTable/);
   });
 
-  it("implements column sort state (sortCol + sortDir)", () => {
-    expect(src).toMatch(/sortCol|sortKey|sortField/);
-    expect(src).toMatch(/sortDir|sortAsc|asc.*desc|desc.*asc/i);
+  it("implements column sort via the shared useSort hook + SortTh", () => {
+    expect(src).toMatch(/from ['"]@\/lib\/useSort['"]/);
+    expect(src).toMatch(/useSort</);
+    expect(src).toMatch(/sortKey=/);
   });
 
-  it("renders clickable column headers for sorting", () => {
-    expect(src).toMatch(/onClick.*sort|sort.*onClick/i);
+  it("renders sortable column headers via SortTh", () => {
+    expect(src).toMatch(/import SortTh from ['"]\.\/SortTh['"]/);
+    expect(src).toMatch(/<SortTh/);
+    expect(src).toMatch(/onToggle=\{toggle\}/);
   });
 
-  it("sorts rows by the selected column", () => {
-    // The sort logic must re-order the rows array
-    expect(src).toMatch(/\.sort\(/);
+  it("sorts rows via the shared useSort hook output", () => {
+    // useSort returns the re-ordered `sorted` array consumed by the render path
+    expect(src).toMatch(/\bsorted\b/);
+    expect(src).toMatch(/const \{ sorted/);
+  });
+
+  it("renders a mobile card list instead of the wide table on mobile", () => {
+    expect(src).toContain("cta-mobile-list");
+    expect(src).toContain("useViewport");
   });
 });
 

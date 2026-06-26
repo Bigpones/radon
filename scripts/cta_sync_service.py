@@ -34,6 +34,30 @@ from utils.cta_sync_health import (  # noqa: E402
     write_cta_sync_status,
 )
 
+try:
+    from db.service_cycle import service_cycle  # noqa: E402
+    from db.writer import upsert_menthorq_cta  # noqa: E402
+except ImportError:  # pragma: no cover
+    service_cycle = None  # type: ignore[assignment]
+    upsert_menthorq_cta = None  # type: ignore[assignment]
+
+
+def _dual_write_cta_to_db(target_date: str, payload: dict[str, Any], finished_at: str) -> None:
+    """Phase 2 dual-write — best-effort. Failures don't break the sync.
+
+    service_cycle (DUR-14) owns the heartbeat: ok on clean exit, error
+    (+ retry embargo) on upsert failure, re-raised into the non-fatal
+    except below.
+    """
+    if upsert_menthorq_cta is None or service_cycle is None:
+        return
+    try:
+        with service_cycle("cta-sync", market_hours_class="daily") as cycle:
+            cycle.finished_at = finished_at
+            upsert_menthorq_cta(target_date, payload, fetched_at=finished_at)
+    except Exception as exc:  # noqa: BLE001 — best-effort, log + continue
+        print(f"[cta-sync] db dual-write non-fatal: {exc}", file=sys.stderr)
+
 
 class CtaSyncLockError(RuntimeError):
     """Raised when a CTA sync lock is already held."""
@@ -183,6 +207,11 @@ def run_cta_sync(
             message="CTA cache already fresh for target date",
         )
         write_final_status(status)
+        try:
+            cached_payload = json.loads(target_cache.read_text())
+            _dual_write_cta_to_db(target, cached_payload, finished_at)
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"[cta-sync] dual-write skipped (cache unreadable): {exc}", file=sys.stderr)
         print(f"CTA cache already exists for {target} — skipping", file=sys.stderr)
         return 0
 
@@ -268,6 +297,7 @@ def run_cta_sync(
                         message="CTA sync completed successfully",
                     )
                     write_final_status(status)
+                    _dual_write_cta_to_db(target, payload, finished_at)
                     return 0
 
                 error_text = captured_stderr or captured_stdout or reason or "CTA sync returned invalid payload"

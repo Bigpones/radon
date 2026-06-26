@@ -13,7 +13,6 @@ Usage:
 
 import argparse
 import json
-import os
 import re
 import subprocess
 import sys
@@ -21,6 +20,19 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+# Phase 4 wiring: load env + ensure scripts/ on sys.path so db.writer
+# imports work when invoked as a subprocess. Bypass embedded replica.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_PROJECT_DIR = _SCRIPT_DIR.parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+try:
+    from dotenv import load_dotenv  # type: ignore[import-untyped]
+    load_dotenv(_PROJECT_DIR / ".env")
+    load_dotenv(_PROJECT_DIR / "web" / ".env")
+except Exception:
+    pass
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -339,8 +351,42 @@ def update_watchlist(account: str, tweets: List[Dict], watchlist_path: str = "da
     # Save watchlist
     with open(watchlist_file, 'w') as f:
         json.dump(watchlist, f, indent=2)
-    
+
+    # Phase 4 dual-write — mirror per-ticker rows into the watchlist table.
+    # The disk JSON remains the canonical blob; the table lets per-row
+    # queries on /scanner et al. work without parsing the 590KB file.
+    _dual_write_watchlist_to_db(account, subcategory, new_tickers + updated_tickers)
+
     return new_tickers, updated_tickers
+
+
+def _dual_write_watchlist_to_db(account: str, subcategory: Dict, touched_tickers: List[str]) -> None:
+    """Best-effort upsert of per-ticker rows into the watchlist table.
+
+    Only writes the tickers that changed in this scan (touched_tickers)
+    to keep the cloud chatter minimal — the disk JSON is the full
+    snapshot of record. Errors are logged + swallowed so a Turso outage
+    doesn't break the scan loop.
+    """
+    if not touched_tickers:
+        return
+    try:
+        from db.writer import upsert_watchlist_ticker
+    except ImportError:
+        return
+    try:
+        for entry in subcategory.get("tickers", []):
+            ticker = entry.get("ticker")
+            if not ticker or ticker not in touched_tickers:
+                continue
+            upsert_watchlist_ticker(
+                ticker,
+                sector=entry.get("sector") or subcategory.get("sector"),
+                source=f"@{account}",
+                payload=entry,
+            )
+    except Exception as exc:  # noqa: BLE001
+        print(f"  Warning: watchlist db dual-write failed: {exc}")
 
 
 def print_summary(account: str, tweets: List[Dict]):

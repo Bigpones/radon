@@ -17,14 +17,28 @@ log_error() { echo -e "${RED}[local]${NC} $*"; }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-ENV_FILE="$PROJECT_ROOT/.env"
 
-# -- Step 1: Switch .env to local Docker mode --------------------------------
+# -- Step 1: Persist local Docker mode in .env.ib-mode -----------------------
 
-log_info "Switching .env to local Docker mode..."
-sed -i '' 's/^IB_GATEWAY_HOST=.*/IB_GATEWAY_HOST=127.0.0.1/' "$ENV_FILE"
-sed -i '' 's/^IB_GATEWAY_MODE=.*/IB_GATEWAY_MODE=docker/' "$ENV_FILE"
-log_info ".env → IB_GATEWAY_HOST=127.0.0.1, IB_GATEWAY_MODE=docker"
+"$SCRIPT_DIR/ib" mode local
+
+# -- Step 1b: Restore laptop schedulers and set RADON_MODE=local ------------
+#
+# Phase 5: local mode loads the launchd plists so the laptop becomes
+# self-sufficient (no Hetzner dependency). Idempotent — load is a no-op
+# if the plist is already loaded.
+if command -v launchctl >/dev/null 2>&1; then
+  for plist in com.radon.cri-scan com.radon.cta-sync com.radon.data-refresh \
+               com.radon.exit-order-service com.radon.monitor-daemon \
+               com.radon.vcg-refresh; do
+    f="$HOME/Library/LaunchAgents/$plist.plist"
+    if [[ -f "$f" ]]; then
+      launchctl load "$f" 2>/dev/null || true
+      log_info "Loaded $plist (local mode)"
+    fi
+  done
+fi
+"$SCRIPT_DIR/_set_radon_mode.sh" local
 
 # -- Step 2: Stop VPS gateway ------------------------------------------------
 
@@ -58,6 +72,28 @@ for i in $(seq 1 24); do
 done
 
 # -- Step 4: Start dev services -----------------------------------------------
+#
+# Phase 6: legacy `_post_start_*.sh` warmers retired. Local-mode laptop
+# loads its launchd plists in Step 1b above; those plists own all
+# scheduled refreshes (CRI scan, CTA sync, etc.) on the same cadence
+# that the Hetzner systemd timers use in cloud mode.
+
+# Preflight: see scripts/cloud.sh for the full rationale. A duplicate
+# launch leaves uvicorn dead and a second newsfeed scraper racing the
+# original on the Turso replica.
+busy=""
+for port in 3000 8321 8765; do
+  if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+    busy="${busy:+$busy }$port"
+  fi
+done
+if [[ -n "$busy" ]]; then
+  log_warn "Dev stack already running on port(s): $busy"
+  log_warn "Mode persisted to .env.ib-mode. Existing services keep their"
+  log_warn "current connection; restart dev manually to apply (Ctrl-C the"
+  log_warn "running 'npm run dev' and re-run scripts/local.sh)."
+  exit 0
+fi
 
 log_info "Starting dev services (Next.js + FastAPI + WS relay)..."
 cd "$PROJECT_ROOT/web"

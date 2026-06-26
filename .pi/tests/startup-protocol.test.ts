@@ -321,6 +321,34 @@ test("market status should show warning when market is closed", async () => {
   assert.ok(ui.hasMessage("⚠️"), "Should have warning indicator for closed market");
 });
 
+test("summarizeFreeTradeError should prefer explicit IB verification failures", async () => {
+  const { summarizeFreeTradeError } = await import("../extensions/startup-protocol.ts");
+
+  const message = summarizeFreeTradeError([
+    "IB error 326: Unable to connect as the client id is already in use. Retry with a unique client id.",
+    "Cannot verify current portfolio via IB: Error 326, reqId -1: Unable to connect as the client id is already in use. Retry with a unique client id.",
+    "API connection failed: TimeoutError()",
+  ].join("\n"));
+
+  assert.strictEqual(
+    message,
+    "Cannot verify current portfolio via IB: Error 326, reqId -1: Unable to connect as the client id is already in use. Retry with a unique client id.",
+    "Should surface the operator-facing IB verification failure"
+  );
+});
+
+test("summarizeFreeTradeError should fall back to first useful stderr line", async () => {
+  const { summarizeFreeTradeError } = await import("../extensions/startup-protocol.ts");
+
+  const message = summarizeFreeTradeError([
+    "IB error 326: Unable to connect as the client id is already in use. Retry with a unique client id.",
+    "Peer closed connection. clientId 47 already in use?",
+    "custom free trade analyzer failure",
+  ].join("\n"));
+
+  assert.strictEqual(message, "custom free trade analyzer failure");
+});
+
 // ============================================================
 // RUN ALL TESTS
 // ============================================================

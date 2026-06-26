@@ -5,80 +5,80 @@
     "CDE",
     "HL",
     "CMC",
-    "BCPC",
     "SSRM",
-    "HCC",
-    "KNF",
-    "CBT",
+    "BCPC",
     "SXT",
-    "CSTM",
-    "AVNT",
-    "CC",
-    "FUL",
-    "MTRN",
-    "USAR",
     "PRM",
-    "HWKN",
+    "CSTM",
+    "USAR",
+    "KNF",
+    "HCC",
+    "MTRN",
+    "CBT",
+    "CC",
     "CENX",
-    "NGVT",
-    "AMR",
-    "NG",
-    "PPTA",
-    "MTX",
+    "FUL",
+    "AVNT",
+    "HWKN",
     "KALU",
-    "KWR",
+    "PPTA",
+    "NGVT",
+    "MTX",
+    "NG",
+    "AMR",
     "IOSP",
-    "OI",
-    "GEF",
+    "KWR",
     "ECVT",
-    "USLM",
-    "SLVM",
+    "PCT",
+    "GEF",
     "IE",
-    "TRS",
-    "UAMY",
+    "OI",
     "WS",
+    "SLVM",
+    "TRS",
+    "USLM",
+    "RYZ",
+    "UAMY",
     "SCL",
     "TROX",
-    "RYZ",
-    "LXU",
-    "MYE",
     "CMP",
-    "RYAM",
-    "PCT",
+    "MYE",
     "KOP",
-    "ASIX",
-    "MTUS",
-    "AMBP",
-    "METC",
-    "ASPI",
-    "SXC",
+    "LXU",
     "NB",
-    "GSM",
-    "IPI",
-    "MATV",
+    "ASPI",
     "CRML",
-    "DC",
-    "GEFB",
+    "MTUS",
+    "SXC",
     "IDR",
+    "METC",
+    "RYAM",
+    "ASIX",
+    "DC",
+    "AMBP",
+    "CTGO",
+    "GSM",
+    "MATV",
+    "IPI",
+    "ABAT",
     "CMCL",
     "TTAM",
-    "ABAT",
     "OEC",
-    "MAGN",
-    "VOXR",
-    "FTK",
+    "GEFB",
     "ASPN",
-    "CLW",
-    "TG",
-    "CTGO",
-    "USAU",
+    "VOXR",
+    "MAGN",
+    "FTK",
     "PACK",
+    "USAU",
+    "TG",
+    "CLW",
     "CMT",
+    "LZM",
     "KRO",
     "FRD",
-    "LZM",
-    "SMID",
     "ACNT",
+    "SMID",
     "ARQ",
     "AVD",
     "VHI",
@@ -93,154 +93,154 @@
     ],
     [
       "CMC",
-      "BCPC"
+      "SSRM"
     ],
     [
-      "SSRM",
-      "HCC"
+      "BCPC",
+      "SXT"
     ],
     [
-      "KNF",
-      "CBT"
-    ],
-    [
-      "SXT",
+      "PRM",
       "CSTM"
     ],
     [
-      "AVNT",
-      "CC"
+      "USAR",
+      "KNF"
     ],
     [
-      "FUL",
+      "HCC",
       "MTRN"
     ],
     [
-      "USAR",
-      "PRM"
+      "CBT",
+      "CC"
     ],
     [
-      "HWKN",
-      "CENX"
+      "CENX",
+      "FUL"
     ],
     [
-      "NGVT",
-      "AMR"
+      "AVNT",
+      "HWKN"
     ],
     [
-      "NG",
+      "KALU",
       "PPTA"
     ],
     [
-      "MTX",
-      "KALU"
+      "NGVT",
+      "MTX"
     ],
     [
-      "KWR",
-      "IOSP"
+      "NG",
+      "AMR"
     ],
     [
-      "OI",
-      "GEF"
+      "IOSP",
+      "KWR"
     ],
     [
       "ECVT",
-      "USLM"
+      "PCT"
     ],
     [
-      "SLVM",
+      "GEF",
       "IE"
     ],
     [
-      "TRS",
-      "UAMY"
+      "OI",
+      "WS"
     ],
     [
-      "WS",
+      "SLVM",
+      "TRS"
+    ],
+    [
+      "USLM",
+      "RYZ"
+    ],
+    [
+      "UAMY",
       "SCL"
     ],
     [
       "TROX",
-      "RYZ"
+      "CMP"
     ],
     [
-      "LXU",
-      "MYE"
-    ],
-    [
-      "CMP",
-      "RYAM"
-    ],
-    [
-      "PCT",
+      "MYE",
       "KOP"
     ],
     [
-      "ASIX",
-      "MTUS"
-    ],
-    [
-      "AMBP",
-      "METC"
+      "LXU",
+      "NB"
     ],
     [
       "ASPI",
+      "CRML"
+    ],
+    [
+      "MTUS",
       "SXC"
     ],
     [
-      "NB",
-      "GSM"
+      "IDR",
+      "METC"
     ],
     [
-      "IPI",
-      "MATV"
+      "RYAM",
+      "ASIX"
     ],
     [
-      "CRML",
-      "DC"
-    ],
-    [
-      "GEFB",
-      "IDR"
-    ],
-    [
-      "CMCL",
-      "TTAM"
-    ],
-    [
-      "ABAT",
-      "OEC"
-    ],
-    [
-      "MAGN",
-      "VOXR"
-    ],
-    [
-      "FTK",
-      "ASPN"
-    ],
-    [
-      "CLW",
-      "TG"
+      "DC",
+      "AMBP"
     ],
     [
       "CTGO",
-      "USAU"
+      "GSM"
     ],
     [
-      "PACK",
+      "MATV",
+      "IPI"
+    ],
+    [
+      "ABAT",
+      "CMCL"
+    ],
+    [
+      "TTAM",
+      "OEC"
+    ],
+    [
+      "GEFB",
+      "ASPN"
+    ],
+    [
+      "VOXR",
+      "MAGN"
+    ],
+    [
+      "FTK",
+      "PACK"
+    ],
+    [
+      "USAU",
+      "TG"
+    ],
+    [
+      "CLW",
       "CMT"
     ],
     [
-      "KRO",
-      "FRD"
-    ],
-    [
       "LZM",
-      "SMID"
+      "KRO"
     ],
     [
-      "ACNT",
+      "FRD",
+      "ACNT"
+    ],
+    [
+      "SMID",
       "ARQ"
     ],
     [

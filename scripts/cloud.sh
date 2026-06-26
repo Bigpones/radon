@@ -17,12 +17,70 @@ log_error() { echo -e "${RED}[cloud]${NC} $*"; }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-ENV_FILE="$PROJECT_ROOT/.env"
+
+# -- Step 0: Refuse to run when a third-party VPN is hijacking traffic -------
+#
+# Detect the conflict at the routing-table level rather than by app name —
+# any third-party VPN (NordVPN, ProtonVPN, WireGuard, Cisco AnyConnect,
+# Cloudflare WARP, OpenVPN, IKEv2, …) breaks Tailscale's data plane the
+# same way: by installing a default (or split-default) route over its own
+# tunnel interface. The control plane stays green so peers look online;
+# only TCP to the peer's IP times out.
+#
+# Algorithm: find Tailscale's tunnel interface via its 100.64/10 IP, then
+# look for `default` / `0/1` / `128.0/1` routes owned by any *other*
+# tunnel-class interface (utun, ipsec, ppp, tun). Tailscale itself can
+# install a default route via its own interface (e.g. with --exit-node);
+# excluding ts_iface keeps that case from firing.
+tailscale_tun_iface() {
+  ifconfig 2>/dev/null | awk '
+    /^[a-z]/ { iface=$1; sub(/:$/,"",iface) }
+    /^[[:space:]]+inet 100\./ {
+      split($2, octets, ".")
+      second = octets[2] + 0
+      if (second >= 64 && second <= 127) { print iface; exit }
+    }
+  '
+}
+
+detect_hijacking_interfaces() {
+  local ts_iface
+  ts_iface="$(tailscale_tun_iface)"
+  netstat -nr -f inet 2>/dev/null | awk -v ts="$ts_iface" '
+    ($1 == "default" || $1 == "0/1" || $1 == "128.0/1") &&
+    $NF ~ /^(utun|ipsec|ppp|tun)/ &&
+    $NF != ts {
+      print $NF
+    }
+  ' | sort -u | paste -sd ',' -
+}
+
+hijacker="$(detect_hijacking_interfaces)"
+if [[ -n "$hijacker" ]]; then
+  log_error "VPN tunnel ${hijacker} owns the default route — traffic to"
+  log_error "ib-gateway:4001 will be routed through it instead of Tailscale,"
+  log_error "and the TCP probe will time out even though the tailnet shows"
+  log_error "ib-gateway online. Disconnect the active VPN (NordVPN, ProtonVPN,"
+  log_error "WireGuard, Cisco AnyConnect, Cloudflare WARP, etc.) and retry."
+  exit 1
+fi
 
 # -- Step 1: Verify Tailscale connectivity -----------------------------------
 
 log_info "Checking Tailscale connectivity to ib-gateway..."
-if ! ping -c 1 -W 3 ib-gateway >/dev/null 2>&1; then
+tcp_probe() {
+  python3 -c "
+import socket, sys
+s = socket.socket()
+s.settimeout(3)
+try:
+    s.connect((sys.argv[1], int(sys.argv[2])))
+    s.close()
+except Exception:
+    sys.exit(1)
+" "$1" "$2" 2>/dev/null
+}
+if ! tcp_probe ib-gateway 22 && ! tcp_probe ib-gateway 4001; then
   log_error "Cannot reach ib-gateway via Tailscale. Is Tailscale running?"
   exit 1
 fi
@@ -48,24 +106,74 @@ if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "ib-gateway"; then
   "$SCRIPT_DIR/docker_ib_gateway.sh" stop
 fi
 
-# -- Step 4: Switch .env to cloud mode --------------------------------------
+# -- Step 4: Persist cloud mode in .env.ib-mode -----------------------------
 
-log_info "Switching .env to cloud mode..."
-sed -i '' 's/^IB_GATEWAY_HOST=.*/IB_GATEWAY_HOST=ib-gateway/' "$ENV_FILE"
-sed -i '' 's/^IB_GATEWAY_MODE=.*/IB_GATEWAY_MODE=cloud/' "$ENV_FILE"
-log_info ".env → IB_GATEWAY_HOST=ib-gateway, IB_GATEWAY_MODE=cloud"
+"$SCRIPT_DIR/ib" mode cloud
+
+# -- Step 4b: Persist RADON_MODE=hetzner so DB writes pick the right path ---
+#
+# Phase 5: in Hetzner mode the laptop runs only the newsfeed scraper +
+# Next.js. All other schedulers run inside the radon-services container
+# on the VPS. We unload the laptop's launchd plists so they don't race.
+if command -v launchctl >/dev/null 2>&1; then
+  for plist in com.radon.cri-scan com.radon.cta-sync com.radon.data-refresh \
+               com.radon.exit-order-service com.radon.monitor-daemon \
+               com.radon.vcg-refresh; do
+    if launchctl list | grep -q "$plist"; then
+      log_info "Unloading $plist (Hetzner mode)..."
+      launchctl unload "$HOME/Library/LaunchAgents/$plist.plist" 2>/dev/null || true
+    fi
+  done
+fi
+"$SCRIPT_DIR/_set_radon_mode.sh" hetzner
 
 # -- Step 5: Verify port 4001 reachable on VPS ------------------------------
 
 log_info "Verifying IB Gateway port 4001..."
-if bash -c "echo > /dev/tcp/ib-gateway/4001" 2>/dev/null; then
+if tcp_probe ib-gateway 4001; then
   log_info "Port 4001 is open."
 else
   log_warn "Port 4001 not responding yet. Gateway may still be starting (2FA pending)."
 fi
 
-# -- Step 6: Start dev services ----------------------------------------------
+# -- Step 6: Start cloud-thin dev (Next.js only) -----------------------------
+#
+# Post Phase 5 (cloud-services migration, 2026-05-03) the Hetzner VPS owns
+# the full stack: radon-api (clientIds 3/4/5), radon-relay (10/11/12),
+# radon-newsfeed (Turso writer), plus radon-monitor and radon-nextjs. If the
+# laptop also launched FastAPI / IB relay / scraper, every shared resource
+# would double-book — IB Gateway returns Error 326 (clientId in use) and
+# Turso emits WalConflict on every dual-write.
+#
+# So in cloud mode the laptop runs only Next.js, pointing radonFetch at
+# Hetzner FastAPI and the WS relay URL at Hetzner relay over Tailscale. The
+# tailnet bypass added to scripts/api/auth.py + server.py treats laptop's
+# 100.64/10 IP as 'local' for server-to-server calls.
 
-log_info "Starting dev services (Next.js + FastAPI + WS relay)..."
+# Preflight: if any dev port is already bound, the user has a stale stack
+# from a prior session. Bail with guidance instead of stomping on it.
+busy=""
+for port in 3000 8321 8765; do
+  if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+    busy="${busy:+$busy }$port"
+  fi
+done
+if [[ -n "$busy" ]]; then
+  log_warn "Dev stack already running on port(s): $busy"
+  log_warn "Mode persisted to .env.ib-mode. Existing services keep their"
+  log_warn "current connection; restart dev manually to apply (Ctrl-C the"
+  log_warn "running 'npm run dev' and re-run scripts/cloud.sh)."
+  exit 0
+fi
+
+log_info "Starting cloud-thin dev (laptop = Next.js only)..."
+log_info "  → FastAPI:  http://ib-gateway:8321 (Tailscale)"
+log_info "  → WS relay: ws://ib-gateway:8765  (Tailscale)"
+
+export RADON_API_URL="http://ib-gateway:8321"
+export IB_REALTIME_WS_URL="ws://ib-gateway:8765"
+export NEXT_PUBLIC_IB_REALTIME_WS_URL="ws://ib-gateway:8765"
+export RADON_DEV_PROFILE="cloud-thin"
+
 cd "$PROJECT_ROOT/web"
 exec npm run dev

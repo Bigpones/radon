@@ -21,23 +21,44 @@ def main():
     parser.add_argument("--symbol", required=True)
     parser.add_argument("--expiry", default=None, help="If provided, fetch strikes for this expiry")
     parser.add_argument("--port", type=int, default=4001)
-    parser.add_argument("--client-id", type=int, default=27)
+    # client_id="auto" rotates through SUBPROCESS_ID_RANGE (20-49) so parallel
+    # chain fetches (one per expiry) don't collide on a single hardcoded ID.
+    # Accept int overrides for ad-hoc CLI use; default routes through the
+    # auto-allocator that the rest of the subprocess scripts use.
+    parser.add_argument("--client-id", default="auto")
     args = parser.parse_args()
 
+    client_id = int(args.client_id) if args.client_id != "auto" else "auto"
     client = IBClient()
 
     try:
-        client.connect(port=args.port, client_id=args.client_id)
+        client.connect(port=args.port, client_id=client_id)
 
-        # Qualify the underlying to get a valid conId (required by reqSecDefOptParams)
-        from ib_insync import Stock
-        stk = Stock(args.symbol, "SMART", "USD")
-        client._ib.qualifyContracts(stk)
-        if not stk.conId:
+        # Qualify the underlying to get a valid conId (required by reqSecDefOptParams).
+        # Index symbols (VIX, SPX, NDX, RUT, XSP, VVIX) MUST be qualified as
+        # `Index(secType=IND, exchange=CBOE/NASDAQ)` — hardcoding `Stock(SMART)`
+        # silently fails because IB has no STK listing for them. The
+        # resolver in `clients/contract_resolver.py` returns the right
+        # contract type per symbol. The downstream `reqSecDefOptParams` call
+        # must also use the matching `underlyingSecType` ("IND" for indices,
+        # "STK" for stocks) or IB returns an empty chain list.
+        # Repro (2026-05-27): `/api/options/expirations?symbol=VIX` returned
+        # 502 because the chain script always passed "STK".
+        from scripts.clients.contract_resolver import (
+            is_index_symbol,
+            resolve_quote_contract,
+        )
+
+        underlying = resolve_quote_contract(args.symbol)
+        client._ib.qualifyContracts(underlying)
+        if not underlying.conId:
             print(json.dumps({"error": f"Could not qualify {args.symbol}"}))
             return
 
-        chains = client._ib.reqSecDefOptParams(args.symbol, "", "STK", stk.conId)
+        sec_type = "IND" if is_index_symbol(args.symbol) else "STK"
+        chains = client._ib.reqSecDefOptParams(
+            args.symbol, "", sec_type, underlying.conId
+        )
 
         if args.expiry:
             # Find the matching chain

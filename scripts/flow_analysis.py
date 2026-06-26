@@ -7,11 +7,17 @@ Output: JSON to stdout with supports/against/watch/neutral arrays.
 """
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fetch_flow import fetch_flow as fetch_flow_module
 from scanner import analyze_signal
+
+try:
+    from db.scan_mirror import mirror_scan_snapshot  # type: ignore
+except Exception:  # pragma: no cover — DB layer optional
+    def mirror_scan_snapshot(*args, **kwargs):  # type: ignore
+        return None
 
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_DIR = SCRIPT_DIR.parent
@@ -130,13 +136,16 @@ def run_analysis():
     positions = load_portfolio()
     if not positions:
         output = {
-            "analysis_time": datetime.now().isoformat(),
+            "analysis_time": datetime.now(timezone.utc).isoformat(),
             "positions_scanned": 0,
             "supports": [],
             "against": [],
             "watch": [],
             "neutral": [],
         }
+        # Heartbeat on the empty short-circuit too — see
+        # feedback_service_health_heartbeat.
+        mirror_scan_snapshot("flow-analysis", output)
         print(json.dumps(output, indent=2))
         return
 
@@ -170,11 +179,12 @@ def run_analysis():
         results[cat].sort(key=lambda x: x["strength"], reverse=True)
 
     output = {
-        "analysis_time": datetime.now().isoformat(),
+        "analysis_time": datetime.now(timezone.utc).isoformat(),
         "positions_scanned": len(positions),
         **results,
     }
 
+    mirror_scan_snapshot("flow-analysis", output)
     print(json.dumps(output, indent=2))
 
 

@@ -1,16 +1,31 @@
 "use client";
 
 /**
- * OrderConfirmSummary — Order summary panel for confirmation step
+ * OrderConfirmSummary — Order summary panel for confirmation step.
  *
- * Usage:
- *   <OrderConfirmSummary summary={orderSummary} />
+ * **Prop contract changed 2026-05-26.** This component now accepts only
+ * `AugmentedOrderSummary` — a branded type that can be produced ONLY by the
+ * `useOrderRisk` hook in `@/lib/order/risk`. Plain object literals no longer
+ * typecheck. This is deliberate: every prior production bug in order risk
+ * math shipped because a surface hand-built one of these literals and
+ * forgot to thread portfolio coverage. The brand makes that impossible.
+ *
+ * Use via `<OrderRiskGate input={...} surface="..." />` — never instantiate
+ * this component directly outside the gate.
  */
 
-import type { OrderSummary } from "../types";
+import { useEffect } from "react";
+import type { AugmentedOrderSummary } from "../types";
+import { isAugmentedOrderSummary } from "../types";
 
 interface OrderConfirmSummaryProps {
-  summary: OrderSummary;
+  /**
+   * Branded augmented summary from `useOrderRisk`. Coverage state is carried
+   * on `summary.coverageStatus`; when `"pending"` or `"no-portfolio"` the
+   * component renders a labeled skeleton and the parent should disable
+   * submit.
+   */
+  summary: AugmentedOrderSummary;
   /** Show as info callout (blue) or neutral */
   variant?: "info" | "neutral";
   /** Custom class name */
@@ -37,10 +52,59 @@ export function OrderConfirmSummary({
   variant = "info",
   className = "",
 }: OrderConfirmSummaryProps) {
+  // Dev-mode brand check. Catches an `as AugmentedOrderSummary` cast that
+  // smuggles a hand-built literal past TypeScript. Production builds skip
+  // the check (compile-time brand still enforced).
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production" && !isAugmentedOrderSummary(summary)) {
+      console.error(
+        "[order-risk] <OrderConfirmSummary> received a non-branded summary. " +
+        "This is a programming error — render through <OrderRiskGate> from " +
+        "@/lib/order/risk so the portfolio-aware augmentation pipeline runs. " +
+        "See web/CLAUDE.md → Order-risk chokepoint.",
+        summary,
+      );
+    }
+  }, [summary]);
+
+  // Pending / no-portfolio: render a labeled skeleton instead of zeroes.
+  // The parent surface is expected to ALSO disable submit when status !== "resolved".
+  if (summary.coverageStatus !== "resolved") {
+    const pendingLabel =
+      summary.coverageStatus === "no-portfolio"
+        ? "Coverage indeterminate — portfolio not in scope"
+        : "Coverage indeterminate — portfolio resolving";
+    return (
+      <div
+        className={`order-confirm-summary order-confirm-summary-pending ${className}`.trim()}
+        data-coverage-status={summary.coverageStatus}
+        role="status"
+      >
+        <div className="order-confirm-description">{summary.description}</div>
+        <div className="order-confirm-metrics">
+          <span
+            className="order-confirm-metric"
+            style={{ fontStyle: "italic", color: "var(--text-secondary)" }}
+          >
+            {pendingLabel}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   const variantClass = variant === "info" ? "order-confirm-summary-info" : "";
+  const showMaxGain = summary.maxGainUnbounded === true || summary.maxGain != null;
+  const showMaxLoss = summary.maxLossUnbounded === true || summary.maxLoss != null;
+  const hasUndefinedRisk =
+    summary.maxLossUnbounded === true ||
+    (summary.undefinedRiskReason != null && summary.undefinedRiskReason.length > 0);
 
   return (
-    <div className={`order-confirm-summary ${variantClass} ${className}`.trim()}>
+    <div
+      className={`order-confirm-summary ${variantClass} ${className}`.trim()}
+      data-undefined-risk={hasUndefinedRisk ? "true" : undefined}
+    >
       <div className="order-confirm-description">{summary.description}</div>
       <div className="order-confirm-metrics">
         {summary.totalCost != null && (
@@ -49,19 +113,22 @@ export function OrderConfirmSummary({
             <span className="order-confirm-metric-value">{formatCurrency(summary.totalCost)}</span>
           </span>
         )}
-        {summary.maxGain != null && (
+        {showMaxGain && (
           <span className="order-confirm-metric">
             <span className="order-confirm-metric-label">Max Gain:</span>
             <span className="order-confirm-metric-value order-confirm-positive">
-              {formatCurrency(summary.maxGain)}
+              {summary.maxGainUnbounded === true ? "UNBOUNDED" : formatCurrency(summary.maxGain)}
             </span>
           </span>
         )}
-        {summary.maxLoss != null && (
+        {showMaxLoss && (
           <span className="order-confirm-metric">
             <span className="order-confirm-metric-label">Max Loss:</span>
-            <span className="order-confirm-metric-value order-confirm-negative">
-              {formatCurrency(summary.maxLoss)}
+            <span
+              className="order-confirm-metric-value order-confirm-negative"
+              data-unbounded={summary.maxLossUnbounded === true ? "true" : undefined}
+            >
+              {summary.maxLossUnbounded === true ? "UNBOUNDED" : formatCurrency(summary.maxLoss)}
             </span>
           </span>
         )}
@@ -80,6 +147,20 @@ export function OrderConfirmSummary({
           </span>
         )}
       </div>
+      {hasUndefinedRisk && (
+        <div
+          className="order-confirm-undefined-risk"
+          role="alert"
+          data-testid="order-undefined-risk-warning"
+        >
+          <span className="order-confirm-undefined-risk-label">GATE 1: Undefined risk</span>
+          <span className="order-confirm-undefined-risk-detail">
+            {summary.maxLossUnbounded === true
+              ? `${summary.undefinedRiskReason ?? "Uncovered short option"} — loss is theoretically unbounded.`
+              : `${summary.undefinedRiskReason ?? "Naked short exposure"} — max loss reflects assignment-at-zero stress, not a defined-risk cap.`}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

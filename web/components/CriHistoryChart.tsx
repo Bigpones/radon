@@ -15,30 +15,35 @@ export interface CriHistoryEntry {
   vix_5d_roc: number;
 }
 
-export interface ChartSeries {
-  key: keyof CriHistoryEntry;
+// The chart was originally CRI-only. The internals are key-driven via d3
+// and never reference CRI-specific fields, so we expose it as a generic
+// time-series chart over any `{ date: string }` entry. The CRI usage in
+// RegimePanel keeps inferring `T = CriHistoryEntry` with zero code change;
+// VcgPanel now drives the same component with `T = VcgHistoryEntry`.
+export interface ChartSeries<T = CriHistoryEntry> {
+  key: keyof T;
   label: string;
   color: string;
   axis: "left" | "right";
   format?: (v: number) => string;
 }
 
-interface TooltipState {
+interface TooltipState<T> {
   visible: boolean;
   x: number;
   y: number;
-  d: CriHistoryEntry | null;
+  d: T | null;
 }
 
-interface CriHistoryChartProps {
-  history: CriHistoryEntry[];
-  series: [ChartSeries, ChartSeries];
+interface CriHistoryChartProps<T extends { date: string }> {
+  history: T[];
+  series: [ChartSeries<T>, ChartSeries<T>];
   title: string;
-  /** Override for today's live values — keys match CriHistoryEntry fields */
-  liveValues?: Partial<Record<keyof CriHistoryEntry, number>>;
+  /** Override for today's live values — keys match the entry type fields */
+  liveValues?: Partial<Record<keyof T, number>>;
 }
 
-const MARGIN = { top: 20, right: 56, bottom: 32, left: 48 };
+const MARGIN = { top: 20, right: 56, bottom: 44, left: 48 };
 const HEIGHT = 440;
 const CHART_GRID = "var(--chart-grid, var(--border-dim))";
 const CHART_AXIS = "var(--chart-axis, var(--border-dim))";
@@ -49,15 +54,38 @@ function defaultFormat(v: number): string {
   return v.toFixed(2);
 }
 
-export default function CriHistoryChart({
+export function buildCriHistoryXAxisTickValues(dates: Date[], innerWidth: number): Date[] {
+  if (dates.length <= 1) return dates;
+
+  const maxLabels = Math.max(4, Math.min(7, Math.floor(innerWidth / 110)));
+  if (dates.length <= maxLabels) return dates;
+
+  const step = (dates.length - 1) / (maxLabels - 1);
+  const indices = new Set<number>();
+  for (let i = 0; i < maxLabels; i += 1) {
+    indices.add(Math.round(i * step));
+  }
+  indices.add(0);
+  indices.add(dates.length - 1);
+
+  return [...indices]
+    .sort((a, b) => a - b)
+    .map((index) => dates[index]);
+}
+
+export function shouldRotateCriHistoryXAxisLabels(innerWidth: number, tickCount: number): boolean {
+  return tickCount > 5 || innerWidth < 560;
+}
+
+export default function CriHistoryChart<T extends { date: string }>({
   history,
   series,
   title,
   liveValues,
-}: CriHistoryChartProps) {
+}: CriHistoryChartProps<T>) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [tooltip, setTooltip] = useState<TooltipState>({
+  const [tooltip, setTooltip] = useState<TooltipState<T>>({
     visible: false,
     x: 0,
     y: 0,
@@ -79,7 +107,7 @@ export default function CriHistoryChart({
   }, []);
 
   // Merge live values into the last data point
-  const chartData: CriHistoryEntry[] = (() => {
+  const chartData: T[] = (() => {
     if (!history || history.length === 0) return [];
     if (!liveValues || Object.keys(liveValues).length === 0) return history;
     const result = [...history];
@@ -120,7 +148,7 @@ export default function CriHistoryChart({
       .range([0, innerW]);
 
     // Helper: build Y scale for a series
-    function buildYScale(s: ChartSeries) {
+    function buildYScale(s: ChartSeries<T>) {
       const vals = chartData
         .map((d) => d[s.key] as number | null | undefined)
         .filter((v): v is number => v != null && Number.isFinite(v));
@@ -149,7 +177,7 @@ export default function CriHistoryChart({
 
     // Draw a line series
     function drawLine(
-      s: ChartSeries,
+      s: ChartSeries<T>,
       yScale: d3.ScaleLinear<number, number>,
     ) {
       const validData = chartData.filter(
@@ -158,7 +186,7 @@ export default function CriHistoryChart({
       if (validData.length < 2) return;
 
       const line = d3
-        .line<CriHistoryEntry>()
+        .line<T>()
         .x((d) => xScale(new Date(d.date)))
         .y((d) => yScale(d[s.key] as number))
         .curve(d3.curveMonotoneX);
@@ -171,11 +199,11 @@ export default function CriHistoryChart({
         .attr("d", line);
 
       // Dots
-      g.selectAll(`.dot-${s.key}`)
+      g.selectAll(`.dot-${String(s.key)}`)
         .data(validData)
         .enter()
         .append("circle")
-        .attr("class", `dot-${s.key}`)
+        .attr("class", `dot-${String(s.key)}`)
         .attr("cx", (d) => xScale(new Date(d.date)))
         .attr("cy", (d) => yScale(d[s.key] as number))
         .attr("r", 2)
@@ -239,11 +267,12 @@ export default function CriHistoryChart({
           .attr("font-family", "IBM Plex Mono, monospace");
       });
 
-    // X-axis
-    const tickCount = Math.max(2, Math.min(chartData.length, Math.floor(innerW / 50)));
+    // X-axis — use explicit sparse ticks so labels stay legible on 20-session charts
+    const xTickValues = buildCriHistoryXAxisTickValues(dates, innerW);
+    const rotateXAxisLabels = shouldRotateCriHistoryXAxisLabels(innerW, xTickValues.length);
     const xAxis = d3
       .axisBottom(xScale)
-      .ticks(tickCount)
+      .tickValues(xTickValues)
       .tickFormat((d) => d3.timeFormat("%b %-d")(d as Date));
 
     g.append("g")
@@ -256,34 +285,53 @@ export default function CriHistoryChart({
           .selectAll(".tick text")
           .attr("fill", CHART_AXIS_MUTED)
           .attr("font-size", "10px")
-          .attr("font-family", "IBM Plex Mono, monospace");
+          .attr("font-family", "IBM Plex Mono, monospace")
+          .attr("text-anchor", rotateXAxisLabels ? "end" : "middle")
+          .attr("dx", rotateXAxisLabels ? "-0.4em" : "0")
+          .attr("dy", rotateXAxisLabels ? "0.6em" : "0.9em")
+          .attr("transform", rotateXAxisLabels ? "rotate(-24)" : null);
       });
 
-    // Invisible overlay for tooltip
+    // Invisible overlay for tooltip — supports both mouse hover and touch drag.
+    const updateTooltip = (clientX: number, clientY: number, mx: number) => {
+      const hoveredDate = xScale.invert(mx);
+      const bisect = d3.bisector((d: T) => new Date(d.date)).left;
+      let idx = bisect(chartData, hoveredDate);
+      idx = Math.max(0, Math.min(chartData.length - 1, idx));
+      if (idx > 0) {
+        const before = chartData[idx - 1];
+        const after = chartData[idx];
+        const tBefore = Math.abs(new Date(before.date).getTime() - hoveredDate.getTime());
+        const tAfter = Math.abs(new Date(after.date).getTime() - hoveredDate.getTime());
+        if (tBefore < tAfter) idx = idx - 1;
+      }
+      const entry = chartData[idx];
+      const svgRect = svgRef.current?.getBoundingClientRect();
+      const ex = clientX - (svgRect?.left ?? 0);
+      const ey = clientY - (svgRect?.top ?? 0);
+      setTooltip({ visible: true, x: ex, y: ey, d: entry });
+    };
+
     g.append("rect")
       .attr("width", innerW)
       .attr("height", innerH)
       .attr("fill", "transparent")
+      .style("touch-action", "pan-y")
       .on("mousemove", function (event: MouseEvent) {
         const [mx] = d3.pointer(event, this);
-        const hoveredDate = xScale.invert(mx);
-        const bisect = d3.bisector((d: CriHistoryEntry) => new Date(d.date)).left;
-        let idx = bisect(chartData, hoveredDate);
-        idx = Math.max(0, Math.min(chartData.length - 1, idx));
-        if (idx > 0) {
-          const before = chartData[idx - 1];
-          const after = chartData[idx];
-          const tBefore = Math.abs(new Date(before.date).getTime() - hoveredDate.getTime());
-          const tAfter = Math.abs(new Date(after.date).getTime() - hoveredDate.getTime());
-          if (tBefore < tAfter) idx = idx - 1;
-        }
-        const entry = chartData[idx];
-        const svgRect = svgRef.current?.getBoundingClientRect();
-        const ex = event.clientX - (svgRect?.left ?? 0);
-        const ey = event.clientY - (svgRect?.top ?? 0);
-        setTooltip({ visible: true, x: ex, y: ey, d: entry });
+        updateTooltip(event.clientX, event.clientY, mx);
       })
       .on("mouseleave", function () {
+        setTooltip({ visible: false, x: 0, y: 0, d: null });
+      })
+      .on("touchstart touchmove", function (event: TouchEvent) {
+        if (event.touches.length === 0) return;
+        event.preventDefault();
+        const [mx] = d3.pointer(event.touches[0], this);
+        const t = event.touches[0];
+        updateTooltip(t.clientX, t.clientY, mx);
+      })
+      .on("touchend touchcancel", function () {
         setTooltip({ visible: false, x: 0, y: 0, d: null });
       });
   }, [chartData, width, series, liveValues, leftSeries, rightSeries]);

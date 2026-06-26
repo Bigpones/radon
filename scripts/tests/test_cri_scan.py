@@ -2,7 +2,7 @@
 
 All tests are pure computation — no network calls.
 """
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import math
 from types import SimpleNamespace
 
@@ -13,9 +13,17 @@ from clients.ib_client import DEFAULT_HOST
 from cri_scan import (
     _extract_ib_quote_value,
     _connect_ib_with_retry,
+    _fetch_ib,
+    _ib_auth_state,
     append_post_close_snapshot,
+    build_post_close_snapshot,
     cor1m_level_and_change,
     fetch_all,
+    fetch_cboe_daily_close_from_csv,
+    fetch_cboe_vix_close,
+    fetch_cboe_vvix_close,
+    current_session_date_et,
+    is_post_close_cboe_official_window,
     score_vix_component,
     score_vvix_component,
     score_correlation_component,
@@ -116,6 +124,75 @@ class TestIBConnectionRetry:
         ]
 
 
+class TestIBAuthGate:
+    """Guards against unbounded IB hangs when the gateway is up but the user
+    session isn't authenticated (e.g. awaiting IBKR Mobile 2FA push). See
+    `_ib_auth_state` and the `_fetch_ib` pre-check.
+    """
+
+    def test_ib_auth_state_returns_value_from_health_endpoint(self, monkeypatch):
+        import io
+        import json
+
+        class _Resp(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                self.close()
+                return False
+
+        def fake_urlopen(req, timeout):
+            return _Resp(
+                json.dumps({"ib_gateway": {"auth_state": "authenticated"}}).encode("utf-8")
+            )
+
+        monkeypatch.setattr("cri_scan.urlopen", fake_urlopen, raising=False)
+        monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+        assert _ib_auth_state() == "authenticated"
+
+    def test_ib_auth_state_returns_none_when_endpoint_unreachable(self, monkeypatch):
+        def boom(req, timeout):
+            raise ConnectionError("connection refused")
+
+        monkeypatch.setattr("urllib.request.urlopen", boom)
+        assert _ib_auth_state() is None
+
+    def test_fetch_ib_skips_when_awaiting_2fa(self, monkeypatch):
+        called = {"connect": 0}
+
+        class _IB:
+            def __init__(self):
+                called["connect"] += 1
+
+        # If the pre-check is honored, IB() must never be instantiated.
+        monkeypatch.setattr("cri_scan._ib_auth_state", lambda: "awaiting_2fa")
+
+        result = _fetch_ib(["SPY"])
+
+        assert result == {}
+        assert called["connect"] == 0
+
+    def test_fetch_ib_proceeds_when_authenticated(self, monkeypatch):
+        # When auth is good, the script should attempt the IB import + connect
+        # path. We exercise that by stubbing `_connect_ib_with_retry` to fail
+        # immediately — the function should return {} via the connect path,
+        # NOT via the auth pre-check.
+        monkeypatch.setattr("cri_scan._ib_auth_state", lambda: "authenticated")
+        monkeypatch.setattr("cri_scan._connect_ib_with_retry", lambda *_args, **_kw: False)
+
+        assert _fetch_ib(["SPY"]) == {}
+
+    def test_fetch_ib_proceeds_when_health_unreachable(self, monkeypatch):
+        # Fail-open: if /health is unreachable (auth_state=None), the per-request
+        # timeout is the real safety net; let the IB path try.
+        monkeypatch.setattr("cri_scan._ib_auth_state", lambda: None)
+        monkeypatch.setattr("cri_scan._connect_ib_with_retry", lambda *_args, **_kw: False)
+
+        assert _fetch_ib(["SPY"]) == {}
+
+
 class TestCor1mCurrentQuoteSelection:
     """Tests for reconciling IB, CBOE, and Yahoo current COR1M quotes."""
 
@@ -179,6 +256,82 @@ class TestCor1mHistoricalFallbackOrder:
         assert set(aligned.keys()) == {"VIX", "VVIX", "SPY", "COR1M"}
         assert len(common_dates) == 130
         assert [ticker for ticker, _ in yahoo_calls] == ["VIX", "VVIX", "SPY"]
+
+
+class TestCboeOfficialVolatilityCloses:
+    def test_fetch_cboe_daily_close_from_csv_parses_vix_close(self, monkeypatch):
+        csv_payload = "DATE,OPEN,HIGH,LOW,CLOSE\n04/21/2026,20.01,20.50,18.90,19.64\n04/22/2026,19.00,19.15,18.55,18.92\n"
+        monkeypatch.setattr("cri_scan._download_cboe_csv_rows", lambda _url: [
+            {"DATE": "04/21/2026", "OPEN": "20.01", "HIGH": "20.50", "LOW": "18.90", "CLOSE": "19.64"},
+            {"DATE": "04/22/2026", "OPEN": "19.00", "HIGH": "19.15", "LOW": "18.55", "CLOSE": "18.92"},
+        ])
+        assert fetch_cboe_daily_close_from_csv("https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv", "2026-04-22") == pytest.approx(18.92)
+
+    def test_fetch_cboe_vvix_close_uses_vvix_column(self, monkeypatch):
+        monkeypatch.setattr("cri_scan._download_cboe_csv_rows", lambda _url: [
+            {"DATE": "04/21/2026", "VVIX": "99.50"},
+            {"DATE": "04/22/2026", "VVIX": "97.13"},
+        ])
+        assert fetch_cboe_vvix_close("2026-04-22") == pytest.approx(97.13)
+
+    def test_fetch_cboe_vix_close_uses_official_url(self, monkeypatch):
+        seen = {}
+
+        def fake_fetch(url: str, session_date: str, value_column: str = "CLOSE"):
+            seen["url"] = url
+            seen["session_date"] = session_date
+            seen["value_column"] = value_column
+            return 18.92
+
+        monkeypatch.setattr("cri_scan.fetch_cboe_daily_close_from_csv", fake_fetch)
+        assert fetch_cboe_vix_close("2026-04-22") == pytest.approx(18.92)
+        assert seen == {
+            "url": "https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+            "session_date": "2026-04-22",
+            "value_column": "CLOSE",
+        }
+
+    def test_fetch_cboe_vvix_close_uses_official_url(self, monkeypatch):
+        seen = {}
+
+        def fake_fetch(url: str, session_date: str, value_column: str = "CLOSE"):
+            seen["url"] = url
+            seen["session_date"] = session_date
+            seen["value_column"] = value_column
+            return 97.13
+
+        monkeypatch.setattr("cri_scan.fetch_cboe_daily_close_from_csv", fake_fetch)
+        assert fetch_cboe_vvix_close("2026-04-22") == pytest.approx(97.13)
+        assert seen == {
+            "url": "https://cdn.cboe.com/api/global/us_indices/daily_prices/VVIX_History.csv",
+            "session_date": "2026-04-22",
+            "value_column": "VVIX",
+        }
+
+    def test_post_close_cboe_window_starts_after_420pm_et(self):
+        assert is_post_close_cboe_official_window(datetime(2026, 4, 22, 16, 19)) is False
+        assert is_post_close_cboe_official_window(datetime(2026, 4, 22, 16, 20)) is True
+
+    def test_build_post_close_snapshot_prefers_official_cboe_for_vix_and_vvix(self, monkeypatch):
+        monkeypatch.setattr("cri_scan.fetch_cboe_vix_close", lambda session_date: 18.92)
+        monkeypatch.setattr("cri_scan.fetch_cboe_vvix_close", lambda session_date: 97.13)
+        monkeypatch.setattr("cri_scan.fetch_preferred_current_quote", lambda ticker: {"SPY": 711.21}.get(ticker))
+        monkeypatch.setattr("cri_scan.fetch_cor1m_current_quote", lambda: 11.53)
+
+        snapshot = build_post_close_snapshot("2026-04-22", use_official_cboe_close=True)
+
+        assert snapshot == {
+            "VIX": pytest.approx(18.92),
+            "VVIX": pytest.approx(97.13),
+            "SPY": pytest.approx(711.21),
+            "COR1M": pytest.approx(11.53),
+        }
+
+    def test_current_session_date_uses_prior_session_before_open(self):
+        assert current_session_date_et(datetime(2026, 4, 23, 7, 35)) == "2026-04-22"
+
+    def test_current_session_date_uses_prior_friday_on_weekend(self):
+        assert current_session_date_et(datetime(2026, 4, 25, 10, 0)) == "2026-04-24"
 
 
 class TestCor1mHistoricalFallback:
@@ -627,8 +780,14 @@ class TestRunAnalysis:
 
         result = run_analysis(aligned, dates)
 
-        assert len(result["history"]) == 20
-        assert all(entry["realized_vol"] is not None for entry in result["history"])
+        # The CRI payload's `history` is the full Yahoo intersection window
+        # (commit 9c942e0). The 20-session statistical window is now scoped
+        # on the consumer side (Z_SCORE_WINDOW in regimeRelationships.ts).
+        # What this test still cares about: enough realized_vol entries to
+        # rebuild the 20-session overlay, and spy_closes capped for cache.
+        assert len(result["history"]) == n
+        rvol_entries = [e for e in result["history"] if e["realized_vol"] is not None]
+        assert len(rvol_entries) >= 20
         assert len(result["spy_closes"]) == 40
 
 

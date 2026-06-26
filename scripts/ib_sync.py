@@ -17,9 +17,27 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
+from zoneinfo import ZoneInfo
+
+# Load env files BEFORE importing modules that read env at import time
+# (e.g. db.client requires TURSO_DB_URL / TURSO_AUTH_TOKEN). When this script
+# runs as a FastAPI subprocess the parent's env is not guaranteed to include
+# them, which previously made the Phase-3 dual-write to portfolio_snapshots
+# silently fail and left the Turso UI snapshot stale.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_PROJECT_DIR = _SCRIPT_DIR.parent
+try:
+    from dotenv import load_dotenv  # type: ignore[import-untyped]
+    # Project-level .env first, then the IB-mode overlay, then web/.env which
+    # is where TURSO_DB_URL / TURSO_AUTH_TOKEN actually live on Hetzner.
+    load_dotenv(_PROJECT_DIR / ".env")
+    load_dotenv(_PROJECT_DIR / ".env.ib-mode")
+    load_dotenv(_PROJECT_DIR / "web" / ".env")
+except Exception:
+    pass
 
 try:
     from ib_insync import util
@@ -29,6 +47,11 @@ except ImportError:
     sys.exit(1)
 
 from clients.ib_client import IBClient, CLIENT_IDS, DEFAULT_HOST, DEFAULT_GATEWAY_PORT
+from clients.journal_basis import (
+    compute_open_basis_for_ticker,
+    prior_net_qty_for_contract,
+)
+from db.client import get_db
 
 # Default connection settings
 DEFAULT_PORT = DEFAULT_GATEWAY_PORT
@@ -234,8 +257,19 @@ def detect_structure_type(legs: list) -> Tuple[str, str]:
     return f"Combo ({len(legs)} legs)", "complex"
 
 
+def _raw_ratio_label(legs: list) -> str:
+    """Compute raw NxM contract counts for two legs, e.g. '75x10'."""
+    if len(legs) != 2:
+        return ""
+    a = int(abs(legs[0].get('position', legs[0].get('contracts', 0))))
+    b = int(abs(legs[1].get('position', legs[1].get('contracts', 0))))
+    if a == b or a == 0 or b == 0:
+        return ""
+    return f"{a}x{b}"
+
+
 def _ratio_label(legs: list) -> str:
-    """Compute NxM ratio label from leg contract counts, e.g. '1x2'.
+    """Compute normalized NxM ratio label from leg contract counts, e.g. '1x2'.
 
     Returns empty string if legs have equal counts (not a ratio).
     Reduces to smallest integer ratio via GCD.
@@ -250,6 +284,25 @@ def _ratio_label(legs: list) -> str:
     return f"{a // g}x{b // g}"
 
 
+def _display_ratio_label(structure_type: str, opt_legs: list, all_legs: list) -> str:
+    """Return the display ratio label for a structure.
+
+    Risk reversals/synthetics should show actual contract counts in displayed
+    long-short leg order so the label matches the expanded leg rows and top-row
+    quantity. Other ratio structures keep the normalized NxM form.
+    """
+    if "Ratio" not in structure_type:
+        return ""
+
+    if "Risk Reversal" in structure_type or "Synthetic" in structure_type:
+        long_legs = [l for l in all_legs if l.get('secType') == 'OPT' and l.get('position', 0) > 0]
+        short_legs = [l for l in all_legs if l.get('secType') == 'OPT' and l.get('position', 0) < 0]
+        if len(long_legs) == 1 and len(short_legs) == 1:
+            return _raw_ratio_label([long_legs[0], short_legs[0]])
+
+    return _ratio_label(opt_legs)
+
+
 def format_structure_description(structure_type: str, legs: list) -> str:
     """Create human-readable structure description with strikes"""
     if structure_type == "Stock":
@@ -261,7 +314,7 @@ def format_structure_description(structure_type: str, legs: list) -> str:
     if not opt_legs:
         return structure_type
 
-    ratio = _ratio_label(opt_legs) if "Ratio" in structure_type else ""
+    ratio = _display_ratio_label(structure_type, opt_legs, legs)
     ratio_suffix = f" {ratio}" if ratio else ""
 
     if "Spread" in structure_type:
@@ -462,6 +515,7 @@ def collapse_positions(positions: list) -> list:
                 "strike": leg.get('strike'),
                 "entry_cost": leg['entry_cost'],
                 "avg_cost": leg['avgCost'],
+                "ib_avg_cost": leg.get('ibAvgCost'),
                 "market_price": leg.get('marketPrice'),
                 "market_value": leg.get('marketValue'),
                 "market_price_is_calculated": bool(leg.get('marketPriceIsCalculated'))
@@ -536,16 +590,119 @@ def _resolve_market_price(market_price: Optional[float], bid: Optional[float], a
     return None, False
 
 
-def fetch_positions(client: IBClient) -> list:
+def _journal_basis_key(symbol: str, expiry, right, strike) -> Optional[str]:
+    digits = "".join(ch for ch in str(expiry or "") if ch.isdigit())
+    if len(digits) == 6:
+        digits = f"20{digits}"
+    if len(digits) != 8:
+        return None
+
+    right_value = str(right or "").strip().upper()[:1]
+    if right_value not in {"C", "P"}:
+        return None
+
+    try:
+        strike_value = float(strike)
+    except (TypeError, ValueError):
+        return None
+
+    symbol_value = str(symbol or "").strip().upper()
+    if not symbol_value:
+        return None
+
+    return f"{symbol_value}|{digits}|{right_value}|{strike_value}"
+
+
+def build_journal_basis_lookup(client: IBClient, db=None) -> dict[str, float]:
+    """Build a per-contract open-basis lookup from raw journal rows.
+
+    Also records the journal net qty for each option contract on the returned
+    dict's ``net_qty`` sidecar so ``fetch_positions`` can reject an override
+    whose journal basis reflects fewer fills than the live position holds
+    (the MU 1050 C incomplete-journal class). ``db`` is injectable for tests.
+    """
+    lookup: dict[str, float] = {}
+    net_qty_lookup: dict[str, float] = {}
+
+    try:
+        raw_positions = client.get_positions()
+    except Exception as exc:
+        print(f"  Warning: journal basis prefetch skipped, positions unavailable: {exc}")
+        return _with_net_qty(lookup, net_qty_lookup)
+
+    option_positions = [
+        pos
+        for pos in raw_positions
+        if getattr(getattr(pos, "contract", None), "secType", None) == "OPT"
+        and getattr(getattr(pos, "contract", None), "symbol", None)
+    ]
+    if not option_positions:
+        return _with_net_qty(lookup, net_qty_lookup)
+
+    if db is None:
+        try:
+            db = get_db()
+        except Exception as exc:
+            print(f"  Warning: journal basis unavailable, falling back to IB avgCost: {exc}")
+            return _with_net_qty(lookup, net_qty_lookup)
+
+    tickers = sorted({str(pos.contract.symbol).strip().upper() for pos in option_positions})
+    for ticker in tickers:
+        try:
+            lookup.update(compute_open_basis_for_ticker(db, ticker))
+        except Exception as exc:
+            print(f"  Warning: journal basis lookup failed for {ticker}: {exc}")
+
+    for pos in option_positions:
+        contract = pos.contract
+        journal_key = _journal_basis_key(
+            contract.symbol,
+            getattr(contract, "lastTradeDateOrContractMonth", None),
+            getattr(contract, "right", None),
+            getattr(contract, "strike", None),
+        )
+        if not journal_key or journal_key in net_qty_lookup:
+            continue
+        try:
+            net_qty_lookup[journal_key] = prior_net_qty_for_contract(
+                db,
+                ticker=contract.symbol,
+                sec_type=contract.secType,
+                strike=getattr(contract, "strike", None),
+                right=getattr(contract, "right", None),
+                expiry=getattr(contract, "lastTradeDateOrContractMonth", None),
+            )
+        except Exception as exc:
+            print(f"  Warning: journal net-qty lookup failed for {journal_key}: {exc}")
+
+    return _with_net_qty(lookup, net_qty_lookup)
+
+
+class _BasisLookup(dict):
+    """Open-basis dict that also carries a per-key journal net-qty sidecar."""
+
+    net_qty: dict[str, float]
+
+
+def _with_net_qty(lookup: dict, net_qty_lookup: dict) -> "_BasisLookup":
+    enriched = _BasisLookup(lookup)
+    enriched.net_qty = net_qty_lookup
+    return enriched
+
+
+def fetch_positions(client: IBClient, journal_basis_lookup: Optional[dict[str, float]] = None) -> list:
     """Fetch all positions from IB"""
     positions = client.get_positions()
-    
+    journal_basis_lookup = journal_basis_lookup or {}
+    journal_net_qty_lookup = getattr(journal_basis_lookup, "net_qty", {}) or {}
+
     formatted = []
     for pos in positions:
         contract = pos.contract
         
         # Calculate position value
         avg_cost = pos.avgCost
+        ib_avg_cost = pos.avgCost
         position_size = pos.position
         
         # For options, avgCost is per share, multiply by 100 for per contract
@@ -553,12 +710,35 @@ def fetch_positions(client: IBClient) -> list:
             entry_cost = abs(avg_cost * position_size)  # Already multiplied by multiplier internally
         else:
             entry_cost = abs(avg_cost * position_size)
+
+        journal_key = _journal_basis_key(
+            contract.symbol,
+            getattr(contract, 'lastTradeDateOrContractMonth', None),
+            getattr(contract, 'right', None),
+            getattr(contract, 'strike', None),
+        )
+        if journal_key and journal_key in journal_basis_lookup and position_size != 0:
+            journal_net = journal_net_qty_lookup.get(journal_key)
+            basis_is_complete = (
+                journal_net is None
+                or abs(journal_net) == abs(position_size)
+            )
+            if basis_is_complete:
+                entry_cost = abs(float(journal_basis_lookup[journal_key]))
+                avg_cost = entry_cost / abs(position_size)
+            else:
+                print(
+                    f"  Warning: journal basis SKIPPED for {journal_key}: "
+                    f"journal_net_qty={journal_net} != position_qty={position_size} "
+                    f"— keeping IB avgCost (incomplete journal)"
+                )
         
         formatted.append({
             "symbol": contract.symbol,
             "secType": contract.secType,
             "position": position_size,
             "avgCost": avg_cost,
+            "ibAvgCost": ib_avg_cost,
             "entry_cost": round(entry_cost, 2),
             "expiry": parse_expiry(contract),
             "strike": getattr(contract, 'strike', None),
@@ -862,8 +1042,14 @@ def convert_to_portfolio_format(account: dict, collapsed_positions: list, pnl_da
     # Derive entry_date from trade_log and previous portfolio.
     # Priority: trade_log (most recent BUY/TRADE for matching ticker+structure) →
     # previous portfolio → today (truly new position).
+    #
+    # `today` MUST be the ET trading day, not the host's local day. On Hetzner
+    # (UTC host) `datetime.now()` after 20:00 ET is already the next calendar
+    # day in UTC, so a brand-new position opened at 21:00 ET would get stamped
+    # with tomorrow's ET date and the same-day P&L branch on the frontend
+    # (web/lib/positionUtils.ts:isSameDay) would miss it. Always use ET.
     import json as _json
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
 
     # Build date lookup from trade_log (latest trade per ticker+structure key)
     trade_log_dates: dict[str, str] = {}
@@ -979,21 +1165,34 @@ def convert_to_portfolio_format(account: dict, collapsed_positions: list, pnl_da
                 if fd:
                     fill_contract_date = min(fill_contract_date, fd) if fill_contract_date else fd
 
-        # Fallback chain: blotter (per-contract) → trade_log → blotter (ticker) →
-        # IB fills → prev portfolio → "unknown"
+        # Fallback chain — ORDERED FROM MOST → LEAST SPECIFIC. Anything weaker
+        # than per-contract risks attributing a brand-new contract to an
+        # unrelated older trade on the same ticker (regression: AMD Risk
+        # Reversal P$320/C$330 was assigned 2026-04-22 because an unrelated
+        # AMD 295P existed in the blotter — see test_combo_entry_date.py).
+        #
+        #   1. blotter (per-contract: ticker|expiry|right|strike)
+        #   2. trade_log (ticker|structure)
+        #   3. IB fills (per-contract, same-session)
+        #   4. prev portfolio (ticker|structure|expiry, excluding today)
+        #   5. today  ← brand-new positions default here so the frontend's
+        #              same-day P&L branch fires correctly. We deliberately
+        #              do NOT use a per-ticker blotter fallback or "unknown".
         pos['entry_date'] = (
             blotter_contract_date
             or trade_log_dates.get(f"{ticker}|{structure}")
-            or blotter_dates.get(ticker)
             or fill_contract_date
             or prev_dates.get(key)
-            or "unknown"
+            or today
         )
 
     result = {
         "bankroll": round(bankroll, 2),
         "peak_value": round(bankroll, 2),  # Would need historical tracking
-        "last_sync": datetime.now().isoformat(),
+        # Wall-clock timestamp consumed by web/lib/performanceFreshness.ts.
+        # Must include a timezone offset so the JS side does not parse it as
+        # the user's local time and shift the derived ET session date.
+        "last_sync": datetime.now(timezone.utc).isoformat(),
         "positions": collapsed_positions,
         "total_deployed_pct": round(deployed_pct, 2),
         "total_deployed_dollars": round(total_deployed, 2),
@@ -1060,6 +1259,21 @@ def save_portfolio(portfolio: dict):
     checksum = atomic_save(str(PORTFOLIO_PATH), portfolio)
     print(f"✓ Saved portfolio to {PORTFOLIO_PATH} (checksum: {checksum[:12]}…)")
 
+    # Phase 3 dual-write — best-effort, non-fatal. The writer streams
+    # directly to Turso cloud (embedded replica is opt-in only).
+    try:
+        import sys as _sys
+        from datetime import datetime as _datetime, timezone as _tz
+        _sys.path.insert(0, str(Path(__file__).parent))
+        from db.service_cycle import service_cycle
+        from db.writer import upsert_portfolio_snapshot
+        taken_at = _datetime.now(_tz.utc).isoformat().replace("+00:00", "Z")
+        with service_cycle("portfolio-sync", market_hours_class="intraday") as cycle:
+            cycle.finished_at = taken_at
+            upsert_portfolio_snapshot(taken_at, portfolio)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  Warning: portfolio db dual-write failed: {exc}")
+
     # Track daily NAV for performance history
     acct = portfolio.get("account_summary", {})
     net_liq = acct.get("net_liquidation") or portfolio.get("bankroll")
@@ -1103,7 +1317,8 @@ def main():
         pnl_obj = client.ib.reqPnL(ib_account) if ib_account else None
 
         # Fetch positions while PnL streams
-        positions = fetch_positions(client)
+        journal_basis_lookup = build_journal_basis_lookup(client)
+        positions = fetch_positions(client, journal_basis_lookup=journal_basis_lookup)
 
         if not args.no_prices and positions:
             # ── Phase 3: Set exchange + request ALL data at once ──

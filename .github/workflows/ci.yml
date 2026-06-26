@@ -1,0 +1,252 @@
+name: CI (test gate + deploy)
+
+# Tests run on every PR and every push to main. The deploy job is GATED on
+# both test jobs — `git push origin main` only reaches the VPS if the full
+# Vitest + pytest suites are green. Deploy lives in THIS file because GitHub
+# Actions `needs:` cannot reference jobs in another workflow file.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same ref so a rapid push doesn't deploy twice.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # gitleaks scans git history, not just the working tree, so a secret
+          # committed-then-reverted is still caught. fetch-depth: 0 pulls the
+          # full history; a shallow clone would scan only the tip and miss it.
+          fetch-depth: 0
+      # Pinned gitleaks binary (not gitleaks/gitleaks-action@v2): the action
+      # defaults to scanning only the PUSH/PR commit RANGE and short-circuits
+      # to a no-op on some event types, and it nags about an org GITLEAKS_LICENSE.
+      # The bare CLI over the full history is deterministic, license-free, and
+      # is exactly what was verified locally (gitleaks 8.x: the dummy Clerk
+      # publishable key on the `# gitleaks:allow` line is honored; removing that
+      # comment makes the scan FAIL with a generic-api-key finding — proving the
+      # gate has teeth and the allow is load-bearing, not decorative).
+      - name: Install gitleaks
+        run: |
+          version="8.30.1"
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+      # `detect` exits non-zero (code 1) on any finding, which fails the job and
+      # therefore blocks deploy (see the deploy `needs:`). --redact keeps the
+      # actual secret value out of the public Actions log on a real hit.
+      - name: Scan repo history for committed secrets
+        run: gitleaks detect --source . --redact --no-banner --verbose
+
+  web-tests:
+    name: Vitest (full config)
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      ASSISTANT_MOCK: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      # The repo has TWO bun projects: the root one provides vitest + the
+      # cross-cutting vitest.config.ts (which imports `vitest/config`), and
+      # web/ provides the app modules the tests import (@/lib, react, ...).
+      # Install BOTH or the root config fails to load with ERR_MODULE_NOT_FOUND.
+      - run: bun install --frozen-lockfile
+      - run: bun install --frozen-lockfile
+        working-directory: web
+      # Run the FULL vitest config from the repo root (lib/tools + site/lib +
+      # web/tests), NOT `bun run test` — that script restricts to web/tests and
+      # silently skips ~9 files / ~68 tests (incl. site/lib/theme). vitest + the
+      # config resolve from root node_modules; web/tests files resolve their
+      # imports from web/node_modules.
+      #
+      # Exclude the integration tests: these spawn `python3.13` and/or read
+      # gitignored data/*.json runtime caches, so they can't run in this
+      # Bun-only, data-less unit job (this mirrors pytest's `-m 'not
+      # integration'`). They still run locally where Python + data exist.
+      #
+      # --coverage enforces the vitest.config.ts thresholds (lines/funcs/
+      # branches) as a non-regressing ratchet — symmetric with the pytest
+      # --cov-fail-under gate. @vitest/coverage-v8 is a declared devDep.
+      - run: >-
+          bunx vitest run --config vitest.config.ts --coverage
+          --exclude '**/web/tests/integration.test.ts'
+          --exclude '**/lib/tools/__tests__/kelly.test.ts'
+          --exclude '**/lib/tools/__tests__/runner.test.ts'
+          --exclude '**/lib/tools/__tests__/data-reader.test.ts'
+
+  py-tests:
+    name: pytest (unit, no integration)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r scripts/requirements-api.txt
+          pip install pytest pytest-asyncio pytest-cov
+      # Run from the repo ROOT — pyproject.toml pins pythonpath so `import
+      # ib_sync` / `from api.*` / trade_blotter all resolve. addopts already
+      # applies `-m 'not integration'`, so the live MenthorQ suite is skipped.
+      # scripts/trade_blotter is listed explicitly: without it the blotter
+      # tests (29 collected) are orphaned — pythonpath includes the dir, but it
+      # is not a collection target unless named.
+      #
+      # --cov-fail-under is a non-regressing RATCHET, not a vanity target. With
+      # --cov-branch over the whole scripts+api tree the measured combined
+      # statement+branch coverage is 66.5% (the bare 71% statement figure does
+      # not count partial branches). 64 sits ~2.5pts below that so it passes
+      # today while catching a coverage regression. Raise it over time as
+      # coverage climbs; never lower it to make a red build pass.
+      - run: >-
+          python -m pytest scripts/tests scripts/api/tests scripts/trade_blotter
+          --cov=scripts --cov=api --cov-branch --cov-report=term-missing
+          --cov-fail-under=64
+
+  perimeter-smoke:
+    name: Perimeter smoke (next start + curl)
+    runs-on: ubuntu-latest
+    # First job in CI that runs `next build`; compile mode keeps it to a few
+    # minutes but budget for cold runner caches.
+    timeout-minutes: 12
+    env:
+      # Dummy-format Clerk keys: the publishable key must decode to a
+      # frontend-API domain ending in `$` (here base64("clerk.example.com$")).
+      # No Clerk network calls happen — an anonymous curl carries no session
+      # cookie, so the middleware 401s before any key verification.
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsuZXhhbXBsZS5jb20k # gitleaks:allow
+      CLERK_SECRET_KEY: sk_test_radon_ci_perimeter_smoke_dummy
+      # Dummy bearer token for the DUR-16 probe-gate asserts below. The
+      # authorized curl is the only request-time proof that the timing-safe
+      # Web Crypto compare runs in the real Edge middleware runtime.
+      RADON_PROBE_FRESHNESS_TOKEN: rpf_ci_perimeter_smoke_dummy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      # Both bun projects, same as web-tests: next.config aliases @tools to
+      # the root lib/tools, so the build resolves modules from BOTH trees.
+      - run: bun install --frozen-lockfile
+      - run: bun install --frozen-lockfile
+        working-directory: web
+      # Static half of the Edge-runtime guard: the no-restricted-syntax
+      # node:* ban on the middleware import graph (web/eslint.config.mjs).
+      # Scoped to the perimeter files so unrelated lint warnings can't block
+      # the gate; `next start` + curl below is the dynamic half.
+      - run: bunx eslint middleware.ts lib/apiContracts.ts lib/probeAuth.ts
+        working-directory: web
+      # Locked build constraint: web/package.json `build` is
+      # `next build --experimental-build-mode=compile` (see web/CLAUDE.md).
+      - run: bun run build
+        working-directory: web
+      # Request-time perimeter assertions against the real production server.
+      # This is the only gate that catches the Edge-runtime crash class
+      # (node:* import in the middleware graph — tsc/vitest/build all pass;
+      # production 500s on EVERY route at request time, 2026-05-15) and
+      # default-deny regressions (world-callable /api/*, 60fcca8 era).
+      - name: next start + perimeter curls
+        working-directory: web
+        run: |
+          bunx next start -p 3000 &
+          for i in $(seq 1 30); do
+            curl -sf -o /dev/null http://127.0.0.1:3000/sign-in && break
+            sleep 1
+          done
+
+          fail=0
+          assert_status() {
+            path="$1"; want="$2"; auth="${3:-}"
+            if [ -n "$auth" ]; then
+              got=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: ${auth}" "http://127.0.0.1:3000${path}")
+            else
+              got=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:3000${path}")
+            fi
+            if [ "$got" = "$want" ]; then
+              echo "PASS ${path} -> ${got}"
+            else
+              echo "FAIL ${path} -> ${got} (expected ${want})"
+              fail=1
+            fi
+          }
+
+          # Public route boots and renders (a middleware crash = 500 here).
+          assert_status /sign-in 200
+          # Middleware-gated API is denied anonymously — exactly 401, not
+          # merely non-500.
+          assert_status /api/portfolio 401
+          # Unknown share scope stays default-deny (the /share allowlist is
+          # explicit; see web/tests/middleware-share-allowlist.test.ts).
+          assert_status /api/journal/share 401
+          # DUR-16 probe gate: anonymous + wrong-token denied; the correct
+          # bearer passes the timing-safe Web Crypto compare in the REAL
+          # Edge middleware runtime and reaches the route (which 200s even
+          # without Turso creds — quiet/unproven checks are data, not 5xx).
+          assert_status /api/probe/freshness 401
+          assert_status /api/probe/freshness 401 "Bearer wrong-token"
+          assert_status /api/probe/freshness 200 "Bearer ${RADON_PROBE_FRESHNESS_TOKEN}"
+          exit $fail
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # e2e-smoke (DEFERRED — blocker now CONFIRMED on GitHub runners, NOT just local)
+  # ───────────────────────────────────────────────────────────────────────────
+  # GOAL: a curated, fully-mocked Playwright subset gating deploy on the shipped
+  # P0/P1 financial regressions (/orders + /portfolio P&L, account metric cards,
+  # share-pnl). Specs are page.route-mocked end-to-end (no live IB/network/DB),
+  # web-first assertions, zero waitForTimeout — deterministic by construction.
+  #
+  # BLOCKER (empirically confirmed on ubuntu-latest, 4 CI iterations 2026-06-13):
+  #   Playwright's headless chromium returns net::ERR_NAME_NOT_RESOLVED for the
+  #   server on loopback — for the literal IP http://127.0.0.1:3000, not just the
+  #   "localhost" hostname. RULED OUT, with in-job diagnostics each time:
+  #     • Proxy:    `env | grep proxy` → none set; --no-proxy-server changed nothing.
+  #     • DNS:      using the literal IP (no name to resolve); --disable-features=
+  #                 AsyncDns (force system resolver) changed nothing.
+  #     • Bind:     `ss -tlnp` → next-server LISTEN on *:3000 (all ifaces).
+  #     • Reach:    `curl http://127.0.0.1:3000/portfolio` → 200 from the SAME shell.
+  #     • Sandbox:  --no-sandbox --disable-dev-shm-usage changed nothing.
+  #   So the server is up and shell-reachable; only the BROWSER process cannot open
+  #   a loopback connection. This is the same isolation seen locally — the original
+  #   plan's assumption that it "does NOT exist on GitHub runners" is DISPROVEN.
+  #
+  # MOST PROMISING NEXT LEAD (do this on a throwaway branch, never iterate on main):
+  #   The server also listens on the runner's LAN IP (next prints "Network:
+  #   http://10.1.0.x:3000"); chromium's normal (non-loopback) network stack may
+  #   work there. BUT navigating via the LAN IP bypasses the loopback check in
+  #   web/middleware.ts:isLocalAuthlessTestBypassEnabled, so Clerk would block the
+  #   pages. Landing this needs EITHER: (a) extend the authless bypass to accept the
+  #   runner's private IP under RADON_AUTHLESS_TEST (scoped, CI-only), then point
+  #   baseURL at that IP; OR (b) run the job inside a container image where chromium
+  #   loopback works; OR (c) assert at the API layer (page.request.get returns 200
+  #   on loopback even when page.goto fails) — but these specs assert DOM, so (c)
+  #   means rewriting them. Promote to deploy.needs ONLY after a GREEN run is
+  #   observed; never gate on a spec set whose first CI run was red.
+  # ───────────────────────────────────────────────────────────────────────────
+
+  deploy:
+    name: Deploy to VPS
+    needs: [secret-scan, web-tests, py-tests, perimeter-smoke]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: radon
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd ~/radon-cloud
+            bash scripts/deploy.sh

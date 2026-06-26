@@ -10,6 +10,9 @@
  *  - market closed + session date === today      → not stale (EOD data is final)
  */
 
+import { parseScanTime, scanTimeToEtDate } from "./parseScanTime";
+import { mostRecentSessionDate } from "./marketSession";
+
 const CACHE_TTL_MS = 60_000; // 1 minute
 
 export interface GexDataShape {
@@ -27,39 +30,32 @@ function isMarketOpenNow(): boolean {
   return minutes >= 9 * 60 + 30 && minutes <= 16 * 60;
 }
 
-function todayInET(): string {
-  return new Date().toLocaleDateString("sv", { timeZone: "America/New_York" });
-}
-
-function scanTimeToETDate(scanTime: string): string | null {
-  try {
-    const d = new Date(scanTime);
-    if (isNaN(d.getTime())) return null;
-    return d.toLocaleDateString("sv", { timeZone: "America/New_York" });
-  } catch {
-    return null;
-  }
-}
-
 /**
  * @param data - parsed GEX JSON
- * @param todayET - today's date in ET (YYYY-MM-DD), injectable for testing
+ * @param todayET - expected SESSION date in ET (YYYY-MM-DD), injectable for testing
  * @param currentMarketOpen - market open state, injectable for testing
  */
 export function isGexDataStale(
   data: GexDataShape,
-  todayET: string = todayInET(),
+  todayET: string = mostRecentSessionDate(),
   currentMarketOpen: boolean = isMarketOpenNow(),
 ): boolean {
   if (!data.scan_time) return true;
 
-  const sessionDate = scanTimeToETDate(data.scan_time);
+  const scanDate = parseScanTime(data.scan_time);
+  if (!scanDate) return true;
+
+  const sessionDate = scanTimeToEtDate(data.scan_time);
   if (!sessionDate) return true;
 
+  // Behind the most-recent EXPECTED session → stale. `todayET` defaults to the
+  // expected SESSION date (weekend/pre-open aware), so finalized Friday data is
+  // not re-fetched all weekend (the off-hours scan-storm fix).
   if (sessionDate !== todayET) return true;
 
+  // Same session + market closed → not stale (serve finalized EOD data).
   if (!currentMarketOpen) return false;
 
-  const scanAge = Date.now() - new Date(data.scan_time).getTime();
+  const scanAge = Date.now() - scanDate.getTime();
   return scanAge > CACHE_TTL_MS;
 }

@@ -43,6 +43,12 @@ _PROJECT_DIR = _SCRIPT_DIR.parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
+try:
+    from db.scan_mirror import mirror_scan_snapshot  # type: ignore
+except Exception:  # pragma: no cover — DB layer optional
+    def mirror_scan_snapshot(*args, **kwargs):  # type: ignore
+        return None
+
 # ── constants ─────────────────────────────────────────────────────
 OLS_WINDOW = 21        # Rolling regression window (business days)
 Z_WINDOW = 63          # Standardisation lookback (business days)
@@ -650,10 +656,13 @@ def build_json_output(
     vcg_trigger: float = VCG_RO_TRIGGER,
 ) -> Dict:
     """Build JSON output dict."""
-    # Recent history (last 20 sessions) — include per-day signal fields
+    # Full history — emit every session the model produced. The chart
+    # consumer slices by user-selected range (1M/3M/6M/1Y/All), matching
+    # the CRI pattern. Z-score and OLS windows are unchanged; we just
+    # stopped capping the emitted slice at 20.
     n = len(model["residuals"])
     history = []
-    for i in range(max(0, n - 20), n):
+    for i in range(n):
         date_idx = i + 1
         d = dates[date_idx] if date_idx < len(dates) else None
         vcg_i = model["vcg"][i]
@@ -700,7 +709,7 @@ def build_json_output(
         })
 
     result = {
-        "scan_time": datetime.now().isoformat(),
+        "scan_time": datetime.now(timezone.utc).isoformat(),
         "market_open": market_open,
         "credit_proxy": proxy,
         "signal": signal,
@@ -1085,6 +1094,7 @@ Examples:
         "--vcg-trigger", type=float, default=VCG_RO_TRIGGER,
         help=f"VCG z-score threshold for RO trigger (default: {VCG_RO_TRIGGER})",
     )
+    parser.add_argument("--force", action="store_true", help="Fetch fresh even when the market is closed (bypass off-hours cache gate)")
 
     args = parser.parse_args()
     proxy = args.proxy.upper()
@@ -1097,6 +1107,28 @@ Examples:
     print(f"{'='*60}", file=sys.stderr)
     if not market_open:
         print(f"  Market closed — using last available data.", file=sys.stderr)
+
+    # Off-hours cache gate: when closed and the cached scan is already for the
+    # most-recent session AND the same credit proxy, serve it and skip the fetch.
+    if not args.backtest:
+        try:
+            from utils.scan_cache_gate import cached_scan_if_fresh
+            from pathlib import Path as _Path
+
+            cached = cached_scan_if_fresh(
+                _Path(__file__).resolve().parent.parent / "data" / "vcg.json",
+                force=getattr(args, "force", False),
+            )
+        except Exception:
+            cached = None
+        if cached is not None and str(cached.get("credit_proxy", proxy)).upper() == proxy:
+            print("  Serving cached VCG (market closed); skipping fetch.", file=sys.stderr)
+            if args.json:
+                # Heartbeat the cached serve too — see
+                # feedback_service_health_heartbeat.
+                mirror_scan_snapshot("vcg-scan", cached)
+                print(json.dumps(cached, indent=2))
+            return
 
     t_start = time.time()
 
@@ -1133,6 +1165,7 @@ Examples:
     # Output
     if args.json:
         result = build_json_output(signal, model, common_dates, proxy, market_open, bt, vix_floor=args.vix_floor, vcg_trigger=args.vcg_trigger)
+        mirror_scan_snapshot("vcg-scan", result)
         print(json.dumps(result, indent=2))
     else:
         # Print summary

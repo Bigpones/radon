@@ -1,10 +1,50 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import Providers from "@/components/Providers";
+import PwaRegister from "@/components/PwaRegister";
+import ThemeBootstrap from "@/components/ThemeBootstrap";
 import "./globals.css";
+
+// Self-hosted via next/font/google — replaces the render-blocking
+// `@import url("https://fonts.googleapis.com/...")` line that previously
+// fronted globals.css. Plex Sans + Plex Mono together create the
+// IBM-workstation-circa-1985 identity called out in the audit (MOVE 6).
+// `variable` exposes the family as a CSS custom property so existing
+// `var(--font-sans)` / `var(--font-mono)` references continue to work.
+const plexSans = IBM_Plex_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-sans",
+  display: "swap",
+});
+
+const plexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-mono",
+  display: "swap",
+});
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0f14" },
+  ],
+};
 
 export const metadata: Metadata = {
   title: "Radon Terminal",
   description: "Market structure reconstruction instrument. Surfaces convex opportunities from institutional flow, volatility surfaces, and cross-asset positioning.",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Radon",
+  },
   icons: {
     icon: [
       { url: "/icons/favicon-16x16.png", sizes: "16x16", type: "image/png" },
@@ -33,22 +73,20 @@ export const metadata: Metadata = {
   },
 };
 
-const inner = (children: React.ReactNode) => (
-  <html lang="en" data-theme="dark">
-    <body className="app-root">
-      <Providers>{children}</Providers>
-    </body>
-  </html>
-);
-
-// When NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is set, wrap with ClerkProvider+dark
-// theme (imported via ClerkShell so @clerk/themes is only bundled when needed).
-// Without the key (local dev), render the bare tree — no Clerk, no redirect.
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
-    return inner(children);
-  }
-
-  const { default: ClerkShell } = await import("@/components/ClerkShell");
-  return <ClerkShell>{inner(children)}</ClerkShell>;
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${plexSans.variable} ${plexMono.variable}`}
+    >
+      <head>
+        <ThemeBootstrap />
+      </head>
+      <body className="app-root">
+        <Providers>{children}</Providers>
+        <PwaRegister />
+      </body>
+    </html>
+  );
 }

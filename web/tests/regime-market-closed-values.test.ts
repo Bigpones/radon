@@ -11,6 +11,13 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { fileURLToPath } from "url";
+import { resolveRegimeStripLiveState } from "../lib/regimeLiveStrip";
+import type { PriceData } from "../lib/pricesProtocol";
+
+// Minimal price entry — resolveRegimeStripLiveState only reads .last and .close.
+function px(last: number, close = last - 1): PriceData {
+  return { last, close } as unknown as PriceData;
+}
 
 const TEST_DIR = fileURLToPath(new URL(".", import.meta.url));
 const PANEL_PATH = join(TEST_DIR, "../components/RegimePanel.tsx");
@@ -42,20 +49,48 @@ describe("RegimePanel — COR1M replaces sector ETF correlation inputs", () => {
   });
 });
 
-describe("RegimePanel — VIX/VVIX/SPY values prefer live WS data when present", () => {
-  it("vixVal uses live websocket values when available", () => {
-    expect(helperSource).toContain("const liveVix = prices.VIX?.last ?? null;");
-    expect(helperSource).toContain("const vixValue = liveVix ?? data?.vix ?? null;");
+describe("resolveRegimeStripLiveState — prefers live WS values, gated on market-open", () => {
+  // Behavioral replacement for the former source-text greps: exercise the pure
+  // resolver directly so a refactor that preserves behavior keeps tests green,
+  // and the market-open gate (which the greps never checked) is actually pinned.
+  it("vixValue uses the live WS value when market is open", () => {
+    const s = resolveRegimeStripLiveState({ prices: { VIX: px(22.5) }, data: { vix: 19 }, marketOpen: true });
+    expect(s.liveVix).toBe(22.5);
+    expect(s.vixValue).toBe(22.5);
+    expect(s.hasLiveVix).toBe(true);
   });
 
-  it("vvixVal uses live websocket values when available", () => {
-    expect(helperSource).toContain("const liveVvix = prices.VVIX?.last ?? null;");
-    expect(helperSource).toContain("const vvixValue = liveVvix ?? data?.vvix ?? null;");
+  it("vixValue falls back to CRI data.vix when market is closed", () => {
+    const s = resolveRegimeStripLiveState({ prices: { VIX: px(22.5) }, data: { vix: 19 }, marketOpen: false });
+    expect(s.liveVix).toBeNull();
+    expect(s.vixValue).toBe(19);
+    expect(s.hasLiveVix).toBe(false);
   });
 
-  it("spyVal uses live websocket values when available", () => {
-    expect(helperSource).toContain("const liveSpy = prices.SPY?.last ?? null;");
-    expect(helperSource).toContain("const spyValue = liveSpy ?? data?.spy ?? null;");
+  it("vvixValue prefers live WS open, falls back to data.vvix closed", () => {
+    const open = resolveRegimeStripLiveState({ prices: { VVIX: px(95) }, data: { vvix: 88 }, marketOpen: true });
+    expect(open.vvixValue).toBe(95);
+    expect(open.hasLiveVvix).toBe(true);
+    const closed = resolveRegimeStripLiveState({ prices: { VVIX: px(95) }, data: { vvix: 88 }, marketOpen: false });
+    expect(closed.vvixValue).toBe(88);
+    expect(closed.hasLiveVvix).toBe(false);
+  });
+
+  it("spyValue prefers live WS open, falls back to data.spy closed", () => {
+    const open = resolveRegimeStripLiveState({ prices: { SPY: px(530) }, data: { spy: 525 }, marketOpen: true });
+    expect(open.spyValue).toBe(530);
+    expect(open.hasLiveSpy).toBe(true);
+    const closed = resolveRegimeStripLiveState({ prices: { SPY: px(530) }, data: { spy: 525 }, marketOpen: false });
+    expect(closed.spyValue).toBe(525);
+    expect(closed.hasLiveSpy).toBe(false);
+  });
+
+  it("falls back to data values when no live price exists even with market open", () => {
+    const s = resolveRegimeStripLiveState({ prices: {}, data: { vix: 19, vvix: 88, spy: 525 }, marketOpen: true });
+    expect(s.vixValue).toBe(19);
+    expect(s.vvixValue).toBe(88);
+    expect(s.spyValue).toBe(525);
+    expect(s.hasLiveVix).toBe(false);
   });
 });
 

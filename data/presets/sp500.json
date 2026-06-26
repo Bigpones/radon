@@ -79,6 +79,7 @@
     "CAG",
     "CAH",
     "CARR",
+    "CASY",
     "CAT",
     "CB",
     "CBOE",
@@ -124,7 +125,6 @@
     "CSGP",
     "CSX",
     "CTAS",
-    "CTRA",
     "CTSH",
     "CTVA",
     "CVNA",
@@ -229,7 +229,6 @@
     "HIG",
     "HII",
     "HLT",
-    "HOLX",
     "HON",
     "HOOD",
     "HPE",
@@ -468,6 +467,7 @@
     "URI",
     "USB",
     "V",
+    "VEEV",
     "VICI",
     "VLO",
     "VLTO",
@@ -912,10 +912,6 @@
       "BAX"
     ],
     [
-      "GEHC",
-      "HOLX"
-    ],
-    [
       "IDXX",
       "RVTY"
     ],
@@ -1226,10 +1222,6 @@
     [
       "OXY",
       "APA"
-    ],
-    [
-      "CTRA",
-      "EQT"
     ],
     [
       "EXE",
@@ -2544,7 +2536,6 @@
         "DXCM",
         "EW",
         "GEHC",
-        "HOLX",
         "IDXX",
         "PODD",
         "ISRG",
@@ -2577,10 +2568,6 @@
           "BAX"
         ],
         [
-          "GEHC",
-          "HOLX"
-        ],
-        [
           "IDXX",
           "RVTY"
         ],
@@ -2590,6 +2577,10 @@
         ],
         [
           "ZBH",
+          "ABT"
+        ],
+        [
+          "GEHC",
           "ABT"
         ]
       ],
@@ -3304,7 +3295,6 @@
       "tickers": [
         "APA",
         "COP",
-        "CTRA",
         "DVN",
         "FANG",
         "EOG",
@@ -3327,12 +3317,12 @@
           "APA"
         ],
         [
-          "CTRA",
-          "EQT"
-        ],
-        [
           "EXE",
           "TPL"
+        ],
+        [
+          "EQT",
+          "APA"
         ]
       ],
       "vol_driver": "Oil/gas prices, OPEC, energy transition"
@@ -4075,7 +4065,9 @@
         "VZ",
         "WSM",
         "WY",
-        "SATS"
+        "SATS",
+        "CASY",
+        "VEEV"
       ],
       "pairs": [
         [

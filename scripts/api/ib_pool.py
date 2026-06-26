@@ -158,15 +158,50 @@ class IBPool:
             logger.warning("IB pool: %s reconnect failed: %s", role, e)
             return False
 
+    async def reconnect_all(self) -> Dict[str, bool]:
+        """Drop and re-establish every pool role. Idempotent.
+
+        Used by the auth-state transition handler when IBKR 2FA resolves while
+        pool clients are still stuck in a disconnected state — a documented
+        failure mode where the gateway returns `managedAccounts()` to a fresh
+        probe but the pool's long-lived sockets don't auto-recover.
+
+        Per-role disconnect errors are swallowed (the connection is dead
+        anyway). Each role gets a fresh connection attempt via `connect_all()`.
+        """
+        logger.info("IB pool: reconnect_all — dropping all pool clients")
+        await self.disconnect_all()
+        return await self.connect_all()
+
     def status(self) -> dict:
-        """Return pool status for health endpoint."""
+        """Return pool status for health endpoint.
+
+        Each role reports `connected` (TCP-level) plus `managed_accounts` (the
+        accounts the IB client can see). A connected client with empty
+        managed_accounts means the API socket is up but Gateway hasn't
+        completed login — typically the IBKR mobile 2FA push is unanswered.
+        """
         return {
             role: {
                 "connected": self.is_connected(role),
                 "client_id": POOL_ROLES[role],
+                "managed_accounts": self._managed_accounts(role),
             }
             for role in POOL_ROLES
         }
+
+    def _managed_accounts(self, role: str) -> list[str]:
+        """Return managedAccounts() for a role, or [] if unavailable.
+
+        Never raises — empty list signals either disconnected or pre-auth.
+        """
+        client = self._clients.get(role)
+        if client is None:
+            return []
+        try:
+            return list(client.ib.managedAccounts() or [])
+        except Exception:
+            return []
 
 
 class _PoolContext:

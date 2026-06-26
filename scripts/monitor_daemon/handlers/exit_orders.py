@@ -25,20 +25,24 @@ logger = logging.getLogger(__name__)
 # Default paths
 DEFAULT_TRADE_LOG = Path(__file__).parent.parent.parent.parent / "data" / "trade_log.json"
 DEFAULT_IB_PORT = 4001
-DEFAULT_CLIENT_ID = 71
+# "auto" rotates across SUBPROCESS_ID_RANGE on connect. See
+# fill_monitor.py for the rationale (CLOSE_WAIT survival on prev cycle's
+# socket, feedback_ib_client_id_ranges.md).
+DEFAULT_CLIENT_ID: int | str = "auto"
 
 
 class ExitOrdersHandler(BaseHandler):
     """Place pending exit orders when IB will accept them."""
-    
+
     name = "exit_orders"
     interval_seconds = 300  # Check every 5 minutes
-    
+    service_name = "exit-orders"  # structural heartbeat via BaseHandler.run()
+
     def __init__(
         self,
         trade_log_path: Optional[Path] = None,
         ib_port: int = DEFAULT_IB_PORT,
-        client_id: int = DEFAULT_CLIENT_ID,
+        client_id: "int | str" = DEFAULT_CLIENT_ID,
         max_gap_pct: float = 0.40
     ):
         super().__init__()

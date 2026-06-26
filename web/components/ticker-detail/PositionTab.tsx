@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import type { PortfolioPosition } from "@/lib/types";
+import { useTickerDetailOptional } from "@/lib/TickerDetailContext";
+import type { PortfolioData, PortfolioPosition } from "@/lib/types";
 import type { PriceData } from "@/lib/pricesProtocol";
 import {
   fmtPrice,
@@ -15,14 +16,35 @@ import {
   resolveSpreadPriceData,
 } from "@/lib/positionUtils";
 import { fmtSignedPrice, fmtUsd, toneClass } from "@/lib/format";
+import PositionTradeTicket from "./PositionTradeTicket";
+import type { TradeTarget } from "@/lib/order/positionTrade";
 
 type PositionTabProps = {
   position: PortfolioPosition;
   prices: Record<string, PriceData>;
+  /** Portfolio snapshot for coverage-aware risk + the naked-short guard. */
+  portfolio?: PortfolioData | null;
+  /** Fired after a trade is placed so the parent can refresh. */
+  onOrderPlaced?: () => void;
 };
 
-function LegsDisclosure({ position, prices }: { position: PortfolioPosition; prices: Record<string, PriceData> }) {
-  const [expanded, setExpanded] = useState(false);
+function isTradeableLeg(leg: PortfolioPosition["legs"][number]): boolean {
+  return leg.strike != null && leg.type !== "Stock";
+}
+
+function LegsDisclosure({
+  position,
+  prices,
+  onTradeLeg,
+}: {
+  position: PortfolioPosition;
+  prices: Record<string, PriceData>;
+  onTradeLeg: (index: number) => void;
+}) {
+  const ctx = useTickerDetailOptional();
+  const focusedBookKey = ctx?.focusedBookKey ?? null;
+  // Default expanded: the legs ARE the actionable surface for a combo.
+  const [expanded, setExpanded] = useState(true);
 
   return (
     <div className="position-legs">
@@ -44,6 +66,8 @@ function LegsDisclosure({ position, prices }: { position: PortfolioPosition; pri
               <th className="right">Qty</th>
               <th className="right">Entry</th>
               <th className="right">Market</th>
+              <th className="right">Book</th>
+              <th className="right">Trade</th>
             </tr>
           </thead>
           <tbody>
@@ -70,6 +94,36 @@ function LegsDisclosure({ position, prices }: { position: PortfolioPosition; pri
                   <td className={`right ${signedMarket != null && toneClass(signedMarket) !== "neutral" ? toneClass(signedMarket) : ""}`}>
                     {fmtSignedPrice(signedMarket)}
                   </td>
+                  <td className="right">
+                    {isTradeableLeg(leg) && key && ctx ? (
+                      <button
+                        type="button"
+                        className={`pos-leg-book${focusedBookKey === key ? " active" : ""}`}
+                        aria-pressed={focusedBookKey === key}
+                        title={focusedBookKey === key ? "Showing this leg's book — click to return" : "Show this leg's order book"}
+                        onClick={() => ctx.setFocusedBookKey(focusedBookKey === key ? null : key)}
+                        data-testid={`pos-leg-book-${i}`}
+                      >
+                        {focusedBookKey === key ? "BOOK ✓" : "BOOK"}
+                      </button>
+                    ) : (
+                      "---"
+                    )}
+                  </td>
+                  <td className="right">
+                    {isTradeableLeg(leg) ? (
+                      <button
+                        type="button"
+                        className="pos-leg-trade"
+                        onClick={() => onTradeLeg(i)}
+                        data-testid={`pos-leg-trade-${i}`}
+                      >
+                        {leg.direction === "LONG" ? "SELL" : "BUY"}
+                      </button>
+                    ) : (
+                      "---"
+                    )}
+                  </td>
                 </tr>
               );
             })}
@@ -80,7 +134,55 @@ function LegsDisclosure({ position, prices }: { position: PortfolioPosition; pri
   );
 }
 
-export default function PositionTab({ position, prices }: PositionTabProps) {
+export default function PositionTab({ position, prices, portfolio, onOrderPlaced }: PositionTabProps) {
+  const [tradeTarget, setTradeTarget] = useState<TradeTarget | null>(null);
+  const isCombo = position.structure_type !== "Stock" && position.legs.length > 1;
+  const isSingleOption =
+    position.structure_type !== "Stock" &&
+    position.legs.length === 1 &&
+    position.legs[0].strike != null &&
+    position.legs[0].type !== "Stock";
+
+  if (tradeTarget) {
+    return (
+      <PositionTradeTicket
+        position={position}
+        prices={prices}
+        portfolio={portfolio}
+        target={tradeTarget}
+        onClose={() => setTradeTarget(null)}
+        onOrderPlaced={onOrderPlaced}
+      />
+    );
+  }
+
+  return (
+    <PositionView
+      position={position}
+      prices={prices}
+      canTrade={isCombo || isSingleOption}
+      isCombo={isCombo}
+      onTradeCombo={() => setTradeTarget({ kind: "combo" })}
+      onTradeLeg={(index) => setTradeTarget({ kind: "leg", index })}
+    />
+  );
+}
+
+function PositionView({
+  position,
+  prices,
+  canTrade,
+  isCombo,
+  onTradeCombo,
+  onTradeLeg,
+}: {
+  position: PortfolioPosition;
+  prices: Record<string, PriceData>;
+  canTrade: boolean;
+  isCombo: boolean;
+  onTradeCombo: () => void;
+  onTradeLeg: (index: number) => void;
+}) {
   const isStock = position.structure_type === "Stock";
   const spreadPriceData = useMemo(
     () => (!isStock && position.legs.length > 1 ? resolveSpreadPriceData(position.ticker, position, prices) : null),
@@ -184,8 +286,23 @@ export default function PositionTab({ position, prices }: PositionTabProps) {
         )}
       </div>
 
+      {canTrade && (
+        <div className="position-trade-actions">
+          {isCombo ? (
+            <button type="button" className="position-trade-cta" onClick={onTradeCombo} data-testid="pos-trade-combo">
+              Close / Adjust Combo
+            </button>
+          ) : (
+            <button type="button" className="position-trade-cta" onClick={() => onTradeLeg(0)} data-testid="pos-trade-single">
+              {position.legs[0].direction === "LONG" ? "Sell to Close" : "Buy to Close"}
+            </button>
+          )}
+          {isCombo && <span className="position-trade-actions-hint">or trade a single leg below</span>}
+        </div>
+      )}
+
       {position.legs.length > 1 && (
-        <LegsDisclosure position={position} prices={prices} />
+        <LegsDisclosure position={position} prices={prices} onTradeLeg={onTradeLeg} />
       )}
     </div>
   );

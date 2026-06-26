@@ -56,6 +56,11 @@ LOGIN_URL = "https://menthorq.com/login/"
 DEFAULT_ARTIFACT_ROOT = Path(__file__).resolve().parent.parent.parent / "logs" / "menthorq_artifacts"
 DEFAULT_STORAGE_STATE_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "menthorq_cache" / "menthorq_storage_state.json"
 
+# Login-flow navigation timeout. WordPress sites pipe continuous analytics /
+# heartbeat traffic so "networkidle" waits are fragile by design — bump the
+# floor and lean on "domcontentloaded" / "load" instead. Override via env.
+MENTHORQ_NAV_TIMEOUT_MS = int(os.environ.get("MENTHORQ_NAV_TIMEOUT_MS", "90000"))
+
 # CTA card slugs (data-command-slug attributes)
 CTA_SLUGS = {
     "main": "cta_table",
@@ -290,7 +295,7 @@ class MenthorQClient:
             return False
 
         try:
-            self._page.goto(BASE_URL, wait_until="domcontentloaded", timeout=30000)
+            self._page.goto(BASE_URL, wait_until="domcontentloaded", timeout=MENTHORQ_NAV_TIMEOUT_MS)
             time.sleep(2)
         except Exception as exc:
             logger.warning(f"MenthorQ storage-state restore failed during navigation: {exc}")
@@ -314,7 +319,15 @@ class MenthorQClient:
         logger.info("MenthorQ session restored from saved storage state.")
         return True
 
-    def _persist_storage_state(self) -> None:
+    def persist_storage_state(self) -> None:
+        """Refresh disk-side cookies from the live BrowserContext.
+
+        Public so external callers can persist after every successful page
+        interaction. Without symmetric reads + writes, the on-disk
+        ``menthorq_storage_state.json`` decays while the in-memory cookies
+        keep working — a process restart then falls back onto the fragile
+        WordPress login flow.
+        """
         if not self._storage_state_path:
             return
         try:
@@ -323,12 +336,15 @@ class MenthorQClient:
         except Exception as exc:
             logger.warning(f"Failed to persist MenthorQ storage state: {exc}")
 
+    # Back-compat alias — internal callers still reach in via the underscore.
+    _persist_storage_state = persist_storage_state
+
     # ── login ──────────────────────────────────────────────────────
 
     def _login(self) -> None:
         """Authenticate to MenthorQ via WordPress login form."""
         logger.info("Navigating to MenthorQ login...")
-        self._page.goto(LOGIN_URL, wait_until="networkidle", timeout=30000)
+        self._page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=MENTHORQ_NAV_TIMEOUT_MS)
         time.sleep(2)
 
         # WordPress login form — try multiple selector patterns
@@ -391,7 +407,7 @@ class MenthorQClient:
                 f"context={self._login_failure_context()}"
             )
 
-        self._page.wait_for_load_state("networkidle", timeout=30000)
+        self._page.wait_for_load_state("load", timeout=MENTHORQ_NAV_TIMEOUT_MS)
         time.sleep(3)
 
         # Verify login succeeded
@@ -568,6 +584,7 @@ class MenthorQClient:
                 f"EOD scrape returned empty data for {ticker} on {date}. "
                 "Page may not have loaded or ticker may be invalid."
             )
+        self.persist_storage_state()
         return result
 
     # ── CTA ─────────────────────────────────────────────────────
@@ -634,6 +651,7 @@ class MenthorQClient:
                 f"Vision extraction returned no data for CTA tables on {date}."
             )
 
+        self.persist_storage_state()
         return tables
 
     # ── Screeners ──────────────────────────────────────────────
@@ -652,7 +670,9 @@ class MenthorQClient:
             "type": "screener",
             "commands": commands,
         })
-        return self._scrape_tables(self._page)
+        rows = self._scrape_tables(self._page)
+        self.persist_storage_state()
+        return rows
 
     def get_screener_category(
         self, category: str, slug: str
@@ -685,7 +705,9 @@ class MenthorQClient:
             "category": category,
             "slug": slug,
         })
-        return self._scrape_tables(self._page)
+        rows = self._scrape_tables(self._page)
+        self.persist_storage_state()
+        return rows
 
     def discover_screener_cards(
         self, category: str
@@ -757,7 +779,9 @@ class MenthorQClient:
             }
             return cards;
         }""")
-        return cards if isinstance(cards, list) else []
+        result = cards if isinstance(cards, list) else []
+        self.persist_storage_state()
+        return result
 
     def get_all_screener_data(
         self, category: str
@@ -799,6 +823,7 @@ class MenthorQClient:
             except Exception as exc:
                 logger.warning(f"Screener {category}/{slug} failed: {exc}")
                 results[slug] = []
+        self.persist_storage_state()
         return results
 
     # ── Summary ──────────────────────────────────────────────────
@@ -828,7 +853,9 @@ class MenthorQClient:
             "type": "summary",
             "category": category,
         })
-        return self._scrape_tables(self._page)
+        rows = self._scrape_tables(self._page)
+        self.persist_storage_state()
+        return rows
 
     # ── Forex Levels ─────────────────────────────────────────────
 
@@ -891,6 +918,7 @@ class MenthorQClient:
                 "Forex levels extraction returned no data for either card."
             )
 
+        self.persist_storage_state()
         return result
 
     # ══════════════════════════════════════════════════════════════
@@ -987,6 +1015,7 @@ class MenthorQClient:
         if images:
             png = next(iter(images.values()))
             logger.info(f"Dashboard S3 image: {command} ({len(png):,} bytes)")
+            self.persist_storage_state()
             return png
 
         # Fall back to viewport screenshot
@@ -1006,6 +1035,7 @@ class MenthorQClient:
             )
 
         logger.info(f"Dashboard image: {command} ({len(png):,} bytes)")
+        self.persist_storage_state()
         return png
 
     # ── Intraday ─────────────────────────────────────────────────
@@ -1021,7 +1051,9 @@ class MenthorQClient:
             "type": "dashboard",
             "commands": "intraday",
         })
-        return self._scrape_tables(self._page)
+        rows = self._scrape_tables(self._page)
+        self.persist_storage_state()
+        return rows
 
     # ── Futures ──────────────────────────────────────────────────
 
@@ -1036,7 +1068,9 @@ class MenthorQClient:
             "type": "futures",
             "commands": "list",
         })
-        return self._scrape_tables(self._page)
+        rows = self._scrape_tables(self._page)
+        self.persist_storage_state()
+        return rows
 
     def get_futures_detail(self, ticker: str) -> List[Dict[str, Any]]:
         """Fetch detail data for a specific futures instrument.
@@ -1053,7 +1087,9 @@ class MenthorQClient:
             "commands": "detail",
             "ticker": ticker,
         })
-        return self._scrape_tables(self._page)
+        rows = self._scrape_tables(self._page)
+        self.persist_storage_state()
+        return rows
 
     def get_futures_contracts(
         self, ticker: str, date: str
@@ -1074,7 +1110,9 @@ class MenthorQClient:
             "ticker": ticker,
             "date": date,
         })
-        return self._scrape_tables(self._page)
+        rows = self._scrape_tables(self._page)
+        self.persist_storage_state()
+        return rows
 
     # ── Forex ────────────────────────────────────────────────────
 
@@ -1089,7 +1127,9 @@ class MenthorQClient:
             "type": "forex",
             "commands": "list",
         })
-        return self._scrape_tables(self._page)
+        rows = self._scrape_tables(self._page)
+        self.persist_storage_state()
+        return rows
 
     def get_forex_detail(self, ticker: str) -> List[Dict[str, Any]]:
         """Fetch detail data for a specific forex pair.
@@ -1106,7 +1146,9 @@ class MenthorQClient:
             "commands": "detail",
             "ticker": ticker,
         })
-        return self._scrape_tables(self._page)
+        rows = self._scrape_tables(self._page)
+        self.persist_storage_state()
+        return rows
 
     # ── Crypto ───────────────────────────────────────────────────
 
@@ -1121,7 +1163,9 @@ class MenthorQClient:
             "type": "crypto",
             "commands": "list",
         })
-        return self._scrape_tables(self._page)
+        rows = self._scrape_tables(self._page)
+        self.persist_storage_state()
+        return rows
 
     def get_crypto_detail(self, ticker: str) -> List[Dict[str, Any]]:
         """Fetch detail data for a specific crypto asset.
@@ -1138,7 +1182,9 @@ class MenthorQClient:
             "commands": "detail",
             "ticker": ticker,
         })
-        return self._scrape_tables(self._page)
+        rows = self._scrape_tables(self._page)
+        self.persist_storage_state()
+        return rows
 
     # ══════════════════════════════════════════════════════════════
     # Low-Level Extraction Methods

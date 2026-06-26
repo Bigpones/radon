@@ -2,10 +2,12 @@
 """
 Fetch analyst ratings and rating changes for tickers.
 
-Data Source Priority:
+Data Source Priority (IB → UW only — Yahoo/yfinance removed 2026-06-01):
   1. Interactive Brokers (reqFundamentalData 'RESC') - Most reliable, requires subscription
   2. Unusual Whales (GET /api/screener/analysts) - Aggregated per-firm consensus, targets, history
-  3. Yahoo Finance - ⚠️ ABSOLUTE LAST RESORT (rate limited, unreliable, delayed)
+
+When neither yields ratings, serve the last-known cached consensus, else a
+clean "unavailable" state — never the old developer-facing yfinance error.
 
 API Reference: docs/unusual_whales_api.md for UW endpoint details
 Full Spec: docs/unusual_whales_api_spec.yaml
@@ -17,7 +19,6 @@ Usage:
     python3 scripts/fetch_analyst_ratings.py --all
     python3 scripts/fetch_analyst_ratings.py --changes-only  # Only show recent changes
     python3 scripts/fetch_analyst_ratings.py --source uw     # Force Unusual Whales
-    python3 scripts/fetch_analyst_ratings.py --source yahoo  # LAST RESORT ONLY
 """
 
 import json
@@ -30,7 +31,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 import argparse
 
-# Rate limiting for Yahoo Finance (ABSOLUTE LAST RESORT)
+# Pacing between non-IB (UW) fetches to avoid bursting toward the UW daily limit
 REQUEST_DELAY = 1.5  # seconds between requests
 MAX_RETRIES = 2
 RETRY_DELAY = 3  # seconds between retries
@@ -45,6 +46,15 @@ from clients.ib_client import (
 from clients.uw_client import UWClient
 
 IB_CLIENT_ID = CLIENT_IDS["fetch_analyst_ratings"]
+
+# Load .env so TURSO_DB_URL resolves for the dual-write to analyst_ratings.
+_PROJECT_DIR = Path(__file__).resolve().parent.parent
+try:
+    from dotenv import load_dotenv  # type: ignore[import-untyped]
+    load_dotenv(_PROJECT_DIR / ".env")
+    load_dotenv(_PROJECT_DIR / "web" / ".env")
+except Exception:
+    pass
 
 # File paths
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -97,12 +107,25 @@ def get_portfolio_tickers() -> list:
     return sorted(list(tickers))
 
 
-def get_cached_rating(ticker: str) -> Optional[dict]:
-    """Get cached rating if still fresh."""
+def get_cached_rating(ticker: str, allow_stale: bool = False) -> Optional[dict]:
+    """Get cached rating. Fresh within CACHE_TTL_HOURS.
+
+    With allow_stale=True, return the last cached rating that has real ratings
+    regardless of age — a graceful fallback when IB + UW are both unavailable
+    (e.g. a UW daily rate-limit window) so the panel shows the last-known
+    consensus instead of a blank/error.
+    """
     cache = load_json(RATINGS_CACHE_FILE)
     cached = cache.get("ratings", {}).get(ticker.upper())
-    
-    if cached and cached.get("fetched_at"):
+    if not cached:
+        return None
+
+    if allow_stale and cached.get("ratings") and not cached.get("error"):
+        cached["from_cache"] = True
+        cached["stale"] = True
+        return cached
+
+    if cached.get("fetched_at"):
         try:
             fetched = datetime.fromisoformat(cached["fetched_at"])
             if datetime.now() - fetched < timedelta(hours=CACHE_TTL_HOURS):
@@ -271,7 +294,9 @@ def fetch_from_uw(ticker: str) -> Optional[dict]:
             data = uw._get("screener/analysts", params={"ticker": ticker.upper(), "limit": 100})
             entries = data.get("data", [])
     except Exception as e:
-        return None
+        # Surface the reason (e.g. UW daily rate-limit) so the caller can show a
+        # helpful unavailable message instead of swallowing it to a bare None.
+        return {"ticker": ticker.upper(), "source": "uw", "ratings": None, "error": str(e)}
 
     if not entries:
         return None
@@ -398,197 +423,69 @@ def fetch_from_uw(ticker: str) -> Optional[dict]:
 
 
 # =============================================================================
-# Yahoo Finance Data Source (ABSOLUTE LAST RESORT)
-# =============================================================================
-
-def fetch_from_yahoo(ticker: str) -> dict:
-    """
-    ABSOLUTE LAST RESORT: Fetch analyst ratings from Yahoo Finance.
-    Only called if BOTH IB and UW fail. Rate limited and unreliable.
-    """
-    try:
-        import yfinance as yf
-    except ImportError:
-        return {
-            "ticker": ticker.upper(),
-            "fetched_at": datetime.now().isoformat(),
-            "source": "yahoo",
-            "error": "yfinance not installed. Run: pip install yfinance"
-        }
-    
-    result = {
-        "ticker": ticker.upper(),
-        "fetched_at": datetime.now().isoformat(),
-        "source": "yahoo",
-        "ratings": None,
-        "recommendation": None,
-        "target_price": None,
-        "recent_changes": [],
-        "error": None,
-        "from_cache": False
-    }
-    
-    for attempt in range(MAX_RETRIES):
-        try:
-            stock = yf.Ticker(ticker)
-            info = stock.info
-            
-            # Check for rate limit response
-            if not info or len(info) < 5:
-                if attempt < MAX_RETRIES - 1:
-                    time.sleep(RETRY_DELAY * (attempt + 1))
-                    continue
-                result["error"] = "Yahoo Finance rate limited or no data"
-                return result
-            
-            break  # Success
-        except Exception as e:
-            if "rate" in str(e).lower() or "429" in str(e):
-                if attempt < MAX_RETRIES - 1:
-                    time.sleep(RETRY_DELAY * (attempt + 1))
-                    continue
-            result["error"] = str(e)
-            return result
-    
-    try:
-        # Get recommendation data
-        result["recommendation"] = info.get("recommendationKey", "N/A")
-        result["recommendation_mean"] = info.get("recommendationMean")
-        result["analyst_count"] = info.get("numberOfAnalystOpinions", 0)
-        
-        # Target prices
-        result["target_price"] = {
-            "current": info.get("currentPrice"),
-            "mean": info.get("targetMeanPrice"),
-            "high": info.get("targetHighPrice"),
-            "low": info.get("targetLowPrice"),
-            "median": info.get("targetMedianPrice")
-        }
-        
-        # Calculate upside/downside
-        current = info.get("currentPrice")
-        target_mean = info.get("targetMeanPrice")
-        if current and target_mean:
-            result["target_upside_pct"] = round(((target_mean - current) / current) * 100, 1)
-        
-        # Get recommendations breakdown
-        try:
-            recs = stock.recommendations
-            if recs is not None and not recs.empty:
-                recent = recs.tail(1).iloc[0].to_dict() if len(recs) > 0 else {}
-                
-                result["ratings"] = {
-                    "strong_buy": int(recent.get("strongBuy", 0)),
-                    "buy": int(recent.get("buy", 0)),
-                    "hold": int(recent.get("hold", 0)),
-                    "sell": int(recent.get("sell", 0)),
-                    "strong_sell": int(recent.get("strongSell", 0))
-                }
-                
-                total = sum(result["ratings"].values())
-                if total > 0:
-                    result["ratings"]["total"] = total
-                    result["ratings"]["buy_pct"] = round(
-                        (result["ratings"]["strong_buy"] + result["ratings"]["buy"]) / total * 100, 1
-                    )
-                    result["ratings"]["sell_pct"] = round(
-                        (result["ratings"]["sell"] + result["ratings"]["strong_sell"]) / total * 100, 1
-                    )
-                
-                # Detect changes
-                if len(recs) >= 2:
-                    prev = recs.iloc[-2].to_dict()
-                    curr = recs.iloc[-1].to_dict()
-                    
-                    changes = []
-                    for field in ["strongBuy", "buy", "hold", "sell", "strongSell"]:
-                        prev_val = int(prev.get(field, 0))
-                        curr_val = int(curr.get(field, 0))
-                        if prev_val != curr_val:
-                            changes.append({
-                                "category": field,
-                                "previous": prev_val,
-                                "current": curr_val,
-                                "change": curr_val - prev_val
-                            })
-                    
-                    if changes:
-                        result["recent_changes"] = changes
-                        result["has_recent_changes"] = True
-                    else:
-                        result["has_recent_changes"] = False
-                        
-        except Exception as e:
-            result["recommendations_error"] = str(e)
-        
-        # Get upgrade/downgrade history
-        try:
-            upgrades = stock.upgrades_downgrades
-            if upgrades is not None and not upgrades.empty:
-                recent_upgrades = []
-                
-                for idx, row in upgrades.tail(10).iterrows():
-                    try:
-                        if hasattr(idx, 'to_pydatetime'):
-                            date = idx.to_pydatetime()
-                        else:
-                            date = datetime.now()
-                        
-                        recent_upgrades.append({
-                            "date": date.strftime("%Y-%m-%d") if hasattr(date, 'strftime') else str(idx),
-                            "firm": row.get("Firm", "Unknown"),
-                            "to_grade": row.get("ToGrade", ""),
-                            "from_grade": row.get("FromGrade", ""),
-                            "action": row.get("Action", "")
-                        })
-                    except Exception:
-                        continue
-                
-                result["upgrade_downgrade_history"] = list(reversed(recent_upgrades))
-                if recent_upgrades:
-                    result["has_recent_changes"] = True
-        except Exception as e:
-            result["upgrades_error"] = str(e)
-            
-    except Exception as e:
-        result["error"] = str(e)
-    
-    return result
-
-
-# =============================================================================
 # Main Fetch Function with Priority
 # =============================================================================
 
 def fetch_analyst_ratings(ticker: str, use_cache: bool = True, force_source: str = None, client=None) -> dict:
     """
-    Fetch analyst ratings with data source priority:
+    Fetch analyst ratings with data source priority (IB → UW only — no Yahoo):
     1. Interactive Brokers (if connected, requires Reuters subscription)
     2. Unusual Whales (/api/screener/analysts)
-    3. Yahoo Finance (ABSOLUTE LAST RESORT — only if IB AND UW both fail)
+
+    When neither source yields ratings (IB unsubscribed AND UW rate-limited /
+    down), fall back to the last-known cached consensus if present, else return
+    a clean unavailable state — never a developer-facing error.
     """
     ticker = ticker.upper()
 
-    # Check cache first
+    # Check cache first (fresh within TTL)
     if use_cache and not force_source:
         cached = get_cached_rating(ticker)
         if cached and not cached.get("error"):
             return cached
 
-    # Priority 1: IB (unless forced to another source)
-    if force_source not in ("yahoo", "uw") and client is not None:
+    last_error = None
+
+    # Priority 1: IB (unless forced to UW)
+    if force_source != "uw" and client is not None:
         result = fetch_from_ib(client, ticker)
         if result and not result.get("error"):
             return result
+        if result and result.get("error"):
+            last_error = result.get("error")
 
     # Priority 2: Unusual Whales
-    if force_source != "yahoo":
-        result = fetch_from_uw(ticker)
-        if result and not result.get("error") and result.get("ratings"):
-            return result
+    result = fetch_from_uw(ticker)
+    if result and not result.get("error") and result.get("ratings"):
+        return result
+    if result and result.get("error"):
+        last_error = result.get("error")
 
-    # Priority 3: Yahoo Finance (ABSOLUTE LAST RESORT — only if IB AND UW both failed)
-    return fetch_from_yahoo(ticker)
+    # No Yahoo/yfinance fallback (per data-source policy: IB → UW only). Serve the
+    # last-known cached consensus if we have one, else a clean unavailable state.
+    if use_cache:
+        stale = get_cached_rating(ticker, allow_stale=True)
+        if stale:
+            return stale
+
+    return {
+        "ticker": ticker,
+        "fetched_at": datetime.now().isoformat(),
+        "source": "none",
+        "ratings": None,
+        "recommendation": None,
+        "target_price": None,
+        "recent_changes": [],
+        "error": _unavailable_message(last_error),
+    }
+
+
+def _unavailable_message(last_error: Optional[str]) -> str:
+    """Operator-/user-readable reason ratings are unavailable from IB + UW."""
+    low = (last_error or "").lower()
+    if any(token in low for token in ("rate limit", "request limit", "daily request", "429")):
+        return "Analyst ratings unavailable: Unusual Whales daily request limit reached (resets after the close)."
+    return "Analyst ratings unavailable from IB / Unusual Whales right now."
 
 
 # =============================================================================
@@ -766,7 +663,7 @@ def format_ratings_table(results: list, changes_only: bool = False) -> str:
                     lines.append(f"  {h['date']} {h['firm'][:20]:<20} {arrow} {h.get('from_grade', 'N/A')} → {h.get('to_grade', 'N/A')}")
     
     lines.append("\n" + "="*95)
-    lines.append("Sources: IB = Interactive Brokers, uw = Unusual Whales, yaho = Yahoo Finance, © = cached")
+    lines.append("Sources: IB = Interactive Brokers, uw = Unusual Whales, © = cached")
     
     return "\n".join(lines)
 
@@ -804,7 +701,7 @@ def main():
     parser.add_argument("--update-watchlist", action="store_true", help="Update watchlist.json with ratings")
     parser.add_argument("--json", action="store_true", help="Output raw JSON")
     parser.add_argument("--no-cache", action="store_true", help="Bypass cache and fetch fresh data")
-    parser.add_argument("--source", choices=["ib", "uw", "yahoo"], help="Force specific data source")
+    parser.add_argument("--source", choices=["ib", "uw"], help="Force specific data source (IB or UW)")
     parser.add_argument("--port", type=int, default=IB_PORT, help=f"IB Gateway/TWS port (default: {IB_PORT})")
     
     args = parser.parse_args()
@@ -830,17 +727,15 @@ def main():
     ib_connected = False
     ib_port = args.port
 
-    if args.source not in ("yahoo", "uw"):
+    if args.source != "uw":
         print(f"Attempting IB connection on port {ib_port}...", file=sys.stderr, end=" ")
         client, ib_connected = connect_ib(port=ib_port)
         if ib_connected:
             print("Connected ✓", file=sys.stderr)
         else:
-            print("Not available, falling back to UW → Yahoo", file=sys.stderr)
-    elif args.source == "uw":
-        print("Using Unusual Whales (forced)", file=sys.stderr)
+            print("Not available, falling back to UW", file=sys.stderr)
     else:
-        print("Using Yahoo Finance (forced)", file=sys.stderr)
+        print("Using Unusual Whales (forced)", file=sys.stderr)
 
     # Fetch ratings
     results = []
@@ -864,7 +759,8 @@ def main():
         cached = " (cached)" if data.get("from_cache") else ""
         print(f"{source}{cached}", file=sys.stderr)
 
-        # Rate limiting for Yahoo
+        # Gentle pacing between UW calls when not on IB (avoid bursts toward the
+        # UW daily request limit).
         if not ib_connected and i < len(tickers) - 1:
             time.sleep(REQUEST_DELAY)
 
@@ -895,6 +791,22 @@ def main():
         if not data.get("error"):
             cache["ratings"][ticker] = data
     save_json(RATINGS_CACHE_FILE, cache)
+
+    # Phase 3 dual-write — best-effort. service_cycle (DUR-14) heartbeats
+    # ok on clean exit and error (+ retry embargo) on failure, re-raising
+    # into the non-fatal except below.
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from db.service_cycle import service_cycle
+        from db.writer import upsert_analyst_ratings
+        fetched_at = cache["last_updated"]
+        with service_cycle("analyst-ratings", market_hours_class="on-demand") as cycle:
+            cycle.finished_at = fetched_at
+            for ticker, data in ratings_dict.items():
+                if not data.get("error"):
+                    upsert_analyst_ratings(ticker, fetched_at, data)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  Warning: analyst_ratings db dual-write failed: {exc}", file=sys.stderr)
 
 
 if __name__ == "__main__":

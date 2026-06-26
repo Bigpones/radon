@@ -68,7 +68,7 @@ The following path was validated successfully:
 
 - Tailscale connected on both the Mac and iPhone
 - iPhone SSH client: Termius
-- SSH target: `macbook-pro.tail8bfbd8.ts.net` and `100.98.36.17`
+- SSH target: `macbook-pro.your-tailnet.ts.net` and `100.64.0.2`
 - SSH auth mode: password-based macOS login
 - Secure IBC command executed successfully from the phone after login
 - The secure `local.ibc-gateway` service remained the canonical command surface throughout
@@ -127,7 +127,7 @@ ssh joemccann@macbook-pro 'cd /Users/joemccann/dev/apps/finance/convex-scavenger
 Current Tailscale IP fallback:
 
 ```bash
-ssh joemccann@100.98.36.17 '~/ibc/bin/status-secure-ibc-service.sh'
+ssh joemccann@100.64.0.2 '~/ibc/bin/status-secure-ibc-service.sh'
 ```
 
 ## Optional next hardening step

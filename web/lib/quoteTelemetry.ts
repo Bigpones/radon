@@ -24,6 +24,21 @@ export type QuoteTelemetryField = {
 
 export type QuoteTelemetryModel = Record<QuoteTelemetryFieldKey, QuoteTelemetryField>;
 
+/**
+ * After-hours fallback for the UNDERLYING stock, sourced from the Unusual
+ * Whales stock-state (which is available when the live WS feed is dark). Only
+ * ever applied to an underlying quote box — never to an option/spread quote,
+ * since these are the stock's own OHLV.
+ */
+export type QuoteFallback = {
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  volume: number | null;
+  prevClose: number | null;
+};
+
 function roundQuoteValue(n: number): number {
   return Math.round(n * 100) / 100;
 }
@@ -59,20 +74,86 @@ function formatMetricValue(value: number | null): string {
   return value != null ? fmtPrice(value) : "---";
 }
 
+function formatVolume(value: number | null): string {
+  return value != null ? value.toLocaleString("en-US") : "---";
+}
+
 function lastFieldLabel(priceData: PriceData): string {
   return priceData.lastIsCalculated ? "MARK" : "LAST";
 }
 
+function dayChangeField(change: number | null): QuoteTelemetryField {
+  return {
+    label: "DAY",
+    value: change != null ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}%` : "---",
+    tone: change == null ? null : change >= 0 ? "positive" : "negative",
+    trend: change == null ? null : change > 0 ? "up" : change < 0 ? "down" : null,
+  };
+}
+
+function pctChange(value: number | null, base: number | null): number | null {
+  return value != null && value > 0 && base != null && base > 0
+    ? ((value - base) / base) * 100
+    : null;
+}
+
+/**
+ * Market-closed model built purely from the UW stock-state fallback. There is
+ * no live book after hours, so BID/MID/ASK/SPREAD stay "---"; LAST is the prior
+ * session close (labelled CLOSE so it never masquerades as a live trade), and
+ * HIGH/LOW/VOLUME/DAY come from the last completed session.
+ */
+function closedMarketModel(fallback: QuoteFallback): QuoteTelemetryModel {
+  return {
+    bid: { label: "BID", value: "---", tone: null, trend: null },
+    mid: { label: "MID", value: "---", tone: null, trend: null },
+    ask: { label: "ASK", value: "---", tone: null, trend: null },
+    spread: { label: "SPREAD", value: "---", tone: null, trend: null },
+    last: { label: "CLOSE", value: formatMetricValue(fallback.close), tone: null, trend: null },
+    volume: { label: "VOLUME", value: formatVolume(fallback.volume), tone: null, trend: null },
+    high: { label: "HIGH", value: formatMetricValue(fallback.high), tone: null, trend: null },
+    low: { label: "LOW", value: formatMetricValue(fallback.low), tone: null, trend: null },
+    day: dayChangeField(pctChange(fallback.close, fallback.prevClose)),
+  };
+}
+
+/** A live quote needs at least one of last/bid/ask. The relay sometimes emits a
+ * hollow tick (object present, every quote field null, volume 0) when the market
+ * is closed — that must be treated as "no live quote", not as live data. */
+function hasLiveQuote(priceData: PriceData): boolean {
+  return priceData.last != null || priceData.bid != null || priceData.ask != null;
+}
+
 export function buildQuoteTelemetryModel(
   priceData: PriceData | null,
+  fallback: QuoteFallback | null = null,
 ): QuoteTelemetryModel | null {
-  if (!priceData) return null;
+  if (!priceData) {
+    return fallback ? closedMarketModel(fallback) : null;
+  }
+
+  // Hollow tick + a fallback → render the prior session, enriched by any
+  // non-null session fields the relay did manage to send.
+  if (!hasLiveQuote(priceData) && fallback) {
+    return closedMarketModel({
+      open: priceData.open ?? fallback.open,
+      high: priceData.high ?? fallback.high,
+      low: priceData.low ?? fallback.low,
+      close: fallback.close,
+      volume: priceData.volume != null && priceData.volume > 0 ? priceData.volume : fallback.volume,
+      prevClose: fallback.prevClose,
+    });
+  }
 
   const { bid, mid, ask } = getQuoteMetrics(priceData);
-  const { last, volume, close, high, low } = priceData;
-  const dayChange = last != null && last > 0 && close != null && close > 0
-    ? ((last - close) / close) * 100
-    : null;
+  const { last } = priceData;
+  // Backfill session OHLV/volume from the stock-state fallback when the live
+  // stream hasn't delivered them (common right after open or for thin names).
+  const volume = priceData.volume ?? fallback?.volume ?? null;
+  const high = priceData.high ?? fallback?.high ?? null;
+  const low = priceData.low ?? fallback?.low ?? null;
+  const close = priceData.close ?? fallback?.prevClose ?? null;
+  const dayChange = pctChange(last, close);
   const spreadLabel = formatSpreadTelemetry(priceData);
 
   return {
@@ -81,19 +162,9 @@ export function buildQuoteTelemetryModel(
     ask: { label: "ASK", value: formatMetricValue(ask), tone: null, trend: null },
     spread: { label: "SPREAD", value: spreadLabel, tone: null, trend: null },
     last: { label: lastFieldLabel(priceData), value: formatMetricValue(last), tone: null, trend: null },
-    volume: {
-      label: "VOLUME",
-      value: volume != null ? volume.toLocaleString("en-US") : "---",
-      tone: null,
-      trend: null,
-    },
+    volume: { label: "VOLUME", value: formatVolume(volume), tone: null, trend: null },
     high: { label: "HIGH", value: formatMetricValue(high), tone: null, trend: null },
     low: { label: "LOW", value: formatMetricValue(low), tone: null, trend: null },
-    day: {
-      label: "DAY",
-      value: dayChange != null ? `${dayChange >= 0 ? "+" : ""}${dayChange.toFixed(2)}%` : "---",
-      tone: dayChange == null ? null : dayChange >= 0 ? "positive" : "negative",
-      trend: dayChange == null ? null : dayChange > 0 ? "up" : dayChange < 0 ? "down" : null,
-    },
+    day: dayChangeField(dayChange),
   };
 }

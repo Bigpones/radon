@@ -13,16 +13,17 @@ import { dirname, resolve } from "node:path";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 dotenv.config({ path: resolve(__dirname, "../.env") });
+// .env.ib-mode (managed by scripts/ib mode) overlays after .env so its
+// IB_GATEWAY_MODE/HOST values win — single switch, no .env rewriting.
+dotenv.config({ path: resolve(__dirname, "../.env.ib-mode"), override: true });
 
 import process from "node:process";
 import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
 import net from "node:net";
-import { execSync } from "node:child_process";
-import { homedir } from "node:os";
 import { WebSocketServer } from "ws";
-import IB from "ib";
+import { IBApi, EventName, SecType, OptionType, TickByTickDataType } from "@stoqey/ib";
 import { classifyIBConnectionError } from "./ib_connection_status.js";
 import {
   createPriceData,
@@ -33,6 +34,13 @@ import {
 } from "./ib_tick_handler.js";
 import { LRUCache } from "./lib/lru-cache.js";
 import { RateLimiter } from "./lib/rate-limiter.js";
+import {
+  decideStaleAction,
+  isFarmStateCode,
+  shouldWriteTickHeartbeat,
+  STALE_DATA_THRESHOLD_MS,
+  STALE_CHECK_INTERVAL_MS,
+} from "./lib/staleDataMachine.js";
 
 const DEFAULT_WS_PORT = 8765;
 const DEFAULT_IB_HOST = process.env.IB_GATEWAY_HOST || "127.0.0.1";
@@ -177,11 +185,42 @@ let activeClientIdIndex = 0;
 let ib = createIBClient(IB_CLIENT_ID_POOL[0]);
 
 function createIBClient(clientId) {
-  return new IB({
+  return new IBApi({
     host: cli.ibHost,
     port: cli.ibPort,
     clientId,
   });
+}
+
+/* ─── Contract builders ────────────────────────────────────────────────────
+ * @stoqey/ib has no ib.contract.* factory helpers — contracts are plain
+ * objects. These mirror the field shapes the old `ib` lib produced
+ * (expiry → lastTradeDateOrContractMonth; right → OptionType), so every
+ * downstream consumer (ensureSymbolState, optionKey, etc.) is unaffected.
+ */
+function stockContract(symbol, exchange = "SMART", currency = "USD") {
+  return { symbol, secType: SecType.STK, exchange, currency };
+}
+
+function optionContract(symbol, expiry, strike, right, exchange = "SMART", currency = "USD") {
+  return {
+    symbol,
+    secType: SecType.OPT,
+    exchange,
+    currency,
+    lastTradeDateOrContractMonth: expiry,
+    strike,
+    right: right === "C" ? OptionType.Call : OptionType.Put,
+    multiplier: "100",
+  };
+}
+
+function indexContract(symbol, currency = "USD", exchange = "CBOE") {
+  return { symbol, secType: SecType.IND, exchange, currency };
+}
+
+function futureContract(symbol, expiry, currency = "USD", exchange = "ONE") {
+  return { symbol, secType: SecType.FUT, currency, exchange, lastTradeDateOrContractMonth: expiry };
 }
 
 async function isPortAvailable(host, port) {
@@ -278,6 +317,113 @@ const requestIdToSymbol = new Map();
 const snapshotRequests = new Map();
 const fundamentalsStore = new LRUCache(500); // symbol → FundamentalsData (LRU-capped)
 
+/* ─── L2 Depth Channel (flag-gated) ────────────────────────────────────────
+ * Entire feature is gated on RADON_DEPTH_ENABLED. When falsy, NO depth
+ * handlers are registered, NO reqMktDepth tickets are opened, and the relay
+ * behaves byte-for-byte as before. Default OFF.
+ *
+ * Depth budget: IB allows ~3 concurrent reqMktDepth tickets on a baseline
+ * account, so we cap concurrency and LRU-recycle the oldest non-focused
+ * ladder before opening a new one.
+ *
+ * NOTE on the @stoqey/ib surface: reqMktDepth(reqId, contract, numRows,
+ * isSmartDepth) and cancelMktDepth(reqId, isSmartDepth) BOTH carry the
+ * smart-depth flag — true for equity/option (SMART aggregation), false for
+ * futures (single-venue native depth). The DepthBook also emits isSmartDepth
+ * (= !isFutures) to match the web type. updateMktDepth emits
+ * (id, position, operation, side, price, size) with NO marketMaker (futures /
+ * single-venue); updateMktDepthL2 emits
+ * (id, position, marketMaker, operation, side, price, size, isSmartDepth)
+ * (equity/SMART) — the trailing isSmartDepth arg is @stoqey-specific.
+ *
+ * REALTIME: the main connection now requests realtime market data (type 1)
+ * unconditionally at the ib "connected" handler (operator decision 2026-06-14)
+ * — delayed-frozen (type 4) made the header futures strip and every watchlist
+ * quote lag the market by ~15 min. Off-hours, IB holds the last live values so
+ * closed-market reads still return last-known prices. A dedicated realtime
+ * client per channel is no longer needed for correctness; depth simply shares
+ * the already-realtime connection.
+ */
+const DEPTH_ENABLED = Boolean(process.env.RADON_DEPTH_ENABLED && process.env.RADON_DEPTH_ENABLED !== "0" && process.env.RADON_DEPTH_ENABLED !== "false");
+const MAX_CONCURRENT_DEPTH = 3;
+const DEPTH_NUM_ROWS_EQUITY = 10;
+const DEPTH_NUM_ROWS_FUTURES = 10;
+// Symbols treated as futures for depth purposes (single-venue native depth).
+// NOTE: VIX futures use IB contract symbol "VIX" (exchange CFE), NOT the CBOE
+// product code "VX" — Future(symbol:"VX") returns IB Error 200 (no security definition).
+const DEPTH_FUTURES_SYMBOLS = new Set(["ES", "NQ", "RTY", "YM", "CL", "NG", "GC", "SI", "HG", "ZB", "ZN", "ZC", "ZS", "VIX"]);
+// Futures root → native exchange. Front-month depth requires a qualified
+// contract (conId), which we resolve via reqContractDetails on this exchange.
+const FUTURES_ROOT_EXCHANGES = {
+  ES: "CME", NQ: "CME", RTY: "CME", YM: "CME",
+  CL: "NYMEX", NG: "NYMEX",
+  GC: "COMEX", SI: "COMEX", HG: "COMEX",
+  ZB: "CBOT", ZN: "CBOT", ZC: "CBOT", ZS: "CBOT",
+  VIX: "CFE",
+};
+function futuresExchangeForRoot(root) {
+  return FUTURES_ROOT_EXCHANGES[root] || "CME";
+}
+// Cash indices whose tradeable depth lives on a CME E-mini future. The Book tab
+// subscribes depth under the INDEX symbol (key stays e.g. "SPX") but the relay
+// resolves the front-month FUTURE (ES) for reqMktDepth. VIX is NOT here — its
+// IB future symbol IS "VIX", so it lives directly in DEPTH_FUTURES_SYMBOLS.
+const INDEX_FUTURE_ROOT = { SPX: "ES", NDX: "NQ", RUT: "RTY" };
+
+// Indices whose OPTIONS are priced off the front-month future (the forward),
+// not the cash spot — Black-Scholes must use the future as the underlying.
+// When such an index L1 is subscribed, the relay also opens an L1 on the
+// front-month future and copies its last/mid into prices[index].fwd so the
+// client prices options off the tradeable forward, not the after-hours-frozen
+// cash index. VIX only (VIX options settle into the VIX future).
+const FORWARD_PRICED_INDICES = new Set(["VIX"]);
+const FORWARD_KEY_PREFIX = "@fwd:"; // internal symbol-state key; never client-facing
+const forwardKeyToIndex = new Map(); // "@fwd:VIX" or "@fwd:VIX:20260618" -> "VIX"
+// Curve forward keys ("@fwd:VIX:<futExpiry>") -> Set of OPTION expiries (YYYYMMDD)
+// to publish that future's price under in prices[index].fwdCurve. The relay owns
+// the option->future matching so the client does a plain fwdCurve[legExpiry].
+const fwdKeyToCurveExpiries = new Map();
+const FUTURES_RESOLVE_TIMEOUT_MS = 6000;
+// key → { depthTickerId, contract, kind, isFutures, ladders:{bid:Map,ask:Map}, focusedAt }
+const symbolDepthStates = new Map();
+const depthRequestIdToSymbol = new Map(); // depthTickerId → key
+// Per-client depth buffer: Map<client, Map<symbol, DepthBook>>
+const clientDepthBuffers = new Map();
+const depthSubscribers = new Map(); // key → Set<client>
+// Resolved front-month futures contracts, cached per root so we don't
+// re-resolve on every subscribe. root → qualified Contract (with conId).
+const resolvedFuturesContracts = new Map();
+// Full non-expired futures chain per root (nearest-expiry first), for the
+// per-expiry forward curve. root → Contract[].
+const resolvedFuturesChain = new Map();
+// In-flight reqContractDetails resolutions: reqId → { root, resolve, timer, candidates }
+const futuresResolveRequests = new Map();
+
+/* ─── Time & Sales tape (flag-gated, rides the focused depth symbol) ─────────
+ * On subscribe-depth we also open a reqTickByTickData(AllLast) stream for the
+ * same contract; on unsubscribe-depth we cancel it. Trades land in a bounded
+ * per-symbol ring buffer and broadcast as {type:"tape-batch"} on the same
+ * 100ms flush as depth. tick-by-tick shares the depth line allowance, so the
+ * existing focused-symbol-only model + 3-ticket cap keep us inside budget.
+ *
+ * @stoqey/ib surface (verified against dist/api/api.d.ts):
+ *   reqTickByTickData(reqId, contract, tickType, numberOfTicks, ignoreSize)
+ *   cancelTickByTickData(reqId)
+ *   EventName.tickByTickAllLast: (reqId, tickType, time, price, size,
+ *     tickAttribLast, exchange, specialConditions)
+ * AllLast is realtime-only (no historical backfill) — start empty, fill forward.
+ *
+ * ORDERING CONVENTION: the ring buffer (and the emitted Trade[]) is
+ * NEWEST-LAST — index 0 is the oldest retained print, the final element is the
+ * most recent. classifyTicks consumes an ordered array (prior-tick test) and
+ * reads forward, so chronological/newest-last matches the prior-tick semantics.
+ */
+const TAPE_RING_SIZE = 50;
+const tapeRequestIdToSymbol = new Map(); // tapeTickerId → key
+// key → { tapeTickerId, trades: Trade[] (newest-last, bounded TAPE_RING_SIZE) }
+const symbolTapeStates = new Map();
+const clientTapeBuffers = new Map(); // client → Map<symbol, Trade[]>
+
 /* ─── Symbol Search Cache ─────────────────────────────────────────────── */
 const SEARCH_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
 const SEARCH_CACHE_MAX = 200;
@@ -371,13 +517,35 @@ let ibConnectionIssue = null;
  * IB Gateway can enter a state where the TCP connection is alive but the
  * data plane stops delivering ticks. Detect this by tracking the last tick
  * timestamp: if we have active subscriptions during market hours but haven't
- * received a tick in STALE_DATA_THRESHOLD_MS, restart IB Gateway.
+ * received a tick in STALE_DATA_THRESHOLD_MS, run the bounded recovery ladder.
+ *
+ * STALE_DATA_THRESHOLD_MS / STALE_CHECK_INTERVAL_MS / the K-cycle ladder +
+ * escalation cooldown all live in lib/staleDataMachine.js — the decision is
+ * pure; this layer wires the real IB socket, timer, and service_health write.
  */
-const STALE_DATA_THRESHOLD_MS = 45_000; // 45s without a tick during market hours
-const STALE_CHECK_INTERVAL_MS = 30_000; // Check every 30s
 let lastTickTimestamp = Date.now();
 let staleCheckTimer = null;
 let ibGatewayRestarting = false;
+// Consecutive reconnect cycles this stale episode (reset when ticks resume).
+let staleReconnectCycles = 0;
+// Last IB market-data farm info code seen (2103/2104/2105/2106/2108/2158).
+let lastFarmStateCode = null;
+// Epoch ms of the last escalation alert — rate-limits the escalate action.
+let lastEscalationAt = null;
+// True once we've written the relay's service_health row to "error" so we
+// only clear it (and reset counters) on the recovery edge.
+let relayHealthInError = false;
+// False until this process has written its first "ok" row. The in-memory
+// error flag does NOT survive a restart, so a prior process that escalated
+// (then got deploy-restarted before recovering) leaves a stale "error" row
+// that recovery-from-error alone would never clear. We write "ok" once on the
+// first healthy tick of each process. See feedback_service_health_heartbeat.
+let relayHealthInitialized = false;
+// Epoch ms of the last RTH tick heartbeat (DUR-16). 0 so the first healthy
+// RTH stale-check cycle of each process writes immediately.
+let lastTickHeartbeatAt = 0;
+
+const RELAY_HEALTH_SERVICE = "ib-realtime-relay";
 
 function isUSMarketHours() {
   // Convert to ET and check if within 9:30-16:00 Mon-Fri
@@ -394,31 +562,89 @@ function isUSMarketHours() {
 
 const GATEWAY_MODE = process.env.IB_GATEWAY_MODE || "docker";
 
-async function restartIBGateway() {
+/* Best-effort relay health write. The relay must never stall ticks on a DB
+ * hiccup, so the writer import + call are dynamic + try/catch'd. The writer
+ * is direct-to-cloud by default (embedded replica is opt-in only). */
+async function writeRelayHealth(state, error) {
+  try {
+    const { recordServiceHealth } = await import("./db/writer.js");
+    await recordServiceHealth(RELAY_HEALTH_SERVICE, state, error ? { error } : {});
+  } catch (err) {
+    console.warn(`\x1b[33m[stale-data] relay health write failed: ${String(err?.message ?? err)}\x1b[0m`);
+  }
+}
+
+// Re-issue reqMktData for every desired symbol without bouncing the socket.
+// Used when a farm-OK signal says the connection is healthy but ticks lapsed.
+function resubscribeAll() {
+  console.log("[stale-data] farm connection OK — resubscribing market data without socket bounce");
+  // Consume the farm-OK hint. If this resubscribe doesn't restore ticks, the
+  // next stale cycle sees farmState=null and falls through to the bounded
+  // reconnect ladder → escalate, rather than resubscribing forever in silence.
+  lastFarmStateCode = null;
+  cleanupSymbolStateForReconnect();
+  if (DEPTH_ENABLED) cleanupDepthForReconnect();
+  restoreSubscriptions();
+  if (DEPTH_ENABLED) restoreDepthSubscriptions();
+}
+
+// Bounce the IB socket; the connected handler restores fresh subscriptions.
+function reconnectIBSocket() {
+  staleReconnectCycles += 1;
+  if (GATEWAY_MODE === "cloud" || GATEWAY_MODE === "docker") {
+    console.log(`[stale-data] ${GATEWAY_MODE} mode — disconnecting and scheduling reconnect (cycle ${staleReconnectCycles})`);
+  } else {
+    // Local launchd mode — do NOT restart IBC from the relay. Repeated local
+    // restarts thrash the auth session and can trigger more 2FA prompts.
+    console.log(`[stale-data] launchd mode — reconnecting IB socket only (cycle ${staleReconnectCycles}); manual IBC restart required if Gateway stays down`);
+  }
+  try { ib.disconnect(); } catch { /* ignore */ }
+  scheduleReconnect();
+}
+
+// K reconnect cycles failed during RTH. Write the relay's service_health row
+// to error (the watchdog turns this into a single alert) and let the
+// operator / ib-watchdog drive the 2FA-locked Gateway restart. Alert-only:
+// the relay never restarts the Gateway itself.
+function escalateStaleData(elapsedMs, activeSubscriptions) {
   if (ibGatewayRestarting) return;
   ibGatewayRestarting = true;
-  console.log("\x1b[31m[stale-data] No ticks received during market hours — handling stale data\x1b[0m");
+  lastEscalationAt = Date.now();
+  relayHealthInError = true;
+  console.log("\x1b[31m[stale-data] escalating — relay market data dead through bounded reconnect ladder during RTH\x1b[0m");
+  void writeRelayHealth("error", {
+    message: `No ticks for ${Math.round(elapsedMs / 1000)}s with ${activeSubscriptions} active subscriptions after ${staleReconnectCycles} reconnect cycles during market hours`,
+    farm_state: lastFarmStateCode,
+  });
+  // Allow another reconnect ladder after the cooldown; the escalation itself
+  // is independently rate-limited by lastEscalationAt in the decision core.
+  setTimeout(() => { ibGatewayRestarting = false; }, 120_000);
+}
 
-  if (GATEWAY_MODE === "cloud" || GATEWAY_MODE === "docker") {
-    // Cloud/Docker — no local restart capability. Just reconnect the IB socket.
-    console.log(`[stale-data] ${GATEWAY_MODE} mode — disconnecting and scheduling reconnect`);
-    try { ib.disconnect(); } catch { /* ignore */ }
-    scheduleReconnect();
-  } else {
-    // LaunchD mode — shell out to restart IBC service
-    try {
-      execSync(`${homedir()}/ibc/bin/restart-secure-ibc-service.sh`, {
-        timeout: 60_000,
-        stdio: "pipe",
-      });
-      console.log("[stale-data] IB Gateway restart initiated — waiting for reconnect");
-    } catch (err) {
-      console.error("[stale-data] Failed to restart IB Gateway:", err.message);
+// Ticks resumed — clear the error row + reset the ladder so a future episode
+// starts fresh. Only writes "ok" if we had previously latched an error.
+function onTicksRecovered() {
+  if (staleReconnectCycles > 0 || relayHealthInError) {
+    staleReconnectCycles = 0;
+    if (relayHealthInError) {
+      relayHealthInError = false;
+      console.log("\x1b[32m[stale-data] ticks resumed — clearing relay error state\x1b[0m");
+      void writeRelayHealth("ok");
     }
   }
+}
 
-  // Allow another attempt after 120s cooldown
-  setTimeout(() => { ibGatewayRestarting = false; }, 120_000);
+// Single chokepoint for every inbound tick: refresh the staleness clock and
+// run the recovery-reset edge. All tick/depth/tape handlers call this.
+function markTick() {
+  lastTickTimestamp = Date.now();
+  // First healthy tick of this process: write "ok" once to clear any stale
+  // "error" row a prior (escalated, then restarted) process may have latched.
+  if (!relayHealthInitialized) {
+    relayHealthInitialized = true;
+    void writeRelayHealth("ok");
+  }
+  onTicksRecovered();
 }
 
 /* ─── Batched Price Relay ──────────────────────────────────────────────────
@@ -460,9 +686,51 @@ function flushBatches() {
   }
 }
 
+function bufferDepthForClient(client, symbol, book) {
+  let buf = clientDepthBuffers.get(client);
+  if (!buf) {
+    buf = new Map();
+    clientDepthBuffers.set(client, buf);
+  }
+  buf.set(symbol, book);
+}
+
+function flushDepthBatches() {
+  for (const [client, buf] of clientDepthBuffers) {
+    if (buf.size === 0) continue;
+    const updates = Object.fromEntries(buf);
+    buf.clear();
+    sendMessage(client, { type: "depth-batch", updates });
+  }
+}
+
+function bufferTapeForClient(client, symbol, trades) {
+  let buf = clientTapeBuffers.get(client);
+  if (!buf) {
+    buf = new Map();
+    clientTapeBuffers.set(client, buf);
+  }
+  buf.set(symbol, trades);
+}
+
+function flushTapeBatches() {
+  for (const [client, buf] of clientTapeBuffers) {
+    if (buf.size === 0) continue;
+    const updates = Object.fromEntries(buf);
+    buf.clear();
+    sendMessage(client, { type: "tape-batch", updates });
+  }
+}
+
 function startBatchFlush() {
   if (batchFlushTimer) return;
-  batchFlushTimer = setInterval(flushBatches, BATCH_INTERVAL_MS);
+  batchFlushTimer = setInterval(() => {
+    flushBatches();
+    if (DEPTH_ENABLED) {
+      flushDepthBatches();
+      flushTapeBatches();
+    }
+  }, BATCH_INTERVAL_MS);
 }
 
 function stopBatchFlush() {
@@ -474,6 +742,8 @@ function stopBatchFlush() {
 
 function removeBatchBuffer(client) {
   clientBatchBuffers.delete(client);
+  clientDepthBuffers.delete(client);
+  clientTapeBuffers.delete(client);
 }
 
 function sendMessage(client, payload) {
@@ -582,6 +852,84 @@ function startLiveSubscription(key, ibContract) {
   }
 }
 
+// Open (or re-open after a reconnect) an L1 subscription on the front-month
+// future for a forward-priced index, under an internal "@fwd:<index>" key. Its
+// ticks feed prices[index].fwd via publishForwardFromFutureTick. Resolution can
+// fail during a data-farm flap (returns null) — we just skip and the client
+// falls back to the cash spot until the next tick re-arms it.
+async function ensureForwardSubscription(indexKey) {
+  if (!FORWARD_PRICED_INDICES.has(indexKey) || !ibConnected) return;
+  const fwdKey = FORWARD_KEY_PREFIX + indexKey;
+  const existing = symbolStates.get(fwdKey);
+  if (existing && existing.tickerId != null) return; // already streaming
+  const contract = await resolveFuturesFrontMonth(indexKey);
+  if (!contract) return;
+  forwardKeyToIndex.set(fwdKey, indexKey);
+  startLiveSubscription(fwdKey, contract);
+}
+
+// Per-expiry forward: match a held VIX OPTION expiry to its nearest VIX future,
+// subscribe that future's L1 (deduped by future expiry), and publish its price
+// in prices[index].fwdCurve under the OPTION expiry so each leg prices off the
+// future of its own expiry. Degrades silently (falls back to front-month `fwd`
+// then cash) when the chain can't resolve during a data-farm flap.
+async function ensureForwardForOptionExpiry(indexKey, optExpiryRaw) {
+  if (!FORWARD_PRICED_INDICES.has(indexKey) || !ibConnected) return;
+  const optExp = String(optExpiryRaw || "").replace(/\D/g, "").slice(0, 8);
+  if (optExp.length !== 8) return;
+  const chain = await resolveFuturesChain(indexKey);
+  const fut = pickNearestExpiry(chain, optExp);
+  if (!fut) return;
+  const futExp = String(fut.lastTradeDateOrContractMonth || "").slice(0, 8);
+  const fwdKey = `${FORWARD_KEY_PREFIX}${indexKey}:${futExp}`;
+  forwardKeyToIndex.set(fwdKey, indexKey);
+  let expiries = fwdKeyToCurveExpiries.get(fwdKey);
+  if (!expiries) { expiries = new Set(); fwdKeyToCurveExpiries.set(fwdKey, expiries); }
+  expiries.add(optExp);
+  const existing = symbolStates.get(fwdKey);
+  if (!existing || existing.tickerId == null) startLiveSubscription(fwdKey, fut);
+}
+
+function isFinitePositive(n) {
+  return typeof n === "number" && Number.isFinite(n) && n > 0;
+}
+
+function forwardFromState(fwdState) {
+  const d = fwdState.data;
+  if (isFinitePositive(d.bid) && isFinitePositive(d.ask)) return (d.bid + d.ask) / 2;
+  if (isFinitePositive(d.last)) return d.last;
+  if (isFinitePositive(d.close)) return d.close;
+  return null;
+}
+
+// Route a future tick into the index price: a curve key ("@fwd:VIX:<futExp>")
+// updates prices[index].fwdCurve under every OPTION expiry mapped to it; the
+// front-month key ("@fwd:VIX") updates prices[index].fwd. Rebroadcasts only on
+// a real change.
+function publishForwardFromFutureTick(fwdKey, fwdState) {
+  const indexKey = forwardKeyToIndex.get(fwdKey);
+  if (!indexKey) return;
+  const fwd = forwardFromState(fwdState);
+  if (fwd == null) return;
+  const idxState = symbolStates.get(indexKey);
+  if (!idxState) return;
+
+  const curveExpiries = fwdKeyToCurveExpiries.get(fwdKey);
+  if (curveExpiries && curveExpiries.size) {
+    const curve = idxState.data.fwdCurve || (idxState.data.fwdCurve = {});
+    let changed = false;
+    for (const optExp of curveExpiries) {
+      if (curve[optExp] !== fwd) { curve[optExp] = fwd; changed = true; }
+    }
+    if (changed) hydrateAndBroadcast(indexKey);
+    return;
+  }
+
+  if (idxState.data.fwd === fwd) return; // no change — skip rebroadcast
+  idxState.data.fwd = fwd;
+  hydrateAndBroadcast(indexKey);
+}
+
 function stopLiveSubscription(symbol) {
   const state = symbolStates.get(symbol);
   if (!state || state.tickerId == null) return;
@@ -605,6 +953,442 @@ function cleanupSymbolStateForReconnect() {
       requestIdToSymbol.delete(state.tickerId);
       state.tickerId = null;
     }
+  }
+}
+
+/* ─── L2 Depth lifecycle + ladder maintenance ──────────────────────────────
+ * All functions in this block are no-ops on the request side unless
+ * DEPTH_ENABLED; callers also guard, but the cap/LRU logic lives here.
+ */
+
+function depthFeedLabel(kind, isFutures, exchange) {
+  // Futures: native single-venue depth — label with the venue when known
+  // (e.g. "CME DEPTH"), else generic "NATIVE DEPTH".
+  if (isFutures) return exchange ? `${exchange} DEPTH` : "NATIVE DEPTH";
+  if (kind === "option") return "OPRA BBO";
+  return "SMART DEPTH";
+}
+
+function activeDepthCount() {
+  let n = 0;
+  for (const state of symbolDepthStates.values()) {
+    if (state.depthTickerId != null) n += 1;
+  }
+  return n;
+}
+
+function emitDepthUnavailable(symbol, reason, code) {
+  const subscribers = depthSubscribers.get(symbol);
+  const payload = { type: "depth-unavailable", symbol, reason };
+  if (code != null) payload.code = code;
+  if (subscribers) {
+    for (const client of subscribers) sendMessage(client, payload);
+  }
+}
+
+function stopDepthSubscription(key, { keepState = false } = {}) {
+  const state = symbolDepthStates.get(key);
+  if (!state) return;
+  if (state.depthTickerId != null) {
+    try {
+      ib.cancelMktDepth(state.depthTickerId, !state.isFutures);
+    } catch {
+      // Ignore.
+    }
+    depthRequestIdToSymbol.delete(state.depthTickerId);
+    state.depthTickerId = null;
+  }
+  if (!keepState) symbolDepthStates.delete(key);
+}
+
+// Cancel the oldest non-focused depth ticket to stay within the budget.
+function evictOldestDepth(exceptKey) {
+  let oldestKey = null;
+  let oldestAt = Infinity;
+  for (const [key, state] of symbolDepthStates) {
+    if (key === exceptKey || state.depthTickerId == null) continue;
+    if (state.focusedAt < oldestAt) {
+      oldestAt = state.focusedAt;
+      oldestKey = key;
+    }
+  }
+  if (oldestKey != null) {
+    stopDepthSubscription(oldestKey);
+    emitDepthUnavailable(oldestKey, "recycled");
+  }
+}
+
+/* Resolve a futures root (e.g. "ES") to its qualified front-month contract.
+ * @stoqey/ib has no ContFuture auto-resolution, so reqMktDepth on a bare root
+ * fails — we need a conId. reqContractDetails on the native exchange returns
+ * every listed expiry; we pick the NEAREST non-expired one. Cached per root.
+ * Bounded await: resolves null on timeout/error so the caller never hangs. */
+function resolveFuturesFrontMonth(root) {
+  const cached = resolvedFuturesContracts.get(root);
+  if (cached) return Promise.resolve(cached);
+  if (!ibConnected) return Promise.resolve(null);
+
+  const exchange = futuresExchangeForRoot(root);
+  const probe = {
+    symbol: root,
+    secType: SecType.FUT,
+    exchange,
+    currency: "USD",
+    includeExpired: false,
+  };
+  const reqId = nextRequestId += 1;
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      futuresResolveRequests.delete(reqId);
+      resolve(value);
+    };
+
+    const timer = setTimeout(() => {
+      verbose(`futures resolve ${root} timed out`);
+      finish(null);
+    }, FUTURES_RESOLVE_TIMEOUT_MS);
+
+    futuresResolveRequests.set(reqId, { root, finish, candidates: [] });
+
+    try {
+      ib.reqContractDetails(reqId, probe);
+    } catch (error) {
+      verbose(`reqContractDetails(${root}) failed: ${error}`);
+      finish(null);
+    }
+  });
+}
+
+// Pick the nearest non-expired expiry from the collected contractDetails.
+// Non-expired contracts sorted nearest-expiry first. Shared by front-month
+// (chain[0]) and the per-expiry forward curve (nearest match).
+function sortedNonExpiredChain(candidates) {
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, ""); // YYYYMMDD
+  return candidates
+    .map((c) => ({ contract: c, expiry: String(c.lastTradeDateOrContractMonth || "").slice(0, 8) }))
+    .filter((e) => e.expiry.length === 8 && e.expiry >= today)
+    .sort((a, b) => a.expiry.localeCompare(b.expiry))
+    .map((e) => e.contract);
+}
+
+function pickFrontMonth(candidates) {
+  const chain = sortedNonExpiredChain(candidates);
+  return chain.length ? chain[0] : null;
+}
+
+// Pick the future whose expiry is nearest the option expiry (abs date distance).
+// VIX monthly options settle into the same-dated future; nearest absorbs the
+// few-day option/future offset and routes weeklies to the closest listed future.
+function pickNearestExpiry(chain, optExpiryDigits) {
+  if (!Array.isArray(chain) || chain.length === 0) return null;
+  const target = toEpochDays(optExpiryDigits);
+  if (target == null) return chain[0];
+  let best = null;
+  let bestDist = Infinity;
+  for (const c of chain) {
+    const e = toEpochDays(String(c.lastTradeDateOrContractMonth || "").slice(0, 8));
+    if (e == null) continue;
+    const dist = Math.abs(e - target);
+    if (dist < bestDist) { bestDist = dist; best = c; }
+  }
+  return best || chain[0];
+}
+
+function toEpochDays(yyyymmdd) {
+  if (!yyyymmdd || yyyymmdd.length < 8) return null;
+  const y = Number(yyyymmdd.slice(0, 4));
+  const m = Number(yyyymmdd.slice(4, 6));
+  const d = Number(yyyymmdd.slice(6, 8));
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+  return Math.floor(Date.UTC(y, m - 1, d) / 86_400_000);
+}
+
+function onContractDetails(reqId, contractDetails) {
+  const req = futuresResolveRequests.get(reqId);
+  if (!req || !contractDetails?.contract) return;
+  req.candidates.push(contractDetails.contract);
+}
+
+function onContractDetailsEnd(reqId) {
+  const req = futuresResolveRequests.get(reqId);
+  if (!req) return;
+  const chain = sortedNonExpiredChain(req.candidates);
+  resolvedFuturesChain.set(req.root, chain); // full curve for per-expiry matching
+  const front = chain.length ? chain[0] : null;
+  if (front) {
+    resolvedFuturesContracts.set(req.root, front);
+    verbose(`futures resolve ${req.root} → ${front.localSymbol || front.lastTradeDateOrContractMonth} (conId ${front.conId}), ${chain.length} listed`);
+    req.finish(front);
+  } else {
+    verbose(`futures resolve ${req.root}: no non-expired expiry`);
+    req.finish(null);
+  }
+}
+
+// Full non-expired chain for a root, resolving (and caching) on first use by
+// piggybacking on the front-month reqContractDetails flow.
+async function resolveFuturesChain(root) {
+  if (resolvedFuturesChain.has(root)) return resolvedFuturesChain.get(root);
+  await resolveFuturesFrontMonth(root); // populates resolvedFuturesChain as a side effect
+  return resolvedFuturesChain.get(root) || [];
+}
+
+/* ─── Time & Sales tape lifecycle ────────────────────────────────────────── */
+function startTapeSubscription(key, contract) {
+  if (!DEPTH_ENABLED || !ibConnected) return;
+  let state = symbolTapeStates.get(key);
+  if (!state) {
+    state = { tapeTickerId: null, trades: [] };
+    symbolTapeStates.set(key, state);
+  }
+  if (state.tapeTickerId != null) return; // already streaming
+
+  const tapeTickerId = nextRequestId += 1;
+  try {
+    // AllLast = every last-trade print (incl. combos/odd-lots). numberOfTicks=0
+    // → continuous stream; ignoreSize=false keeps trade sizes.
+    ib.reqTickByTickData(tapeTickerId, contract, TickByTickDataType.AllLast, 0, false);
+    state.tapeTickerId = tapeTickerId;
+    tapeRequestIdToSymbol.set(tapeTickerId, key);
+    verbose(`tape subscribe ${key} ticket=${tapeTickerId}`);
+  } catch (error) {
+    console.error(`Failed to subscribe tape ${key}:`, error);
+  }
+}
+
+function stopTapeSubscription(key) {
+  const state = symbolTapeStates.get(key);
+  if (!state) return;
+  if (state.tapeTickerId != null) {
+    try {
+      ib.cancelTickByTickData(state.tapeTickerId);
+    } catch {
+      // Ignore.
+    }
+    tapeRequestIdToSymbol.delete(state.tapeTickerId);
+    state.tapeTickerId = null;
+  }
+  symbolTapeStates.delete(key);
+}
+
+// Append a print to the bounded ring (newest-last) and buffer for broadcast.
+function applyTrade(key, price, size, exchange, time) {
+  const state = symbolTapeStates.get(key);
+  if (!state) return;
+  state.trades.push({ price, size, exchange: exchange || null, time });
+  if (state.trades.length > TAPE_RING_SIZE) {
+    state.trades.splice(0, state.trades.length - TAPE_RING_SIZE);
+  }
+  const subscribers = depthSubscribers.get(key);
+  if (!subscribers || subscribers.size === 0) return;
+  const snapshot = state.trades.slice();
+  for (const client of subscribers) {
+    bufferTapeForClient(client, key, snapshot);
+  }
+}
+
+function cleanupTapeForReconnect() {
+  for (const [, state] of symbolTapeStates) {
+    if (state.tapeTickerId != null) {
+      try {
+        ib.cancelTickByTickData(state.tapeTickerId);
+      } catch {
+        // Ignore.
+      }
+      tapeRequestIdToSymbol.delete(state.tapeTickerId);
+      state.tapeTickerId = null;
+    }
+  }
+}
+
+function startDepthSubscription(key, contract, { kind, isFutures }) {
+  if (!DEPTH_ENABLED || !ibConnected) return;
+
+  let state = symbolDepthStates.get(key);
+  if (!state) {
+    state = { depthTickerId: null, contract, kind, isFutures, ladders: { bid: [], ask: [] }, focusedAt: Date.now() };
+    symbolDepthStates.set(key, state);
+  } else {
+    state.contract = contract;
+    state.kind = kind;
+    state.isFutures = isFutures;
+    state.focusedAt = Date.now();
+  }
+
+  if (state.depthTickerId != null) return; // already streaming
+
+  // Cap-check: cancel the oldest non-focused ticket before exceeding the budget.
+  while (activeDepthCount() >= MAX_CONCURRENT_DEPTH) {
+    const before = activeDepthCount();
+    evictOldestDepth(key);
+    if (activeDepthCount() >= before) break; // nothing evictable — avoid spin
+  }
+
+  const numRows = isFutures ? DEPTH_NUM_ROWS_FUTURES : DEPTH_NUM_ROWS_EQUITY;
+  const depthTickerId = nextRequestId += 1;
+  const isSmartDepth = !isFutures;
+  try {
+    // @stoqey/ib: reqMktDepth(reqId, contract, numRows, isSmartDepth). Smart
+    // depth (true) for equity/option SMART aggregation, native single-venue
+    // depth (false) for futures. The same isSmartDepth is required on cancel.
+    ib.reqMktDepth(depthTickerId, contract, numRows, isSmartDepth);
+    state.depthTickerId = depthTickerId;
+    state.ladders.bid.length = 0;
+    state.ladders.ask.length = 0;
+    depthRequestIdToSymbol.set(depthTickerId, key);
+    verbose(`depth subscribe ${key} kind=${kind} rows=${numRows} ticket=${depthTickerId}`);
+  } catch (error) {
+    console.error(`Failed to subscribe depth ${key}:`, error);
+  }
+}
+
+function applyDepthDelta(key, position, marketMaker, operation, side, price, size) {
+  const state = symbolDepthStates.get(key);
+  if (!state) return;
+  const ladder = side === 1 ? state.ladders.bid : state.ladders.ask;
+  const level = { price, size, marketMaker: marketMaker || null };
+  switch (operation) {
+    case 0: // insert: shift every level at/below position down one.
+      ladder.splice(position, 0, level);
+      break;
+    case 1: // update in place; defensive OOB update => insert.
+      if (position < ladder.length) ladder[position] = level;
+      else ladder.splice(position, 0, level);
+      break;
+    case 2: // delete: shift every level below position up one; ignore OOB.
+      if (position < ladder.length) ladder.splice(position, 1);
+      break;
+    default:
+      break;
+  }
+  hydrateAndBroadcastDepth(key);
+}
+
+function serializeLadder(ladder, isFutures, kind, side) {
+  const rows = ladder.map((lvl, i) => [i, lvl]);
+  // OPRA options: each row is a venue's top-of-book BBO (no stacked depth). The
+  // NBBO is the best bid (max price) / best ask (min price) across the venue
+  // rows; ALL venues tied at that inside price are flagged nbbo=true.
+  const isOption = kind === "option";
+  const nbboPrice = nbboPriceForOptionLadder(rows, side, isOption);
+  return rows.map(([, lvl]) => {
+    // Equity/option (L2): the venue/MPID code arrives as marketMaker. For
+    // options the marketMaker IS the venue, so populate BOTH fields so the web
+    // montage (level.marketMaker ?? level.exchange) labels the Market column
+    // consistently with stocks. Equities keep marketMaker null (MPID exposed
+    // as exchange). Futures (single-venue): no attribution, both null.
+    const venue = isFutures ? null : (lvl.marketMaker || null);
+    const marketMaker = isOption ? venue : null;
+    const exchange = venue;
+    const level = { price: lvl.price, size: lvl.size, marketMaker, exchange };
+    if (isOption) level.nbbo = nbboPrice != null && lvl.price === nbboPrice;
+    return level;
+  });
+}
+
+// Inside price across an option venue montage: max bid / min ask. Returns null
+// for non-option ladders or empty rows (no flag emitted).
+function nbboPriceForOptionLadder(rows, side, isOption) {
+  if (!isOption || rows.length === 0) return null;
+  const prices = rows.map(([, lvl]) => lvl.price).filter((p) => typeof p === "number");
+  if (prices.length === 0) return null;
+  return side === "bid" ? Math.max(...prices) : Math.min(...prices);
+}
+
+// Cross-venue NBBO summary for an option montage: best bid / best ask / mid /
+// total displayed size across the venue rows at the inside.
+function summarizeOptionNbbo(bid, ask) {
+  const bestBid = bid.length ? Math.max(...bid.map((l) => l.price)) : null;
+  const bestAsk = ask.length ? Math.min(...ask.map((l) => l.price)) : null;
+  const mid = bestBid != null && bestAsk != null ? (bestBid + bestAsk) / 2 : null;
+  const sumSize = (rows) => rows.reduce((acc, l) => acc + (typeof l.size === "number" ? l.size : 0), 0);
+  return { bestBid, bestAsk, mid, bidSize: sumSize(bid), askSize: sumSize(ask) };
+}
+
+function hydrateAndBroadcastDepth(key) {
+  const state = symbolDepthStates.get(key);
+  if (!state) return;
+  const subscribers = depthSubscribers.get(key);
+  if (!subscribers || subscribers.size === 0) return;
+
+  const bid = serializeLadder(state.ladders.bid, state.isFutures, state.kind, "bid");
+  const ask = serializeLadder(state.ladders.ask, state.isFutures, state.kind, "ask");
+  const book = {
+    symbol: key,
+    kind: state.kind,
+    bid,
+    ask,
+    isSmartDepth: !state.isFutures,
+    feed: depthFeedLabel(state.kind, state.isFutures, state.isFutures ? state.contract?.exchange : null),
+    entitled: true,
+    timestamp: nowIso(),
+  };
+  // Options: surface the cross-venue NBBO summary (cheap — derived from the
+  // already-flagged inside rows). Honest framing: this is top-of-book per
+  // venue, not stacked depth.
+  if (state.kind === "option") book.nbbo = summarizeOptionNbbo(bid, ask);
+  for (const client of subscribers) {
+    bufferDepthForClient(client, key, book);
+  }
+}
+
+function subscribeClientToDepth(client, key) {
+  let subscribers = depthSubscribers.get(key);
+  if (!subscribers) {
+    subscribers = new Set();
+    depthSubscribers.set(key, subscribers);
+  }
+  subscribers.add(client);
+}
+
+function unsubscribeClientFromDepth(client, key) {
+  const subscribers = depthSubscribers.get(key);
+  if (!subscribers) return;
+  subscribers.delete(client);
+  if (subscribers.size === 0) {
+    depthSubscribers.delete(key);
+    stopDepthSubscription(key);
+    stopTapeSubscription(key); // tape rides the focused depth symbol
+  }
+}
+
+function cleanupDepthForReconnect() {
+  for (const [, state] of symbolDepthStates) {
+    if (state.depthTickerId != null) {
+      try {
+        ib.cancelMktDepth(state.depthTickerId, !state.isFutures);
+      } catch {
+        // Ignore.
+      }
+      depthRequestIdToSymbol.delete(state.depthTickerId);
+      state.depthTickerId = null;
+    }
+    state.ladders.bid.length = 0;
+    state.ladders.ask.length = 0;
+  }
+  cleanupTapeForReconnect();
+  // Defensively drop any reverse-map entries that outlived their state (a
+  // depth/tape ticker that was cancelled without a matching state row would
+  // otherwise route post-reconnect depth/tape events to a dead tickerId,
+  // producing the "Can't find EId" / stale-ladder signature). The per-state
+  // loops above already cleared live mappings; this clears orphans.
+  depthRequestIdToSymbol.clear();
+  tapeRequestIdToSymbol.clear();
+}
+
+// Restore the focused depth ticket(s) + tape after a reconnect.
+function restoreDepthSubscriptions() {
+  if (!DEPTH_ENABLED) return;
+  for (const key of depthSubscribers.keys()) {
+    const state = symbolDepthStates.get(key);
+    if (!state || !state.contract) continue;
+    startDepthSubscription(key, state.contract, { kind: state.kind, isFutures: state.isFutures });
+    startTapeSubscription(key, state.contract);
   }
 }
 
@@ -650,6 +1434,11 @@ function unsubscribeClientFromSymbol(client, symbol) {
 function disconnectClient(client) {
   removeBatchBuffer(client);
   clientLastPong.delete(client);
+  if (DEPTH_ENABLED) {
+    for (const key of [...depthSubscribers.keys()]) {
+      unsubscribeClientFromDepth(client, key);
+    }
+  }
   const clientSet = clientSymbols.get(client);
   if (!clientSet) {
     return;
@@ -694,7 +1483,7 @@ async function handleSnapshotRequest(client, symbols) {
     }
 
     const requestId = nextRequestId += 1;
-    const contract = ib.contract.stock(symbol, "SMART", "USD");
+    const contract = stockContract(symbol, "SMART", "USD");
     const requestState = {
       symbol,
       client,
@@ -718,7 +1507,12 @@ async function handleSnapshotRequest(client, symbols) {
 
     try {
       await snapshotLimiter.submit(() => {
-        ib.reqMktData(requestId, contract, "233,165", true, false);
+        // IB rejects snapshot=true paired with generic ticks (233=RTVolume,
+        // 165=Misc Stats) — both are streaming-only. Snapshot still returns
+        // bid/ask/last/close/volume/high/low/open via default tick types,
+        // which is what the snapshot consumer needs. The streaming path at
+        // line 566 keeps "233,165" because snapshot=false there.
+        ib.reqMktData(requestId, contract, "", true, false);
       });
     } catch (error) {
       clearSnapshot(requestId);
@@ -733,6 +1527,27 @@ async function handleSnapshotRequest(client, symbols) {
       });
     }
   }
+}
+
+/** Maximum age (ms) for cached bid/ask before we consider it stale.
+ * Option quotes older than 8 hours come from a prior session and should
+ * not be broadcast to new subscribers — they will be replaced once the
+ * fresh reqMktData ticks arrive from IB. */
+const QUOTE_STALE_MS = 8 * 60 * 60 * 1000; // 8 hours
+
+/**
+ * Return a copy of PriceData safe to send as an initial snapshot.
+ * If the cached bid/ask timestamps are older than QUOTE_STALE_MS
+ * (i.e. from a prior trading session), null them out so the UI shows
+ * "---" instead of stale prices until fresh ticks arrive.
+ */
+function safeInitialState(data) {
+  if (!data.timestamp) return data;
+  const age = Date.now() - new Date(data.timestamp).getTime();
+  if (age > QUOTE_STALE_MS) {
+    return { ...data, bid: null, ask: null, bidSize: null, askSize: null, lastIsCalculated: false };
+  }
+  return data;
 }
 
 function hydrateAndBroadcast(symbol) {
@@ -754,7 +1569,7 @@ function hydrateAndBroadcast(symbol) {
 }
 
 function onTickPrice(tickerId, tickType, price) {
-  lastTickTimestamp = Date.now();
+  markTick();
   const symbol = requestIdToSymbol.get(tickerId);
   const liveState = symbol ? symbolStates.get(symbol) : null;
   const snapshotState = snapshotRequests.get(tickerId);
@@ -765,6 +1580,8 @@ function onTickPrice(tickerId, tickType, price) {
     updateOptionCloseCache(symbol, liveState.data.close);
     verbose(`tick ${symbol} type=${tickType} price=${price}`);
     hydrateAndBroadcast(symbol);
+    // Forward-priced index: route the front-month future tick into index.fwd.
+    if (forwardKeyToIndex.has(symbol)) publishForwardFromFutureTick(symbol, liveState);
   }
   if (snapshotState) {
     updatePriceFromTickPrice(snapshotState.data, tickType, price);
@@ -772,7 +1589,7 @@ function onTickPrice(tickerId, tickType, price) {
 }
 
 function onTickSize(tickerId, sizeType, size) {
-  lastTickTimestamp = Date.now();
+  markTick();
   const symbol = requestIdToSymbol.get(tickerId);
   const liveState = symbol ? symbolStates.get(symbol) : null;
   const snapshotState = snapshotRequests.get(tickerId);
@@ -799,6 +1616,9 @@ const fundamentalsPending = new Set(); // symbols currently being fetched
 function requestFundamentals(symbol, ibContract) {
   // Only for stock symbols, not options
   if (symbol.includes("_")) return;
+  // Not for futures roots — reqFundamentalData(ReportSnapshot) is equities-only;
+  // a FUT contract returns nothing useful and just logs noise.
+  if (ibContract && ibContract.secType === SecType.FUT) return;
   // Already have data or request in-flight
   if (fundamentalsStore.has(symbol) || fundamentalsPending.has(symbol)) return;
   if (!ibConnected) return;
@@ -873,6 +1693,18 @@ function restoreSubscriptions() {
     const ibContract = existing?.contract;
     if (!ibContract) continue;
     startLiveSubscription(key, ibContract);
+    // Re-arm the front-month future L1 behind a forward-priced index — its
+    // ticker was cancelled by cleanupSymbolStateForReconnect and it is not a
+    // client-facing subscription, so restoreSubscriptions would otherwise skip it.
+    if (FORWARD_PRICED_INDICES.has(key)) void ensureForwardSubscription(key);
+    // Re-arm the per-expiry forward curve for a restored forward-priced index
+    // OPTION (key = "VIX_YYYYMMDD_STRIKE_C"): the curve future is internal too.
+    if (key.includes("_")) {
+      const parts = key.split("_");
+      if (parts.length >= 4 && FORWARD_PRICED_INDICES.has(parts[0])) {
+        void ensureForwardForOptionExpiry(parts[0], parts[1]);
+      }
+    }
     const state = symbolStates.get(key);
     if (state) {
       sendToSymbolSubscribers(key, {
@@ -884,7 +1716,99 @@ function restoreSubscriptions() {
   }
 }
 
+/* Resolve the IB contract + instrument kind for a single depth subject from
+ * the raw client payload. Option → has expiry/strike; future → symbol in the
+ * futures set; else stock. Returns null when the payload is unusable. */
+function resolveDepthSubject(payload) {
+  const rawSymbol = typeof payload.symbol === "string" ? payload.symbol.trim().toUpperCase() : null;
+  if (!rawSymbol) return null;
+
+  const hasOptionFields = typeof payload.expiry === "string" && typeof payload.strike === "number" && (payload.right === "C" || payload.right === "P");
+  if (hasOptionFields) {
+    const c = { symbol: rawSymbol, expiry: payload.expiry.trim(), strike: payload.strike, right: payload.right };
+    return { key: optionKey(c), contract: optionContract(c.symbol, c.expiry, c.strike, c.right), kind: "option", isFutures: false };
+  }
+
+  const mappedRoot = INDEX_FUTURE_ROOT[rawSymbol];
+  const isFuture = DEPTH_FUTURES_SYMBOLS.has(rawSymbol) || Boolean(mappedRoot) || payload.instrument === "future" || payload.secType === "FUT";
+  if (isFuture) {
+    // Depth on a bare futures root needs a QUALIFIED front-month contract
+    // (conId), resolved via reqContractDetails in the handler. We carry the
+    // root + a fallback bare-root contract; the handler swaps in the resolved
+    // front-month before calling reqMktDepth. For an index→future mapping
+    // (SPX→ES) the native future exchange wins over any index exchange the
+    // client sent; the key stays the inbound symbol so depths[key] still matches.
+    const root = mappedRoot || rawSymbol;
+    const exchange = mappedRoot
+      ? futuresExchangeForRoot(root)
+      : (typeof payload.exchange === "string" ? payload.exchange.trim().toUpperCase() : futuresExchangeForRoot(root));
+    // Carry the order-ticket selected expiry (YYYYMMDD/YYYYMM digits) so the
+    // handler resolves THAT listed future under the key instead of the front
+    // month. Absent → front-month fallback. Key stays the inbound symbol so
+    // depths[key] still matches regardless of which expiry is selected.
+    const expiry = typeof payload.expiry === "string" ? payload.expiry.replace(/-/g, "").trim() : null;
+    return { key: rawSymbol, root, expiry: expiry || null, contract: futureContract(root, "", "USD", exchange), kind: "future", isFutures: true };
+  }
+
+  return { key: rawSymbol, contract: stockContract(rawSymbol, "SMART", "USD"), kind: "stock", isFutures: false };
+}
+
 async function handleClientMessage(client, data) {
+  // Depth actions carry a single `symbol` (+ instrument fields), distinct from
+  // the array subscribe. Route them off the raw payload before normalization.
+  if (DEPTH_ENABLED && data && typeof data === "object" && typeof data.action === "string") {
+    const depthAction = data.action.trim().toLowerCase();
+    if (depthAction === "subscribe-depth" || depthAction === "unsubscribe-depth") {
+      const subject = resolveDepthSubject(data);
+      if (!subject) {
+        sendMessage(client, { type: "error", message: "Invalid depth subscription" });
+        return;
+      }
+      if (depthAction === "subscribe-depth") {
+        subscribeClientToDepth(client, subject.key);
+        let contract = subject.contract;
+        if (subject.isFutures) {
+          // Qualify a real conId before reqMktDepth — bounded await so a
+          // slow/failed resolution can't hang the relay. No depth without a
+          // real contract: emit futures-no-depth and bail.
+          //
+          // If the client sent a selected expiry, resolve THAT specific listed
+          // future from the full curve; otherwise fall back to the front month.
+          // The depth path owns its own resolveFuturesChain — independent of
+          // /api/futures/chain — so depth resolves even when the order-form
+          // chain fetch is slow.
+          let resolved = null;
+          if (subject.expiry) {
+            const chain = await resolveFuturesChain(subject.root);
+            resolved = pickNearestExpiry(chain, subject.expiry);
+          }
+          if (!resolved) {
+            resolved = await resolveFuturesFrontMonth(subject.root);
+          }
+          if (!resolved) {
+            emitDepthUnavailable(subject.key, "futures-no-depth");
+            return;
+          }
+          contract = resolved;
+        }
+        // Contract swap under an existing key (e.g. user picked a different
+        // VIX expiry): cancel the live ticket so startDepthSubscription re-reqs
+        // on the new conId. Without this it short-circuits ("already streaming")
+        // and the book stays pinned to the prior contract.
+        const existing = symbolDepthStates.get(subject.key);
+        if (existing && existing.depthTickerId != null && existing.contract && contract && existing.contract.conId !== contract.conId) {
+          stopDepthSubscription(subject.key, { keepState: true });
+          stopTapeSubscription(subject.key);
+        }
+        startDepthSubscription(subject.key, contract, { kind: subject.kind, isFutures: subject.isFutures });
+        startTapeSubscription(subject.key, contract);
+      } else {
+        unsubscribeClientFromDepth(client, subject.key);
+      }
+      return;
+    }
+  }
+
   const message = parseActionMessage(data);
   if (!message) {
     sendMessage(client, { type: "error", message: "Invalid JSON" });
@@ -901,7 +1825,20 @@ async function handleClientMessage(client, data) {
       // Stock subscriptions (backward compatible)
       for (const symbol of symbols) {
         subscribeClientToSymbol(client, symbol);
-        const ibContract = ib.contract.stock(symbol, "SMART", "USD");
+        // A bare futures ROOT (e.g. "ES") must subscribe L1 against the resolved
+        // front-month FUTURE, not a stock — otherwise IB resolves the equity
+        // ticker of the same name (ES = Eversource Energy ~$67) and the quote bar
+        // shows the wrong instrument while the depth ladder shows the future.
+        // Front-month L1 is decoupled from DEPTH_ENABLED so the header futures
+        // strip (ES/NQ/RTY last + prior close) streams without the depth flag;
+        // the depth LADDER (reqMktDepth) stays gated on DEPTH_ENABLED elsewhere.
+        let ibContract;
+        if (DEPTH_FUTURES_SYMBOLS.has(symbol)) {
+          const resolvedFut = await resolveFuturesFrontMonth(symbol);
+          ibContract = resolvedFut || stockContract(symbol, "SMART", "USD");
+        } else {
+          ibContract = stockContract(symbol, "SMART", "USD");
+        }
         ensureSymbolState(symbol, ibContract);
         if (ibConnected) {
           startLiveSubscription(symbol, ibContract);
@@ -910,7 +1847,7 @@ async function handleClientMessage(client, data) {
             sendMessage(client, {
               type: "price",
               symbol,
-              data: state.data,
+              data: safeInitialState(state.data),
             });
           }
           // Send cached fundamentals if available
@@ -929,16 +1866,21 @@ async function handleClientMessage(client, data) {
       for (const c of contracts) {
         const key = optionKey(c);
         subscribeClientToSymbol(client, key);
-        const ibContract = ib.contract.option(c.symbol, c.expiry, c.strike, c.right);
+        const ibContract = optionContract(c.symbol, c.expiry, c.strike, c.right);
         ensureSymbolState(key, ibContract);
         if (ibConnected) {
           startLiveSubscription(key, ibContract);
+          // Forward-priced index option (VIX): subscribe the future of THIS
+          // option's expiry so it prices off its own forward (prices[idx].fwdCurve).
+          if (FORWARD_PRICED_INDICES.has(String(c.symbol).toUpperCase())) {
+            void ensureForwardForOptionExpiry(String(c.symbol).toUpperCase(), c.expiry);
+          }
           const state = symbolStates.get(key);
           if (state) {
             sendMessage(client, {
               type: "price",
               symbol: key,
-              data: state.data,
+              data: safeInitialState(state.data),
             });
           }
           subscribed.push(key);
@@ -948,16 +1890,19 @@ async function handleClientMessage(client, data) {
       for (const idx of indexes) {
         const key = idx.symbol;
         subscribeClientToSymbol(client, key);
-        const ibContract = ib.contract.index(idx.symbol, "USD", idx.exchange);
+        const ibContract = indexContract(idx.symbol, "USD", idx.exchange);
         ensureSymbolState(key, ibContract);
         if (ibConnected) {
           startLiveSubscription(key, ibContract);
+          // Forward-priced index (VIX): also open the front-month future L1 so
+          // prices[key].fwd carries the forward options are priced against.
+          if (FORWARD_PRICED_INDICES.has(key)) void ensureForwardSubscription(key);
           const state = symbolStates.get(key);
           if (state) {
             sendMessage(client, {
               type: "price",
               symbol: key,
-              data: state.data,
+              data: safeInitialState(state.data),
             });
           }
           subscribed.push(key);
@@ -1002,7 +1947,12 @@ async function handleClientMessage(client, data) {
         return;
       }
       if (!ibConnected) {
-        sendMessage(client, { type: "searchResults", pattern, results: [] });
+        sendMessage(client, {
+          type: "searchResults",
+          pattern,
+          results: [],
+          disconnected: true,
+        });
         return;
       }
 
@@ -1077,21 +2027,28 @@ function scheduleReconnect() {
 }
 
 function wireIBEvents() {
-  ib.on("connected", () => {
+  ib.on(EventName.connected, () => {
     ibConnected = true;
     ibConnectionIssue = null;
     console.log(`IB connected (clientId ${IB_CLIENT_ID_POOL[activeClientIdIndex]})`);
     reconnectTimer = null;
-    // Request Delayed-Frozen data so closed-market queries return last known prices
-    // Type 4 cascades: Live → Delayed → Frozen → Delayed-Frozen
-    ib.reqMarketDataType(4);
+    // Real-time market data (type 1) for ALL L1 — a trading terminal must not
+    // show ~15-min delayed quotes. Was delayed-frozen (type 4) when depth was
+    // off, which made the header futures strip (and every watchlist quote) lag
+    // the real market; flipped to always-realtime per operator decision
+    // 2026-06-14. Off-hours, IB holds the last live values (frozen) so
+    // closed-market reads still return last-known prices; explicit close ticks
+    // (type 9) continue to populate PriceData.close for % -change math.
+    ib.reqMarketDataType(1);
     cleanupSymbolStateForReconnect();
+    if (DEPTH_ENABLED) cleanupDepthForReconnect();
     searchCache.clear(); // Invalidate stale search results from IB-down period
     restoreSubscriptions();
+    if (DEPTH_ENABLED) restoreDepthSubscriptions();
     broadcastStatus();
   });
 
-  ib.on("disconnected", () => {
+  ib.on(EventName.disconnected, () => {
     if (ibConnected) {
       console.log("IB disconnected");
     }
@@ -1100,10 +2057,12 @@ function wireIBEvents() {
     scheduleReconnect();
   });
 
-  ib.on("error", (error, data) => {
+  // @stoqey/ib error signature: (error, code, reqId). reqId is the request
+  // (ticker) id the error pertains to, or -1 when not request-scoped. The old
+  // `ib` lib delivered (error, { id, code }); we map reqId → tickerId, code → code.
+  ib.on(EventName.error, (error, code, reqId) => {
     const msg = String(error?.message ?? error);
-    const tickerId = data?.id;
-    const code = data?.code;
+    const tickerId = reqId != null && reqId >= 0 ? reqId : undefined;
     const symbol = tickerId != null ? requestIdToSymbol.get(tickerId) : null;
     const connectionIssue = classifyIBConnectionError(msg, {
       ibHost: cli.ibHost,
@@ -1132,6 +2091,16 @@ function wireIBEvents() {
           state.tickerId = null;
         }
       }
+    } else if (DEPTH_ENABLED && (code === 10089 || code === 10092 || /depth.*not (allowed|eligible)|not supported for this combination/i.test(msg)) && tickerId != null && depthRequestIdToSymbol.has(tickerId)) {
+      // No L2 entitlement (10089) or deep depth unsupported for this
+      // secType/exchange (10092, e.g. index options on CBOE) — soft, expected.
+      // Cancel the ticket and tell the client; never latch a connection fault.
+      // (Index options still serve a single CBOE BBO row via smart depth; this
+      // only fires when even that is unavailable.)
+      const depthSymbol = depthRequestIdToSymbol.get(tickerId);
+      console.warn(`\x1b[33mIB warning: depth unavailable for ${depthSymbol} (code ${code})\x1b[0m`);
+      stopDepthSubscription(depthSymbol, { keepState: true });
+      emitDepthUnavailable(depthSymbol, "no-entitlement", code);
     } else if (/Fundamentals data is not allowed/i.test(msg)) {
       verbose(`fundamentals not allowed for tickerId:${tickerId} — IBIS subscription may be inactive`);
       if (tickerId != null) {
@@ -1161,23 +2130,35 @@ function wireIBEvents() {
     }
   });
 
-  ib.on("tickPrice", (tickerId, tickType, price) => {
+  // Market-data farm status info codes (2103/2104/2105/2106/2108/2158).
+  // @stoqey/ib delivers these as EventName.info (message, code) rather than
+  // errors. Feed the latest farm code into the stale-data decision core so a
+  // farm-OK signal steers recovery toward a fresh resubscribe over a socket
+  // bounce. Non-farm info codes are ignored here.
+  ib.on(EventName.info, (message, code) => {
+    if (typeof code === "number" && isFarmStateCode(code)) {
+      lastFarmStateCode = code;
+      verbose(`IB farm info ${code}: ${message}`);
+    }
+  });
+
+  ib.on(EventName.tickPrice, (tickerId, tickType, price) => {
     onTickPrice(tickerId, tickType, price);
   });
 
-  ib.on("tickSize", (tickerId, sizeType, size) => {
+  ib.on(EventName.tickSize, (tickerId, sizeType, size) => {
     onTickSize(tickerId, sizeType, size);
   });
 
-  ib.on("tickSnapshotEnd", (tickerId) => {
+  ib.on(EventName.tickSnapshotEnd, (tickerId) => {
     onTickSnapshotEnd(tickerId);
   });
 
-  ib.on("fundamentalData", (reqId, data) => {
+  ib.on(EventName.fundamentalData, (reqId, data) => {
     onFundamentalData(reqId, data);
   });
 
-  ib.on("tickOptionComputation", (tickerId, tickType, impliedVol, delta, optPrice, pvDividend, gamma, vega, theta, undPrice) => {
+  ib.on(EventName.tickOptionComputation, (tickerId, tickType, impliedVol, delta, optPrice, pvDividend, gamma, vega, theta, undPrice) => {
     const symbol = requestIdToSymbol.get(tickerId);
     const liveState = symbol ? symbolStates.get(symbol) : null;
     if (!liveState) return;
@@ -1203,19 +2184,28 @@ function wireIBEvents() {
     hydrateAndBroadcast(symbol);
   });
 
-  ib.on("symbolSamples", (reqId, contracts) => {
+  ib.on(EventName.symbolSamples, (reqId, contracts) => {
     const req = searchRequestClients.get(reqId);
     if (!req) return;
     searchRequestClients.delete(reqId);
 
-    const results = contracts.map((c) => ({
-      conId: c.conId,
-      symbol: c.symbol,
-      secType: c.secType,
-      primaryExchange: c.primaryExchange,
-      currency: c.currency,
-      derivativeSecTypes: c.derivativeSecTypes || [],
-    }));
+    // @stoqey/ib delivers ContractDescription[] where the contract fields are
+    // NESTED under `c.contract` (and primaryExchange is renamed `primaryExch`),
+    // unlike the dead ib@0.2.9 lib which had them flat on `c`. Read from
+    // `c.contract` (falling back to `c` for the old shape). Without this the
+    // wire payload had secType:undefined, so TickerSearch's ALLOWED_SEC_TYPES
+    // filter dropped every result → "No results" (regression from f69c0d4).
+    const results = contracts.map((c) => {
+      const k = c.contract ?? c;
+      return {
+        conId: k.conId,
+        symbol: k.symbol,
+        secType: k.secType,
+        primaryExchange: k.primaryExch ?? k.primaryExchange,
+        currency: k.currency,
+        derivativeSecTypes: c.derivativeSecTypes || [],
+      };
+    });
 
     if (searchCache.size >= SEARCH_CACHE_MAX) {
       const oldest = searchCache.keys().next().value;
@@ -1231,6 +2221,47 @@ function wireIBEvents() {
 
     verbose(`search "${req.pattern}" → ${results.length} results`);
   });
+
+  if (DEPTH_ENABLED) {
+    // Futures / single-venue depth — no market maker (arg order: id, position,
+    // operation, side, price, size in the installed `ib` lib).
+    ib.on(EventName.updateMktDepth, (id, position, operation, side, price, size) => {
+      const key = depthRequestIdToSymbol.get(id);
+      if (!key) return;
+      markTick();
+      applyDepthDelta(key, position, null, operation, side, price, size);
+    });
+
+    // Equity / SMART L2 — marketMaker = exchange/MPID code. @stoqey/ib appends
+    // a trailing isSmartDepth arg after size; we accept it but don't re-derive
+    // from it (the ladder's smart-depth label comes from state.isFutures).
+    ib.on(EventName.updateMktDepthL2, (id, position, marketMaker, operation, side, price, size, _isSmartDepth) => {
+      const key = depthRequestIdToSymbol.get(id);
+      if (!key) return;
+      markTick();
+      applyDepthDelta(key, position, marketMaker, operation, side, price, size);
+    });
+
+    // Time & Sales tape — reqTickByTickData(AllLast). @stoqey/ib arity:
+    // (reqId, tickType, time, price, size, tickAttribLast, exchange,
+    // specialConditions). `time` is unix seconds (string); we emit ISO.
+    ib.on(EventName.tickByTickAllLast, (reqId, _tickType, time, price, size, _tickAttribLast, exchange, _specialConditions) => {
+      const key = tapeRequestIdToSymbol.get(reqId);
+      if (!key) return;
+      markTick();
+      const seconds = Number(time);
+      const iso = Number.isFinite(seconds) ? new Date(seconds * 1000).toISOString() : nowIso();
+      applyTrade(key, price, size, exchange, iso);
+    });
+
+    // Front-month futures contract resolution (reqContractDetails).
+    ib.on(EventName.contractDetails, (reqId, contractDetails) => {
+      onContractDetails(reqId, contractDetails);
+    });
+    ib.on(EventName.contractDetailsEnd, (reqId) => {
+      onContractDetailsEnd(reqId);
+    });
+  }
 }
 
 // Wire events on initial instance
@@ -1297,22 +2328,56 @@ statusBroadcastTick = setInterval(() => {
 }, 5000);
 
 /* ─── Stale Data Health Check ──────────────────────────────────────────────
- * If connected to IB with active subscriptions during market hours but no
- * ticks received in STALE_DATA_THRESHOLD_MS, auto-restart IB Gateway.
+ * Delegate the decision to the pure machine; this layer only supplies the
+ * live snapshot + executes the chosen action against the real IB socket /
+ * subscriptions / service_health row. The bounded ladder (K reconnects →
+ * escalate-and-alert) and the escalation cooldown live in the machine.
  */
 staleCheckTimer = setInterval(() => {
-  if (!ibConnected || shuttingDown || ibGatewayRestarting) return;
-  if (!isUSMarketHours()) return;
+  if (shuttingDown || ibGatewayRestarting) return;
 
+  const now = Date.now();
+  const marketHours = isUSMarketHours();
   const activeSubscriptions = symbolSubscribers.size;
-  if (activeSubscriptions === 0) return;
+  const elapsed = now - lastTickTimestamp;
 
-  const elapsed = Date.now() - lastTickTimestamp;
-  if (elapsed > STALE_DATA_THRESHOLD_MS) {
-    console.warn(
-      `\x1b[33m[stale-data] No ticks for ${Math.round(elapsed / 1000)}s with ${activeSubscriptions} active subscriptions during market hours\x1b[0m`,
-    );
-    restartIBGateway();
+  // DUR-16: RTH tick heartbeat for /api/probe/freshness. Refreshes the
+  // relay's service_health row with the last-tick timestamp so the probe
+  // computes true tick age. ok->ok upserts are suppressed by the 0011
+  // events trigger; the error<->ok edges stay owned by the ladder below.
+  if (shouldWriteTickHeartbeat({ now, isMarketHours: marketHours, inError: relayHealthInError, lastHeartbeatAt: lastTickHeartbeatAt })) {
+    lastTickHeartbeatAt = now;
+    void writeRelayHealth("ok", {
+      heartbeat: "tick",
+      last_tick_at: new Date(lastTickTimestamp).toISOString(),
+      tick_age_secs: Math.round(elapsed / 1000),
+      active_subscriptions: activeSubscriptions,
+    });
+  }
+
+  const action = decideStaleAction({
+    now,
+    lastTickAt: lastTickTimestamp,
+    ibConnected,
+    isMarketHours: marketHours,
+    activeSubscriptions,
+    reconnectCycles: staleReconnectCycles,
+    farmState: lastFarmStateCode,
+    lastEscalationAt,
+  });
+
+  if (action === "none") return;
+
+  console.warn(
+    `\x1b[33m[stale-data] No ticks for ${Math.round(elapsed / 1000)}s with ${activeSubscriptions} active subscriptions during market hours → ${action}\x1b[0m`,
+  );
+
+  if (action === "resubscribe") {
+    resubscribeAll();
+  } else if (action === "reconnect") {
+    reconnectIBSocket();
+  } else if (action === "escalate") {
+    escalateStaleData(elapsed, activeSubscriptions);
   }
 }, STALE_CHECK_INTERVAL_MS);
 

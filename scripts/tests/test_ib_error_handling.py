@@ -309,7 +309,7 @@ class TestConnectionErrorPatterns:
 
     def test_request_timed_out_detected(self):
         from api.server import _is_ib_connection_error
-        assert _is_ib_connection_error("account updates for U4698258 request timed out")
+        assert _is_ib_connection_error("account updates for U1234567 request timed out")
 
 
 # ---------------------------------------------------------------------------

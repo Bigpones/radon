@@ -9,6 +9,9 @@ import {
   useState,
 } from "react";
 import { createReconnectStrategy, type ReconnectState } from "@/lib/reconnectStrategy";
+import { useDismissablePopover } from "@/lib/useDismissablePopover";
+import { useWatchlist } from "@/lib/useWatchlist";
+import StarToggle from "@/components/StarToggle";
 
 type SearchResult = {
   conId: number;
@@ -23,6 +26,8 @@ type TickerSearchProps = {
   onSelect: (symbol: string) => void;
   placeholder?: string;
   className?: string;
+  /** Fired when the user attempts a search while IB Gateway is unreachable. */
+  onSearchUnavailable?: () => void;
 };
 
 const WS_URL =
@@ -34,7 +39,7 @@ const ALLOWED_SEC_TYPES = new Set(["STK", "IND", "FUT"]);
 
 const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
   function TickerSearch(
-    { onSelect, placeholder = "Search ticker...", className },
+    { onSelect, placeholder = "Search ticker...", className, onSearchUnavailable },
     ref,
   ) {
     const inputRef = useRef<HTMLInputElement>(null);
@@ -56,7 +61,28 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
     const [activeIndex, setActiveIndex] = useState(-1);
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(false);
-    const [wsReady, setWsReady] = useState(false);
+    const [watchBusy, setWatchBusy] = useState<Set<string>>(new Set());
+
+    const { isWatched, toggleWatch } = useWatchlist();
+
+    const handleToggleWatch = useCallback(
+      async (symbol: string) => {
+        const key = symbol.toUpperCase();
+        setWatchBusy((prev) => new Set(prev).add(key));
+        try {
+          await toggleWatch(symbol);
+        } catch {
+          // hook already rolled back the optimistic state
+        } finally {
+          setWatchBusy((prev) => {
+            const next = new Set(prev);
+            next.delete(key);
+            return next;
+          });
+        }
+      },
+      [toggleWatch],
+    );
 
     useImperativeHandle(ref, () => inputRef.current!, []);
 
@@ -82,7 +108,6 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
             ws.close();
             return;
           }
-          setWsReady(true);
           reconnectStrategyRef.current.reset();
 
           // If a search was attempted while WS was down, fire it now
@@ -110,6 +135,9 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
               setResults(filtered);
               setActiveIndex(-1);
               setLoading(false);
+              if (data.disconnected === true) {
+                onSearchUnavailable?.();
+              }
             }
           } catch {
             // ignore non-JSON or irrelevant messages
@@ -118,7 +146,6 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
 
         ws.onclose = () => {
           if (!mountedRef.current) return;
-          setWsReady(false);
           wsRef.current = null;
           // Reconnect with exponential backoff
           const strategy = reconnectStrategyRef.current;
@@ -183,13 +210,16 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
             ws.send(JSON.stringify({ action: "search", pattern: pattern.trim() }));
             pendingPatternRef.current = null;
           } else {
-            // WS not ready — stash the pattern for when it reconnects
+            // WS not ready — relay (or upstream IB) is unreachable. Surface that.
             pendingPatternRef.current = pattern.trim();
+            setResults([]);
+            setLoading(false);
+            onSearchUnavailable?.();
             connectWs();
           }
         }, DEBOUNCE_MS);
       },
-      [connectWs],
+      [connectWs, onSearchUnavailable],
     );
 
     /* ------------------------------------------------------------------ */
@@ -248,22 +278,13 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
     );
 
     /* ------------------------------------------------------------------ */
-    /*  Click outside                                                      */
+    /*  Click outside / Escape                                             */
     /* ------------------------------------------------------------------ */
-    useEffect(() => {
-      function handleClickOutside(e: MouseEvent) {
-        if (
-          containerRef.current &&
-          !containerRef.current.contains(e.target as Node)
-        ) {
-          setIsOpen(false);
-          setActiveIndex(-1);
-        }
-      }
-      document.addEventListener("mousedown", handleClickOutside);
-      return () =>
-        document.removeEventListener("mousedown", handleClickOutside);
+    const dismissDropdown = useCallback(() => {
+      setIsOpen(false);
+      setActiveIndex(-1);
     }, []);
+    useDismissablePopover(containerRef, dismissDropdown);
 
     /* ------------------------------------------------------------------ */
     /*  Scroll active item into view                                       */
@@ -440,6 +461,24 @@ const TickerSearch = forwardRef<HTMLInputElement, TickerSearchProps>(
                   }}
                 >
                   {r.primaryExchange}
+                </span>
+
+                {/* Watchlist star — stop propagation so starring doesn't
+                    select the row / navigate to the ticker. */}
+                <span
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ display: "inline-flex" }}
+                >
+                  <StarToggle
+                    active={isWatched(r.symbol)}
+                    busy={watchBusy.has(r.symbol.toUpperCase())}
+                    onToggle={() => handleToggleWatch(r.symbol)}
+                    size="sm"
+                  />
                 </span>
               </div>
             ))}

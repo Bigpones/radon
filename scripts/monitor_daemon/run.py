@@ -29,8 +29,11 @@ from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from monitor_daemon.daemon import MonitorDaemon
-from monitor_daemon.handlers import FillMonitorHandler, ExitOrdersHandler, PresetRebalanceHandler
+from monitor_daemon.handlers import FillMonitorHandler, ExitOrdersHandler, PresetRebalanceHandler, JournalSyncHandler
 from monitor_daemon.handlers.flex_token_check import FlexTokenCheck
+from monitor_daemon.handlers.cash_flow_sync import CashFlowSyncHandler
+from monitor_daemon.handlers.journal_reconcile import JournalReconcileHandler
+from monitor_daemon.handlers.replica_watchdog import ReplicaWatchdogHandler
 
 # Paths
 PROJECT_DIR = Path(__file__).parent.parent.parent
@@ -87,9 +90,20 @@ def create_daemon() -> MonitorDaemon:
     ))
     
     daemon.register(PresetRebalanceHandler())
-    
+
     daemon.register(FlexTokenCheck())
-    
+
+    daemon.register(JournalSyncHandler(
+        ib_port=4001,
+        client_id=72
+    ))
+
+    daemon.register(CashFlowSyncHandler())
+
+    daemon.register(JournalReconcileHandler())
+
+    daemon.register(ReplicaWatchdogHandler())
+
     # Load previous state
     daemon.load_state()
     
@@ -160,6 +174,7 @@ def list_handlers():
     print("  exit_orders        - Place pending exit orders (300s)")
     print("  preset_rebalance   - Index constituent updates (weekly)")
     print("  flex_token_check   - IB Flex token expiry reminders (daily)")
+    print("  journal_sync       - Append fresh IB fills to trade_log (300s)")
     print()
     print("Add new handlers by:")
     print("  1. Create scripts/monitor_daemon/handlers/my_handler.py")

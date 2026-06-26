@@ -11,6 +11,9 @@
  *  - market closed + session date === today      → not stale (EOD data is final)
  */
 
+import { parseScanTime, scanTimeToEtDate } from "./parseScanTime";
+import { mostRecentSessionDate } from "./marketSession";
+
 const CACHE_TTL_MS = 60_000; // 1 minute
 
 export interface VcgDataShape {
@@ -28,20 +31,6 @@ function isMarketOpenNow(): boolean {
   return minutes >= 9 * 60 + 30 && minutes <= 16 * 60;
 }
 
-function todayInET(): string {
-  return new Date().toLocaleDateString("sv", { timeZone: "America/New_York" });
-}
-
-function scanTimeToETDate(scanTime: string): string | null {
-  try {
-    const d = new Date(scanTime);
-    if (isNaN(d.getTime())) return null;
-    return d.toLocaleDateString("sv", { timeZone: "America/New_York" });
-  } catch {
-    return null;
-  }
-}
-
 /**
  * @param data - parsed VCG JSON
  * @param todayET - today's date in ET (YYYY-MM-DD), injectable for testing
@@ -49,22 +38,28 @@ function scanTimeToETDate(scanTime: string): string | null {
  */
 export function isVcgDataStale(
   data: VcgDataShape,
-  todayET: string = todayInET(),
+  todayET: string = mostRecentSessionDate(),
   currentMarketOpen: boolean = isMarketOpenNow(),
 ): boolean {
   // No scan_time → always stale
   if (!data.scan_time) return true;
 
-  const sessionDate = scanTimeToETDate(data.scan_time);
+  const scanDate = parseScanTime(data.scan_time);
+  if (!scanDate) return true;
+
+  const sessionDate = scanTimeToEtDate(data.scan_time);
   if (!sessionDate) return true;
 
-  // Different trading day → stale
+  // Behind the most-recent EXPECTED session → stale (new trading day, or
+  // catch-up if a scan was missed). `todayET` defaults to the expected SESSION
+  // date (weekend/pre-open aware via mostRecentSessionDate), so on Saturday it
+  // is Friday and finalized Friday data is NOT flagged stale all weekend.
   if (sessionDate !== todayET) return true;
 
-  // Same day + market closed → not stale (serve EOD)
+  // Same session + market closed → not stale (serve finalized EOD data)
   if (!currentMarketOpen) return false;
 
   // Market open → stale if scan_time age exceeds TTL
-  const scanAge = Date.now() - new Date(data.scan_time).getTime();
+  const scanAge = Date.now() - scanDate.getTime();
   return scanAge > CACHE_TTL_MS;
 }

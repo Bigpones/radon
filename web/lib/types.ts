@@ -1,6 +1,15 @@
-import type { LayoutDashboard } from "lucide-react";
+import type { ComponentType } from "react";
 
 export type MessageRole = "assistant" | "user";
+
+/** Visual signature any nav glyph must satisfy. Covers both the legacy
+ *  lucide-react components and the Radon glyph set defined in
+ *  components/icons/RadonGlyphs.tsx. */
+export type NavIcon = ComponentType<{
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+}>;
 
 export type Message = {
   id: string;
@@ -37,7 +46,7 @@ export type PiResponse = {
   error?: string;
 };
 
-export type WorkspaceSection = "dashboard" | "flow-analysis" | "portfolio" | "performance" | "orders" | "scanner" | "discover" | "journal" | "regime" | "cta" | "ticker-detail";
+export type WorkspaceSection = "dashboard" | "flow-analysis" | "portfolio" | "performance" | "orders" | "scanner" | "discover" | "journal" | "regime" | "cta" | "ticker-detail" | "admin" | "profile";
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
@@ -45,7 +54,7 @@ export type WorkspaceNavItem = {
   label: string;
   route: WorkspaceSection;
   href: string;
-  icon: typeof LayoutDashboard;
+  icon: NavIcon;
   hidden?: boolean;
 };
 
@@ -371,7 +380,9 @@ export type BlotterTrade = {
   net_quantity: number;
   total_quantity?: number;
   total_commission: number;
-  realized_pnl: number;
+  realized_pnl: number | null;
+  realized_quantity?: number;
+  realized_cost_basis?: number | null;
   cost_basis: number;
   proceeds: number;
   total_cash_flow: number;
@@ -410,6 +421,68 @@ export type ScannerData = {
   tickers_scanned: number;
   signals_found: number;
   top_signals: ScannerSignal[];
+};
+
+// LEAP IV-mispricing scanner — surfaced via /api/leap, written by
+// scripts/leap_scanner_uw.py --json. The script ranks tickers where
+// long-dated IV diverges from realized vol; `best_gap` is the headline
+// signal (HV − IV in vol points). `is_mispriced` is the script's own
+// boolean classification.
+export type LeapResult = {
+  ticker: string;
+  price: number | null;
+  hv_20: number | null;
+  hv_60: number | null;
+  hv_252: number | null;
+  current_iv: number | null;
+  iv_rank: number | null;
+  leap_count: number;
+  best_gap: number;
+  is_mispriced: boolean;
+};
+
+export type LeapData = {
+  scan_time: string;
+  min_gap: number | null;
+  results: LeapResult[];
+};
+
+// GARCH convergence scanner — surfaced via /api/garch-convergence, written
+// by scripts/garch_convergence.py --json. Scans correlated pairs for IV
+// repricing lags. Each pair has a leader / lagger; the dashboard ranks
+// pairs by `divergence` (composite metric) with `gates_passed` indicating
+// which rows are actionable per the four-gate framework.
+export type GarchPair = {
+  pair: [string, string];
+  leader: string;
+  lagger: string;
+  divergence: number;
+  lagger_hv_iv_gap: number;
+  lagger_iv_rank: number | null;
+  signal: string;
+  gates_passed: boolean;
+  failing_gates: string[];
+  expected_iv: number | null;
+  expected_move: number | null;
+};
+
+export type GarchTickerVol = {
+  price: number | null;
+  hv20: number | null;
+  hv60: number | null;
+  hv252: number | null;
+  leap_atm_iv: number | null;
+  iv_rank: number | null;
+  iv_hv60: number;
+  hv20_minus_iv: number;
+  has_leaps: boolean;
+  leap_count: number;
+};
+
+export type GarchConvergenceData = {
+  scan_time: string;
+  tickers: Record<string, GarchTickerVol>;
+  pairs: GarchPair[];
 };
 
 // Flow Analysis types

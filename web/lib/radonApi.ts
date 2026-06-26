@@ -17,6 +17,23 @@ export class RadonApiError extends Error {
   }
 }
 
+export function coerceRadonErrorDetail(body: unknown, status: number): string {
+  if (typeof body === "string") return body;
+  if (body === null || body === undefined) return `HTTP ${status}`;
+  if (typeof body !== "object") return String(body);
+  const obj = body as Record<string, unknown>;
+  const raw = obj.detail ?? obj.error ?? obj.message;
+  if (typeof raw === "string") return raw;
+  if (raw && typeof raw === "object") {
+    const nested = raw as Record<string, unknown>;
+    if (typeof nested.detail === "string") return nested.detail;
+    if (typeof nested.message === "string") return nested.message;
+    if (typeof nested.error === "string") return nested.error;
+    return JSON.stringify(raw);
+  }
+  return JSON.stringify(body);
+}
+
 export async function radonFetch<T = Record<string, unknown>>(
   path: string,
   opts?: RequestInit & { timeout?: number; token?: string },
@@ -36,7 +53,7 @@ export async function radonFetch<T = Record<string, unknown>>(
     let detail: string;
     try {
       const body = await res.json();
-      detail = body.detail ?? body.error ?? JSON.stringify(body);
+      detail = coerceRadonErrorDetail(body, res.status);
     } catch {
       detail = await res.text().catch(() => `HTTP ${res.status}`);
     }

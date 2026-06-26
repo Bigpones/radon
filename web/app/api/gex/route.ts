@@ -4,6 +4,11 @@ import { join } from "path";
 import { isGexDataStale } from "@/lib/gexStaleness";
 import { radonFetch } from "@/lib/radonApi";
 import { getRequestId, setCacheResponseHeaders } from "@/lib/apiContracts";
+import { getDb } from "@/lib/db";
+// Disable Next.js static caching: this handler reads live disk state
+// (data/*.json, cache files). Without this, the framework freezes the
+// first response and serves stale data until the dev server restarts.
+export const dynamic = "force-dynamic";
 
 export const runtime = "nodejs";
 
@@ -65,7 +70,22 @@ function todayET(): string {
   return new Date().toLocaleDateString("sv", { timeZone: "America/New_York" });
 }
 
-async function readCachedGex(): Promise<Record<string, unknown> | null> {
+async function readCachedGexFromDb(): Promise<Record<string, unknown> | null> {
+  try {
+    const db = getDb();
+    const result = await db.execute({
+      sql: `SELECT payload FROM gex_snapshots WHERE ticker = 'SPX' ORDER BY scan_time DESC LIMIT 1`,
+      args: [],
+    });
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0] as unknown as { payload: string };
+    return JSON.parse(row.payload) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+async function readCachedGexFromDisk(): Promise<Record<string, unknown> | null> {
   try {
     const raw = await readFile(CACHE_PATH, "utf-8");
     const jsonStart = raw.indexOf("{");
@@ -74,6 +94,10 @@ async function readCachedGex(): Promise<Record<string, unknown> | null> {
   } catch {
     return null;
   }
+}
+
+async function readCachedGex(): Promise<Record<string, unknown> | null> {
+  return (await readCachedGexFromDb()) ?? (await readCachedGexFromDisk());
 }
 
 function normalizeGexPayload(raw: Record<string, unknown>): Record<string, unknown> {
@@ -137,4 +161,25 @@ export async function GET(): Promise<Response> {
     cacheState: "HIT",
     tags: ["gex"],
   });
+}
+
+export async function POST(): Promise<Response> {
+  try {
+    const rawData = await radonFetch<Record<string, unknown>>("/gex/scan", { method: "POST", timeout: 130_000 });
+    const data = normalizeGexPayload(rawData);
+    return NextResponse.json(data);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "GEX scan failed";
+    try {
+      const cached = await readCachedGex();
+      if (cached) {
+        const res = NextResponse.json(normalizeGexPayload(cached));
+        res.headers.set("X-Sync-Warning", `GEX sync failed - serving cached data (${message})`);
+        return res;
+      }
+    } catch {
+      // fall through to 502
+    }
+    return NextResponse.json({ error: message }, { status: 502 });
+  }
 }

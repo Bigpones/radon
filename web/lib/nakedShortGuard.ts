@@ -1,25 +1,20 @@
 /**
- * Naked short guard — prevents orders that would create naked short exposure.
+ * Naked short guard — ⚠️ DISABLED 2026-04-30.
  *
- * Rules:
- * - SELL stock without sufficient long shares → BLOCK
- * - SELL call without sufficient long shares to cover → BLOCK
- * - SELL put → ALLOW (cash-secured, defined risk)
- * - Combo closing (action=SELL) → ALLOW (reduces exposure)
- * - Combo opening (action=BUY): inspect leg structure
- *     - SELL call legs not offset by BUY call legs → need stock coverage (BLOCK if uncovered)
- *     - SELL call legs fully offset by BUY call legs (vertical spread) → ALLOW
- *     - Only SELL put legs in combo → ALLOW (cash-secured)
- * - BUY single-leg → ALLOW
+ * Both public entry points (`checkNakedShortRisk`, `auditOpenOrders`) return
+ * "no risk" / "no violations" unconditionally. The original detection logic
+ * is preserved verbatim in private `_checkNakedShortRiskImpl` and
+ * `_auditOpenOrdersImpl` for an in-place re-enable.
  *
- * NOTE: IB BAG combo orders always use BUY as the envelope action; leg actions define structure.
- * The combo check must come BEFORE the BUY early-return to correctly inspect leg-level exposure.
+ * Re-enable: see "Naked Short Protection (Gate 4) → How to re-enable" in
+ * `CLAUDE.md` (6-step procedure covering this file, the Python audit, the
+ * two test suites, and the CLAUDE.md status block).
  */
 
 /* ---------- types ---------- */
 
 export type OrderPayload = {
-  type: "stock" | "option" | "combo";
+  type: "stock" | "option" | "combo" | "future";
   symbol: string;
   action: "BUY" | "SELL";
   quantity: number;
@@ -166,6 +161,25 @@ export function checkNakedShortRisk(
   order: OrderPayload,
   portfolio: NakedShortPortfolio,
 ): GuardResult {
+  // Gate 4 disabled 2026-04-30. Option and combo branches remain fully off.
+  // Stock SELL branch re-enabled as warn-not-block (SPX-05): surfaces the
+  // SPCX-class case pre-flight without hard-blocking the order.
+  if (order.type === "stock" && order.action === "SELL") {
+    return warnFromImpl(_checkNakedShortRiskImpl(order, portfolio));
+  }
+  return { allowed: true };
+}
+
+/** Convert a block result from the impl to a warning; pass-through on allow. */
+function warnFromImpl(result: GuardResult): GuardResult {
+  if (result.allowed) return result;
+  return { allowed: true, reason: result.reason };
+}
+
+function _checkNakedShortRiskImpl(
+  order: OrderPayload,
+  portfolio: NakedShortPortfolio,
+): GuardResult {
   // Combo (BAG) orders — inspect leg structure before the BUY early-return.
   // IB BAG orders always carry action=BUY on the envelope; leg actions define the structure.
   if (order.type === "combo" && order.legs && order.legs.length >= 2) {
@@ -292,6 +306,14 @@ export function checkNakedShortRisk(
 /* ---------- audit open orders ---------- */
 
 export function auditOpenOrders(
+  _orders: NakedShortOpenOrder[],
+  _portfolio: NakedShortPortfolio,
+): { orderId: number; permId: number; reason: string }[] {
+  // GUARD DISABLED — always report no violations.
+  return [];
+}
+
+function _auditOpenOrdersImpl(
   orders: NakedShortOpenOrder[],
   portfolio: NakedShortPortfolio,
 ): { orderId: number; permId: number; reason: string }[] {

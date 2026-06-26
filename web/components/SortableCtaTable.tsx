@@ -5,6 +5,11 @@ import type { CtaRow } from "@/lib/useMenthorqCta";
 import { SECTION_TOOLTIPS } from "@/lib/sectionTooltips";
 import InfoTooltip from "./InfoTooltip";
 import { normalizeCtaPercentile } from "@/lib/ctaPercentiles";
+import { useViewport } from "@/lib/useViewport";
+import { useSort } from "@/lib/useSort";
+import SortTh from "./SortTh";
+import MetricCell from "./mobile/MetricCell";
+import { ChevronRight, ChevronDown } from "lucide-react";
 
 /* ─── Props ──────────────────────────────────────────── */
 
@@ -41,11 +46,11 @@ function posColor(v: number): string {
 
 function pctileBg(v: number): string {
   const normalized = normalizeCtaPercentile(v) ?? v;
-  if (normalized <= 10) return "rgba(232,93,108,0.25)";
-  if (normalized <= 25) return "rgba(232,93,108,0.12)";
-  if (normalized <= 40) return "rgba(245,166,35,0.12)";
-  if (normalized >= 75) return "rgba(5,173,152,0.25)";
-  if (normalized >= 60) return "rgba(5,173,152,0.12)";
+  if (normalized <= 10) return "color-mix(in srgb, var(--fault) 25%, transparent)";
+  if (normalized <= 25) return "color-mix(in srgb, var(--fault) 12%, transparent)";
+  if (normalized <= 40) return "color-mix(in srgb, var(--warning) 12%, transparent)";
+  if (normalized >= 75) return "color-mix(in srgb, var(--signal-core) 25%, transparent)";
+  if (normalized >= 60) return "color-mix(in srgb, var(--signal-core) 12%, transparent)";
   return "transparent";
 }
 
@@ -72,7 +77,7 @@ const SECTION_LABELS: Record<string, string> = {
   currency: "CURRENCIES",
 };
 
-type NumericSortCol =
+type CtaSortKey =
   | "position_today"
   | "position_yesterday"
   | "position_1m_ago"
@@ -80,6 +85,10 @@ type NumericSortCol =
   | "percentile_3m"
   | "percentile_1y"
   | "z_score_3m";
+
+function ctaSortValue(row: CtaRow, key: CtaSortKey): number {
+  return row[key] as number;
+}
 
 /* ─── Flag helpers ───────────────────────────────────── */
 
@@ -117,49 +126,168 @@ function flagForRow(r: CtaRow): { kind: "short" | "long"; tooltip: string } | nu
   return null;
 }
 
-type SortDir = "asc" | "desc";
+/* ─── Mobile sort key -> label ───────────────────────── */
+
+type MobileSortOption = { key: CtaSortKey; label: string };
+
+const MOBILE_SORT_OPTIONS: MobileSortOption[] = [
+  { key: "position_today", label: "Today" },
+  { key: "z_score_3m", label: "Z-score" },
+  { key: "percentile_3m", label: "%ile" },
+];
+
+function flagDotColor(kind: "short" | "long"): string {
+  return kind === "short" ? "var(--negative)" : "var(--positive)";
+}
+
+function flagLabel(kind: "short" | "long"): string {
+  return kind === "short" ? "HEAVY SHORT" : "CROWDED LONG";
+}
+
+/* ─── Mobile section ─────────────────────────────────── */
+
+const MOBILE_TOP_N = 5;
+
+function MobileCtaSection({ sectionKey, rows, callout }: SortableCtaTableProps) {
+  const [activeSortKey, setActiveSortKey] = useState<CtaSortKey>("position_today");
+  const [expanded, setExpanded] = useState(false);
+  const { sorted } = useSort<CtaRow, CtaSortKey>(rows, ctaSortValue, activeSortKey);
+
+  const visibleRows = expanded ? sorted : sorted.slice(0, MOBILE_TOP_N);
+  const hasMore = sorted.length > MOBILE_TOP_N;
+  const sectionLabel = SECTION_LABELS[sectionKey] ?? sectionKey.toUpperCase();
+
+  return (
+    <div style={{ width: "100%" }}>
+      {/* Section header row */}
+      <div className="m-cta-section-header tap-target" role="heading" aria-level={3}>
+        <span className="m-cta-section-header__label">
+          {sectionLabel}
+          {SECTION_TOOLTIPS[sectionLabel] && (
+            <InfoTooltip text={SECTION_TOOLTIPS[sectionLabel]} />
+          )}
+        </span>
+        <span className="m-cta-section-header__count">{rows.length}</span>
+        <ChevronRight size={14} color="var(--text-muted)" aria-hidden />
+      </div>
+
+      {/* Sort bar */}
+      <div className="m-sortbar" role="group" aria-label="Sort CTA rows">
+        {MOBILE_SORT_OPTIONS.map((opt) => (
+          <button
+            key={opt.key}
+            type="button"
+            className={`m-chip${activeSortKey === opt.key ? " m-chip--active" : ""}`}
+            onClick={() => setActiveSortKey(opt.key)}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {callout && (
+        <div
+          className="cta-section-callout"
+          style={{
+            borderLeftColor: callout.kind === "short"
+              ? "var(--negative)"
+              : callout.kind === "long"
+                ? "var(--signal-core)"
+                : "var(--border-dim)",
+          }}
+        >
+          <span
+            className="cta-section-callout-headline"
+            style={{
+              color: callout.kind === "short"
+                ? "var(--negative)"
+                : callout.kind === "long"
+                  ? "var(--signal-core)"
+                  : "var(--text-muted)",
+            }}
+          >
+            {callout.headline}
+          </span>
+          {" "}
+          <span className="cta-section-callout-body">{callout.body}</span>
+        </div>
+      )}
+
+      <div className="cta-mobile-list" data-testid="cta-mobile-list">
+        {visibleRows.map((r) => {
+          const flag = flagForRow(r);
+          const todayTone = r.position_today > 0 ? "pos" as const : r.position_today < 0 ? "neg" as const : "mut" as const;
+          const zTone = r.z_score_3m > 1 ? "pos" as const : r.z_score_3m < -1 ? "neg" as const : "mut" as const;
+          return (
+            <article key={r.underlying} className="m-card-press cta-mobile-card">
+              <div className="cta-mobile-card__head">
+                <span className="cta-mobile-card__ticker">{r.underlying}</span>
+                {flag ? (
+                  <span
+                    className="m-cta-flag-inline"
+                    title={flag.tooltip}
+                    aria-label={flag.tooltip}
+                  >
+                    <span
+                      className="m-cta-flag-dot"
+                      style={{ background: flagDotColor(flag.kind) }}
+                      aria-hidden
+                    />
+                    <span
+                      className="m-cta-flag-label"
+                      style={{ color: flagDotColor(flag.kind) }}
+                    >
+                      {flagLabel(flag.kind)}
+                    </span>
+                  </span>
+                ) : null}
+              </div>
+              <div className="cta-mobile-card__grid">
+                <MetricCell label="Today" value={fmt(r.position_today)} tone={todayTone} />
+                <MetricCell label="3M %ile" value={fmtPctile(r.percentile_3m)} />
+                <MetricCell label="3M Z" value={fmt(r.z_score_3m)} tone={zTone} />
+                <MetricCell label="1M ago" value={fmt(r.position_1m_ago)} tone={r.position_1m_ago > 0 ? "pos" : r.position_1m_ago < 0 ? "neg" : "mut"} />
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      {hasMore && (
+        <button
+          type="button"
+          className="m-cta-expander tap-target"
+          onClick={() => setExpanded((x) => !x)}
+        >
+          {expanded ? (
+            <>
+              <ChevronDown size={14} aria-hidden />
+              Show fewer
+            </>
+          ) : (
+            <>
+              <ChevronRight size={14} aria-hidden />
+              Show all {sorted.length}
+            </>
+          )}
+        </button>
+      )}
+    </div>
+  );
+}
 
 /* ─── Component ──────────────────────────────────────── */
 
 export default function SortableCtaTable({ sectionKey, rows, callout }: SortableCtaTableProps) {
-  const [sortCol, setSortCol] = useState<NumericSortCol | null>(null);
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const { sorted, sort, toggle } = useSort<CtaRow, CtaSortKey>(rows, ctaSortValue);
+  const { isMobile, hasMounted } = useViewport();
 
-  function handleSort(col: NumericSortCol) {
-    if (sortCol === col) {
-      if (sortDir === "desc") {
-        setSortDir("asc");
-      } else {
-        // asc → unsorted
-        setSortCol(null);
-        setSortDir("desc");
-      }
-    } else {
-      setSortCol(col);
-      setSortDir("desc");
-    }
-  }
-
-  const sorted = sortCol == null
-    ? rows
-    : [...rows].sort((a, b) => {
-        const av = a[sortCol] as number;
-        const bv = b[sortCol] as number;
-        return sortDir === "asc" ? av - bv : bv - av;
-      });
-
-  function indicator(col: NumericSortCol) {
-    if (sortCol !== col) return null;
-    return sortDir === "asc" ? " ▲" : " ▼";
-  }
-
-  function thStyle(col: NumericSortCol): React.CSSProperties {
-    return {
-      cursor: "pointer",
-      userSelect: "none",
-      color: sortCol === col ? "var(--text-primary)" : undefined,
-      whiteSpace: "nowrap",
-    };
+  if (hasMounted && isMobile) {
+    return (
+      <div data-testid="sortable-cta-table" style={{ width: "100%" }}>
+        <MobileCtaSection sectionKey={sectionKey} rows={rows} callout={callout} />
+      </div>
+    );
   }
 
   return (
@@ -184,7 +312,7 @@ export default function SortableCtaTable({ sectionKey, rows, callout }: Sortable
             marginLeft: "8px",
             fontSize: "9px",
             fontWeight: 400,
-            background: "rgba(226,232,240,0.06)",
+            background: "color-mix(in srgb, var(--text-primary) 6%, transparent)",
             padding: "1px 5px",
             letterSpacing: "0.04em",
           }}
@@ -224,27 +352,13 @@ export default function SortableCtaTable({ sectionKey, rows, callout }: Sortable
           <thead>
             <tr>
               <th className="cta-th-underlying">UNDERLYING</th>
-              <th className="cta-th-num" style={thStyle("position_today")} onClick={() => handleSort("position_today")}>
-                TODAY{indicator("position_today")}
-              </th>
-              <th className="cta-th-num" style={thStyle("position_yesterday")} onClick={() => handleSort("position_yesterday")}>
-                YDAY{indicator("position_yesterday")}
-              </th>
-              <th className="cta-th-num" style={thStyle("position_1m_ago")} onClick={() => handleSort("position_1m_ago")}>
-                1M AGO{indicator("position_1m_ago")}
-              </th>
-              <th className="cta-th-num" style={thStyle("percentile_1m")} onClick={() => handleSort("percentile_1m")}>
-                1M %ILE{indicator("percentile_1m")}
-              </th>
-              <th className="cta-th-num" style={thStyle("percentile_3m")} onClick={() => handleSort("percentile_3m")}>
-                3M %ILE{indicator("percentile_3m")}
-              </th>
-              <th className="cta-th-num" style={thStyle("percentile_1y")} onClick={() => handleSort("percentile_1y")}>
-                1Y %ILE{indicator("percentile_1y")}
-              </th>
-              <th className="cta-th-num" style={thStyle("z_score_3m")} onClick={() => handleSort("z_score_3m")}>
-                3M Z{indicator("z_score_3m")}
-              </th>
+              <SortTh<CtaSortKey> label="TODAY" sortKey="position_today" activeKey={sort.key} direction={sort.direction} onToggle={toggle} className="cta-th-num" />
+              <SortTh<CtaSortKey> label="YDAY" sortKey="position_yesterday" activeKey={sort.key} direction={sort.direction} onToggle={toggle} className="cta-th-num" />
+              <SortTh<CtaSortKey> label="1M AGO" sortKey="position_1m_ago" activeKey={sort.key} direction={sort.direction} onToggle={toggle} className="cta-th-num" />
+              <SortTh<CtaSortKey> label="1M %ILE" sortKey="percentile_1m" activeKey={sort.key} direction={sort.direction} onToggle={toggle} className="cta-th-num" />
+              <SortTh<CtaSortKey> label="3M %ILE" sortKey="percentile_3m" activeKey={sort.key} direction={sort.direction} onToggle={toggle} className="cta-th-num" />
+              <SortTh<CtaSortKey> label="1Y %ILE" sortKey="percentile_1y" activeKey={sort.key} direction={sort.direction} onToggle={toggle} className="cta-th-num" />
+              <SortTh<CtaSortKey> label="3M Z" sortKey="z_score_3m" activeKey={sort.key} direction={sort.direction} onToggle={toggle} className="cta-th-num" />
               <th style={{ width: "24px" }} aria-label="signal flag" />
             </tr>
           </thead>

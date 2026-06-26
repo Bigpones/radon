@@ -5,6 +5,8 @@ import {
   type WSMessage,
   type PriceData,
   type FundamentalsData,
+  type DepthBook,
+  type Trade,
   type OptionContract,
   type IndexContract,
   normalizeSymbolList,
@@ -12,6 +14,7 @@ import {
   symbolKey,
   contractsKey,
   optionKey,
+  parseOptionKey,
 } from "./pricesProtocol";
 import { createReconnectStrategy, type ReconnectState } from "./reconnectStrategy";
 
@@ -30,6 +33,22 @@ export type UsePricesOptions = {
   indexes?: IndexContract[];
   /** Enable real-time streaming (default: true) */
   enabled?: boolean;
+  /**
+   * The single symbol whose L2 depth-of-book should stream. Depth is a
+   * scarce resource (~3 concurrent tickets), so only the focused subject
+   * subscribes. `null`/`undefined` releases any active depth ticket.
+   * NOTE: this alone never forces a connection — the focused symbol is
+   * already part of `symbols`/`contracts`.
+   */
+  depthSymbol?: string | null;
+  /**
+   * For a futures/index depth subject, the order-ticket selected contract's
+   * expiry (YYYYMMDD or YYYYMM). The depth KEY stays `depthSymbol`; this expiry
+   * tells the relay WHICH listed future to resolve under that key. `null`
+   * resolves the front month. Ignored for OPTION depth subjects (those carry
+   * their own structured expiry/strike/right).
+   */
+  depthExpiry?: string | null;
   /** Callback when a price updates */
   onPriceUpdate?: (update: PriceUpdate) => void;
   /** Callback when connection status changes */
@@ -43,6 +62,11 @@ export type UsePricesReturn = {
   prices: Record<string, PriceData>;
   /** Fundamentals data keyed by symbol (from IB generic tick 258) */
   fundamentals: Record<string, FundamentalsData>;
+  /** Depth-of-book (L2) keyed by symbol. Only the focused `depthSymbol` populates. */
+  depths: Record<string, DepthBook>;
+  /** Time & Sales tape keyed by symbol (newest-first, bounded). Rides the same
+   *  focused `depthSymbol` as `depths` — only that subject populates. */
+  tape: Record<string, Trade[]>;
   /** Whether the connection is active */
   connected: boolean;
   /** Whether IB is connected on the server */
@@ -69,6 +93,10 @@ function wsLog(...args: unknown[]) {
 const STALENESS_CHECK_INTERVAL_MS = 15_000;
 const STALENESS_THRESHOLD_MS = 60_000;
 
+/** Time & Sales tape is bounded per symbol so a busy print stream can't grow
+ *  unboundedly. Newest rows are kept (the tape renders newest-first). */
+const TAPE_MAX_PER_SYMBOL = 50;
+
 /**
  * React hook for real-time price streaming from IB via WebSocket.
  *
@@ -82,6 +110,8 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
     contracts = [],
     indexes = [],
     enabled = true,
+    depthSymbol = null,
+    depthExpiry = null,
     onPriceUpdate,
     onConnectionChange,
     getToken,
@@ -89,6 +119,8 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
 
   const [prices, setPrices] = useState<Record<string, PriceData>>({});
   const [fundamentals, setFundamentals] = useState<Record<string, FundamentalsData>>({});
+  const [depths, setDepths] = useState<Record<string, DepthBook>>({});
+  const [tape, setTape] = useState<Record<string, Trade[]>>({});
   const [connected, setConnected] = useState(false);
   const [ibConnected, setIbConnected] = useState(false);
   const [ibIssue, setIbIssue] = useState<string | null>(null);
@@ -115,6 +147,15 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
     indexes: IndexContract[];
   }>({ symbols: [], contracts: [], indexes: [] });
   const lastSentHashRef = useRef("");
+
+  // Focused-depth tracking — kept SEPARATE from the price subscription diff so
+  // the scarce depth resource is routed on its own. We track the symbol AND the
+  // optional selected future expiry separately, but dedupe/diff on the PAIR
+  // (symbol + "|" + expiry) so changing ONLY the expiry still re-fires
+  // subscribe-depth (the relay swaps the resolved contract under the same key).
+  const desiredDepthRef = useRef<string | null>(null);
+  const desiredDepthExpiryRef = useRef<string | null>(null);
+  const lastSentDepthKeyRef = useRef<string | null>(null);
 
   // Callback refs (avoid stale closures in WS handlers)
   const onPriceUpdateRef = useRef(onPriceUpdate);
@@ -147,12 +188,19 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
     normalizedContracts.length > 0 ||
     normalizedIndexes.length > 0;
 
+  const normalizedDepthSymbol =
+    depthSymbol && depthSymbol.trim().length > 0 ? depthSymbol.trim() : null;
+  const normalizedDepthExpiry =
+    depthExpiry && depthExpiry.trim().length > 0 ? depthExpiry.trim() : null;
+
   // Sync refs during render (before any useCallback/useEffect)
   desiredRef.current = {
     symbols: normalizedSymbols,
     contracts: normalizedContracts,
     indexes: normalizedIndexes,
   };
+  desiredDepthRef.current = normalizedDepthSymbol;
+  desiredDepthExpiryRef.current = normalizedDepthExpiry;
   onPriceUpdateRef.current = onPriceUpdate;
   onConnectionChangeRef.current = onConnectionChange;
   getTokenRef.current = getToken;
@@ -299,6 +347,85 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
     [buildHash],
   );
 
+  /**
+   * Send subscribe-depth / unsubscribe-depth for the single focused symbol.
+   * Mirrors `syncSubscriptions` diff discipline but for the scarce depth
+   * ticket: on a focus change the old key is unsubscribed and evicted from
+   * `depths` before the new key subscribes.
+   */
+  const syncDepth = useCallback((ws: WebSocket) => {
+    if (ws.readyState !== WebSocket.OPEN) return;
+
+    const desired = desiredDepthRef.current;
+    const desiredExpiry = desiredDepthExpiryRef.current;
+    // Diff on the PAIR so changing ONLY the expiry (same index symbol) still
+    // re-sends subscribe-depth and the relay swaps the resolved future.
+    const desiredKey = desired ? `${desired}|${desiredExpiry ?? ""}` : null;
+    const previousKey = lastSentDepthKeyRef.current;
+    if (desiredKey === previousKey) return; // No change
+
+    // The depths/tape maps are keyed by the bare symbol, not the pair. When the
+    // expiry changes for the SAME symbol the relay re-uses that key (swap in
+    // place), so only evict the previous book when the SYMBOL itself changed.
+    const previousSymbol = previousKey ? previousKey.split("|")[0] : null;
+    const symbolChanged = previousSymbol !== desired;
+
+    if (previousSymbol && symbolChanged) {
+      ws.send(
+        JSON.stringify({ action: "unsubscribe-depth", symbol: previousSymbol }),
+      );
+      setDepths((prev) => {
+        if (!(previousSymbol in prev)) return prev;
+        const next = { ...prev };
+        delete next[previousSymbol];
+        return next;
+      });
+      // The tape rides the same focused depth symbol — evict it together so a
+      // focus switch never leaves a stale tape behind.
+      setTape((prev) => {
+        if (!(previousSymbol in prev)) return prev;
+        const next = { ...prev };
+        delete next[previousSymbol];
+        return next;
+      });
+    }
+
+    if (desired) {
+      // A focused single-leg OPTION subject is keyed by its composite option
+      // key (SYMBOL_YYYYMMDD_STRIKE_RIGHT). The relay's option-depth branch
+      // needs the STRUCTURED contract fields (expiry/strike/right) to build the
+      // OPRA montage — given only the composite string it falls through to a
+      // bogus stock contract and emits depth-unavailable, so the panel degrades
+      // to the L1 fallback. Decompose the key here so the relay re-derives the
+      // SAME key via its own optionKey() and echoes the book under it.
+      const optionContract = parseOptionKey(desired);
+      let payload: Record<string, unknown>;
+      if (optionContract) {
+        payload = {
+          action: "subscribe-depth",
+          symbol: optionContract.symbol,
+          expiry: optionContract.expiry,
+          strike: optionContract.strike,
+          right: optionContract.right,
+        };
+      } else if (desiredExpiry) {
+        // Futures/index subject with a selected expiry: tell the relay to
+        // resolve THIS listed future (not the front month) under the same key.
+        payload = {
+          action: "subscribe-depth",
+          symbol: desired,
+          instrument: "future",
+          expiry: desiredExpiry,
+        };
+      } else {
+        payload = { action: "subscribe-depth", symbol: desired };
+      }
+      ws.send(JSON.stringify(payload));
+    }
+
+    lastSentDepthKeyRef.current = desiredKey;
+  }, []);
+
   // ---------------------------------------------------------------------------
   // buildAuthenticatedUrl — append ticket query param for WS auth
   // ---------------------------------------------------------------------------
@@ -368,6 +495,9 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
       // Force full send on new connection
       lastSentHashRef.current = "";
       syncSubscriptions(ws);
+      // Depth resubscribes from scratch on every fresh socket.
+      lastSentDepthKeyRef.current = null;
+      syncDepth(ws);
       wsLog("open", { gen });
 
       // Start staleness check
@@ -418,6 +548,63 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
             }));
             break;
           }
+          case "depth": {
+            const { data } = message;
+            setDepths((prev) => ({ ...prev, [data.symbol]: data }));
+            break;
+          }
+          case "depth-batch": {
+            const { updates } = message;
+            setDepths((prev) => ({ ...prev, ...updates }));
+            break;
+          }
+          case "tape-batch": {
+            // The relay sends each symbol's FULL ring-buffer snapshot
+            // (oldest-first, already bounded), not a delta — so REPLACE, never
+            // merge (merging would re-append the whole snapshot every flush and
+            // duplicate rows). Keep oldest-first: classifyTicks walks the array
+            // front-to-back treating each prior element as the chronologically
+            // earlier print, and TimeAndSales reverses for newest-at-top display.
+            const { updates } = message;
+            setTape((prev) => {
+              const next = { ...prev };
+              for (const [sym, snapshot] of Object.entries(updates)) {
+                next[sym] = snapshot.slice(-TAPE_MAX_PER_SYMBOL);
+              }
+              return next;
+            });
+            break;
+          }
+          case "depth-unavailable": {
+            const { symbol: depthSym, reason } = message;
+            if (reason === "recycled") {
+              // The ticket was reassigned to another focused symbol; drop the
+              // stale book entirely rather than render a non-entitled shell.
+              setDepths((prev) => {
+                if (!(depthSym in prev)) return prev;
+                const next = { ...prev };
+                delete next[depthSym];
+                return next;
+              });
+              break;
+            }
+            // no-entitlement / futures-no-depth → mark the book unentitled so
+            // the panel flips to the L1 fallback with a calm note.
+            setDepths((prev) => ({
+              ...prev,
+              [depthSym]: {
+                symbol: depthSym,
+                kind: prev[depthSym]?.kind ?? "stock",
+                bid: [],
+                ask: [],
+                isSmartDepth: prev[depthSym]?.isSmartDepth ?? false,
+                feed: prev[depthSym]?.feed ?? null,
+                entitled: false,
+                timestamp: new Date().toISOString(),
+              },
+            }));
+            break;
+          }
           case "status":
             setIbConnected(message.ib_connected);
             setIbIssue(message.ib_issue ?? null);
@@ -452,6 +639,7 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
       setIbStatusMessage(null);
       onConnectionChangeRef.current?.(false);
       lastSentHashRef.current = ""; // Next connect must full-sync
+      lastSentDepthKeyRef.current = null; // Depth re-subscribes on reconnect
       wsLog("close", { gen });
       scheduleReconnectRef.current();
     };
@@ -466,7 +654,7 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
       ws.close();
     };
     })();
-  }, [enabled, socketUrl, clearReconnectTimer, clearStalenessTimer, syncSubscriptions, buildAuthenticatedUrl]);
+  }, [enabled, socketUrl, clearReconnectTimer, clearStalenessTimer, syncSubscriptions, syncDepth, buildAuthenticatedUrl]);
 
   // Wire scheduleReconnect via ref to avoid circular dep
   const scheduleReconnect = useCallback(() => {
@@ -587,6 +775,7 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
       }
       connStateRef.current = "idle";
       lastSentHashRef.current = "";
+      lastSentDepthKeyRef.current = null;
       setConnected(false);
       onConnectionChangeRef.current?.(false);
     }
@@ -603,6 +792,7 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
       }
       connStateRef.current = "idle";
       lastSentHashRef.current = "";
+      lastSentDepthKeyRef.current = null;
     };
   }, [enabled, hasSubscriptions, connect, clearReconnectTimer, clearStalenessTimer]);
 
@@ -617,9 +807,24 @@ export function usePrices(options: UsePricesOptions): UsePricesReturn {
     // If still connecting, onopen will flush via syncSubscriptions
   }, [symbolHash, contractHash, indexHash, syncSubscriptions]);
 
+  // ---------------------------------------------------------------------------
+  // Focused-depth sync effect — diffs the single depth symbol over the open
+  // connection. Deliberately does NOT influence `hasSubscriptions`/connect:
+  // the focused symbol is already streaming L1, so depth never forces a socket.
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const ws = wsRef.current;
+    if (ws && connStateRef.current === "open") {
+      syncDepth(ws);
+    }
+    // If still connecting, onopen will flush via syncDepth
+  }, [normalizedDepthSymbol, normalizedDepthExpiry, syncDepth]);
+
   return {
     prices,
     fundamentals,
+    depths,
+    tape,
     connected,
     ibConnected,
     ibIssue,

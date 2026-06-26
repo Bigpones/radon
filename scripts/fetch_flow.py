@@ -18,17 +18,33 @@ Intraday Interpolation:
   - Volume comparison to prior days' averages
   This prevents false "fading" signals from incomplete intraday data.
 """
-import argparse, json, sys
+import argparse, json, logging, sys, time as time_module
 from datetime import datetime, time
 from typing import Dict, List, Optional, Tuple
 import pytz
 
-from clients.uw_client import UWClient, UWAPIError
+from clients.uw_client import (
+    UWClient,
+    UWAPIError,
+    UWNotFoundError,
+    UWRateLimitError,
+    UWServerError,
+)
 from utils.market_calendar import (
     get_last_n_trading_days,
     load_holidays,
     _is_trading_day,
 )
+from utils.darkpool_cache import get_cached_darkpool, set_cached_darkpool
+
+logger = logging.getLogger(__name__)
+
+# Single 2-second backoff for transient UW failures (rate limit / 5xx).
+# Two days ago (2026-05-15 16:30 UTC) a hammer-pattern burst of concurrent
+# requests poisoned the EWY flow-analysis cache for ~10 hours because the
+# per-day darkpool calls silently swallowed UWRateLimitError. One bounded
+# retry covers the common transient case without amplifying the throttle.
+_UW_TRANSIENT_RETRY_SLEEP_S = 2.0
 
 # Trading day constants
 MARKET_OPEN = time(9, 30)  # 9:30 AM ET
@@ -217,18 +233,61 @@ def is_market_open(date: datetime) -> bool:
     return _is_trading_day(date)
 
 
+def _call_uw_with_retry(call, *, what: str):
+    """Invoke a UW client call with one bounded retry on transient errors.
+
+    Returns the raw response on success. Returns ``[]`` ONLY for
+    `UWNotFoundError` (legitimate empty — UW doesn't have that ticker /
+    date). Rate-limit (429) and 5xx get one 2-second retry, then re-raise.
+    All other UW errors re-raise immediately.
+
+    The previous blanket `except UWAPIError: return []` silently converted
+    every error class into an empty result, then the aggregator persisted
+    a "successful" report with zero prints for that day, then `server.py`'s
+    aggregate-level cache guard waved it through because the cross-day
+    total was still positive. End result: stale cache rows showing
+    "NO DATA" for days that were perfectly healthy on UW's side.
+
+    Now: rate-limit / 5xx surfaces as a raised exception so the calling
+    POST 502s and the cache is preserved at its prior valid state.
+    """
+    try:
+        return call()
+    except UWNotFoundError as exc:
+        logger.info("UW %s: not found (legit empty): %s", what, exc)
+        return None
+    except (UWRateLimitError, UWServerError) as exc:
+        logger.warning(
+            "UW %s: transient %s, retrying once after %ss",
+            what, type(exc).__name__, _UW_TRANSIENT_RETRY_SLEEP_S,
+        )
+        time_module.sleep(_UW_TRANSIENT_RETRY_SLEEP_S)
+        return call()
+    except UWAPIError as exc:
+        logger.warning("UW %s: non-retryable error: %s", what, exc)
+        raise
+
+
 def fetch_darkpool(ticker: str, date: Optional[str] = None, _client: Optional[UWClient] = None) -> List[Dict]:
     """Fetch dark pool trade prints for a ticker.
 
     Returns list of individual dark pool transactions with price, size,
     NBBO context, and premium.
+
+    Raises `UWRateLimitError` / `UWServerError` if the upstream is genuinely
+    failing (after one bounded retry). The caller is expected to abort the
+    flow_report build rather than build a structurally-degraded report
+    that gets cached.
     """
     def _fetch(client):
-        try:
-            resp = client.get_darkpool_flow(ticker, date=date)
-            return resp.get("data", [])
-        except UWAPIError:
+        what = f"darkpool({ticker}, date={date})"
+        resp = _call_uw_with_retry(
+            lambda: client.get_darkpool_flow(ticker, date=date),
+            what=what,
+        )
+        if resp is None:
             return []
+        return resp.get("data", [])
 
     if _client is not None:
         return _fetch(_client)
@@ -242,14 +301,18 @@ def fetch_flow_alerts(
     """Fetch options flow alerts for a ticker.
 
     Filters for larger trades (default $50k+ premium) that are more likely
-    to represent institutional activity.
+    to represent institutional activity. Same retry / raise semantics as
+    `fetch_darkpool`.
     """
     def _fetch(client):
-        try:
-            resp = client.get_flow_alerts(ticker=ticker, min_premium=min_premium, limit=100)
-            return resp.get("data", [])
-        except UWAPIError:
+        what = f"flow_alerts({ticker}, min_premium={min_premium})"
+        resp = _call_uw_with_retry(
+            lambda: client.get_flow_alerts(ticker=ticker, min_premium=min_premium, limit=100),
+            what=what,
+        )
+        if resp is None:
             return []
+        return resp.get("data", [])
 
     if _client is not None:
         return _fetch(_client)
@@ -305,19 +368,23 @@ def analyze_darkpool(trades: List[Dict]) -> Dict:
     classified = buy_volume + sell_volume
     buy_ratio = round(buy_volume / classified, 4) if classified > 0 else None
 
-    # Flow direction: >55% buy = ACCUMULATION, <45% buy = DISTRIBUTION
+    # Flow direction: >55% buy = ACCUMULATION, <45% buy = DISTRIBUTION.
+    # Strength is the magnitude of the lean (|buy_ratio - 0.5| * 200) on a
+    # 0-100 scale — reported regardless of whether the lean crossed the
+    # actionable threshold so a NEUTRAL day still reflects how skewed the
+    # prints actually were rather than collapsing to "0" (which reads as
+    # "no data" in the UI).
     if buy_ratio is None:
         direction = "UNKNOWN"
         strength = 0
-    elif buy_ratio >= 0.55:
-        direction = "ACCUMULATION"
-        strength = round((buy_ratio - 0.5) * 200, 1)  # 0-100 scale
-    elif buy_ratio <= 0.45:
-        direction = "DISTRIBUTION"
-        strength = round((0.5 - buy_ratio) * 200, 1)
     else:
-        direction = "NEUTRAL"
-        strength = 0
+        strength = round(abs(buy_ratio - 0.5) * 200, 1)
+        if buy_ratio >= 0.55:
+            direction = "ACCUMULATION"
+        elif buy_ratio <= 0.45:
+            direction = "DISTRIBUTION"
+        else:
+            direction = "NEUTRAL"
 
     return {
         "total_volume": total_volume,
@@ -347,8 +414,9 @@ def analyze_options_flow(alerts: List[Dict]) -> Dict:
     put_premium = 0.0
 
     for a in alerts:
-        prem = float(a.get("premium", 0))
-        if a.get("is_call"):
+        prem = float(a.get("total_premium") or a.get("premium") or 0)
+        is_call = (a.get("type") or "").lower() == "call" or bool(a.get("is_call"))
+        if is_call:
             call_premium += prem
         else:
             put_premium += prem
@@ -420,7 +488,14 @@ def fetch_flow(ticker: str, lookback_days: int = 5, _client: Optional[UWClient] 
     def _do_fetch(client):
         nonlocal all_dp_trades, daily_signals
         for date in trading_days:
-            trades = fetch_darkpool(ticker, date, _client=client)
+            # Prior (closed) sessions are immutable: serve them from the on-disk
+            # cache and skip UW entirely. Only today is fetched live. A failed
+            # fetch raises out of fetch_darkpool (never cached); empty/today are
+            # no-ops in set_cached_darkpool. This is the P0 UW-load reduction.
+            trades = get_cached_darkpool(ticker, date)
+            if trades is None:
+                trades = fetch_darkpool(ticker, date, _client=client)
+                set_cached_darkpool(ticker, date, trades)
             if isinstance(trades, list):
                 day_analysis = analyze_darkpool(trades)
                 day_analysis["date"] = date

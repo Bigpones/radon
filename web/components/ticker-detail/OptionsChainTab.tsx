@@ -3,16 +3,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PriceData, OptionContract } from "@/lib/pricesProtocol";
 import { optionKey, normalizeOptionExpiry } from "@/lib/pricesProtocol";
-import type { PortfolioPosition } from "@/lib/types";
+import type { PortfolioData, PortfolioPosition } from "@/lib/types";
 import { fmtPrice } from "@/lib/positionUtils";
 import OrderErrorBanner from "@/components/OrderErrorBanner";
+import SpectralLoader from "@/components/SpectralLoader";
+import { useOrderActionsOptional } from "@/lib/OrderActionsContext";
 import { useTickerDetail } from "@/lib/TickerDetailContext";
 import { useChainPrefetch } from "@/lib/useChainPrefetch";
+import { useChainUrlState, parseSideParam, parseStrikesParam, type SideFilter } from "@/lib/useChainUrlState";
+import { computeLegImpliedValue } from "@/lib/impliedValue";
+import { useRiskFreeRate } from "@/lib/useRiskFreeRate";
 import {
   type OrderLeg,
   formatExpiry,
   daysToExpiry,
   detectStructure,
+  isBearishRiskReversal,
   computeNetPrice,
   computeNetOptionQuote,
   getComboEntryAction,
@@ -20,8 +26,18 @@ import {
   normalizeComboOrder,
   findAtmStrike,
   getVisibleStrikes,
+  ALL_STRIKES,
 } from "@/lib/optionsChainUtils";
-import { OrderPriceStrip, OrderLegPills, OrderConfirmSummary, type OrderLeg as UnifiedOrderLeg, type OrderSummary } from "@/lib/order";
+import {
+  OrderPriceStrip,
+  OrderLegPills,
+  OrderRiskGate,
+  useOrderRisk,
+  type OrderLeg as UnifiedOrderLeg,
+  type OrderRiskInput,
+} from "@/lib/order";
+import { useViewport } from "@/lib/useViewport";
+import MobileChainLadder from "@/components/mobile/MobileChainLadder";
 
 /* ─── Types ─── */
 
@@ -31,6 +47,12 @@ type OptionsChainTabProps = {
   tickerPriceData: PriceData | null;
   focusPosition?: PortfolioPosition | null;
   focusPositionRequested?: boolean;
+  /**
+   * Full portfolio snapshot. Used by the chain `OrderBuilder` so SELL legs at
+   * a different strike than a held LONG (same ticker / expiry / right) compose
+   * to a vertical spread instead of flagging "uncovered short".
+   */
+  portfolio?: PortfolioData | null;
 };
 
 type ChainStrike = {
@@ -42,6 +64,8 @@ type ChainStrike = {
 /* ─── Chain Strike Row ─── */
 
 function StrikeRow({
+  ticker,
+  expiry,
   strike,
   callKey,
   putKey,
@@ -51,7 +75,10 @@ function StrikeRow({
   onClickPut,
   atmRef,
   sideFilter,
+  riskFreeRate,
 }: {
+  ticker: string;
+  expiry: string;
   strike: number;
   callKey: string;
   putKey: string;
@@ -61,6 +88,7 @@ function StrikeRow({
   onClickPut: (strike: number, action: "BUY" | "SELL") => void;
   atmRef?: React.Ref<HTMLTableRowElement>;
   sideFilter: "both" | "calls" | "puts";
+  riskFreeRate: number;
 }) {
   const callData = prices[callKey] ?? null;
   const putData = prices[putKey] ?? null;
@@ -82,6 +110,28 @@ function StrikeRow({
   const putIV = putData?.impliedVol;
   const putDelta = putData?.delta;
 
+  // Black-Scholes implied (theoretical) per-share price. Reuses the same
+  // resolver the dashboard PositionTable uses — same S, σ, K, T, r precedence.
+  // contracts is set to 1 because we display per-share, not notional.
+  const callImplied = useMemo(
+    () =>
+      computeLegImpliedValue(
+        { ticker, expiry, strike, type: "Call", direction: "LONG", contracts: 1 },
+        prices,
+        { riskFreeRate },
+      ).perContract,
+    [ticker, expiry, strike, prices, riskFreeRate],
+  );
+  const putImplied = useMemo(
+    () =>
+      computeLegImpliedValue(
+        { ticker, expiry, strike, type: "Put", direction: "LONG", contracts: 1 },
+        prices,
+        { riskFreeRate },
+      ).perContract,
+    [ticker, expiry, strike, prices, riskFreeRate],
+  );
+
   const rowClass = `chain-row ${isAtm ? "chain-row-atm" : ""}`;
   const showCalls = sideFilter !== "puts";
   const showPuts = sideFilter !== "calls";
@@ -93,6 +143,12 @@ function StrikeRow({
         <>
           <td className="chain-cell chain-greek">{callDelta != null ? callDelta.toFixed(2) : ""}</td>
           <td className="chain-cell chain-iv">{callIV != null ? (callIV * 100).toFixed(1) : ""}</td>
+          <td
+            className="chain-cell chain-implied"
+            title="Black-Scholes implied (theoretical) per-share price"
+          >
+            {callImplied != null ? fmtPrice(callImplied) : ""}
+          </td>
           <td className="chain-cell chain-vol">{callVol != null ? callVol.toLocaleString() : ""}</td>
           <td
             className="chain-cell chain-bid chain-clickable"
@@ -150,6 +206,12 @@ function StrikeRow({
             {putAsk != null ? fmtPrice(putAsk) : "---"}
           </td>
           <td className="chain-cell chain-vol">{putVol != null ? putVol.toLocaleString() : ""}</td>
+          <td
+            className="chain-cell chain-implied"
+            title="Black-Scholes implied (theoretical) per-share price"
+          >
+            {putImplied != null ? fmtPrice(putImplied) : ""}
+          </td>
           <td className="chain-cell chain-iv">{putIV != null ? (putIV * 100).toFixed(1) : ""}</td>
           <td className="chain-cell chain-greek">{putDelta != null ? putDelta.toFixed(2) : ""}</td>
         </>
@@ -164,6 +226,7 @@ function OrderBuilder({
   ticker,
   legs,
   prices,
+  portfolio,
   onRemoveLeg,
   onUpdateLeg,
   onClearLegs,
@@ -171,6 +234,7 @@ function OrderBuilder({
   ticker: string;
   legs: OrderLeg[];
   prices: Record<string, PriceData>;
+  portfolio?: PortfolioData | null;
   onRemoveLeg: (id: string) => void;
   onUpdateLeg: (id: string, updates: Partial<OrderLeg>) => void;
   onClearLegs: () => void;
@@ -180,7 +244,7 @@ function OrderBuilder({
   const [priceManuallySet, setPriceManuallySet] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const orderActions = useOrderActionsOptional();
   const [confirmStep, setConfirmStep] = useState(false);
 
   const isCombo = legs.length > 1;
@@ -217,9 +281,15 @@ function OrderBuilder({
 
   const signedNetPrice = useCallback((value: number | null) => {
     if (value == null) return null;
+    // Single-leg orders carry a positive premium (the price you pay/receive
+    // for that one option). Sign-flipping is a combo-only concept for
+    // expressing net debit/credit. Forcing positive here keeps BID/MID/ASK
+    // quote buttons positive, the auto-populated limit positive, and the
+    // `isValidPrice` (parsedPrice > 0) check satisfied.
+    if (!isCombo) return Math.abs(value);
     if (isDebit === null) return value;
     return isDebit ? Math.abs(value) : -Math.abs(value);
-  }, [isDebit]);
+  }, [isCombo, isDebit]);
 
   const signedNetPrices = useMemo(() => {
     return {
@@ -245,45 +315,61 @@ function OrderBuilder({
     }
   }, [signedNetPrices.mid, priceManuallySet, structureKey]);
 
-  // Calculate order summary for confirmation
-  const orderSummary: OrderSummary | null = useMemo(() => {
+  // Build the chokepoint input. All risk math + portfolio augmentation now
+  // lives in `useOrderRisk` (called by `<OrderRiskGate>` below). The chain
+  // hands raw user-entered legs in; the gate folds coverage, fixes per-combo
+  // ratios, applies `netPremiumAdjustment` for stock-backed covered calls.
+  // The old in-line augmentation + computeOrderRisk has moved behind
+  // `@/lib/order/risk` and is ESLint-banned at every call site outside that
+  // module. See `tasks/order-risk-chokepoint-refactor.md`.
+  const riskInput: OrderRiskInput | null = useMemo(() => {
     if (!isValidPrice) return null;
-    
     const totalCost = parsedPrice * totalQty * 100;
     const description = `${structure || "Option"} @ ${fmtPrice(parsedPrice)}`;
-    
-    // For vertical spreads, calculate max gain/loss
-    if (legs.length === 2) {
-      const strikes = legs.map((l) => l.strike);
-      const width = Math.abs(strikes[0] - strikes[1]);
-      const maxWidth = width * totalQty * 100;
-      
-      if (isDebit) {
-        // Debit spread: max loss = premium paid, max gain = width - premium
-        return {
-          description,
-          totalCost,
-          maxGain: maxWidth - totalCost,
-          maxLoss: totalCost,
-        };
-      } else {
-        // Credit spread: max gain = premium received, max loss = width - premium
-        return {
-          description,
-          totalCost: -totalCost, // Negative because we receive
-          maxGain: totalCost,
-          maxLoss: maxWidth - totalCost,
-        };
-      }
-    }
-    
-    // Single leg or complex: max loss = premium paid (for debit)
+    // Single-leg orders: debit/credit is STRUCTURALLY determined by action,
+    // not by the WS net-price probe. SELL → receive premium → credit;
+    // BUY → pay premium → debit. Falling back on `isDebit` (computed from
+    // `computeNetPrice` on live WS quotes) breaks on weekends / off-hours
+    // when bid/ask are null and `isDebit` is `null` — the old code then
+    // defaulted to treating the order as a debit and the resulting risk
+    // numbers came out with a flipped credit sign (Max Loss = abs(credit)
+    // instead of $0). For multi-leg combos `isDebit` is still meaningful
+    // because structure determines the sign.
+    const isCredit = isCombo
+      ? isDebit === false
+      : legs[0]?.action === "SELL";
+    const netPremium = isCredit ? -Math.abs(parsedPrice) : parsedPrice;
+    // `ChainOrderLeg.quantity` MUST be the raw user-entered contract count
+    // (see `augmentOrderLegsWithPortfolioCoverage`'s docblock). The augmenter
+    // computes the per-combo ratio itself via `gcd(quantities)`.
+    //
+    // Regression 2026-05-27 (VIX bull call spread): passing `normalizedOrder.legs`
+    // here handed in ratio quantities (e.g. 1/1 for a 500/500 spread). The
+    // augmenter then computed `comboQuantity = gcd(1, 1) = 1`, collapsing the
+    // 500-contract aggregate into per-combo dollars ($880 / $120 instead of
+    // $440k / $60k). Always source from raw `legs`. Multi-leg fuzz property
+    // P3b in `tests/fuzz/order-risk.fuzz.test.ts` pins the contract going
+    // forward.
+    const chainLegs = legs.map((l) => ({
+      action: l.action,
+      right: l.right,
+      strike: l.strike,
+      expiry: l.expiry,
+      quantity: Math.max(1, Math.trunc(l.quantity)),
+    }));
     return {
+      ticker,
+      chainLegs,
+      netPremium,
       description,
-      totalCost: isDebit ? totalCost : -totalCost,
-      ...(isDebit ? { maxLoss: totalCost } : {}),
+      totalCost: isCredit ? -totalCost : totalCost,
     };
-  }, [isValidPrice, parsedPrice, totalQty, structure, legs, isDebit]);
+  }, [isValidPrice, parsedPrice, totalQty, structure, isDebit, legs, ticker]);
+
+  // Pull the resolved state for the coverage chip + (later) submit gating.
+  // Calling `useOrderRisk` directly here is equivalent to the gate; the gate
+  // wraps both the hook and the summary render below.
+  const riskState = useOrderRisk(riskInput, portfolio ?? null);
 
   const handlePlace = useCallback(async () => {
     if (!confirmStep) {
@@ -293,7 +379,6 @@ function OrderBuilder({
 
     setLoading(true);
     setError(null);
-    setSuccess(null);
 
     try {
       const isCombo = legs.length > 1;
@@ -338,7 +423,7 @@ function OrderBuilder({
       if (!res.ok) {
         setError(json.error || "Order placement failed");
       } else {
-        setSuccess(`Order placed: ${structure || "Option"} on ${ticker}`);
+        orderActions?.pushNotification({ type: "success", message: `Order placed: ${structure || "Option"} on ${ticker}` });
         setConfirmStep(false);
       }
     } catch {
@@ -407,7 +492,7 @@ function OrderBuilder({
             color: "var(--text-secondary)",
           }}
         >
-          ORDER BUILDER {structure ? `— ${structure}` : ""}
+          ORDER BUILDER {structure ? `: ${structure}` : ""}
         </span>
         <button
           className="btn-secondary"
@@ -417,13 +502,79 @@ function OrderBuilder({
             setLimitPrice("");
             setPriceManuallySet(false);
             setError(null);
-            setSuccess(null);
           }}
           style={{ fontSize: "10px", padding: "2px 8px" }}
         >
           Clear
         </button>
       </div>
+
+      {/* Coverage hint: show when a held LONG bounds an otherwise-naked SELL.
+          Helps the operator understand why Max Loss dropped from UNBOUNDED.
+          Stock-coverage chips include the avg cost so the operator sees the
+          basis driving the structural max-loss (stock-to-zero net of premium). */}
+      {riskState != null && riskState.coveringLegs.length > 0 && (
+        <div
+          className="order-builder-coverage"
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "10px",
+            color: "var(--text-secondary)",
+            padding: "4px 8px",
+            marginBottom: "8px",
+            background: "color-mix(in srgb, var(--ok) 8%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)",
+            borderRadius: "4px",
+            letterSpacing: "0.04em",
+          }}
+        >
+          COVERED BY HELD{" "}
+          {riskState.coveringLegs
+            .map((l) =>
+              l.type === "Option"
+                ? `LONG ${l.contracts}× $${l.strike} ${l.right === "C" ? "Call" : "Put"}`
+                : `${l.shares.toLocaleString()} shares @ $${l.avgCost.toFixed(2)}`,
+            )
+            .join(" + ")}
+        </div>
+      )}
+
+      {/* Bearish risk reversal heads-up. IB Smart's combo router has been
+          observed to silently drop this BAG structure (SELL CALL + BUY PUT,
+          different strikes) without an errorEvent — the order vanishes into
+          PendingSubmit and gets discarded when the placing client
+          disconnects. Bullish RR with identical strikes routes fine; single
+          legs route fine. Warn the operator pre-emptively so the routing
+          failure isn't a surprise. Diagnostic in
+          `feedback_ib_combo_router_silent_drops_bearish_rr.md`. */}
+      {isBearishRiskReversal(legs) && (
+        <div
+          className="order-builder-routing-warning"
+          role="status"
+          data-testid="order-builder-bearish-rr-warning"
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "10px",
+            color: "var(--text-secondary)",
+            padding: "6px 8px",
+            marginBottom: "8px",
+            background: "color-mix(in srgb, var(--warning, var(--fault)) 8%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--warning, var(--fault)) 40%, transparent)",
+            borderRadius: "4px",
+            lineHeight: 1.5,
+          }}
+        >
+          <div style={{ letterSpacing: "0.04em", marginBottom: 2 }}>
+            HEADS-UP: BEARISH RISK REVERSAL ROUTING
+          </div>
+          <div>
+            IB Smart sometimes silently drops this combo. If the order
+            sits in PendingSubmit with no permId after submit, place the
+            legs separately (SELL the call as one order, BUY the put as
+            another) — both transmit fine as singletons.
+          </div>
+        </div>
+      )}
 
       {/* Price strip for combo orders */}
       {isCombo && stripPrices.available && (
@@ -638,11 +789,19 @@ function OrderBuilder({
       </div>
 
       <OrderErrorBanner error={error} />
-      {success && <div className="order-success">{success}</div>}
 
-      {/* Order Summary (shown in confirm step) */}
-      {confirmStep && orderSummary && (
-        <OrderConfirmSummary summary={orderSummary} variant="info" />
+      {/* Order Summary (shown in confirm step). Risk math is owned entirely
+          by `<OrderRiskGate>` — it consumes `riskInput` + `portfolio`, runs
+          the augmentation pipeline, and renders `<OrderConfirmSummary>` with
+          a branded summary. The parent surface no longer constructs the
+          summary literal; the brand at the type level prevents that. */}
+      {confirmStep && (
+        <OrderRiskGate
+          input={riskInput}
+          portfolio={portfolio ?? null}
+          surface="chain-builder"
+          variant="info"
+        />
       )}
 
       {/* Submit */}
@@ -687,6 +846,7 @@ export default function OptionsChainTab({
   tickerPriceData,
   focusPosition = null,
   focusPositionRequested = false,
+  portfolio = null,
 }: OptionsChainTabProps) {
   const [expirations, setExpirations] = useState<string[]>([]);
   const [selectedExpiry, setSelectedExpiry] = useState<string | null>(null);
@@ -695,9 +855,16 @@ export default function OptionsChainTab({
   const [loadingStrikes, setLoadingStrikes] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [orderLegs, setOrderLegs] = useState<OrderLeg[]>([]);
-  const [strikesPerSide, setStrikesPerSide] = useState(15);
-  const [sideFilter, setSideFilter] = useState<"both" | "calls" | "puts">("both");
+  // Filter state is deep-linked into the URL (?expiry=&side=&strikes=) — seed
+  // from the URL on mount, write back on change. See useChainUrlState.
+  const chainUrl = useChainUrlState();
+  const [strikesPerSide, setStrikesPerSide] = useState(() => chainUrl.initialStrikes);
+  const [sideFilter, setSideFilter] = useState<SideFilter>(() => chainUrl.initialSide);
+  const { isMobile, hasMounted } = useViewport();
+  const showMobileChain = isMobile && hasMounted;
+  const riskFreeRate = useRiskFreeRate();
   const atmRef = useRef<HTMLTableRowElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const initialFocusAppliedRef = useRef(false);
 
   const focusedExpiry = useMemo(
@@ -747,15 +914,43 @@ export default function OptionsChainTab({
     if (expirations.length === 0) return;
     if (focusPositionRequested && !focusedExpiry) return;
 
-    const nextExpiry = focusedExpiry && expirations.includes(focusedExpiry)
-      ? focusedExpiry
-      : expirations.find((expiry) => daysToExpiry(expiry) >= 7) ?? expirations[0] ?? null;
+    // Priority: explicit URL deep-link > focused position > first >=7 DTE > first.
+    // URL expiry arrives dashed (2026-07-17); compare in compact internal form.
+    const urlExpiryCompact = chainUrl.urlExpiry ? normalizeOptionExpiry(chainUrl.urlExpiry) : null;
+    const nextExpiry =
+      (urlExpiryCompact && expirations.includes(urlExpiryCompact) ? urlExpiryCompact : null) ??
+      (focusedExpiry && expirations.includes(focusedExpiry) ? focusedExpiry : null) ??
+      expirations.find((expiry) => daysToExpiry(expiry) >= 7) ??
+      expirations[0] ??
+      null;
 
     if (nextExpiry) {
       setSelectedExpiry(nextExpiry);
     }
     initialFocusAppliedRef.current = true;
-  }, [expirations, focusedExpiry]);
+  }, [expirations, focusedExpiry, chainUrl.urlExpiry]);
+
+  // Write filter state → URL after commit (preserves tab + other params).
+  // Gated until the initial expiry has been resolved so we don't strip a
+  // deep-linked ?expiry before it's been validated against the expiry list.
+  useEffect(() => {
+    if (!initialFocusAppliedRef.current) return;
+    chainUrl.syncUrl({ selectedExpiry, side: sideFilter, strikes: strikesPerSide });
+    // Depend on the memoized `chainUrl.syncUrl`, NOT the whole `chainUrl` object
+    // (recreated every render — would run this effect each render). syncUrl is
+    // stable except when the URL/router actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedExpiry, sideFilter, strikesPerSide, chainUrl.syncUrl]);
+
+  // Reconcile from external URL changes (back/forward, manual edit) for the
+  // mount-seeded filters, mirroring useNewsfeedTagFilter. setState to the same
+  // value is a no-op, so this never loops with the write effect above.
+  useEffect(() => {
+    setSideFilter(parseSideParam(chainUrl.sideParamRaw));
+  }, [chainUrl.sideParamRaw]);
+  useEffect(() => {
+    setStrikesPerSide(parseStrikesParam(chainUrl.strikesParamRaw));
+  }, [chainUrl.strikesParamRaw]);
 
   // Fetch strikes when expiry changes — check prefetch cache first
   useEffect(() => {
@@ -863,20 +1058,38 @@ export default function OptionsChainTab({
       setChainContracts([]);
       return;
     }
+    // When showing all strikes, cap WS subscriptions to ±50 around ATM to
+    // avoid overwhelming the relay with hundreds of simultaneous ticks.
+    const WS_CAP = 50;
+    const strikesToStream =
+      strikesPerSide === ALL_STRIKES
+        ? getVisibleStrikes(strikes, focusedStrike ?? atmStrike, WS_CAP)
+        : visibleStrikes.map((r) => r.strike);
+    const streamSet = new Set(strikesToStream);
     const contracts: OptionContract[] = [];
     for (const row of visibleStrikes) {
+      if (!streamSet.has(row.strike)) continue;
       contracts.push({ symbol: ticker, expiry: selectedExpiry, strike: row.strike, right: "C" });
       contracts.push({ symbol: ticker, expiry: selectedExpiry, strike: row.strike, right: "P" });
     }
     setChainContracts(contracts);
     return () => setChainContracts([]);
-  }, [ticker, selectedExpiry, visibleStrikes, setChainContracts]);
+  }, [ticker, selectedExpiry, visibleStrikes, strikesPerSide, strikes, focusedStrike, atmStrike, setChainContracts]);
 
-  // Scroll to ATM on load
+  // Center the ATM row inside the chain wrapper only — scrollIntoView would
+  // also scroll page-level ancestors, dragging the Order Builder with it.
   useEffect(() => {
-    if (atmRef.current) {
-      atmRef.current.scrollIntoView({ block: "center", behavior: "smooth" });
-    }
+    const atmEl = atmRef.current;
+    const wrapper = wrapperRef.current;
+    if (!atmEl || !wrapper) return;
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const atmRect = atmEl.getBoundingClientRect();
+    const target =
+      wrapper.scrollTop +
+      (atmRect.top - wrapperRect.top) +
+      atmRect.height / 2 -
+      wrapper.clientHeight / 2;
+    wrapper.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
   }, [visibleStrikes]);
 
   // Add leg from chain click
@@ -950,9 +1163,7 @@ export default function OptionsChainTab({
   if (loadingExpiries) {
     return (
       <div style={{ padding: "24px 0", textAlign: "center" }}>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-secondary)" }}>
-          Loading expirations...
-        </span>
+        <SpectralLoader label="Loading expirations" />
       </div>
     );
   }
@@ -964,6 +1175,31 @@ export default function OptionsChainTab({
           {error}
         </span>
       </div>
+    );
+  }
+
+  if (showMobileChain) {
+    return (
+      <MobileChainLadder
+        ticker={ticker}
+        expirations={expirations}
+        selectedExpiry={selectedExpiry}
+        onSelectExpiry={(expiry) => {
+          setSelectedExpiry(expiry);
+          setOrderLegs([]);
+        }}
+        visibleStrikes={visibleStrikes}
+        atmStrike={atmStrike}
+        prices={prices}
+        currentPrice={currentPrice}
+        loading={loadingStrikes}
+        orderLegs={orderLegs}
+        onAddLeg={handleAddLeg}
+        onRemoveLeg={handleRemoveLeg}
+        onUpdateLeg={handleUpdateLeg}
+        onClearLegs={handleClearLegs}
+        portfolio={portfolio ?? null}
+      />
     );
   }
 
@@ -1026,6 +1262,8 @@ export default function OptionsChainTab({
             <option value={15}>±15</option>
             <option value={25}>±25</option>
             <option value={50}>±50</option>
+            <option value={100}>±100</option>
+            <option value={ALL_STRIKES}>All</option>
           </select>
         </div>
       </div>
@@ -1033,12 +1271,10 @@ export default function OptionsChainTab({
       {/* Chain grid */}
       {loadingStrikes ? (
         <div style={{ padding: "24px 0", textAlign: "center" }}>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--text-secondary)" }}>
-            Loading chain...
-          </span>
+          <SpectralLoader label="Loading chain" />
         </div>
       ) : (
-        <div className="chain-grid-wrapper">
+        <div className="chain-grid-wrapper" ref={wrapperRef}>
           <table className="chain-grid">
             <thead>
               <tr>
@@ -1046,6 +1282,9 @@ export default function OptionsChainTab({
                   <>
                     <th className="chain-header">Δ</th>
                     <th className="chain-header">IV</th>
+                    <th className="chain-header" title="Black-Scholes implied (theoretical) per-share price">
+                      Implied
+                    </th>
                     <th className="chain-header">Vol</th>
                     <th className="chain-header">Bid</th>
                     <th className="chain-header chain-header-mid">Mid</th>
@@ -1061,15 +1300,18 @@ export default function OptionsChainTab({
                     <th className="chain-header chain-header-mid">Mid</th>
                     <th className="chain-header">Ask</th>
                     <th className="chain-header">Vol</th>
+                    <th className="chain-header" title="Black-Scholes implied (theoretical) per-share price">
+                      Implied
+                    </th>
                     <th className="chain-header">IV</th>
                     <th className="chain-header">Δ</th>
                   </>
                 )}
               </tr>
               <tr>
-                {sideFilter !== "puts" && <th className="chain-side-label" colSpan={7}>CALLS</th>}
+                {sideFilter !== "puts" && <th className="chain-side-label" colSpan={8}>CALLS</th>}
                 <th className="chain-side-label" />
-                {sideFilter !== "calls" && <th className="chain-side-label" colSpan={7}>PUTS</th>}
+                {sideFilter !== "calls" && <th className="chain-side-label" colSpan={8}>PUTS</th>}
               </tr>
             </thead>
             <tbody>
@@ -1078,6 +1320,8 @@ export default function OptionsChainTab({
                 return (
                   <StrikeRow
                     key={row.strike}
+                    ticker={ticker}
+                    expiry={selectedExpiry!}
                     strike={row.strike}
                     callKey={row.callKey}
                     putKey={row.putKey}
@@ -1087,6 +1331,7 @@ export default function OptionsChainTab({
                     onClickPut={handlePutClick}
                     atmRef={isAtm ? atmRef : undefined}
                     sideFilter={sideFilter}
+                    riskFreeRate={riskFreeRate}
                   />
                 );
               })}
@@ -1100,6 +1345,7 @@ export default function OptionsChainTab({
         ticker={ticker}
         legs={orderLegs}
         prices={prices}
+        portfolio={portfolio}
         onRemoveLeg={handleRemoveLeg}
         onUpdateLeg={handleUpdateLeg}
         onClearLegs={handleClearLegs}

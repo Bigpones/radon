@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { fileURLToPath } from "url";
+import { resolveRegimeStripLiveState } from "../lib/regimeLiveStrip";
+import type { PriceData } from "../lib/pricesProtocol";
 
 const TEST_DIR = fileURLToPath(new URL(".", import.meta.url));
 const PANEL_PATH = join(TEST_DIR, "../components/RegimePanel.tsx");
@@ -9,10 +11,19 @@ const HELPER_PATH = join(TEST_DIR, "../lib/regimeLiveStrip.ts");
 const panelSource = readFileSync(PANEL_PATH, "utf-8");
 const helperSource = readFileSync(HELPER_PATH, "utf-8");
 
+function px(last: number, close = last - 1): PriceData {
+  return { last, close } as unknown as PriceData;
+}
+
 describe("RegimePanel — live COR1M rendering", () => {
   it("prefers the live COR1M websocket price over cached CRI COR1M when available", () => {
-    expect(helperSource).toContain("const liveCor1m = prices.COR1M?.last ?? null;");
-    expect(helperSource).toContain("const cor1mValue = liveCor1m ?? data?.cor1m ?? null;");
+    // Behavioral: live COR1M wins when market open, CRI value when closed.
+    const open = resolveRegimeStripLiveState({ prices: { COR1M: px(72) }, data: { cor1m: 55 }, marketOpen: true });
+    expect(open.liveCor1m).toBe(72);
+    expect(open.cor1mValue).toBe(72);
+    const closed = resolveRegimeStripLiveState({ prices: { COR1M: px(72) }, data: { cor1m: 55 }, marketOpen: false });
+    expect(closed.cor1mValue).toBe(55);
+    // Panel wires the resolved value into the active-correlation field.
     expect(panelSource).toContain("cor1mValue: activeCorr");
   });
 

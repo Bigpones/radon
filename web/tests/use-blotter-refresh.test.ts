@@ -63,8 +63,8 @@ describe("useBlotter", () => {
       expect(result.current.data?.summary.closed_trades).toBe(2);
     });
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/blotter", { method: "GET" });
-    expect(fetchMock).toHaveBeenCalledWith("/api/blotter", { method: "POST" });
+    expect(fetchMock).toHaveBeenCalledWith("/api/blotter", { method: "GET", cache: "no-store" });
+    expect(fetchMock).toHaveBeenCalledWith("/api/blotter", { method: "POST", cache: "no-store" });
   });
 
   it("keeps cached history visible but surfaces the sync error when live refresh fails", async () => {

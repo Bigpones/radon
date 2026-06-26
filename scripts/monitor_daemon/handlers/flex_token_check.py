@@ -27,14 +27,59 @@ CONFIG_PATH = PROJECT_ROOT / "data" / "flex_token_config.json"
 CHECK_INTERVAL = 86400
 
 
+def _dual_write_flex_state_to_app_config(config: Dict[str, Any], days_remaining: int) -> None:
+    """Phase 4 — store flex token expiry telemetry in app_config k/v.
+
+    Three keys: expires_at (ISO date), days_remaining (int), reminders_sent
+    (JSON blob of which thresholds have already fired). Disk JSON remains
+    canonical; this gives the UI a fast key lookup path.
+    """
+    try:
+        from db.writer import upsert_app_config
+    except ImportError:
+        return
+    try:
+        if config.get("expires_at"):
+            upsert_app_config("flex_token_expires_at", str(config["expires_at"]))
+        upsert_app_config("flex_token_days_remaining", str(days_remaining))
+        if config.get("reminders_sent"):
+            upsert_app_config("flex_token_reminders_sent", json.dumps(config["reminders_sent"]))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"flex_token app_config dual-write failed: {exc}")
+
+
 class FlexTokenCheck(BaseHandler):
     """Check IB Flex Web Service token expiry and fire reminder_days alerts."""
 
     name = "flex_token_check"
     interval_seconds = CHECK_INTERVAL
     requires_market_hours = False
+    service_name = "flex-token-check"  # structural heartbeat via BaseHandler.run()
 
     def execute(self) -> Dict[str, Any]:
+        result = self._execute_inner()
+        # DB errors here propagate so the BaseHandler contract retries next
+        # cycle (and writes the structural error row) instead of latching.
+        result["events_pruned"] = self._prune_service_health_events()
+        return result
+
+    @staticmethod
+    def _prune_service_health_events() -> int | None:
+        """DUR-11: daily retention sweep of the append-only history table.
+
+        Piggybacks on this handler because it is the existing daily,
+        24/7 monitor-daemon slot. Import failures (hosts without libsql
+        or an older db.writer) skip gracefully; DB errors propagate so
+        BaseHandler retries next cycle instead of latching last_run.
+        """
+        try:
+            from db.writer import prune_service_health_events
+        except Exception as exc:  # pragma: no cover — hosts without libsql
+            logger.warning("service_health_events prune unavailable: %s", exc)
+            return None
+        return prune_service_health_events()
+
+    def _execute_inner(self) -> Dict[str, Any]:
         if not CONFIG_PATH.exists():
             return {"status": "skip", "reason": "flex_token_config.json not found"}
 
@@ -83,6 +128,10 @@ class FlexTokenCheck(BaseHandler):
                 f"⚠️ IB Flex Token expires in {days_remaining} days "
                 f"(threshold: {fired_reminder}d). Renew at: {renewal_url}"
             )
+
+        # Phase 4 dual-write — mirror config + computed days_remaining
+        # into the app_config k/v store. Best-effort.
+        _dual_write_flex_state_to_app_config(config, days_remaining)
 
         expired = days_remaining <= 0
 

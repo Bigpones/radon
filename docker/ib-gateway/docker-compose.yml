@@ -9,10 +9,36 @@ services:
       TWS_PASSWORD_FILE: /run/secrets/ib_password
       TRADING_MODE: ${TRADING_MODE:-live}
       READ_ONLY_API: ${READ_ONLY_API:-no}
-      TWOFA_TIMEOUT_ACTION: restart
-      RELOGIN_AFTER_TWOFA_TIMEOUT: "yes"
+      # IMPORTANT: do NOT enable IBC-side auto-relogin on 2FA timeout.
+      # Each relogin fires a fresh IBKR Mobile 2FA push; stacking pushes
+      # within ~3 min causes IBKR's backend to reject every approval the
+      # user taps. The radon stack governs restart cadence centrally via
+      # scripts/utils/ib_2fa_lock.py + scripts/api/ib_gateway.py
+      # (in-process backoff ladder) + scripts/ib_watchdog.py (sustained
+      # api-hang detection). Both consult a shared 10-min push lock so
+      # only one 2FA push is ever in flight at a time. Letting IBC
+      # ALSO relogin on its own would bypass the lock.
+      # `exit` makes IBC quit on 2FA timeout; the container's
+      # `restart: unless-stopped` + our autoheal label still recover,
+      # but go through a fresh container boot rather than an IBC
+      # in-container restart that the radon stack can't see.
+      TWOFA_TIMEOUT_ACTION: exit
+      RELOGIN_AFTER_TWOFA_TIMEOUT: "no"
       EXISTING_SESSION_DETECTED_ACTION: primary
-      AUTO_RESTART_TIME: "23:58 ET"
+      # DUR-08: IBC's AutoRestartTime expects "hh:mm AM/PM" interpreted in the
+      # GATEWAY SESSION timezone (jts.ini TimeZone — Africa/Abidjan = UTC on
+      # our hosts), NOT ET. The previous "23:58 ET" was an invalid format, so
+      # IBC fell back to the gateway's default nightly restart at 11:45 PM
+      # session-local = 23:45 UTC — the anchor of the nightly api-hang wedge
+      # cluster (23:51-00:09 UTC). 09:05 AM session-local = 09:05 UTC =
+      # 05:05 ET: outside RTH, outside IBKR's NA server reset (23:45-00:45 ET),
+      # and quiet for the relay. If the relogin wedges here it cascades nothing.
+      AUTO_RESTART_TIME: "09:05 AM"
+      # DUR-08: GC logging does NOT work via JAVA_TOOL_OPTIONS — the image's
+      # launcher blanks it before starting the JVM (verified on the java
+      # process /proc environ). It lives instead in the persistent ib-config
+      # volume: Jts/ibgateway/<ver>/ibgateway.vmoptions gets
+      # `-Xlog:gc*:stdout:time,uptime,level,tags` (applied live 2026-06-13).
       VNC_SERVER_PASSWORD: ${VNC_SERVER_PASSWORD:-}
     ports:
       - "127.0.0.1:${IB_LIVE_PORT:-4001}:4003"

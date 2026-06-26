@@ -291,7 +291,13 @@ describe("Share PnL - Entry/Exit Price and Time", () => {
               type: "Call",
               strike: 115,
               entry_cost: 13975,
-              avg_cost: 5.59, // This is the entry price per unit
+              // PortfolioLeg.avg_cost is per-CONTRACT for options (already
+              // × 100); $5.59/share = $559/contract. The previous fixture
+              // used $5.59 here (per-share value) which only worked because
+              // the buggy entryNotional path re-multiplied by 100 — see
+              // commit history for WorkspaceSections.tsx + memory
+              // feedback_leg_avg_cost_per_contract.md.
+              avg_cost: 559,
               market_price: 8.05,
               market_value: 20125,
             },

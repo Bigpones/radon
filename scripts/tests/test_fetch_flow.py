@@ -112,6 +112,37 @@ class TestAnalyzeDarkpool:
         result = analyze_darkpool(trades)
         assert result["flow_direction"] == "NEUTRAL"
         assert result["dp_buy_ratio"] == 0.5
+        # Perfectly balanced -> 0 magnitude.
+        assert result["flow_strength"] == 0.0
+
+    def test_neutral_high_lean_strength(self):
+        # 54% buy / 46% sell -> classified NEUTRAL, but column should reflect
+        # the actual magnitude of the lean rather than collapse to 0.
+        # buy_ratio == 0.54  ->  |0.54 - 0.5| * 200 == 8.0
+        trades = [
+            {"size": "5400", "price": "51", "premium": "275400",
+             "nbbo_bid": "49", "nbbo_ask": "51"},
+            {"size": "4600", "price": "49", "premium": "225400",
+             "nbbo_bid": "49", "nbbo_ask": "51"},
+        ]
+        result = analyze_darkpool(trades)
+        assert result["flow_direction"] == "NEUTRAL"
+        assert result["dp_buy_ratio"] == 0.54
+        assert result["flow_strength"] == 8.0
+
+    def test_neutral_low_lean_strength(self):
+        # 46% buy / 54% sell -> NEUTRAL with bearish lean.
+        # buy_ratio == 0.46  ->  |0.46 - 0.5| * 200 == 8.0
+        trades = [
+            {"size": "4600", "price": "51", "premium": "234600",
+             "nbbo_bid": "49", "nbbo_ask": "51"},
+            {"size": "5400", "price": "49", "premium": "264600",
+             "nbbo_bid": "49", "nbbo_ask": "51"},
+        ]
+        result = analyze_darkpool(trades)
+        assert result["flow_direction"] == "NEUTRAL"
+        assert result["dp_buy_ratio"] == 0.46
+        assert result["flow_strength"] == 8.0
 
     def test_no_nbbo_unknown(self):
         trades = [
@@ -200,6 +231,21 @@ class TestAnalyzeOptionsFlow:
         assert result["bias"] == "NEUTRAL"
         assert result["call_put_ratio"] == 1.0
 
+    def test_real_uw_field_names(self):
+        # UW /option-trades/flow-alerts returns total_premium (not premium)
+        # and type ("call"/"put") (not is_call). Without this, GOOGL on prod
+        # returned total_alerts:100 with bias:NO_DATA.
+        alerts = [
+            {"total_premium": "300000", "type": "call"},
+            {"total_premium": "100000", "type": "put"},
+        ]
+        result = analyze_options_flow(alerts)
+        assert result["total_premium"] == 400000.0
+        assert result["call_premium"] == 300000.0
+        assert result["put_premium"] == 100000.0
+        assert result["bias"] == "STRONGLY_BULLISH"
+        assert result["call_put_ratio"] == 3.0
+
 
 # ── fetch_flow combined signal ──────────────────────────────────────
 
@@ -256,3 +302,112 @@ class TestFetchFlowCombinedSignal:
         mock_flow.return_value = []
         result = fetch_flow("AAPL", lookback_days=1)
         assert result["combined_signal"] == "DP_ACCUMULATION_ONLY"
+
+
+class TestUWRetryPolicy:
+    """Regression for the 2026-05-15 EWY incident: a transient UW
+    rate-limit on per-day darkpool calls was silently swallowed and
+    converted to []. Three healthy days kept the aggregate positive so
+    the cache-write gate at server.py:1026 waved the partial report
+    through, leaving a "NO DATA" view on healthy tickers for 600s.
+
+    After the fix:
+      - UWNotFoundError → return [] (legit empty)
+      - UWRateLimitError / UWServerError → one 2s retry, then re-raise
+      - Other UWAPIError → re-raise immediately
+    """
+
+    def test_darkpool_not_found_returns_empty_no_retry(self):
+        from clients.uw_client import UWNotFoundError
+        from fetch_flow import fetch_darkpool
+
+        mock_client = MagicMock()
+        mock_client.get_darkpool_flow.side_effect = UWNotFoundError(
+            "no data for date", status_code=404
+        )
+
+        result = fetch_darkpool("XYZ", date="2026-05-15", _client=mock_client)
+
+        assert result == []
+        assert mock_client.get_darkpool_flow.call_count == 1, "no retry on NotFound"
+
+    def test_darkpool_rate_limit_retries_once_then_succeeds(self):
+        from clients.uw_client import UWRateLimitError
+        from fetch_flow import fetch_darkpool
+
+        mock_client = MagicMock()
+        mock_client.get_darkpool_flow.side_effect = [
+            UWRateLimitError("429", status_code=429),
+            {"data": [{"size": 100, "price": 50.0}]},
+        ]
+
+        with patch("fetch_flow.time_module.sleep"):
+            result = fetch_darkpool("EWY", date="2026-05-15", _client=mock_client)
+
+        assert result == [{"size": 100, "price": 50.0}]
+        assert mock_client.get_darkpool_flow.call_count == 2
+
+    def test_darkpool_rate_limit_persistent_raises(self):
+        """If the retry ALSO 429s, propagate. The caller (flow_report)
+        will surface this so server.py 502s the POST and the cache is
+        never written.
+        """
+        from clients.uw_client import UWRateLimitError
+        from fetch_flow import fetch_darkpool
+
+        mock_client = MagicMock()
+        mock_client.get_darkpool_flow.side_effect = UWRateLimitError(
+            "429", status_code=429
+        )
+
+        with patch("fetch_flow.time_module.sleep"), \
+             pytest.raises(UWRateLimitError):
+            fetch_darkpool("EWY", date="2026-05-15", _client=mock_client)
+
+    def test_darkpool_server_error_retries_once_then_succeeds(self):
+        from clients.uw_client import UWServerError
+        from fetch_flow import fetch_darkpool
+
+        mock_client = MagicMock()
+        mock_client.get_darkpool_flow.side_effect = [
+            UWServerError("503", status_code=503),
+            {"data": []},
+        ]
+
+        with patch("fetch_flow.time_module.sleep"):
+            result = fetch_darkpool("EWY", date="2026-05-15", _client=mock_client)
+
+        assert result == []
+        assert mock_client.get_darkpool_flow.call_count == 2
+
+    def test_darkpool_auth_error_raises_immediately_no_retry(self):
+        """Auth failures must NOT silently empty the result. Re-raise
+        so the operator sees the configuration problem.
+        """
+        from clients.uw_client import UWAuthError
+        from fetch_flow import fetch_darkpool
+
+        mock_client = MagicMock()
+        mock_client.get_darkpool_flow.side_effect = UWAuthError(
+            "401 token expired", status_code=401
+        )
+
+        with pytest.raises(UWAuthError):
+            fetch_darkpool("EWY", date="2026-05-15", _client=mock_client)
+        assert mock_client.get_darkpool_flow.call_count == 1
+
+    def test_flow_alerts_inherits_same_retry_policy(self):
+        from clients.uw_client import UWRateLimitError
+        from fetch_flow import fetch_flow_alerts
+
+        mock_client = MagicMock()
+        mock_client.get_flow_alerts.side_effect = [
+            UWRateLimitError("429", status_code=429),
+            {"data": [{"ticker": "AAPL"}]},
+        ]
+
+        with patch("fetch_flow.time_module.sleep"):
+            result = fetch_flow_alerts("AAPL", _client=mock_client)
+
+        assert result == [{"ticker": "AAPL"}]
+        assert mock_client.get_flow_alerts.call_count == 2

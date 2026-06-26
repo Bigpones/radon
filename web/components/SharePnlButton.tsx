@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Share2 } from "lucide-react";
+import { useDismissablePopover } from "@/lib/useDismissablePopover";
 
 export type SharePnlData = {
   description: string;
@@ -65,21 +66,8 @@ export default function SharePnlButton({ data, size = 13 }: SharePnlButtonProps)
   const [copied, setCopied] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    // Delay listener to avoid the opening click from immediately closing
-    const id = setTimeout(() => document.addEventListener("mousedown", handler), 0);
-    return () => {
-      clearTimeout(id);
-      document.removeEventListener("mousedown", handler);
-    };
-  }, [open]);
+  const close = useCallback(() => setOpen(false), []);
+  useDismissablePopover(popoverRef, close, open);
 
   const generateImage = useCallback(async () => {
     const params = new URLSearchParams();

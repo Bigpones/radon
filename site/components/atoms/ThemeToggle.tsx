@@ -1,15 +1,39 @@
 "use client";
 
 import { Moon, Sun } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import {
   DEFAULT_SITE_THEME,
-  resolveInitialTheme,
+  isSiteTheme,
   SITE_THEME_STORAGE_KEY,
   siteThemeMetaColor,
   getNextTheme,
   type SiteTheme,
 } from "@/lib/theme";
+
+// The theme lives on <html data-theme> (applied pre-hydration by the bootstrap
+// script in layout.tsx). We read it through useSyncExternalStore so SSR and the
+// first client render agree on the default, then React reconciles to the real
+// client value without a setState-in-effect or a hydration mismatch.
+const themeListeners = new Set<() => void>();
+
+function subscribeTheme(onChange: () => void) {
+  themeListeners.add(onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    themeListeners.delete(onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+function getThemeSnapshot(): SiteTheme {
+  const attr = document.documentElement.getAttribute("data-theme");
+  return isSiteTheme(attr) ? attr : DEFAULT_SITE_THEME;
+}
+
+function getServerThemeSnapshot(): SiteTheme {
+  return DEFAULT_SITE_THEME;
+}
 
 function applySiteTheme(theme: SiteTheme) {
   document.documentElement.setAttribute("data-theme", theme);
@@ -17,27 +41,29 @@ function applySiteTheme(theme: SiteTheme) {
   if (themeMeta) {
     themeMeta.setAttribute("content", siteThemeMetaColor[theme]);
   }
+  themeListeners.forEach((listener) => listener());
 }
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<SiteTheme>(() => {
-    if (typeof document === "undefined") {
-      return DEFAULT_SITE_THEME;
-    }
-    return resolveInitialTheme(
-      document.documentElement.getAttribute("data-theme") ||
-        window.localStorage.getItem(SITE_THEME_STORAGE_KEY),
-      window.matchMedia("(prefers-color-scheme: dark)").matches,
-    );
-  });
-
-  useEffect(() => {
-    applySiteTheme(theme);
-  }, [theme]);
+  const theme = useSyncExternalStore(
+    subscribeTheme,
+    getThemeSnapshot,
+    getServerThemeSnapshot,
+  );
 
   const nextTheme = getNextTheme(theme);
   const label = nextTheme === "light" ? "Light" : "Dark";
   const ariaLabel = `Switch to ${nextTheme} mode`;
+
+  const handleToggle = useCallback(() => {
+    const upcomingTheme = getNextTheme(getThemeSnapshot());
+    applySiteTheme(upcomingTheme);
+    try {
+      window.localStorage.setItem(SITE_THEME_STORAGE_KEY, upcomingTheme);
+    } catch {
+      // localStorage unavailable (private mode); theme still applies for the session.
+    }
+  }, []);
 
   return (
     <button
@@ -47,12 +73,7 @@ export function ThemeToggle() {
       aria-label={ariaLabel}
       title={ariaLabel}
       className="inline-flex items-center gap-2 rounded-[999px] border border-grid bg-panel px-3 py-2 min-h-[44px] min-w-[44px] font-mono text-[10px] uppercase tracking-[0.16em] text-primary transition-colors hover:bg-panel-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/60"
-      onClick={() => {
-        const upcomingTheme = getNextTheme(theme);
-        setTheme(upcomingTheme);
-        applySiteTheme(upcomingTheme);
-        window.localStorage.setItem(SITE_THEME_STORAGE_KEY, upcomingTheme);
-      }}
+      onClick={handleToggle}
     >
       {nextTheme === "light" ? <Sun size={14} /> : <Moon size={14} />}
       <span suppressHydrationWarning>{label}</span>

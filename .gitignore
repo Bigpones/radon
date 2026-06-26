@@ -107,12 +107,30 @@ data/company_info_cache/
 data/cri_scheduled/
 data/menthorq_cache/
 data/seasonality_cache/
+data/darkpool_cache/
 data/price_history_cache/
 data/service_health/
+# Nightly Turso dump pulls (DUR-13, rsync'd from the VPS — never commit)
+data/db_backups/
+# Daily journald snapshots pulled from the VPS (DUR-12, laptop launchd job)
+data/journal_archive/
+# host_metrics sampler's capped local fallback when Turso writes fail (DUR-12)
+data/host_metrics_fallback.jsonl
 logs/*
 !logs/.gitkeep
 logs/menthorq_artifacts/
 web/data/
+
+# IB Gateway mode toggle (per-developer state, written by scripts/ib)
+.env.ib-mode
+
+# Newsfeed scraper runtime artifacts (regenerated each cycle)
+web/public/data/
+web/public/media/
+
+# Newsfeed Playwright storage state (cookies + localStorage; re-derived per machine)
+data/newsfeed-storage*.json
+data/newsfeed-debug-*.png
 
 # Temp files
 tmp/
@@ -122,6 +140,7 @@ tmp/
 
 # Runtime caches
 data/cache/
+data/locks/
 data/nav_history.jsonl
 
 # Verification screenshots (generated during UI work)
@@ -135,6 +154,13 @@ web/verify-regime-internals.mjs
 # Local agent worktrees / scratch state
 /.claude/worktrees/
 /.claude/hooks/dead-code.manifest
+
+# Local skill / agent installations (per-developer, not checked in)
+/.agents/
+/.claude/skills/
+/.pi/skills/
+/skills-lock.json
+/radon-dark-full.png
 
 # =============================================================================
 # Vendor (downloaded binaries, not checked in)
@@ -158,3 +184,14 @@ docker/ib-gateway/secrets/*.txt
 
 # Firecrawl
 .firecrawl/
+.worktrees/
+web/.claude/
+
+# Turso libSQL embedded replica files
+data/replica.db
+data/replica.db-shm
+data/replica.db-wal
+web/data/replica.db
+web/data/replica.db-shm
+web/data/replica.db-wal
+data/replica.db-info

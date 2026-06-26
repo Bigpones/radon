@@ -133,7 +133,18 @@ export async function ensureTestFastApi(): Promise<FastApiHarness> {
     stderrLog += chunk.toString();
   });
 
-  const healthy = await waitForHealth(baseUrl, START_TIMEOUT_MS);
+  // A spawn failure (e.g. `python3.13` not installed in a JS-only CI job) emits
+  // an async 'error' event on the child. Without this listener Node escalates it
+  // to an unhandled exception, which vitest counts as a run error and fails the
+  // whole suite with exit 1 — even though the FastAPI-backed tests skip cleanly
+  // when the server never comes up. Capture it into the skip reason instead.
+  let spawnError: Error | null = null;
+  child.on("error", (err) => {
+    spawnError = err;
+    stderrLog += `\nspawn error: ${err.message}`;
+  });
+
+  const healthy = spawnError ? false : await waitForHealth(baseUrl, START_TIMEOUT_MS);
   if (!healthy) {
     await stopProcess(child);
     return {

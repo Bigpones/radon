@@ -1,4 +1,586 @@
+# Task: Unusual Whales Indicator Expansion Roadmap
+
+## Goal
+Add the UW indicators from the user-provided list that are not yet fully supported as Radon operator surfaces. In this plan, "supported" means more than a `UWClient` method: the indicator must have a normalized fetch contract, persistence or explicit cache policy, FastAPI/Next API access, an operator-facing UI, service-health visibility where scheduled, and regression coverage.
+
+## Dependency Graph
+
+- T1 depends_on: [] — Inventory current Radon UW support and classify each listed UW feature as supported, partial, missing, or blocked by external API scope.
+- T2 depends_on: [T1] — Update the UW endpoint contract map and shared ingestion layer for missing REST/WebSocket surfaces.
+- T3 depends_on: [T1, T2] — Add a durable storage model for bounded snapshots, deduped event feeds, and optional live stream state.
+- T4 depends_on: [T2, T3] — Build global-market collectors: Market Tide, Market Map, Economic Calendar, Earnings Hub, market-wide net impact, sector/ETF tide.
+- T5 depends_on: [T2, T3] — Build ticker/options collectors: Net Premium, Intraday Levels, expanded Greek Exposure, Options Flow/Dark Pool extensions, custom screeners.
+- T6 depends_on: [T4, T5] — Expose normalized FastAPI and Next.js routes with stale-data semantics, no-store headers, and DB-first reads.
+- T7 depends_on: [T6] — Add operator UI surfaces in the Dashboard, Scanner/Flow Analysis, Regime, and Ticker workspaces.
+- T8 depends_on: [T4, T5, T6] — Add custom alert/screener workflows and optional live WebSocket ingestion for Advanced UW API plans.
+- T9 depends_on: [T4, T5, T6] — Integrate new data into evaluation/scanner context without weakening Radon's sequential trade gates.
+- T10 depends_on: [T4, T5, T6, T7] — Add a Radon-native "Mr. Whale" style synthesis layer backed by cited UW rows; do not assume a public UW Mr. Whale REST endpoint exists.
+- T11 depends_on: [T6, T7, T8, T9, T10] — Add regression, route, UI, ingestion, and scheduler tests; run focused suites and then full suites before any commit.
+- T12 depends_on: [T11] — Document rollout, source freshness, rate limits, token scopes, fallback behavior, and verification results.
+
+## Current Support Matrix
+
+| UW feature from list | Current Radon status | Required work |
+|---|---|---|
+| Options Flow | Partial | Existing `fetch_flow.py`, `flow_report.py`, flow-analysis UI, and `UWClient.get_flow_alerts` cover flow alerts. Missing full-tape support, reusable custom presets, ticker-level net/strike/expiry flow UI, and optional live `option_trades` / `flow-alerts` WebSocket ingestion. |
+| Dark Pools | Partial | Existing scanner/flow reports use `/darkpool/{ticker}` and `UWClient.get_darkpool_recent`. Missing live off-lit stream, market-wide dark pool tape, per-ticker price-level integration, and dashboard surfacing. |
+| Market Map | Missing | Map to UW market endpoints: `/market/sector-etfs`, `/market/top-net-impact`, `/market/total-options-volume`, `/market/{sector}/sector-tide`, `/market/{ticker}/etf-tide`, and `/screener/stocks`. Build a Radon market map focused on net premium, sector rotation, option volume, and watchlist exposure. |
+| Net Premium | Plumbing only | `UWClient.get_net_prem_ticks` exists, but no storage/API/UI. Need ticker cumulative net call/put premium charts, market-wide net-flow expiry charts, and scanner/evaluation summaries. |
+| Greeks Exposure | Partial | Regime GEX and Gamma Rotation Gap use UW GEX for SPX/SPY/TLT. Missing per-ticker GEX/VEX/CEX/DEX panels, strike-expiry views, spot-exposure history, live GEX WebSocket, and option-chain integration. |
+| Custom Flow Alerts/Screeners | Missing | Add `/alerts`, `/alerts/configuration`, `/screener/option-contracts`, `/screener/stocks`, saved Radon presets, and a local rule evaluator so UW-created alerts and Radon-created screeners share one operator feed. |
+| Intraday Levels | Missing | Add UW option price levels `/stock/{ticker}/option/stock-price-levels`, off/lit stock price levels `/stock/{ticker}/stock-volume-price-levels`, `flow-per-strike-intraday`, and combine them with existing IB depth/chain views. |
+| Earnings Hub | Missing | `UWClient` has premarket/afterhours/historical earnings methods, but no surfaced hub. Add calendar, expected move, recent post-earnings move behavior, watchlist/portfolio filters, and ticker detail history. |
+| Analyst Ratings | Partial | `fetch_analyst_ratings.py`, `analyst_ratings` DB rows, `/ticker/ratings`, and `RatingsTab` exist. Fold ratings into the new catalyst/event feed and custom alert surface; avoid duplicating the existing tab. |
+| Insider Trading | Plumbing only | `UWClient` wrappers exist, but there is no route/UI/event persistence. Add transaction feed, ticker-flow/sector-flow summaries, insider quality filters, and ticker detail module. |
+| Congressional Trading | Plumbing only | `UWClient` wrappers exist for recent trades/trader reports. Add recent/late report feeds, ticker filters, politician detail links, deduping, and portfolio/watchlist impact scoring. |
+| Economic Calendar | Plumbing only | `UWClient.get_economic_calendar` exists. Add macro event timeline, day/week filters, expected/previous/actual fields, portfolio risk tags, and evaluation warnings around event windows. |
+| Market Tide | Plumbing only | `UWClient.get_market_tide` exists. Add market-wide net call/put premium chart, slope/acceleration metrics, OTM-only and 5-minute modes, sector/ETF tide drilldowns, and Regime/Dashboard cards. |
+| Mr. Whale AI | Blocked as direct UW API surface | Official UW API docs list REST, WebSocket, Kafka, and MCP surfaces, but no public Mr. Whale REST endpoint was found in the current docs. Implement a Radon-native synthesis panel using fetched UW evidence rows and existing AI/chat infrastructure; optionally evaluate UW MCP later as a separate integration path. |
+
+## Implementation Plan
+
+### T1 — Inventory and contract audit
+
+- Reconcile `docs/unusual_whales_api.md`, `docs/unusual_whales_api_spec.yaml`, `scripts/clients/uw_client.py`, and official UW docs.
+- Produce a checked support matrix in `docs/unusual-whales-radon-coverage.md`.
+- Mark every listed feature by support level: full, partial, plumbing-only, missing, or blocked.
+- Acceptance criteria:
+  - Every row names the exact UW endpoint(s), Radon files using them today, desired UI owner, and planned persistence policy.
+  - Explicitly document API-plan requirements, especially Advanced-only WebSocket/full-tape access.
+
+### T2 — Shared UW ingestion layer
+
+- Extend `UWClient` with missing wrappers:
+  - Alerts: `/alerts`, `/alerts/configuration`.
+  - Market: `/market/top-net-impact`, `/market/{sector}/sector-tide`, `/market/{ticker}/etf-tide`, `/net-flow/expiry`, `/market/spike`.
+  - Screeners: richer `/screener/option-contracts` and `/screener/stocks` parameter support.
+  - Ticker levels: `/stock/{ticker}/option/stock-price-levels`, `/stock/{ticker}/stock-volume-price-levels`, `/stock/{ticker}/flow-per-strike-intraday`, `/stock/{ticker}/flow-recent`.
+  - Greek extensions: `/stock/{ticker}/greek-exposure/strike-expiry`, `/stock/{ticker}/spot-exposures`, `/stock/{ticker}/spot-exposures/strike`, `/stock/{ticker}/spot-exposures/expiry-strike`.
+  - Congress/insider gaps: `/congress/late-reports`, `/politician-portfolios/recent_trades`, `/stock/{ticker}/insider-buy-sells`.
+- Normalize provider errors using existing `UWAPIError` hierarchy; do not hide 401/403 scope failures behind empty data.
+- Acceptance criteria:
+  - Unit tests pin path, params, retry behavior, 404 empty-vs-error policy, and array query names.
+  - `UW_TOKEN` loading keeps honoring `web/.env` when local verification needs it.
+
+### T3 — Storage model
+
+- Add a small number of generic tables rather than one table per UW widget:
+  - `uw_indicator_snapshots(surface, scope, symbol, as_of_date, interval, fetched_at, status, payload)`.
+  - `uw_event_items(source_type, provider_id, symbol, event_time, fetched_at, payload)` for alerts, earnings, insider, congress, analyst, economic events.
+  - `uw_stream_state(channel, symbol, last_seen_at, last_payload_hash, status, error)` for optional WebSocket consumers.
+- Keep JSON fallback files only where a current route pattern already requires compatibility; new surfaces should be DB-first.
+- Acceptance criteria:
+  - Idempotent upsert helpers in `scripts/db/writer.py`.
+  - Migration tests cover inserts, replacement, deduping, and latest-row reads.
+
+### T4 — Global market collectors
+
+- Add `scripts/uw_market_overview.py --json`:
+  - Market Tide: `/market/market-tide` with `date`, `otm_only`, `interval_5m`.
+  - Market Map: sector ETFs, top net impact, total options volume, sector tide, ETF tide.
+  - Net flow by expiry: `/net-flow/expiry` for zero-DTE vs weekly, equity/ETF/index splits, ITM/OTM/ATM.
+  - Economic Calendar: `/market/economic-calendar`.
+  - Earnings Hub: `/earnings/premarket`, `/earnings/afterhours`.
+- Compute derived fields:
+  - Net premium slope and acceleration.
+  - Bullish/bearish top-net-impact split.
+  - Sector tide breadth.
+  - Event risk window for FOMC/CPI/NFP/Fed speakers/earnings.
+- Acceptance criteria:
+  - CLI returns one stable JSON envelope with `data_date`, `fetched_at`, `surfaces`, `freshness`, and per-surface errors.
+  - Partial endpoint failure degrades only that surface.
+
+### T5 — Ticker/options collectors
+
+- Add `scripts/uw_ticker_intel.py TICKER --json`:
+  - Net premium ticks with cumulative call/put premium and volume.
+  - Intraday levels: option price levels plus lit/off-lit stock volume levels.
+  - Expanded Greek exposure: aggregate, strike, expiry, strike-expiry, Greek flow, spot exposures.
+  - Options flow extensions: flow per strike/expiry/intraday, recent flows, flow alerts using named Radon presets.
+  - Insider/congress/analyst/earnings for the ticker.
+- Keep current `fetch_flow.py` intact for existing scanner/evaluation behavior until the new collector proves equivalent or better.
+- Acceptance criteria:
+  - One command can populate a full ticker intelligence payload for a watchlist symbol without calling unrelated endpoints.
+  - Numeric parsing is centralized; raw payloads remain available for audit.
+
+### T6 — API routes
+
+- FastAPI:
+  - `POST /uw/market/scan`
+  - `GET /uw/market`
+  - `POST /uw/ticker/{ticker}/scan`
+  - `GET /uw/ticker/{ticker}`
+  - `GET /uw/events`
+  - `GET /uw/alerts`
+  - Optional `POST /uw/ws/start` / `POST /uw/ws/stop` only after token scope is verified.
+- Next.js:
+  - `/api/uw/market`
+  - `/api/uw/ticker/[ticker]`
+  - `/api/uw/events`
+  - `/api/uw/alerts`
+- Acceptance criteria:
+  - Routes are DB-first, no-store where operator freshness matters, and explicit about stale/fallback data.
+  - Existing `/api/gex`, `/api/flow-analysis`, `/api/ticker/ratings`, and `/api/ticker/info` stay backward compatible.
+
+### T7 — Operator UI
+
+- Dashboard:
+  - Add compact Market Tide, Market Map, Earnings/Economic risk strip, and top net-impact modules.
+- Scanner / Flow Analysis:
+  - Add custom screener presets, flow-alert presets, top net premium names, and dark-pool/off-lit tape drilldowns.
+- Regime:
+  - Add Market Tide and net-flow expiry panels beside CRI/VCG/GEX/GRG, clearly source-tagged as UW.
+- Ticker workspace:
+  - Add or extend tabs/modules for Net Premium, Levels, Expanded Greeks, Insider/Congress, Earnings, and Events.
+  - Keep `RatingsTab` as the ratings owner; add cross-links rather than a duplicate ratings surface.
+- Acceptance criteria:
+  - No generic marketing/landing page.
+  - UI follows Radon brand: instrument modules, hairline borders, matte panels, max 4px radius, no gradients/glass/decorative copy.
+  - Mobile layouts have geometry tests for key panels.
+
+### T8 — Alerts, screeners, and optional WebSocket
+
+- Start with REST polling:
+  - Fetch UW-created alert configurations and triggered alerts.
+  - Add Radon-local saved presets for flow alerts and contract/stock screeners.
+  - Emit a unified event feed with severity, ticker, source type, dedupe key, and operator action.
+- Add WebSocket ingestion only if the active UW plan supports it:
+  - Channels: `flow-alerts`, `option_trades:{TICKER}`, `gex:{TICKER}`, `gex_strike:{TICKER}`, `news`, `off_lit_trades`, `price:{TICKER}`.
+  - Run in monitor daemon or a separate supervised worker, never in Next.js request handlers.
+- Acceptance criteria:
+  - Live stream outages write service health and fall back to REST snapshots.
+  - No duplicate alert spam when REST and WebSocket report the same event.
+
+### T9 — Evaluation and scanner integration
+
+- Add the new surfaces as context and conflict checks, not as shortcuts around Radon's gates:
+  - Market Tide and net-flow expiry become regime context.
+  - Net Premium, Greek Exposure, intraday levels, and custom screeners become supporting edge context.
+  - Earnings/Economic/Insider/Congress/Analyst become catalyst and risk-event context.
+  - Dark-pool/OTC remains the specific data-backed edge gate unless the strategy spec is explicitly changed.
+- Acceptance criteria:
+  - `evaluate [TICKER]` still outputs `signal -> structure -> Kelly math -> decision`.
+  - If an active gate fails, output stops at that gate.
+  - Tests prove the new indicators cannot rationalize a trade when convexity or edge fails.
+
+### T10 — Radon-native "Mr. Whale" synthesis
+
+- Since no current public UW Mr. Whale REST endpoint is documented, implement a Radon synthesis layer:
+  - Input: the normalized UW market/ticker/event payloads.
+  - Output: short operator brief with cited rows, contradictions, missing data, and confidence.
+  - Scope: explain market state and anomaly clusters; do not place orders or override evaluation gates.
+- Integrate into existing chat/context infrastructure as a tool-backed "UW Brief" rather than a free-form hallucination surface.
+- Acceptance criteria:
+  - Every assertion links to an underlying endpoint row or says data is unavailable.
+  - Snapshot tests cover bullish, bearish, mixed, and stale-data briefs.
+
+### T11 — Verification
+
+- Python:
+  - `python3.13 scripts/run_pytest_affected.py --files ... -- -q`
+  - Focused tests for `UWClient`, collectors, DB writers, FastAPI routes, service health, and scheduler/daemon workers.
+  - Full `python3.13 -m pytest -q` before commit; report unrelated baseline failures separately if still red.
+- TypeScript/React:
+  - Focused Vitest for API routes, hooks, staleness helpers, and components.
+  - Relevant Playwright E2E for Dashboard, Regime, Scanner/Flow Analysis, and Ticker workspace surfaces.
+  - Full `npm test` and `npm run typecheck` before commit; report current repo baseline separately if red.
+- Live verification:
+  - Load `UW_TOKEN` from `web/.env`.
+  - Smoke one liquid index ETF (`SPY`), one mega-cap (`NVDA` or `AAPL`), one lower-liquidity watchlist name, and one no-data ticker.
+  - Confirm rate-limit behavior and stale/fallback labels.
+
+### T12 — Documentation and rollout
+
+- Update:
+  - `docs/unusual_whales_api.md`
+  - `docs/scripts-reference.md`
+  - `README.md`
+  - `web/CLAUDE.md` / scoped `AGENTS.md` only if route/verification conventions change.
+- Add an operator runbook:
+  - API plan and token-scope requirements.
+  - Refresh cadence per surface.
+  - Known delayed-data behavior.
+  - What counts as stale, partial, unavailable, and auth-scope-blocked.
+- Acceptance criteria:
+  - A future agent can run the collectors, verify the surfaces, and understand why each indicator is or is not allowed to influence a trade decision.
+
+## Proposed Delivery Order
+
+1. Foundation: T1, T2, T3.
+2. Highest signal global surfaces: T4 Market Tide, top net impact, net-flow expiry, economic/earnings risk strip.
+3. Highest signal ticker surfaces: T5 Net Premium, Intraday Levels, expanded Greeks.
+4. Event intelligence: insider, congress, analyst integration, earnings history.
+5. Custom alerts/screeners: REST first, WebSocket only after scope verification.
+6. Radon-native UW synthesis.
+7. Full verification and docs.
+
+## Review
+
+- Planned against current repo state on 2026-05-31.
+- Official UW docs confirm REST categories for options flow, dark pool, congressional trading, Greek exposure, market data, earnings, insiders, screeners, and WebSocket streaming; local `docs/unusual_whales_api_spec.yaml` contains the concrete endpoint map.
+- Current Radon code already has broad `UWClient` plumbing, existing flow/dark-pool/GEX/rating surfaces, and DB patterns (`*_snapshots`, `analyst_ratings`, `oi_changes`) to reuse.
+- No implementation changes were made in this task beyond this planning artifact.
+
+---
+
+# Task: Fix Mobile Dashboard News Feed Bugs
+
+## Dependency Graph
+
+- T1 depends_on: [] — Inspect dashboard mobile ordering, news header CSS, and existing coverage.
+- T2 depends_on: [T1] — Add focused regression coverage for dashboard mobile numbering and refresh layout contract.
+- T3 depends_on: [T2] — Patch dashboard section numbering and mobile news header/refresh CSS.
+- T4 depends_on: [T3] — Run focused tests, visual mobile verification, and document review.
+
+## Checklist
+
+- [x] T1 — Inspect dashboard mobile ordering, news header CSS, and existing coverage.
+- [x] T2 — Add focused regression coverage.
+- [x] T3 — Patch dashboard numbering and refresh layout.
+- [x] T4 — Verify and document results.
+
+## Review
+
+- Fixed dashboard section metadata so mobile reads `Portfolio 01`, `Live Market Feed 02`, `Working & Filled 03`, `Trading Candidates 04`.
+- Replaced the news header's generic `report-meta` class with a scoped `news-feed-updated` class so it no longer brings block padding/border into the header.
+- Added mobile CSS to stretch the dashboard stack, stack the news header controls, and keep the refresh button as a 44px contained touch target.
+- Follow-up correction: made the mobile news rail and every dashboard section explicit `flex: 0 0 100%` / `width: 100%` so all four containers share the Portfolio width.
+- Follow-up correction: added `.dashboard-news` itself to that mobile width rule and changed Playwright to compare the actual bordered inner panels, not just the outer section wrappers.
+- Added `web/tests/dashboard-mobile-newsfeed.test.tsx` plus a mobile Playwright regression in `web/e2e/mobile-shell.spec.ts`.
+- Verification:
+  - `npx vitest run web/tests/dashboard-mobile-newsfeed.test.tsx --config vitest.config.ts` passed: 3 tests after the width correction.
+  - `npx vitest run web/tests/dashboard-mobile-newsfeed.test.tsx web/tests/dashboard-newsfeed-pagination.test.tsx web/tests/dashboard-newsfeed-tag-filter.test.tsx --config vitest.config.ts` passed: 17 tests.
+  - `PLAYWRIGHT_PORT=3000 RADON_AUTHLESS_TEST=1 NEXT_PUBLIC_RADON_AUTHLESS_TEST=1 npx playwright test e2e/mobile-shell.spec.ts --grep "dashboard shows Live Market Feed" --config playwright.no-server.config.ts --project=mobile --timeout=20000` passed: 1 test after the inner-panel width correction.
+  - Mobile screenshot `/tmp/radon-dashboard-mobile-news.png` visually confirmed Live Market Feed is `02`, full-width, and the Refresh control stays inside the panel border.
+  - One-off Playwright geometry check at 393px viewport measured Portfolio, Live Feed, Orders, and Opportunities bordered panels at `left=12`, `right=381`, `width=369`.
+  - `npx eslint app/globals.css components/DashboardNewsFeed.tsx components/dashboard/DashboardSurface.tsx components/dashboard/OrdersSnapshotCard.tsx tests/dashboard-mobile-newsfeed.test.tsx e2e/mobile-shell.spec.ts` passed with 0 errors; repo ESLint ignores CSS/test/e2e files and emitted 3 ignore warnings.
+  - Full `npm test` remains red: 271 files passed, 1 skipped, 9 failed; failures are unrelated localStorage mock failures across position/table/theme tests plus listen `EPERM` in realtime/order suites. The dashboard width test passed inside the full run.
+  - `npm run typecheck` remains red on existing e2e/test fixture typing errors outside the touched dashboard files.
+
+---
+
+# Task: Gamma Rotation Gap End-to-End Build
+
+## Dependency Graph
+
+- T1 depends_on: [] — Map existing GEX, VCG, Turso, FastAPI, and Regime UI seams.
+- T2 depends_on: [T1] — Implement SPY/TLT Gamma Rotation Gap scanner with Turso-backed persistence and JSON fallback only as compatibility cache.
+- T3 depends_on: [T2] — Expose Gamma Rotation Gap through FastAPI and Next.js dynamic API routes.
+- T4 depends_on: [T3] — Build the Regime UI panel, hook, copy, gates, and visual components.
+- T5 depends_on: [T4] — Add Python and TypeScript regression coverage for computation, persistence contracts, API normalization, and UI rendering.
+- T6 depends_on: [T5] — Verify focused tests plus localhost browser behavior against live UW data.
+
+## Checklist
+
+- [x] T1 — Map existing GEX, VCG, Turso, FastAPI, and Regime UI seams.
+- [x] T2 — Implement SPY/TLT Gamma Rotation Gap scanner and persistence.
+- [x] T3 — Expose FastAPI and Next.js API routes.
+- [x] T4 — Build Regime UI panel and operator copy.
+- [x] T5 — Add regression coverage.
+- [x] T6 — Verify tests and localhost rendering.
+
+## Review
+
+- Implemented `scripts/gamma_rotation_gap.py` as the SPY/TLT Gamma Rotation Gap scanner using UW aggregate gamma history and current strike GEX.
+- Chose Turso as primary persistence through `gamma_rotation_snapshots`; `data/gamma_rotation_gap.json` remains a compatibility cache/fallback.
+- Removed the stale Next.js embedded-replica default so Turso reads are direct-to-cloud unless explicitly opted into replica mode.
+- Removed stale local `data/replica.db*` artifacts and confirmed GRG still reads from Turso afterward.
+- Added FastAPI `POST /gamma-rotation/scan`, Next `GET/POST /api/gamma-rotation`, `useGammaRotation`, and `/regime/grg`.
+- Added the Regime GRG tab with operator copy for cushion/whip state, top/bottom watches, gate diagnostics, SPY/TLT cards, and a 90-session divergence field.
+- Local live result on 2026-05-31: data date `2026-05-29`, state `DUAL_CUSHION`, GRG z `-0.499`, SPY GEX `+836.1K`, TLT GEX `+12.5M`, storage `turso`.
+- Verification passed:
+  - `python3.13 -m py_compile scripts/gamma_rotation_gap.py scripts/api/server.py`
+  - `python3.13 -m pytest -q scripts/tests/test_gamma_rotation_gap.py`
+  - `cd web && npx vitest run tests/db-direct-cloud.test.ts tests/middleware-auth.test.ts tests/gamma-rotation-route.test.ts tests/gamma-rotation-panel.test.tsx tests/regime-tab-routes.test.tsx tests/api-routes-no-cache-contract.test.ts --config ../vitest.config.ts`
+  - `set -a; source web/.env; set +a; RADON_DB_NO_REPLICA=1 python3.13 scripts/db/migrate.py`
+  - `python3.13 scripts/gamma_rotation_gap.py --json`
+  - `scripts/local.sh`
+  - `curl http://127.0.0.1:3000/api/gamma-rotation`
+  - `curl -X POST http://127.0.0.1:8321/gamma-rotation/scan`
+  - `node /private/tmp/grg-localhost-check.cjs`
+  - `npx playwright screenshot --full-page --viewport-size=1440,1900 --wait-for-selector="text=Dual cushion" --timeout=30000 http://127.0.0.1:3000/regime/grg /tmp/radon-grg-localhost-full.png`
+- Broad-suite status:
+  - `python3.13 -m pytest -q` baseline red: 2284 passed, 15 skipped, 90 deselected, 7 failed, 5 errors. Failures are sandbox/keychain/localhost-bind issues in existing DB guard, health-service, and VCG wrapper tests.
+  - `cd web && npm test` baseline red: 270 files passed, 1 skipped, 9 files failed; failures are existing localStorage mock and localhost bind issues.
+  - `cd web && npm run typecheck` baseline red on pre-existing e2e/test fixture typing errors.
+
+---
+
+# Task: SPY/TLT GEX Divergence Indicator Mockup
+
+## Dependency Graph
+
+- T1 depends_on: [] — Inspect VCG model, repo context, and image content.
+- T2 depends_on: [T1] — Define a VCG-like SPY/TLT GEX divergence indicator.
+- T3 depends_on: [T2] — Create a brand-aligned mockup artifact.
+- T4 depends_on: [T3] — Render and verify the mockup visually.
+- T5 depends_on: [T4] — Document final analysis and usage guidance.
+
+## Checklist
+
+- [x] T1 — Inspect VCG model, repo context, and image content.
+- [x] T2 — Define required inputs, computation, states, and copy.
+- [x] T3 — Build a visual mockup.
+- [x] T4 — Verify the mockup output renders cleanly.
+- [x] T5 — Add review notes and final response.
+
+## Review
+
+- Created mockup HTML at `/tmp/radon-grg-mockup.html`.
+- Rendered screenshot at `/tmp/radon-grg-mockup.png` using Playwright.
+- Visually inspected screenshot for layout clipping, rerendered full-page, and confirmed all panels are visible.
+- No code-bearing application files were changed.
+
+---
+
 # TODO
+
+## Session: Fix Desktop Touchscreen Dropdown Targets (2026-05-28)
+
+### Goal
+Make dropdowns and dropdown-like controls accessible on desktop touchscreen / hybrid-pointer devices, especially options-chain controls.
+
+### Dependency Graph
+- T1 (Inspect existing dropdown/touch-target CSS and identify why desktop touchscreens miss it) depends_on: []
+- T2 (Patch shared dropdown/touch target media query to include hybrid devices with `any-pointer: coarse`) depends_on: [T1]
+- T3 (Add regression coverage for desktop touchscreen media-query contract and verify focused tests) depends_on: [T2]
+
+### Checklist
+- [x] T1 Inspect existing dropdown/touch-target CSS and identify why desktop touchscreens miss it
+- [x] T2 Patch shared dropdown/touch target media query to include hybrid devices with `any-pointer: coarse`
+- [x] T3 Add regression coverage for desktop touchscreen media-query contract and verify focused tests
+
+### Review
+- Root cause: desktop touchscreen / hybrid devices can have a fine primary pointer while still supporting touch. The existing dropdown target rule only covered `pointer: coarse` and `max-width: 1024px`, so large desktop touchscreen viewports could miss the 44px/touch-action treatment.
+- Fixed the shared dropdown/touch target media query to include `any-pointer: coarse`, and tightened the rules with `padding-block: 8px`, `pointer-events: auto`, `touch-action: manipulation`, and tap-highlight suppression for native selects, chain expiry selects, futures selects, filter selects, chain side buttons, column dropdown buttons/items, and chain clickable cells.
+- Added `web/tests/desktop-touch-dropdown-css.test.ts` to pin the hybrid touchscreen media-query contract.
+- Verification:
+  - `npx vitest run tests/desktop-touch-dropdown-css.test.ts --config ../vitest.config.ts` passed: 3 tests.
+  - Desktop-width Playwright touch-emulation CSS check at `1366x900` confirmed select/button/menu item heights are 44px and touch-action/pointer-events are active.
+
+## Session: Fix Mobile Touch Newsfeed Lightbox Controls (2026-05-28)
+
+### Goal
+Stop the mobile touch newsfeed lightbox close button from occluding chart images and hide prev/next chevrons only on coarse-pointer mobile viewports.
+
+### Dependency Graph
+- T1 (Reproduce the screenshot geometry against the lightbox CSS and identify whether the issue is React structure or responsive positioning) depends_on: []
+- T2 (Move the close control outside the animated panel transform and scope touch-only chevron hiding to coarse-pointer mobile CSS) depends_on: [T1]
+- T3 (Add regression coverage and verify touch-mobile plus narrow mouse behavior) depends_on: [T2]
+
+### Checklist
+- [x] T1 Reproduce the screenshot geometry against the lightbox CSS and identify whether the issue is React structure or responsive positioning
+- [x] T2 Move the close control outside the animated panel transform and scope touch-only chevron hiding to coarse-pointer mobile CSS
+- [x] T3 Add regression coverage and verify touch-mobile plus narrow mouse behavior
+
+### Review
+- Fixed the close button by wrapping the animated panel in `newsfeed-lightbox__frame` and keeping the close control as a sibling, so the mobile fixed positioning is no longer trapped by the panel transform.
+- Added `@media (max-width: 900px) and (pointer: coarse)` rules that hide prev/next chevrons only for touch mobile, keep them visible for narrow mouse/fine-pointer viewports, and remove footer padding reserved for the hidden arrows.
+- Added `web/tests/newsfeed-lightbox-mobile-css.test.ts` to pin the coarse-pointer-only CSS contract.
+- Verification:
+  - Playwright touch geometry check: close button no longer intersects media/image; prev/next are hidden on coarse-pointer mobile and visible on narrow mouse viewport.
+  - `npx vitest run tests/newsfeed-lightbox.test.tsx tests/newsfeed-lightbox-mobile-css.test.ts --config ../vitest.config.ts` passed: 14 tests.
+  - `npx eslint components/NewsfeedLightbox.tsx tests/newsfeed-lightbox-mobile-css.test.ts` passed with 0 errors; ESLint reported the new CSS-contract test is ignored by the current ignore pattern.
+
+## Session: Scope MenthorQ Ticker Enhancement (2026-05-28)
+
+### Goal
+Scope a ticker-enrichment feature sourced from MenthorQ dashboard intraday pages, including company profile overwrite/persistence, unavailable states, and non-equity instrument behavior.
+
+### Dependency Graph
+- T1 (Map existing MenthorQ client, CTA cache/DB persistence, ticker detail company data flow, and provider fallback conventions) depends_on: []
+- T2 (Define MenthorQ ticker dashboard fetch contract, URL shape, and normalization strategy) depends_on: [T1]
+- T3 (Define DB schema and API shape for ticker enrichment reads and background sync) depends_on: [T1, T2]
+- T4 (Define UI behavior for equity, index, future, volatility product, and unavailable MenthorQ states) depends_on: [T3]
+- T5 (Define test plan, implementation phases, and risks) depends_on: [T2, T3, T4]
+
+### Checklist
+- [x] T1 Map existing MenthorQ client, CTA cache/DB persistence, ticker detail company data flow, and provider fallback conventions
+- [x] T2 Define MenthorQ ticker dashboard fetch contract, URL shape, and normalization strategy
+- [x] T3 Define DB schema and API shape for ticker enrichment reads and background sync
+- [x] T4 Define UI behavior for equity, index, future, volatility product, and unavailable MenthorQ states
+- [x] T5 Define test plan, implementation phases, and risks
+
+### Review
+- Current seams:
+  - `scripts/clients/menthorq_client.py` already handles authenticated Playwright navigation, storage reuse, dashboard commands, HTML scraping, and S3 image fallback.
+  - `scripts/gex_scan.py` has ticker-specific MQ behavior but uses a hardcoded ticker map and should not be reused as the arbitrary-symbol contract.
+  - CTA persistence provides the closest pattern: `menthorq_cta` table, writer helpers, DB-first Next API route, disk fallback.
+  - Company tab currently reads `/api/ticker/info` and should keep UW/Exa/Yahoo as its baseline while adding source-tagged MenthorQ enrichment.
+- Proposed data model:
+  - Add `menthorq_ticker_enrichment` keyed by `ticker`, with `asset_type`, `source_date`, `fetched_at`, `status` (`available`, `unavailable`, `error`), `payload`, and `error`.
+  - Persist one overwrite row per ticker first. Add append-only history later only if intraday retention becomes useful.
+- Fetch/API shape:
+  - Add `MenthorQClient.get_ticker_dashboard(ticker, command="intraday", date=None, tickers="commons")`.
+  - Use URL shape `action=data&type=dashboard&commands=intraday&tickers=commons&date=YYYY-MM-DD&ticker=mu`.
+  - Extract structured JSON from intercepted `admin-ajax.php` first, then visible cards/tables. Empty useful payload writes `status="unavailable"`, not hard failure.
+  - Add DB-first `GET /api/ticker/menthorq?ticker=MU`; optional background `POST /api/ticker/menthorq/sync` should spawn Python and not run Playwright inline.
+- UI:
+  - Add compact MenthorQ module to Company tab or merge source-tagged enriched fields into the existing profile.
+  - For unavailable MenthorQ data, render a muted unavailable module instead of an error.
+  - For index/future/vol products, hide or label company profile as not applicable while still showing intraday/key-level data when available.
+- Test plan:
+  - Python URL/fetch normalization, writer upsert/unavailable/error rows, and fetch-script fixtures for equity and non-company instruments.
+  - Next route DB read/missing/unavailable/no-cache tests.
+  - Company tab rendering tests for equity enrichment and index/vol not-applicable states.
+  - E2E fixture for a ticker with MenthorQ data and one without provider coverage.
+
+## Session: SpotGamma Paid API Delta Report (2026-05-28)
+
+### Goal
+Research SpotGamma paid/API availability, compare its likely data surface with Radon's current Unusual Whales and MenthorQ integrations, and produce a local HTML report showing deltas, overlaps, and feature enhancements unlocked by a paid SpotGamma account.
+
+### Dependency Graph
+- T1 (Inventory current Radon UW and MenthorQ integration surfaces from docs, scripts, API routes, and UI contracts) depends_on: []
+- T2 (Research current SpotGamma paid/API product surface from primary or high-signal sources, noting confidence and citation quality) depends_on: []
+- T3 (Compare SpotGamma against current UW and MenthorQ capabilities across flow, dealer positioning, levels, Greeks, alerts, history, and integration friction) depends_on: [T1, T2]
+- T4 (Create a branded standalone HTML report with deltas, overlaps, source notes, risks, and feature enhancement roadmap) depends_on: [T3]
+- T5 (Open the report locally and document review results) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inventory current Radon UW and MenthorQ integration surfaces from docs, scripts, API routes, and UI contracts
+- [x] T2 Research current SpotGamma paid/API product surface from primary or high-signal sources, noting confidence and citation quality
+- [x] T3 Compare SpotGamma against current UW and MenthorQ capabilities across flow, dealer positioning, levels, Greeks, alerts, history, and integration friction
+- [x] T4 Create a branded standalone HTML report with deltas, overlaps, source notes, risks, and feature enhancement roadmap
+- [x] T5 Open the report locally and document review results
+
+### Review
+- Created and opened [spotgamma-paid-api-delta-report-2026-05-28.html](/Users/joemccann/dev/apps/finance/radon/reports/spotgamma-paid-api-delta-report-2026-05-28.html).
+- SpotGamma research used public SpotGamma pricing/product pages, support articles, and official HIRO/Tape user-guide PDFs. Public evidence supports paid dashboards/tools and institutional custom access, but not a self-service paid developer REST/WebSocket API.
+- Current Radon comparison used [docs/unusual_whales_api.md](/Users/joemccann/dev/apps/finance/radon/docs/unusual_whales_api.md), [uw_client.py](/Users/joemccann/dev/apps/finance/radon/scripts/clients/uw_client.py), [menthorq_client.py](/Users/joemccann/dev/apps/finance/radon/scripts/clients/menthorq_client.py), [docs/menthorq-prompts.md](/Users/joemccann/dev/apps/finance/radon/docs/menthorq-prompts.md), and [docs/strategies.md](/Users/joemccann/dev/apps/finance/radon/docs/strategies.md).
+- Verification: `open reports/spotgamma-paid-api-delta-report-2026-05-28.html` completed; `wc -c` reports 26,316 bytes; `rg` confirmed the report title, hard conclusion, source notes, and API-status sections exist.
+
+## Session: Refactor Mobile And Touchscreen UI (2026-05-28)
+
+### Goal
+Fix the reported mobile and touchscreen UI regressions across Radon Terminal: compact filters/search inputs, touch-accessible dropdowns, mobile-friendly ticker/detail views, collapsible dashboard sections, swipable news modal, non-horizontal-scrolling scanner/flow/CTA tables, operator navigation access, improved timeframe controls, and streamlined GEX/CTA mobile presentations.
+
+### Dependency Graph
+- T1 (Map affected web surfaces, existing responsive patterns, and available test coverage) depends_on: []
+- T2 (Patch shared mobile controls: filter/search sizing, placeholder behavior, touch targets, dropdown pointer/touch access, bottom navigation operator entry) depends_on: [T1]
+- T3 (Patch mobile positions, ticker detail, dashboard collapsible sections, and news lightbox swipe/navigation layout) depends_on: [T1, T2]
+- T4 (Patch scanner and flow analysis responsive table/card layouts) depends_on: [T1, T2]
+- T5 (Patch regime VCG timeframe default/style, GEX streamlined mobile layout, and CTA streamlined mobile layout) depends_on: [T1, T2]
+- T6 (Add focused regression coverage for mobile/touch behavior and responsive layout contracts) depends_on: [T2, T3, T4, T5]
+- T7 (Run focused tests, Playwright visual checks on mobile/tablet, then full JS verification; document results) depends_on: [T6]
+
+### Checklist
+- [x] T1 Map affected web surfaces, existing responsive patterns, and available test coverage
+- [x] T2 Patch shared mobile controls: filter/search sizing, placeholder behavior, touch targets, dropdown pointer/touch access, bottom navigation operator entry
+- [x] T3 Patch mobile positions, ticker detail, dashboard collapsible sections, and news lightbox swipe/navigation layout
+- [x] T4 Patch scanner and flow analysis responsive table/card layouts
+- [x] T5 Patch regime VCG timeframe default/style, GEX streamlined mobile layout, and CTA streamlined mobile layout
+- [x] T6 Add focused regression coverage for mobile/touch behavior and responsive layout contracts
+- [x] T7 Run focused tests, Playwright visual checks on mobile/tablet, then full JS verification; document results
+
+### Review
+- Implemented:
+  - Compact mobile table/search controls and touch-sized select/dropdown targets, including options-chain tablet controls.
+  - Added Operator to the mobile drawer.
+  - Dashboard sections are collapsible; mobile order is Portfolio, Live Market Feed, Orders, Opportunities.
+  - News lightbox supports swipe navigation and moves arrow controls away from article content on mobile.
+  - Ticker detail stacks hero/chart/tabs for mobile.
+  - Scanner and flow analysis use mobile card layouts instead of horizontally scrolling tables.
+  - CTA uses mobile cards instead of the wide percentile table.
+  - VCG defaults to 1M and preserves user-selected range; GEX/CTA mobile layouts are more compact.
+  - Playwright authless mode now bypasses client Clerk handshake for test runs while preserving websocket unit-test behavior.
+- Focused verification:
+  - `npx vitest run tests/newsfeed-lightbox.test.tsx tests/vcg-history-chart.test.tsx tests/gex-panel.test.tsx tests/workspace-sections-table-search-headers.test.ts tests/cta-page.test.ts tests/ib-status-context.test.ts --config ../vitest.config.ts` passed: 83 tests.
+  - `npm run lint -- ...changed files...` passed with 7 existing warnings in unrelated files.
+  - `PLAYWRIGHT_PORT=3000 RADON_AUTHLESS_TEST=1 NEXT_PUBLIC_RADON_AUTHLESS_TEST=1 npx playwright test e2e/mobile-shell.spec.ts --config playwright.no-server.config.ts --project=mobile --timeout=20000` passed: 7 tests.
+  - `PLAYWRIGHT_PORT=3000 RADON_AUTHLESS_TEST=1 NEXT_PUBLIC_RADON_AUTHLESS_TEST=1 npx playwright test e2e/mobile-charts.spec.ts --config playwright.no-server.config.ts --project=mobile --timeout=30000` passed: 4 tests.
+  - `PLAYWRIGHT_PORT=3000 RADON_AUTHLESS_TEST=1 NEXT_PUBLIC_RADON_AUTHLESS_TEST=1 npx playwright test e2e/flow-analysis-ticker.spec.ts e2e/cta-page.spec.ts --config playwright.no-server.config.ts --project=chromium --timeout=30000` passed: 14 tests.
+  - Mobile visual/overflow smoke checked `/dashboard`, `/portfolio`, `/scanner`, `/flow-analysis`, `/cta`, `/regime/vcg`, `/regime/gex`, and `/VIX`; every route reported `scrollWidth=393`, `clientWidth=393`, `bodyMobile=true`. Screenshots saved to `/tmp/radon-mobile-*.png`.
+  - Live deployment check on `https://app.radon.run` via authenticated Chrome/CDP confirmed changed routes render at mobile width without document-level horizontal overflow, More drawer includes Operator, options-chain tablet selects are native/touchable, Flow Analysis placeholder is compact (`Ticker`), and VCG defaults to `1M`.
+  - Live deployment check caught a missed dashboard mobile ordering rule for Live Market Feed; patched `.dashboard-section--news { order: 2; }` and tightened dashboard mobile section/card widths.
+- Baseline blockers:
+  - `npm run typecheck` fails on pre-existing unrelated test typing errors across e2e/test fixtures.
+  - Full `npm test` remains red on pre-existing unrelated baseline clusters: regime live value tests, radon API init options, previous-close API fallback tests, inactive sync hooks, websocket stability/keepalive, localStorage mocks, and jsdom missing scroll APIs. Focused changed-surface tests are green.
+
+## Session: Split Codex Instructions Into Scoped AGENTS Files (2026-05-28)
+
+### Goal
+Reduce always-loaded Codex instruction tokens by replacing the large root `AGENTS.md` with a concise global file and moving subsystem-specific rules into scoped `AGENTS.md` files next to their matching `CLAUDE.md` files.
+
+### Dependency Graph
+- T1 (Identify root vs scoped instruction boundaries from the existing `.pi/AGENTS.md` and all `CLAUDE.md` files) depends_on: []
+- T2 (Rewrite root `.pi/AGENTS.md` as concise global guidance with pointers to scoped files) depends_on: [T1]
+- T3 (Create scoped `AGENTS.md` files for `web`, `scripts`, `scripts/api`, `scripts/monitor_daemon`, `scripts/newsfeed`, and `scripts/watchdog`) depends_on: [T2]
+- T4 (Verify every `CLAUDE.md` scope has a matching `AGENTS.md` and review diff/token reduction) depends_on: [T3]
+- T5 (Document review results and summarize the new loading model) depends_on: [T4]
+
+### Checklist
+- [x] T1 Identify root vs scoped instruction boundaries from the existing `.pi/AGENTS.md` and all `CLAUDE.md` files
+- [x] T2 Rewrite root `.pi/AGENTS.md` as concise global guidance with pointers to scoped files
+- [x] T3 Create scoped `AGENTS.md` files for `web`, `scripts`, `scripts/api`, `scripts/monitor_daemon`, `scripts/newsfeed`, and `scripts/watchdog`
+- [x] T4 Verify every `CLAUDE.md` scope has a matching `AGENTS.md` and review diff/token reduction
+- [x] T5 Document review results and summarize the new loading model
+
+### Review
+- Root `AGENTS.md` remains a symlink to `.pi/AGENTS.md`, now reduced from 804 lines to ~90 lines of global guidance.
+- Added scoped Codex instruction files: `web/AGENTS.md`, `scripts/AGENTS.md`, `scripts/api/AGENTS.md`, `scripts/monitor_daemon/AGENTS.md`, `scripts/newsfeed/AGENTS.md`, and `scripts/watchdog/AGENTS.md`.
+- The scoped files mirror the existing Claude loading boundaries so Codex can pull detailed instructions only when working under the matching directory.
+- Verification: `find` confirms every scoped `CLAUDE.md` now has a same-directory `AGENTS.md`; total scoped instruction surface is 379 lines, but only the concise root should be always loaded.
+
+## Session: Align Codex Instructions With Claude Docs (2026-05-28)
+
+### Goal
+Analyze the Radon repository instructions, memories, task backlog, and every `CLAUDE.md` file, then update `AGENTS.md` so Codex has the same current operating model and scoped subsystem rules going forward.
+
+### Dependency Graph
+- T1 (Inventory repository instruction surfaces, memory files, task files, and all `CLAUDE.md` files) depends_on: []
+- T2 (Summarize what Radon is and extract Claude-only guidance that is stale or missing from `AGENTS.md`) depends_on: [T1]
+- T3 (Patch `AGENTS.md` with Codex-native guidance consistent with root and subsystem `CLAUDE.md` files) depends_on: [T2]
+- T4 (Verify the documentation-only change by reviewing the diff and confirming every `CLAUDE.md` was accounted for) depends_on: [T3]
+- T5 (Document review results in this task entry and report the project summary in 100 words or less) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inventory repository instruction surfaces, memory files, task files, and all `CLAUDE.md` files
+- [x] T2 Summarize what Radon is and extract Claude-only guidance that is stale or missing from `AGENTS.md`
+- [x] T3 Patch `AGENTS.md` with Codex-native guidance consistent with root and subsystem `CLAUDE.md` files
+- [x] T4 Verify the documentation-only change by reviewing the diff and confirming every `CLAUDE.md` was accounted for
+- [x] T5 Document review results in this task entry and report the project summary in 100 words or less
+
+### Review
+- Project summary: Radon is a market-structure reconstruction and operator workstation for finding, sizing, monitoring, and executing convex options trades from IB, Unusual Whales, dark-pool/OTC flow, OI changes, vol/regime signals, news, and live portfolio state.
+- Read and accounted for all `CLAUDE.md` files: root, `web/`, `scripts/`, `scripts/api/`, `scripts/monitor_daemon/`, `scripts/newsfeed/`, and `scripts/watchdog/`.
+- Read task and memory surfaces under `tasks/` and `context/memory/`, including active backlog and persistent facts.
+- Updated `AGENTS.md` via the root symlink to `.pi/AGENTS.md` for Claude parity: scoped instruction table, behavioral rules, disabled naked-short gate, corrected data-source priority, order-risk chokepoint, Next cache/theme/auth contracts, web calculation invariants, FastAPI/IB 2FA and subprocess rules, direct-to-cloud Turso architecture, order placement contract, updated client ID ranges, monitor daemon rules, service-health/watchdog rules, and newsfeed scraper rules.
+- Verification: reviewed `git diff` for `AGENTS.md`/`tasks/todo.md`; confirmed `find` sees exactly 7 `CLAUDE.md` files and all 7 are listed in `AGENTS.md`.
+
+## Session: Fix IB Sync Entry Cost With Journal Lot-Matched Basis (2026-05-21)
+
+### Goal
+Use raw journal fills to derive open leg basis for live positions so partial closes do not inherit IB's recomputed `avgCost` drift. The immediate AAOI risk-reversal repro should return the remaining 25x call / 25x short put to an approximately zero net entry cost instead of `$1.34`.
+
+### Dependency Graph
+- T1 (Inspect the existing `ib_sync` / journal / DB seams and pin the exact regression coverage for lot-matched open basis) depends_on: []
+- T2 (Add red regression tests for journal lot-matched basis and the AAOI net combo entry-cost expectation) depends_on: [T1]
+- T3 (Implement `scripts/clients/journal_basis.py` and wire the lookup through `ib_sync.py` with IB fallback plus diagnostic `ib_avg_cost`) depends_on: [T2]
+- T4 (Run required verification: full pytest suite, Vitest baseline check, and `bun run build` from `web/`) depends_on: [T3]
+- T5 (Document review results, create the atomic commit, push `main`, verify `deploy.yml`, and spot-check live AAOI output) depends_on: [T4]
+
+### Checklist
+- [x] T1 Inspect the existing `ib_sync` / journal / DB seams and pin the exact regression coverage for lot-matched open basis
+- [x] T2 Add red regression tests for journal lot-matched basis and the AAOI net combo entry-cost expectation
+- [x] T3 Implement `scripts/clients/journal_basis.py` and wire the lookup through `ib_sync.py` with IB fallback plus diagnostic `ib_avg_cost`
+- [x] T4 Run required verification: full pytest suite, Vitest baseline check, and `bun run build` from `web/`
+- [ ] T5 Document review results, create the atomic commit, push `main`, verify `deploy.yml`, and spot-check live AAOI output
+
+### Review
+- Fix:
+  - Added `scripts/clients/journal_basis.py`, a pure journal-row lot matcher that buckets option fills by `ticker|expiry|right|strike`, infers open-side from net quantity, and returns live open basis per remaining contract bucket.
+  - Wired `scripts/ib_sync.py` to prefetch per-ticker journal basis, override leg `entry_cost` and `avgCost` from the journal when available, and preserve the raw IB value as `ibAvgCost` / `ib_avg_cost` for diagnostics.
+  - Added Python regression coverage for the AAOI May 19-21 fill sequence and a TS render regression that locks the near-zero average-entry display on the AAOI remaining risk reversal.
+  - Normalized near-zero signed display values in `web/lib/positionUtils.ts` so corrected negative dust does not render as `$-0.00`.
+- Verification:
+  - Focused Python: `python3.13 -m pytest scripts/tests/test_journal_basis.py scripts/tests/test_combo_entry_date.py -q` → `8 passed`.
+  - Focused Vitest: `npx vitest run web/tests/position-table-ratio-risk-reversal.test.tsx` → `2 passed`.
+  - Full pytest: `env RADON_DB_NO_REPLICA=1 python3.13 -m pytest scripts/tests -q` → baseline not clean on this checkout: `1908 passed, 26 failed, 95 errors, 15 skipped`. The dominant error cluster is existing MenthorQ/Playwright integration coverage plus unrelated repo failures.
+  - Full Vitest: `npx vitest run --config vitest.config.ts` → baseline not clean on this checkout; broad pre-existing failures reproduced across unrelated websocket/regime/newsfeed/test-runtime surfaces.
+  - Build: `cd web && bun run build` failed in the sandbox because `next/font` could not fetch Google fonts (`IBM Plex Mono`, `IBM Plex Sans`) with network access restricted. Non-font warning in `web/lib/tools/runner.ts` is pre-existing and unrelated to this fix.
+- Ship blocker:
+  - Commit/push/deploy verification could not be completed from this sandbox because writes inside `.git/` are blocked (`touch .git/codex-write-test` and `git commit` both fail with `Operation not permitted` on `.git/index.lock` creation).
 
 ## Session: Add Affected-File Pytest Runner (2026-03-24)
 
@@ -3512,3 +4094,29 @@ Restore the 31 skipped skills under `/Users/joemccann/.agents/skills/` by adding
     - Result: `150` files passed, `1385` tests passed
   - `python3.13 -m pytest -x -q`
     - Result: first failure is unrelated to this change set after `894 passed`: [scripts/tests/test_menthorq_integration.py](/Users/joemccann/dev/apps/finance/radon/scripts/tests/test_menthorq_integration.py) fails in `TestMenthorQIntegrationHTML.test_eod_spx` with `MenthorQExtractionError` from [scripts/clients/menthorq_client.py](/Users/joemccann/dev/apps/finance/radon/scripts/clients/menthorq_client.py).
+
+---
+
+## FOLLOW-UP (apply after Phase 3 relay track lands): instrument search regression
+
+REGRESSION from commit f69c0d4 (@stoqey/ib migration). The symbolSamples handler
+in scripts/ib_realtime_server.js (~line 1855) still reads the OLD flat ib@0.2.9
+payload shape, but @stoqey/ib nests contract fields under `c.contract` and renames
+primaryExchange -> primaryExch. Result: relay sends secType:undefined on the wire,
+TickerSearch.tsx:109 filters all results via ALLOWED_SEC_TYPES.has(undefined) ->
+"No results" for every query.
+
+FIX (one function, after the Phase 3 relay edits settle to avoid a concurrent-edit
+conflict):
+```js
+const results = contracts.map((c) => {
+  const k = c.contract ?? c; // tolerate both shapes
+  return {
+    conId: k.conId, symbol: k.symbol, secType: k.secType,
+    primaryExchange: k.primaryExch ?? k.primaryExchange, currency: k.currency,
+    derivativeSecTypes: c.derivativeSecTypes || [],
+  };
+});
+```
+Add a relay source-assertion / unit test for the symbolSamples mapping + chrome-cdp
+verify search returns results on app.radon.run.

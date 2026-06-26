@@ -1,0 +1,51 @@
+# Reliability Roadmap — Execution Todos
+
+Source: `tasks/reliability-report-2026-06-12.html` § 10 (full problem/evidence/proposal per item).
+
+> **⛔ EXECUTION GATE: do not start implementation before market close — 16:00 ET Friday 2026-06-12.**
+> Several NOW items touch live prod units (radon-api, watchdog, deploy gate, systemd config) and must not run during RTH.
+
+## NOW — stops active bleeding
+
+- [x] **DUR-01** (M, high) Unfreeze DB-first reads and pull `service_health` heartbeats out of the disabled mirror — Turso snapshots frozen at 2026-06-11 while fresher JSON sits on disk; 7 services' heartbeats dark since `2647c93`.
+- [x] **DUR-02** (S, high) Kill the `radon-beta-nextjs` crash loop (156,481 restarts over 10 days, beta 502); add `StartLimit*` flap brakes + journald caps to all radon units, with alerting on flap.
+- [x] **DUR-03** (S, high) Enforce the 2FA push lock in the `radon` CLI (radon-cloud repo) — it still bypasses `scripts/utils/ib_2fa_lock.py`; one restart broker for the gateway.
+- [x] **DUR-05** (M, high) Make the deploy health gate independent of radon-api (it has blocked deploys carrying its own fix); add retry to `migrate.py`.
+- [x] **DUR-06** (M, high) Bring live ops config under git (live `/etc/caddy/Caddyfile`, VPS `deploy.sh`, beta units) + daily drift audit between repo and prod.
+- [x] **DUR-07** (S, high) Flip the embedded-replica default to OFF in code (not just `RADON_DB_NO_REPLICA` env); shared systemd env drop-in for unit-level invariants.
+
+## NEXT — structural durability
+
+- [x] **DUR-08** (L, high) ~~Root-cause the nightly JVM wedge~~ DONE 06-12: forensic hook live; ROOT CAUSE = the gateway's own default 23:45 UTC auto-restart wedging during relogin (in-tree AUTO_RESTART_TIME "23:58 ET" was invalid IBC format). **APPLIED 2026-06-13 00:30 UTC** (radon-cloud `21d9391`): restart pinned to 09:05 UTC; GC logging via the persistent vmoptions file (image launcher blanks JAVA_TOOL_OPTIONS); gateway re-authenticated in 24s, zero forced restarts.
+- [x] **DUR-09** (L, high) Finish the sync-libsql purge: out-of-process mirror writer (in-script scan writes, not GIL-vulnerable worker threads) + bounded DB client (timeouts + retries everywhere).
+- [x] **DUR-10** (M, high) Watchdog second sensor (don't depend solely on FastAPI `/health`) + auto-start cascade victims after gateway recovery.
+- [x] **DUR-13** (M, high) Backup/restore for the canonical Turso `journal` table (laptop-pull dumps; restore drill).
+- [x] **DUR-11** (M, med) Append-only `service_health_events` history + deploy markers in Turso (so incidents can be correlated after the fact).
+- [x] **DUR-12** (M, med) Minimal host/process metrics + off-box log shipping, solo-operator sized (no self-managed Prometheus stack).
+- [x] **DUR-14** (M, med) `service_health` writer-contract library (heartbeat-every-cycle, staleness windows, writer-state semantics enforced in one place) + alert escalation channel.
+- [x] **DUR-15** (S, med) Perimeter CI guards: public-surface snapshot test (what is reachable unauthenticated) + Edge-runtime smoke test (catches `node:*` imports in the middleware graph).
+
+## LATER — step change
+
+- [x] **DUR-16** (L, high) Synthetic user-path + data-plane freshness probe (login → dashboard → data fresh) with 3 explicit SLOs.
+
+## Candidates from 2026-06-12 investigations (SPCX short rejection + MU share-card fix)
+
+- [x] **SPX-01** (S, high) `scripts/ib_place_order.py:226-303` — on terminal-failed status (Inactive/Rejected/Cancelled), grace-wait ~1-2s for the pending IB errorEvent, re-check the error buffer, and fall back to `trade.log` entries with `errorCode != 0`; fold the IB 201 reason into the returned message. **DONE 06-13** — grace-wait (5x300ms) for the 201, structured ib_error_code/text, permId==0 path untouched.
+- [x] **SPX-02** (S, high) `scripts/api/server.py:1411-1441` `/orders/place` — log the failure detail server-side before raising `HTTPException(502)` so rejection reasons survive in journald. **DONE 06-13** — logs detail before the 502 + preserves the structured result.data dict so radonFetch unwraps it.
+- [x] **SPX-03** (M, med) `GET /short-availability/{ticker}` — bounded ib_pool tick-236 probe (tick 46 difficulty + tick 89 shares, streaming-only per `feedback_ib_snapshot_no_generic_ticks`, `asyncio.wait_for` bounds) with UW `get_short_data()` fallback for fee/rebate; 200 + `missing: true` semantics; validate freshness + instrument name (UW served stale rows for the recycled SPCX ticker).
+- [x] **SPX-04** (M, med) OrderTab — LOCATE/FEE chip inside `OrderRiskGate` when action=SELL with no held position: red NO LOCATE / amber HTB+fee / green EASY+shares, with as_of + source.
+- [x] **SPX-05** (S, low) Consider re-enabling the stock branch of `nakedShortGuard` (`web/lib/nakedShortGuard.ts:216-231` `_checkNakedShortRiskImpl`) as warn-not-block for SELL-stock-no-position. (Gate 4 disabled 2026-04-30; warn-only respects that while catching the SPCX case pre-flight.)
+- [x] **SPX-06** (S, low) `docs/ib_tws_api.md` corrections — line 337: tick 236 missing the 1.5/2.5 difficulty bands and tick 89 entirely; line 411: "Inactive" missing the short-sale-rejection case.
+- [x] **JRN-01** (M, high) ~~Journal ingest gap~~ DONE 06-13 (`d2fb6e6`). ROOT CAUSE: `journal_sync._dual_write` swallowed a transient Hrana "stream not found" on 2026-06-08 15:04:13Z; disk write succeeded so disk-dedup blocked any Turso retry — permanent silent drop of **two** fills (MU C1000 SLD 7 + EWY C215 SLD 10). Shipped: `JournalReconcileHandler` (daily, gaps → `service_health` error via the swallowed-failure convention — the shipped `utils.notify` import was dead and was removed) + idempotent `backfill_journal_from_executed_orders.py`. Both rows backfilled + verified live (MU C1000 net +7 → 0). Registered journal-reconcile in windows + watchdog.
+- [x] **MU-PNL** (S, high) DONE 06-13 (`912a957`). CTA-01 made journal basis authoritative, exposing a latent `ib_sync` bug: it overrode IB avgCost with journal basis even when the journal was incomplete, reporting MU $1050 C P&L as −$60,876/−128% (true ~−$6,289/−6.2%). Guard now keeps IB avgCost when journal-qty ≠ position-qty. Blast-radius scan caught a 2nd live corruption (KWEB $31 C) + 9 dormant.
+- [x] **JRN-02** (M, med) DONE 06-13. RCA: separate drops, not a rehydrate bug (MU C1050 @110 swallowed by JRN-01 dual-write, @108 never reached disk). journal_sync now self-heals DB-missing rows every cycle (decouples disk-dedup from DB-write success); backfill gained --from-executed-orders. 7 gaps (4 disk-present + 3 no-disk-row incl. a new MU P800) backfilled. Resolve the gaps JRN-01's reconciliation flags but cannot backfill (no `trade_log.json` row): MU C1050 `0002920b.6a2b2035` (+ the older SLD 3@110 fill), VIX P10 (05-22), EWY C215 (05-27). Likely a `journal_rehydrate` quantity discrepancy (MU C1050 journaled 5 of 10 contracts) and pre-DUR-14 misses. Root-cause + repair so the `journal-reconcile` row returns fully green; until then the MU-PNL guard keeps P&L correct via IB-avgCost fallback. Also consider: make `journal_sync` retry failed Turso upserts (decouple disk-dedup from DB-write success) so the JRN-01 swallow class can't recur.
+
+- [x] **CTA-01** (S, high) `scripts/clients/journal_basis.py:129,182` use `result.rows`, which does not exist on production libsql-experimental 0.0.55 — raises AttributeError, swallowed per-ticker by `ib_sync.build_journal_basis_lookup`, silently falling back to IB drifting avgCost (may be nullifying lot-matched basis in prod). Fix to `.fetchall()`; correct the stale `.rows` docs in `scripts/db/client.py` docstring; audit for other `.rows` call sites.
+- [x] **CTA-02** (S, med) radon-cloud: add a ~16:10 ET slot to `radon-cta-sync.timer` so the day's MenthorQ report lands at the session roll instead of 17:30 ET (closes the structural 16:00-17:30 ET stale-share window at the source), and raise the unit's 5-min start timeout (Jun 11 18:15Z run was killed mid-fetch).
+
+Deferred, not picked up: relay tick-236 streaming subscription (`scripts/ib_realtime_server.js:841`) — only if SPX-04 needs live data rather than on-demand probes.
+
+## Rejected (already covered)
+
+- DUR-04 Tier-3 off-box prober — already shipped/enabled (`fd4ad67`); residuals folded into DUR-12/DUR-16.

@@ -15,19 +15,26 @@ import { useOrderActions } from "@/lib/OrderActionsContext";
 import { usePrices } from "@/lib/usePrices";
 import { computeRealizedPnlFromFills } from "@/lib/realized-pnl";
 import { usePreviousClose } from "@/lib/usePreviousClose";
+import { useGlobexOpen, HEADER_FUTURES } from "@/lib/futuresSession";
+import FuturesStrip, { type FuturesQuote } from "@/components/FuturesStrip";
 import { type OptionContract, type IndexContract, optionKey, portfolioLegToContract, uniqueOptionContracts } from "@/lib/pricesProtocol";
+import { isIndexSymbol, indexExchangeFor } from "@/lib/indexSymbols";
 import Sidebar from "@/components/Sidebar";
 import Header from "@/components/Header";
-import ChatPanel from "@/components/ChatPanel";
 import MetricCards from "@/components/MetricCards";
 import ToastContainer from "@/components/Toast";
+import DashboardSurface from "@/components/dashboard/DashboardSurface";
+import ChatLauncher from "@/components/ChatLauncher";
+import MobileShell from "@/components/mobile/MobileShell";
+import { useViewport } from "@/lib/useViewport";
 
 const WorkspaceSections = dynamic(() => import("@/components/WorkspaceSections"), {
   loading: () => null,
 });
-import ConnectionBanner from "@/components/ConnectionBanner";
-import FlexTokenBanner from "@/components/FlexTokenBanner";
+import FooterTelemetryStrip from "@/components/FooterTelemetryStrip";
 import { useTickerDetail } from "@/lib/TickerDetailContext";
+import { assessMargin, rankOf, type MarginLevel } from "@/lib/marginWarning";
+import { useTheme } from "@/lib/ThemeContext";
 
 type WorkspaceShellProps = {
   section?: WorkspaceSection;
@@ -35,15 +42,20 @@ type WorkspaceShellProps = {
 };
 
 export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellProps) {
-  const [theme, setTheme] = useState<"dark" | "light" | null>(null);
+  const { theme: resolvedTheme, toggleTheme } = useTheme();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const pathname = usePathname();
+  const { isMobile, hasMounted } = useViewport();
+  const showMobileChrome = isMobile && hasMounted;
   const activeSection: WorkspaceSection = section ?? resolveSectionFromPath(pathname, "dashboard");
   const navLabel = navItems.find((item) => item.route === activeSection)?.label ?? "Dashboard";
   const activeLabel = activeSection === "ticker-detail" && tickerParam ? tickerParam : navLabel;
   const { toasts, addToast, removeToast } = useToast();
   const marketState = useMarketHours();
   const isMarketActive = marketState !== MarketState.CLOSED;
+  // CME Globex session gate for the header ES/NQ/RTY futures strip — runs ~23h,
+  // independent of the equities session above.
+  const globexOpen = useGlobexOpen();
 
   const { data: portfolio, syncing: portfolioSyncing, error: portfolioError, lastSync: portfolioLastSync, syncNow: portfolioSyncNow } = usePortfolio(isMarketActive);
 
@@ -128,14 +140,33 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
     [activeSection],
   );
 
+  // Indices (VIX/SPX/NDX/…) must route through the `indexes` channel
+  // not `symbols`: subscribing to "VIX" as a Stock returns no data
+  // because IBKR exposes it via secType=IND. Splitting the tickerParam
+  // here keeps the `/[ticker]` page working for both stocks and indices
+  // without forking the page or shell.
   const tickerSymbols = useMemo(
-    () => tickerParam ? [tickerParam] : [],
+    () => (tickerParam && !isIndexSymbol(tickerParam) ? [tickerParam] : []),
     [tickerParam],
   );
 
+  const tickerIndexes = useMemo<IndexContract[]>(() => {
+    if (!tickerParam) return [];
+    const exchange = indexExchangeFor(tickerParam);
+    return exchange ? [{ symbol: tickerParam.toUpperCase(), exchange }] : [];
+  }, [tickerParam]);
+
   const allSymbols = useMemo(
-    () => [...new Set([...portfolioSymbols, ...orderSymbols, ...regimeStocks, ...tickerSymbols])],
-    [portfolioSymbols, orderSymbols, regimeStocks, tickerSymbols],
+    () => {
+      const base = [...portfolioSymbols, ...orderSymbols, ...regimeStocks, ...tickerSymbols];
+      // Subscribe ES/NQ/RTY front-month L1 only while Globex is open (the relay
+      // resolves these roots to the active future; off-session there's nothing
+      // to stream). The relay returns the equity ticker of the same name unless
+      // it recognises these as futures roots — it does (DEPTH_FUTURES_SYMBOLS).
+      if (globexOpen) base.push(...HEADER_FUTURES.map((f) => f.symbol));
+      return [...new Set(base)];
+    },
+    [portfolioSymbols, orderSymbols, regimeStocks, tickerSymbols, globexOpen],
   );
 
   const tickerDetail = useTickerDetail();
@@ -156,9 +187,26 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
     [activeSection],
   );
 
+  const allIndexes = useMemo<IndexContract[]>(() => {
+    // De-dup by `symbol@exchange` so a regime-tab + /VIX-page combo
+    // doesn't double-subscribe.
+    const seen = new Set<string>();
+    const out: IndexContract[] = [];
+    for (const idx of [...regimeIndexes, ...tickerIndexes]) {
+      const key = `${idx.symbol}@${idx.exchange}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(idx);
+      }
+    }
+    return out;
+  }, [regimeIndexes, tickerIndexes]);
+
   const {
     prices: rawPrices,
     fundamentals,
+    depths,
+    tape,
     connected: wsConnected,
     ibConnected: rawIbConnected,
     ibIssue,
@@ -166,7 +214,16 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
   } = usePrices({
     symbols: allSymbols,
     contracts: allContracts,
-    indexes: regimeIndexes,
+    indexes: allIndexes,
+    // Single focused depth ticket for the open ticker-detail subject. The
+    // detail view publishes the resolved book key (option key for single-leg
+    // options, else the ticker); null releases the ticket. Never forces a
+    // connection on its own — the subject already streams L1.
+    depthSymbol: tickerDetail.depthSymbol,
+    // For a futures-backed depth subject (VIX), the order-ticket selected
+    // expiry decides which listed future the relay resolves under that key.
+    // Null → relay falls back to front-month.
+    depthExpiry: tickerDetail.depthFutureExpiry,
   });
 
   // Debounce ibConnected: disconnections must persist >2s before surfacing to UI.
@@ -189,6 +246,15 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
   // Backfill missing previous-close from Yahoo Finance / UW for day-change calc
   const prices = usePreviousClose(rawPrices);
 
+  // Header index-futures strip: ES/NQ/RTY last + prior-close, gated on Globex.
+  const futuresQuotes = useMemo<FuturesQuote[]>(() => {
+    if (!globexOpen) return [];
+    return HEADER_FUTURES.map((f) => {
+      const p = prices[f.symbol];
+      return { label: f.label, last: p?.last ?? null, close: p?.close ?? null };
+    });
+  }, [globexOpen, prices]);
+
   // Realized P&L derived from today's session fills (executed_orders), not IB account summary.
   // IB's reqPnL().realizedPnL can include non-trade events and diverges from fill-level data.
   const executedOrders = useMemo(() => orders?.executed_orders ?? [], [orders]);
@@ -198,11 +264,13 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
   );
 
   // Sync prices + portfolio into ticker-detail context (refs, no re-renders)
-  const { setActiveTicker, setPrices: setTickerPrices, setFundamentals: setTickerFundamentals, setPortfolio: setTickerPortfolio, setOrders: setTickerOrders } = tickerDetail;
+  const { setActiveTicker, setPrices: setTickerPrices, setFundamentals: setTickerFundamentals, setPortfolio: setTickerPortfolio, setOrders: setTickerOrders, setDepths: setTickerDepths, setTape: setTickerTape } = tickerDetail;
   useEffect(() => { setTickerPrices(prices); }, [prices, setTickerPrices]);
   useEffect(() => { setTickerFundamentals(fundamentals); }, [fundamentals, setTickerFundamentals]);
   useEffect(() => { setTickerPortfolio(portfolio); }, [portfolio, setTickerPortfolio]);
   useEffect(() => { setTickerOrders(orders); }, [orders, setTickerOrders]);
+  useEffect(() => { setTickerDepths(depths); }, [depths, setTickerDepths]);
+  useEffect(() => { setTickerTape(tape); }, [tape, setTickerTape]);
 
   // Sync tickerParam to context
   useEffect(() => {
@@ -213,19 +281,30 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
   useEffect(() => {
     if (prevIbConnectedRef.current !== null && prevIbConnectedRef.current !== ibConnected) {
       if (ibConnected) {
-        addToast("success", "IB Gateway reconnected", 4000);
+        addToast("success", "IB Gateway · uplink restored", 4000);
       } else if (ibIssue === "ibc_mfa_required") {
         addToast(
           "warning",
-          ibStatusMessage ?? "Interactive Brokers Gateway is reconnecting. Check the push notification from Interactive Brokers on your phone to approve MFA.",
+          ibStatusMessage ?? "IB Gateway · awaiting 2FA. Approve the IBKR Mobile push to restore the uplink.",
           8000,
         );
       } else {
-        addToast("error", "IB Gateway connection lost", 6000);
+        addToast("error", "IB Gateway · uplink lost. Reconnect in progress.", 6000);
       }
     }
     prevIbConnectedRef.current = ibConnected;
   }, [ibConnected, ibIssue, ibStatusMessage, addToast]);
+
+  // Margin-warning persistent toast (Stage 1: threshold-derived).
+  // Fires only on transition into a worse level. duration:0 = manual dismiss only.
+  const prevMarginLevelRef = useRef<MarginLevel>("none");
+  useEffect(() => {
+    const { level, message } = assessMargin(portfolio?.account_summary);
+    if (rankOf(level) > rankOf(prevMarginLevelRef.current)) {
+      addToast(level === "critical" ? "error" : "warning", message, 0);
+    }
+    prevMarginLevelRef.current = level;
+  }, [portfolio?.account_summary, addToast]);
   const syncing = isOrdersPage ? ordersSyncing : portfolioSyncing;
   const error = isOrdersPage ? ordersError : portfolioError;
   const lastSync = isOrdersPage ? ordersLastSync : portfolioLastSync;
@@ -247,18 +326,19 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
     return () => clearInterval(id);
   }, [drainNotifications, addToast]);
 
-  useEffect(() => {
-    const saved = localStorage.getItem("theme");
-    if (saved === "light" || saved === "dark") {
-      setTheme(saved);
-      document.documentElement.setAttribute("data-theme", saved);
-    } else {
-      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      const systemTheme = prefersDark ? "dark" : "light";
-      setTheme(systemTheme);
-      document.documentElement.setAttribute("data-theme", systemTheme);
-    }
-  }, []);
+  // Surface IB-disconnected state when the user attempts a ticker search.
+  // Throttle so rapid typing doesn't spam toasts.
+  const lastSearchUnavailableToastRef = useRef(0);
+  const handleSearchUnavailable = useCallback(() => {
+    const now = Date.now();
+    if (now - lastSearchUnavailableToastRef.current < 30_000) return;
+    lastSearchUnavailableToastRef.current = now;
+    addToast(
+      "warning",
+      "IB Gateway uplink lost. Instrument search unavailable.",
+      5000,
+    );
+  }, [addToast]);
 
   useEffect(() => {
     const syncFullscreenState = () => {
@@ -281,18 +361,9 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
     };
   }, []);
 
-  const resolvedTheme = theme ?? "dark";
-
   const actionTone = useMemo(() => {
     return resolvedTheme === "dark" ? "#e2e8f0" : "#0a0f14";
   }, [resolvedTheme]);
-
-  const toggleTheme = () => {
-    const next = resolvedTheme === "dark" ? "light" : "dark";
-    setTheme(next);
-    document.documentElement.setAttribute("data-theme", next);
-    localStorage.setItem("theme", next);
-  };
 
   const toggleFullscreen = useCallback(async () => {
     try {
@@ -307,13 +378,16 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
   }, []);
 
   const syncLabel = lastSync
-    ? `Last sync: ${new Date(lastSync).toLocaleTimeString()}`
+    ? `Last sample ${new Date(lastSync).toLocaleTimeString([], { hour12: false })}`
     : error
-      ? `Sync error`
-      : "No sync yet";
+      ? "Sync failed. Reconstruction incomplete."
+      : "Awaiting first sample";
 
   return (
     <div className="app-shell" suppressHydrationWarning>
+      {showMobileChrome ? (
+        <MobileShell title={activeLabel} ibConnected={ibConnected} lastSync={lastSync} />
+      ) : null}
       <Sidebar activeSection={activeSection} actionTone={actionTone} ibConnected={ibConnected} lastSync={lastSync} />
 
       <main className="main">
@@ -323,6 +397,9 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
           onToggleFullscreen={toggleFullscreen}
           onToggleTheme={toggleTheme}
           theme={resolvedTheme}
+          futuresStrip={futuresQuotes.length > 0 ? <FuturesStrip quotes={futuresQuotes} /> : null}
+          onSearchUnavailable={handleSearchUnavailable}
+          lastSync={lastSync}
         >
           <div className="sync-controls">
             <span className={`sync-status ${error ? "sync-error" : syncing ? "sync-active" : ""}`}>
@@ -340,18 +417,16 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
           </div>
         </Header>
 
-        <ConnectionBanner
-          ibConnected={ibConnected}
-          wsConnected={wsConnected}
-          ibIssue={ibIssue}
-          ibStatusMessage={ibStatusMessage}
-        />
-        <FlexTokenBanner />
-
         <div className="content">
-          {activeSection === "dashboard" ? <ChatPanel activeSection={activeSection} /> : null}
+          {activeSection === "dashboard" ? (
+            <DashboardSurface
+              portfolio={portfolio}
+              orders={orders}
+              realizedPnl={todayRealizedPnl}
+            />
+          ) : null}
 
-          {activeSection !== "dashboard" && activeSection !== "ticker-detail" ? <MetricCards portfolio={portfolio} prices={prices} realizedPnl={todayRealizedPnl} executedOrders={executedOrders} section={activeSection} /> : null}
+          {activeSection !== "dashboard" && activeSection !== "ticker-detail" && activeSection !== "admin" && activeSection !== "profile" ? <MetricCards portfolio={portfolio} prices={prices} realizedPnl={todayRealizedPnl} executedOrders={executedOrders} section={activeSection} /> : null}
 
           {activeSection !== "dashboard" ? (
             <WorkspaceSections
@@ -366,9 +441,12 @@ export default function WorkspaceShell({ section, tickerParam }: WorkspaceShellP
             />
           ) : null}
         </div>
+
+        <FooterTelemetryStrip />
       </main>
 
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
+      <ChatLauncher activeSection={activeSection} />
     </div>
   );
 }

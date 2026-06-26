@@ -3,9 +3,10 @@
  * Extracted from ib_realtime_server.js so they can be unit-tested independently.
  */
 
-import IB from "ib";
-
-const { TICK_TYPE } = IB;
+// @stoqey/ib does not re-export the tick-type enum from its package root, so
+// import the numeric enum directly. Field names + integer values match the
+// IB TWS API (and the old `ib` lib's TICK_TYPE), so every case below is intact.
+import { TickType as TICK_TYPE } from "@stoqey/ib/dist/api/market/tickType.js";
 
 export function normalizeNumber(value) {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
@@ -38,6 +39,14 @@ export function createPriceData(symbol) {
     vega: null,
     impliedVol: null,
     undPrice: null,
+    // Forward price for forward-priced indices (VIX): the relay copies the
+    // front-month future last/mid here so option pricing uses the tradeable
+    // forward, not the after-hours-frozen cash index. Null for everything else.
+    fwd: null,
+    // Per-expiry forward curve keyed by OPTION expiry (YYYYMMDD): the relay
+    // matches each held VIX option expiry to a VIX future and publishes that
+    // future's price here so each leg prices off its own expiry's forward.
+    fwdCurve: null,
     timestamp: new Date().toISOString(),
   };
 }

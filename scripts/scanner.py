@@ -13,11 +13,17 @@ import json
 import logging
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from clients.uw_client import UWRateLimitError
 from fetch_flow import fetch_flow as fetch_flow_module
+
+try:
+    from db.scan_mirror import mirror_scan_snapshot  # type: ignore
+except Exception:  # pragma: no cover — DB layer optional
+    def mirror_scan_snapshot(*args, **kwargs):  # type: ignore
+        return None
 
 logger = logging.getLogger(__name__)
 
@@ -220,12 +226,13 @@ def scan(top_n: int = 20, min_score: float = 0, max_workers: int = 5):
     filtered = [r for r in results if r["score"] >= min_score][:top_n]
 
     output = {
-        "scan_time": datetime.now().isoformat(),
+        "scan_time": datetime.now(timezone.utc).isoformat(),
         "tickers_scanned": len(results),
         "signals_found": len([r for r in results if r["signal"] in ("STRONG", "MODERATE")]),
         "top_signals": filtered
     }
 
+    mirror_scan_snapshot("scanner", output)
     print(json.dumps(output, indent=2))
 
 if __name__ == "__main__":

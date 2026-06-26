@@ -28,7 +28,6 @@
     "GEHC",
     "GILD",
     "HCA",
-    "HOLX",
     "HSIC",
     "HUM",
     "IDXX",
@@ -55,6 +54,7 @@
     "TMO",
     "UHS",
     "UNH",
+    "VEEV",
     "VRTX",
     "VTRS",
     "WAT",
@@ -112,10 +112,6 @@
       "BAX"
     ],
     [
-      "GEHC",
-      "HOLX"
-    ],
-    [
       "IDXX",
       "RVTY"
     ],
@@ -125,6 +121,10 @@
     ],
     [
       "ZBH",
+      "ABT"
+    ],
+    [
+      "GEHC",
       "ABT"
     ],
     [

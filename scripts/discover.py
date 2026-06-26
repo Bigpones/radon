@@ -25,7 +25,7 @@ import logging
 import sys
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from clients.uw_client import UWClient, UWAPIError, UWRateLimitError
@@ -36,6 +36,13 @@ from utils.market_calendar import (
     load_holidays,
     _is_trading_day,
 )
+from utils.darkpool_cache import get_cached_darkpool, set_cached_darkpool
+
+try:
+    from db.scan_mirror import mirror_scan_snapshot  # type: ignore
+except Exception:  # pragma: no cover — DB layer optional
+    def mirror_scan_snapshot(*args, **kwargs):  # type: ignore
+        return None
 
 WATCHLIST = Path(__file__).parent.parent / "data" / "watchlist.json"
 PORTFOLIO = Path(__file__).parent.parent / "data" / "portfolio.json"
@@ -150,11 +157,18 @@ def fetch_darkpool_multi(ticker: str, days: int = 3, _client: UWClient = None) -
     all_trades = []
 
     def _fetch_day(client, date):
-        try:
-            resp = client.get_darkpool_flow(ticker, date=date)
-        except UWAPIError:
-            return None, []
-        trades = resp.get("data", [])
+        # Prior (closed) sessions are immutable — serve from the shared on-disk
+        # cache and skip UW. Only today hits the API. (Same P0 reduction as
+        # fetch_flow; discover scans market-wide so this is high-impact.)
+        trades = get_cached_darkpool(ticker, date)
+        if trades is None:
+            try:
+                resp = client.get_darkpool_flow(ticker, date=date)
+            except UWAPIError:
+                return None, []
+            trades = resp.get("data", [])
+            if isinstance(trades, list):
+                set_cached_darkpool(ticker, date, trades)
         if isinstance(trades, list):
             day_analysis = analyze_darkpool_day(trades)
             day_analysis["date"] = date
@@ -462,7 +476,7 @@ def discover_targeted(tickers: list, dp_days: int = 3,
     candidates.sort(key=lambda x: x["score"], reverse=True)
 
     return {
-        "discovery_time": datetime.now().isoformat(),
+        "discovery_time": datetime.now(timezone.utc).isoformat(),
         "mode": "targeted",
         "tickers_scanned": len(tickers),
         "scoring_weights": WEIGHTS,
@@ -497,7 +511,7 @@ def discover(min_premium: int = 500000, min_alerts: int = 1,
 
         if not alerts:
             return {
-                "discovery_time": datetime.now().isoformat(),
+                "discovery_time": datetime.now(timezone.utc).isoformat(),
                 "mode": "market-wide",
                 "scoring_weights": WEIGHTS,
                 "alerts_analyzed": 0,
@@ -544,7 +558,7 @@ def discover(min_premium: int = 500000, min_alerts: int = 1,
     candidates.sort(key=lambda x: x["score"], reverse=True)
 
     return {
-        "discovery_time": datetime.now().isoformat(),
+        "discovery_time": datetime.now(timezone.utc).isoformat(),
         "mode": "market-wide",
         "scoring_weights": WEIGHTS,
         "alerts_analyzed": len(alerts),
@@ -597,6 +611,8 @@ def main():
         top=args.top,
     )
 
+    if not result.get("error"):
+        mirror_scan_snapshot("discover", result)
     print(json.dumps(result, indent=2))
 
 

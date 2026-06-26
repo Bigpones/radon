@@ -1,0 +1,92 @@
+"""Dead-man's-switch reader for external_probe — pure classification.
+
+The whole risk with a Tier-3 prober is the SILENT DEATH case: if the GitHub
+Actions schedule stops firing (workflow disabled, GH incident, secret rotated,
+account suspended) the last external_probe row stays frozen with whatever it
+last wrote. A consumer that naively reads `ok=1` would report all-green while
+the prober is actually dead — the exact failure Tier-3 exists to prevent.
+
+The rule: a row is only trustworthy if its OWN checked_at is fresh relative to
+the prober's cadence. GitHub cron is nominally every 5 min but is best-effort
+and routinely lags 5-15 min under load, so the staleness window must be
+generous — a few missed cycles, not one. We treat a row as STALE (and therefore
+the prober as DEAD, NOT the edge as green) once checked_at is older than
+STALE_AFTER_SECONDS.
+
+This is pure: callers fetch the row however they like (libsql on-box, the
+HTTP API, a dashboard query) and pass it in. The documented equivalent SQL
+query is in the module docstring of classify_external_probe.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+# GH cron min granularity is 5 min and it lags. Allow ~4 missed cycles before
+# declaring the prober dead so normal scheduler jitter doesn't flap the banner.
+STALE_AFTER_SECONDS = 20 * 60
+
+# Three-valued verdict, matching the daemon's vocabulary:
+#   "healthy"  — fresh row AND ok=1: edge is reachable + aggregate happy
+#   "down"     — fresh row AND ok=0: edge confirmed not healthy from off-box
+#   "stale"    — checked_at too old: the PROBER is dead, edge status UNKNOWN
+VERDICT_HEALTHY = "healthy"
+VERDICT_DOWN = "down"
+VERDICT_STALE = "stale"
+
+
+def _parse_iso(value: str) -> datetime:
+    """Parse the prober's ISO-8601 'Z' timestamp into an aware UTC datetime."""
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def age_seconds(checked_at: str, now: datetime | None = None) -> float:
+    """Seconds between checked_at and now (UTC). Negative clamped to 0."""
+    reference = now.astimezone(timezone.utc) if now else datetime.now(timezone.utc)
+    delta = (reference - _parse_iso(checked_at)).total_seconds()
+    return delta if delta > 0 else 0.0
+
+
+def classify_external_probe(
+    row: dict | None,
+    now: datetime | None = None,
+    stale_after_seconds: int = STALE_AFTER_SECONDS,
+) -> dict:
+    """Apply the dead-man's-switch. Returns {verdict, reason, [age_seconds]}.
+
+    A missing row (prober never ran) is STALE, not green. A row whose own
+    checked_at is older than the window is STALE regardless of its ok flag —
+    a frozen ok=1 must never read as healthy.
+
+    Documented equivalent SQL (for a dashboard / SWR consumer that prefers a
+    query over importing this module):
+
+        SELECT
+          CASE
+            WHEN checked_at IS NULL
+              OR (julianday('now') - julianday(checked_at)) * 86400 > 1200
+              THEN 'stale'
+            WHEN ok = 1 THEN 'healthy'
+            ELSE 'down'
+          END AS verdict
+        FROM external_probe
+        WHERE source = 'github-actions/edge';
+    """
+    if not row or not row.get("checked_at"):
+        return {"verdict": VERDICT_STALE, "reason": "no_probe_row"}
+
+    seconds_old = age_seconds(row["checked_at"], now=now)
+    if seconds_old > stale_after_seconds:
+        return {
+            "verdict": VERDICT_STALE,
+            "reason": "prober_silent",
+            "age_seconds": seconds_old,
+        }
+
+    verdict = VERDICT_HEALTHY if int(row.get("ok", 0)) == 1 else VERDICT_DOWN
+    return {"verdict": verdict, "reason": str(row.get("detail", "")), "age_seconds": seconds_old}

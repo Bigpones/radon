@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Gauge } from "lucide-react";
 import { fmtPrice } from "@/lib/positionUtils";
+import SectionEmptyState from "@/components/SectionEmptyState";
 
 /* ─── Types matching the actual API response ─── */
 
@@ -110,7 +112,15 @@ export default function RatingsTab({ ticker, active, currentPrice }: RatingsTabP
     return <div className="tab-error">{error}</div>;
   }
   if (!data) {
-    return <div className="tab-empty">No analyst data for {ticker}</div>;
+    return (
+      <div className="tab-empty">
+        <SectionEmptyState
+          icon={Gauge}
+          headline={`No analyst data for ${ticker}`}
+          variant="compact"
+        />
+      </div>
+    );
   }
 
   // Normalize: handle both nested (UW) and flat (legacy) shapes

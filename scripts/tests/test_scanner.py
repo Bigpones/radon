@@ -1,7 +1,12 @@
 """Tests for scanner.py — signal scoring from flow data."""
+import io
+import json
+from contextlib import redirect_stdout
+from unittest.mock import patch
+
 import pytest
 
-from scanner import analyze_signal
+from scanner import analyze_signal, scan
 
 
 class TestAnalyzeSignal:
@@ -158,3 +163,31 @@ class TestAnalyzeSignal:
         }
         result = analyze_signal(flow_data)
         assert result["recent_direction"] == "UNKNOWN"
+
+
+# ── scan_time timezone-awareness regression ──────────────────────
+# JS `new Date()` parses naive ISO strings as local time; on a UTC
+# host this rolls the trading day forward for users west of UTC.
+
+class TestScanTimeTimezoneAware:
+    def test_scan_time_has_utc_offset_when_no_watchlist(self, tmp_path, monkeypatch):
+        """scan() emits scan_time even when the watchlist is empty.
+
+        Easiest path that exercises the writer: point WATCHLIST at an
+        empty (no `tickers`) JSON file so no UW lookups happen.
+        """
+        watchlist_file = tmp_path / "watchlist.json"
+        watchlist_file.write_text(json.dumps({"tickers": []}))
+        monkeypatch.setattr("scanner.WATCHLIST", watchlist_file)
+        # Avoid touching real portfolio.json
+        monkeypatch.setattr("scanner.get_open_positions", lambda: set())
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            scan(top_n=1, min_score=0, max_workers=1)
+
+        output = json.loads(buf.getvalue())
+        scan_time = output["scan_time"]
+        assert "+00:00" in scan_time or scan_time.endswith("Z"), (
+            f"scan_time {scan_time!r} is naive; JS will parse it as local time"
+        )

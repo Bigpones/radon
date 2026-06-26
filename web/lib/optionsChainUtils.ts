@@ -77,6 +77,29 @@ export function detectStructure(legs: OrderLeg[]): string {
   return `${legs.length}-Leg Combo`;
 }
 
+/**
+ * Detect a BEARISH risk reversal — SELL CALL + BUY PUT on the same expiry,
+ * different strikes. IB Smart's combo router has been observed (2026-05-27)
+ * to silently drop this structure as a BAG, even though the BULLISH
+ * counterpart (BUY CALL + SELL PUT) routes fine and the individual legs as
+ * singletons transmit cleanly. The chain order builder surfaces a heads-up
+ * when this returns true so the operator knows to expect a possible
+ * "Order stuck in PendingSubmit" error and can pre-emptively split into
+ * single-leg orders. Full diagnostic in
+ * `feedback_ib_combo_router_silent_drops_bearish_rr.md`.
+ */
+export function isBearishRiskReversal(legs: OrderLeg[]): boolean {
+  if (legs.length !== 2) return false;
+  const [a, b] = legs;
+  if (a.expiry !== b.expiry) return false;
+  if (a.right === b.right) return false;
+  if (a.action === b.action) return false;
+  if (a.strike === b.strike) return false; // synthetic short, not RR
+  const callLeg = a.right === "C" ? a : b;
+  const putLeg = a.right === "P" ? a : b;
+  return callLeg.action === "SELL" && putLeg.action === "BUY";
+}
+
 function greatestCommonDivisor(a: number, b: number): number {
   let x = Math.abs(Math.trunc(a)) || 1;
   let y = Math.abs(Math.trunc(b)) || 1;
@@ -243,12 +266,28 @@ export function findAtmStrike(strikes: number[], currentPrice: number): number |
 
 /* ─── Visible strikes around ATM ─── */
 
+/** Sentinel value for strikesPerSide meaning "show every strike in the chain".
+ * Pass to getVisibleStrikes to bypass the ATM-centered window entirely.
+ * The WS subscription is still capped at ±50 around ATM even in this mode
+ * (see OptionsChainTab) to avoid flooding the relay with hundreds of ticks. */
+export const ALL_STRIKES = -1;
+
+/**
+ * Return the slice of strikes to display in the options chain grid.
+ *
+ * @param strikes - Full sorted strike array from the chain API.
+ * @param atmStrike - Nearest-ATM strike to centre the window on. Falls back
+ *   to the array midpoint when null.
+ * @param strikesPerSide - Number of strikes to show on each side of ATM.
+ *   Pass ALL_STRIKES (-1) to return the entire array.
+ */
 export function getVisibleStrikes(
   strikes: number[],
   atmStrike: number | null,
   strikesPerSide: number,
 ): number[] {
   if (strikes.length === 0) return [];
+  if (strikesPerSide === ALL_STRIKES) return strikes;
   const atmIdx = atmStrike != null ? strikes.indexOf(atmStrike) : Math.floor(strikes.length / 2);
   const startIdx = Math.max(0, atmIdx - strikesPerSide);
   const endIdx = Math.min(strikes.length, atmIdx + strikesPerSide + 1);

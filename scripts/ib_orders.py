@@ -21,6 +21,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+# Load env so TURSO_DB_URL is visible to the Phase 3 dual-write path even
+# when ib_orders.py is invoked as a FastAPI subprocess (subprocess inherits
+# only the parent's env). web/.env carries the Turso creds on Hetzner.
+_PROJECT_DIR = Path(__file__).resolve().parent.parent
+try:
+    from dotenv import load_dotenv  # type: ignore[import-untyped]
+    load_dotenv(_PROJECT_DIR / ".env")
+    load_dotenv(_PROJECT_DIR / ".env.ib-mode")
+    load_dotenv(_PROJECT_DIR / "web" / ".env")
+except Exception:
+    pass
+
 from clients.ib_client import IBClient, CLIENT_IDS, DEFAULT_HOST, DEFAULT_GATEWAY_PORT
 
 DEFAULT_PORT = DEFAULT_GATEWAY_PORT
@@ -222,7 +234,14 @@ def build_orders_data(open_orders: list, executed_orders: list) -> dict:
 
 
 def save_orders(data: dict):
-    """Save orders to JSON file"""
+    """Save orders to JSON file + dual-write to Turso (best-effort).
+
+    The disk write is the failure-safe path; the Turso dual-write is the
+    Phase 3 source-of-truth migration target. If Turso fails for any
+    reason, we record a non-OK service_health row (visible via the
+    <ServiceHealthBanner /> in WorkspaceShell) and keep going — disk
+    JSON remains the fallback the routes still read from.
+    """
     ORDERS_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     if ORDERS_PATH.exists():
@@ -233,6 +252,56 @@ def save_orders(data: dict):
         json.dump(data, f, indent=2)
 
     print(f"Saved orders to {ORDERS_PATH}")
+
+    _dual_write_orders_to_db(data)
+
+
+def _dual_write_orders_to_db(data: dict) -> None:
+    """Phase 3 — mirror orders.json into the open_orders + executed_orders
+    tables. Per-row schema (one row per permId / execId) avoids the
+    torn-blob risk of orders.json fdopen writes."""
+    try:
+        from db.service_cycle import service_cycle
+        from db.writer import (
+            ensure_no_replica_for_writers,
+            replace_open_orders_for_session,
+            upsert_executed_order,
+        )
+    except ImportError:
+        return
+    ensure_no_replica_for_writers()
+
+    try:
+        # Open orders: full snapshot replace. IB returns the entire open
+        # set on each fills() call; cancelled / filled orders simply
+        # disappear from the snapshot, so DELETE+INSERT keeps DB in sync
+        # without manual diff logic.
+        # service_cycle (DUR-14): ok heartbeat on clean exit, error row
+        # (+ retry embargo) on failure, re-raised into the non-fatal
+        # except below — the disk JSON stays the failure-safe path.
+        with service_cycle("orders-sync", market_hours_class="intraday") as cycle:
+            cycle.finished_at = data.get("last_sync")
+            open_rows: list[tuple[int, dict]] = []
+            for o in data.get("open_orders", []):
+                perm_id = o.get("permId")
+                if not isinstance(perm_id, int):
+                    continue
+                open_rows.append((perm_id, o))
+            replace_open_orders_for_session(open_rows)
+
+            # Executed orders: per-row upsert keyed by execId. IB's exec_id is
+            # globally unique within an account, so INSERT OR REPLACE is safe.
+            for e in data.get("executed_orders", []):
+                exec_id = e.get("execId")
+                if not isinstance(exec_id, str) or not exec_id:
+                    continue
+                fill_time = e.get("time") or ""
+                perm_id = e.get("contract", {}).get("permId") if isinstance(e.get("contract"), dict) else None
+                if not isinstance(perm_id, int):
+                    perm_id = None
+                upsert_executed_order(exec_id, e, fill_time, perm_id=perm_id)
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        print(f"  Warning: orders db dual-write failed: {exc}", file=sys.stderr)
 
 
 def display_orders(open_orders: list, executed_orders: list):

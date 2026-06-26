@@ -1,0 +1,99 @@
+import { describe, expect, it } from "vitest";
+import {
+  isFlowReportStale,
+  flowReportTimestamp,
+  FLOW_REPORT_STALENESS,
+} from "@/lib/flowReportStaleness";
+
+describe("flowReportTimestamp", () => {
+  it("prefers fetched_at over analysis_time", () => {
+    const ts = flowReportTimestamp({
+      fetched_at: "2026-05-08T15:00:00Z",
+      analysis_time: "2026-05-08T14:00:00Z",
+    });
+    expect(ts).toBe("2026-05-08T15:00:00Z");
+  });
+
+  it("falls back to cache_meta.last_refresh", () => {
+    const ts = flowReportTimestamp({
+      cache_meta: { last_refresh: "2026-05-08T13:00:00Z" },
+    });
+    expect(ts).toBe("2026-05-08T13:00:00Z");
+  });
+
+  it("returns null when nothing is set", () => {
+    expect(flowReportTimestamp(null)).toBeNull();
+    expect(flowReportTimestamp(undefined)).toBeNull();
+    expect(flowReportTimestamp({})).toBeNull();
+  });
+});
+
+describe("isFlowReportStale", () => {
+  it("treats reports without a timestamp as stale", () => {
+    expect(isFlowReportStale(null)).toBe(true);
+    expect(isFlowReportStale({})).toBe(true);
+    expect(isFlowReportStale({ fetched_at: "not-a-date" })).toBe(true);
+  });
+
+  it("market open: stale after 10 minutes", () => {
+    const now = new Date("2026-05-08T15:00:00Z"); // 11:00 ET (Friday market open)
+    const fresh = isFlowReportStale(
+      { fetched_at: "2026-05-08T14:55:00Z" },
+      now,
+      true,
+    );
+    const stale = isFlowReportStale(
+      { fetched_at: "2026-05-08T14:30:00Z" },
+      now,
+      true,
+    );
+    expect(fresh).toBe(false);
+    expect(stale).toBe(true);
+  });
+
+  it("after hours: stale after 8 hours", () => {
+    const now = new Date("2026-05-08T22:00:00Z"); // 18:00 ET (after close)
+    const fresh = isFlowReportStale(
+      { fetched_at: "2026-05-08T20:00:00Z" },
+      now,
+      false,
+    );
+    const stale = isFlowReportStale(
+      { fetched_at: "2026-05-08T08:00:00Z" },
+      now,
+      false,
+    );
+    expect(fresh).toBe(false);
+    expect(stale).toBe(true);
+  });
+
+  it("future timestamps are not stale (clock-skew tolerant)", () => {
+    const now = new Date("2026-05-08T15:00:00Z");
+    const result = isFlowReportStale(
+      { fetched_at: "2026-05-08T15:01:00Z" },
+      now,
+      true,
+    );
+    expect(result).toBe(false);
+  });
+
+  it("exposes TTL constants", () => {
+    expect(FLOW_REPORT_STALENESS.MARKET_HOURS_TTL_MS).toBe(600_000);
+    expect(FLOW_REPORT_STALENESS.AFTER_HOURS_TTL_MS).toBe(8 * 60 * 60 * 1000);
+  });
+
+  it("naive ISO from a UTC writer is treated as UTC, not local", () => {
+    // Hetzner runs UTC; older snapshots wrote naive `analysis_time`.
+    // Repro the wrong-day edge: 22:03 ET on 2026-05-08 is 02:03 UTC on
+    // 2026-05-09. A naive ISO string of "2026-05-09T02:03:00" must NOT
+    // be parsed as 02:03 in the user's local zone (which would shift it
+    // by hours and mark a fresh report stale).
+    const now = new Date("2026-05-09T02:05:00Z"); // 22:05 ET — 2 minutes after the naive write
+    const result = isFlowReportStale(
+      { analysis_time: "2026-05-09T02:03:00.123456" }, // naive ISO, no offset
+      now,
+      true, // pretend market open to use the strict 10m TTL
+    );
+    expect(result).toBe(false);
+  });
+});

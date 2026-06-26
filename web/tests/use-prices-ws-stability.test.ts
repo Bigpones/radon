@@ -3,6 +3,13 @@
  *
  * Unit tests for usePrices WebSocket connection stability.
  * Validates the state-machine + diff-based subscription sync refactor.
+ *
+ * NOTE: usePrices opens the socket inside an async IIFE — it awaits
+ * buildAuthenticatedUrl() (WS-ticket auth) before `new WebSocket()`. So the
+ * socket is constructed on a microtask AFTER render/rerender/reconnect/timer.
+ * Every connect-triggering action is therefore followed by `await flush()`
+ * (or wrapped in `await advance()` for timer-driven reconnects) so the
+ * microtask drains before we assert on wsInstances/latestWs.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
@@ -40,6 +47,24 @@ function makePriceData(symbol: string, last: number): PriceData {
 function latestWs(): MockWebSocket { return wsInstances[wsInstances.length - 1]; }
 function sentMessages(ws: MockWebSocket) { return ws.sent.map((s) => JSON.parse(s)); }
 
+// Drain the microtask queue (within act) so the async connect IIFE constructs
+// its socket. Two ticks: one for buildAuthenticatedUrl, one for the IIFE await.
+async function flush() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+// Advance fake timers (fires the reconnect timer → connect()) then drain the
+// connect microtask so the reconnected socket exists before assertions.
+async function advance(ms: number) {
+  await act(async () => {
+    vi.advanceTimersByTime(ms);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
 beforeEach(() => {
   wsInstances = [];
   vi.useFakeTimers();
@@ -50,40 +75,46 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("Connection stability", () => {
-  it("does not recreate WS when symbols change", () => {
+  it("does not recreate WS when symbols change", async () => {
     const { rerender } = renderHook(
       (props: { symbols: string[] }) => usePrices({ symbols: props.symbols, enabled: true }),
       { initialProps: { symbols: ["AAPL"] } },
     );
+    await flush();
     expect(wsInstances).toHaveLength(1);
     act(() => latestWs().simulateOpen());
     rerender({ symbols: ["AAPL", "MSFT"] });
+    await flush();
     expect(wsInstances).toHaveLength(1);
   });
 
-  it("does not recreate WS when contracts change", () => {
+  it("does not recreate WS when contracts change", async () => {
     const c1 = { symbol: "PLTR", expiry: "20260320", strike: 100, right: "C" as const };
     const c2 = { symbol: "PLTR", expiry: "20260320", strike: 110, right: "C" as const };
     const { rerender } = renderHook(
       (props: { contracts: typeof c1[] }) => usePrices({ symbols: ["PLTR"], contracts: props.contracts, enabled: true }),
       { initialProps: { contracts: [c1] } },
     );
+    await flush();
     expect(wsInstances).toHaveLength(1);
     act(() => latestWs().simulateOpen());
     rerender({ contracts: [c1, c2] });
+    await flush();
     expect(wsInstances).toHaveLength(1);
   });
 
-  it("sends diff-based subscribe when symbols added", () => {
+  it("sends diff-based subscribe when symbols added", async () => {
     const { rerender } = renderHook(
       (props: { symbols: string[] }) => usePrices({ symbols: props.symbols, enabled: true }),
       { initialProps: { symbols: ["AAPL"] } },
     );
+    await flush();
     const ws = latestWs();
     act(() => ws.simulateOpen());
     expect(sentMessages(ws)).toHaveLength(1);
     expect(sentMessages(ws)[0].symbols).toContain("AAPL");
     rerender({ symbols: ["AAPL", "MSFT"] });
+    await flush();
     const all = sentMessages(ws);
     expect(all).toHaveLength(2);
     expect(all[1].action).toBe("subscribe");
@@ -91,13 +122,15 @@ describe("Connection stability", () => {
     expect(all[1].symbols).not.toContain("AAPL");
   });
 
-  it("sends unsubscribe when symbols removed", () => {
+  it("sends unsubscribe when symbols removed", async () => {
     const { rerender } = renderHook(
       (props: { symbols: string[] }) => usePrices({ symbols: props.symbols, enabled: true }),
       { initialProps: { symbols: ["AAPL", "MSFT"] } },
     );
+    await flush();
     act(() => latestWs().simulateOpen());
     rerender({ symbols: ["AAPL"] });
+    await flush();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const unsub = sentMessages(latestWs()).find((m: any) => m.action === "unsubscribe");
     expect(unsub).toBeDefined();
@@ -106,15 +139,18 @@ describe("Connection stability", () => {
 });
 
 describe("Idempotent connect", () => {
-  it("calling connect while CONNECTING creates no extra socket", () => {
+  it("calling connect while CONNECTING creates no extra socket", async () => {
     const { result } = renderHook(() => usePrices({ symbols: ["AAPL"], enabled: true }));
+    await flush();
     expect(wsInstances).toHaveLength(1);
     act(() => result.current.reconnect());
+    await flush();
     expect(wsInstances.length).toBeLessThanOrEqual(2);
   });
 
-  it("calling connect while OPEN creates no extra socket", () => {
+  it("calling connect while OPEN creates no extra socket", async () => {
     renderHook(() => usePrices({ symbols: ["AAPL"], enabled: true }));
+    await flush();
     expect(wsInstances).toHaveLength(1);
     act(() => latestWs().simulateOpen());
     expect(wsInstances).toHaveLength(1);
@@ -122,23 +158,27 @@ describe("Idempotent connect", () => {
 });
 
 describe("Stale socket isolation", () => {
-  it("old socket onclose after new socket exists does not trigger reconnect", () => {
+  it("old socket onclose after new socket exists does not trigger reconnect", async () => {
     const { result } = renderHook(() => usePrices({ symbols: ["AAPL"], enabled: true }));
+    await flush();
     const oldWs = latestWs();
     act(() => oldWs.simulateOpen());
     act(() => result.current.reconnect());
+    await flush();
     expect(latestWs()).not.toBe(oldWs);
     act(() => { oldWs.readyState = MockWebSocket.CLOSED; oldWs.onclose?.(new Event("close")); });
     expect(wsInstances).toHaveLength(2);
   });
 
-  it("old socket onmessage does not overwrite newer state", () => {
+  it("old socket onmessage does not overwrite newer state", async () => {
     const { result } = renderHook(() => usePrices({ symbols: ["AAPL"], enabled: true }));
+    await flush();
     const oldWs = latestWs();
     act(() => oldWs.simulateOpen());
     act(() => oldWs.simulateMessage({ type: "price", symbol: "AAPL", data: makePriceData("AAPL", 100) }));
     expect(result.current.prices.AAPL?.last).toBe(100);
     act(() => result.current.reconnect());
+    await flush();
     act(() => latestWs().simulateOpen());
     act(() => latestWs().simulateMessage({ type: "price", symbol: "AAPL", data: makePriceData("AAPL", 200) }));
     expect(result.current.prices.AAPL?.last).toBe(200);
@@ -148,9 +188,10 @@ describe("Stale socket isolation", () => {
 });
 
 describe("Reconnect timer cleanup", () => {
-  it("unmount clears pending reconnect timeout", () => {
+  it("unmount clears pending reconnect timeout", async () => {
     const spy = vi.spyOn(globalThis, "clearTimeout");
     const { unmount } = renderHook(() => usePrices({ symbols: ["AAPL"], enabled: true }));
+    await flush();
     act(() => latestWs().simulateOpen());
     act(() => latestWs().simulateClose());
     unmount();
@@ -158,74 +199,83 @@ describe("Reconnect timer cleanup", () => {
     spy.mockRestore();
   });
 
-  it("enabled=false clears pending reconnect timeout", () => {
+  it("enabled=false clears pending reconnect timeout", async () => {
     const { rerender } = renderHook(
       (props: { enabled: boolean }) => usePrices({ symbols: ["AAPL"], enabled: props.enabled }),
       { initialProps: { enabled: true } },
     );
+    await flush();
     act(() => latestWs().simulateOpen());
     act(() => latestWs().simulateClose());
     rerender({ enabled: false });
+    await flush();
     const before = wsInstances.length;
-    act(() => vi.advanceTimersByTime(60_000));
+    await advance(60_000);
     expect(wsInstances.length).toBe(before);
   });
 
-  it("reconnect timer does not stack multiple retries", () => {
+  it("reconnect timer does not stack multiple retries", async () => {
     renderHook(() => usePrices({ symbols: ["AAPL"], enabled: true }));
+    await flush();
     act(() => latestWs().simulateOpen());
     act(() => latestWs().simulateClose());
     const after = wsInstances.length;
-    act(() => vi.advanceTimersByTime(1600));
+    await advance(1600);
     expect(wsInstances.length).toBe(after + 1);
   });
 
-  it("exponential backoff increases delay on sequential failures", () => {
+  it("exponential backoff increases delay on sequential failures", async () => {
     renderHook(() => usePrices({ symbols: ["AAPL"], enabled: true }));
+    await flush();
     act(() => latestWs().simulateOpen());
     act(() => latestWs().simulateClose());
-    act(() => vi.advanceTimersByTime(1600));
+    await advance(1600);
     expect(wsInstances.length).toBe(2);
     act(() => latestWs().simulateOpen());
     act(() => latestWs().simulateClose());
-    act(() => vi.advanceTimersByTime(1600));
+    await advance(1600);
     const at1600 = wsInstances.length;
-    act(() => vi.advanceTimersByTime(2000));
+    await advance(2000);
     expect(wsInstances.length).toBeGreaterThanOrEqual(at1600);
   });
 
-  it("backoff resets on successful open", () => {
+  it("backoff resets on successful open", async () => {
     renderHook(() => usePrices({ symbols: ["AAPL"], enabled: true }));
+    await flush();
     act(() => latestWs().simulateOpen());
     act(() => latestWs().simulateClose());
-    act(() => vi.advanceTimersByTime(1600));
+    await advance(1600);
     act(() => latestWs().simulateOpen());
     act(() => latestWs().simulateClose());
-    act(() => vi.advanceTimersByTime(1600));
+    await advance(1600);
     expect(wsInstances.length).toBeGreaterThanOrEqual(3);
   });
 });
 
 describe("Subscription diff", () => {
-  it("does not re-send identical subscriptions when hashes unchanged", () => {
+  it("does not re-send identical subscriptions when hashes unchanged", async () => {
     const { rerender } = renderHook(
       (props: { symbols: string[] }) => usePrices({ symbols: props.symbols, enabled: true }),
       { initialProps: { symbols: ["AAPL"] } },
     );
+    await flush();
     const ws = latestWs();
     act(() => ws.simulateOpen());
     expect(ws.sent).toHaveLength(1);
     rerender({ symbols: ["AAPL"] });
+    await flush();
     expect(ws.sent).toHaveLength(1);
   });
 
-  it("sends only diff (added/removed), not full re-subscribe", () => {
+  it("sends only diff (added/removed), not full re-subscribe", async () => {
     const { rerender } = renderHook(
       (props: { symbols: string[] }) => usePrices({ symbols: props.symbols, enabled: true }),
       { initialProps: { symbols: ["AAPL", "MSFT"] } },
     );
+    await flush();
     act(() => latestWs().simulateOpen());
     rerender({ symbols: ["AAPL", "NVDA"] });
+    await flush();
     const msgs = sentMessages(latestWs());
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const subs = msgs.filter((m: any) => m.action === "subscribe");
@@ -237,11 +287,12 @@ describe("Subscription diff", () => {
     expect(unsubs[unsubs.length - 1].symbols).toContain("MSFT");
   });
 
-  it("evicts price data for removed subscriptions", () => {
+  it("evicts price data for removed subscriptions", async () => {
     const { result, rerender } = renderHook(
       (props: { symbols: string[] }) => usePrices({ symbols: props.symbols, enabled: true }),
       { initialProps: { symbols: ["AAPL", "MSFT"] } },
     );
+    await flush();
     act(() => latestWs().simulateOpen());
     act(() => {
       latestWs().simulateMessage({ type: "price", symbol: "AAPL", data: makePriceData("AAPL", 175) });
@@ -250,76 +301,88 @@ describe("Subscription diff", () => {
     expect(result.current.prices.AAPL).toBeDefined();
     expect(result.current.prices.MSFT).toBeDefined();
     rerender({ symbols: ["AAPL"] });
+    await flush();
     expect(result.current.prices.AAPL).toBeDefined();
     expect(result.current.prices.MSFT).toBeUndefined();
   });
 
-  it("preserves prices for unchanged subscriptions across sub changes", () => {
+  it("preserves prices for unchanged subscriptions across sub changes", async () => {
     const { result, rerender } = renderHook(
       (props: { symbols: string[] }) => usePrices({ symbols: props.symbols, enabled: true }),
       { initialProps: { symbols: ["AAPL"] } },
     );
+    await flush();
     act(() => latestWs().simulateOpen());
     act(() => { latestWs().simulateMessage({ type: "price", symbol: "AAPL", data: makePriceData("AAPL", 175) }); });
     rerender({ symbols: ["AAPL", "MSFT"] });
+    await flush();
     expect(result.current.prices.AAPL?.last).toBe(175);
   });
 });
 
 describe("Lifecycle transitions", () => {
-  it("creates WS when first subscription arrives", () => {
+  it("creates WS when first subscription arrives", async () => {
     const { result, rerender } = renderHook(
       (props: { symbols: string[] }) => usePrices({ symbols: props.symbols, enabled: true }),
       { initialProps: { symbols: [] as string[] } },
     );
+    await flush();
     expect(wsInstances).toHaveLength(0);
     rerender({ symbols: ["AAPL"] });
+    await flush();
     expect(wsInstances).toHaveLength(1);
     act(() => latestWs().simulateOpen());
     expect(result.current.connected).toBe(true);
   });
 
-  it("closes WS when all subscriptions removed", () => {
+  it("closes WS when all subscriptions removed", async () => {
     const { result, rerender } = renderHook(
       (props: { symbols: string[] }) => usePrices({ symbols: props.symbols, enabled: true }),
       { initialProps: { symbols: ["AAPL"] } },
     );
+    await flush();
     act(() => latestWs().simulateOpen());
     expect(result.current.connected).toBe(true);
     rerender({ symbols: [] as string[] });
+    await flush();
     expect(result.current.connected).toBe(false);
   });
 
-  it("closes and stays closed when enabled becomes false", () => {
+  it("closes and stays closed when enabled becomes false", async () => {
     const { result, rerender } = renderHook(
       (props: { enabled: boolean }) => usePrices({ symbols: ["AAPL"], enabled: props.enabled }),
       { initialProps: { enabled: true } },
     );
+    await flush();
     act(() => latestWs().simulateOpen());
     expect(result.current.connected).toBe(true);
     rerender({ enabled: false });
+    await flush();
     expect(result.current.connected).toBe(false);
     const before = wsInstances.length;
-    act(() => vi.advanceTimersByTime(60_000));
+    await advance(60_000);
     expect(wsInstances.length).toBe(before);
   });
 
-  it("reconnects when enabled flips false->true", () => {
+  it("reconnects when enabled flips false->true", async () => {
     const { result, rerender } = renderHook(
       (props: { enabled: boolean }) => usePrices({ symbols: ["AAPL"], enabled: props.enabled }),
       { initialProps: { enabled: true } },
     );
+    await flush();
     act(() => latestWs().simulateOpen());
     rerender({ enabled: false });
+    await flush();
     expect(result.current.connected).toBe(false);
     rerender({ enabled: true });
+    await flush();
     act(() => latestWs().simulateOpen());
     expect(result.current.connected).toBe(true);
   });
 });
 
 describe("Callback refs", () => {
-  it("latest onPriceUpdate is invoked (not stale closure)", () => {
+  it("latest onPriceUpdate is invoked (not stale closure)", async () => {
     const cb1 = vi.fn();
     const cb2 = vi.fn();
     const { rerender } = renderHook(
@@ -327,6 +390,7 @@ describe("Callback refs", () => {
       (props: { cb: (u: any) => void }) => usePrices({ symbols: ["AAPL"], enabled: true, onPriceUpdate: props.cb }),
       { initialProps: { cb: cb1 } },
     );
+    await flush();
     act(() => latestWs().simulateOpen());
     rerender({ cb: cb2 });
     act(() => { latestWs().simulateMessage({ type: "price", symbol: "AAPL", data: makePriceData("AAPL", 175) }); });
@@ -336,14 +400,15 @@ describe("Callback refs", () => {
 });
 
 describe("Price state across reconnects", () => {
-  it("preserves last-known prices until fresh ticks arrive", () => {
+  it("preserves last-known prices until fresh ticks arrive", async () => {
     const { result } = renderHook(() => usePrices({ symbols: ["AAPL"], enabled: true }));
+    await flush();
     act(() => latestWs().simulateOpen());
     act(() => { latestWs().simulateMessage({ type: "price", symbol: "AAPL", data: makePriceData("AAPL", 175) }); });
     expect(result.current.prices.AAPL?.last).toBe(175);
     act(() => latestWs().simulateClose());
     expect(result.current.prices.AAPL?.last).toBe(175);
-    act(() => vi.advanceTimersByTime(1600));
+    await advance(1600);
     act(() => latestWs().simulateOpen());
     expect(result.current.prices.AAPL?.last).toBe(175);
     act(() => { latestWs().simulateMessage({ type: "price", symbol: "AAPL", data: makePriceData("AAPL", 180) }); });
@@ -352,16 +417,18 @@ describe("Price state across reconnects", () => {
 });
 
 describe("Message hardening", () => {
-  it("ignores malformed JSON without crashing", () => {
+  it("ignores malformed JSON without crashing", async () => {
     const { result } = renderHook(() => usePrices({ symbols: ["AAPL"], enabled: true }));
+    await flush();
     act(() => latestWs().simulateOpen());
     act(() => { latestWs().onmessage?.({ data: "not valid json{{{" }); });
     expect(result.current.connected).toBe(true);
     expect(result.current.error).toBeNull();
   });
 
-  it("ignores unknown message types without crashing", () => {
+  it("ignores unknown message types without crashing", async () => {
     const { result } = renderHook(() => usePrices({ symbols: ["AAPL"], enabled: true }));
+    await flush();
     act(() => latestWs().simulateOpen());
     act(() => { latestWs().simulateMessage({ type: "unknown_future_type", foo: "bar" }); });
     expect(result.current.connected).toBe(true);

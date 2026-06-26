@@ -14,7 +14,22 @@ import asyncio
 import json
 import sys
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
+
+# Allow importing utils.ib_preflight when this script is run directly
+# (as ``python3 scripts/test_ib_realtime.py``) without scripts/ on sys.path.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
+from utils.ib_preflight import (
+    IB_REQUEST_TIMEOUT_S,
+    IBPreflightError,
+    IBRequestTimeout,
+    assert_ib_authenticated,
+    ib_auth_state,
+)
 
 # Test results tracking
 class TestResults:
@@ -56,82 +71,126 @@ results = TestResults()
 async def test_ib_connection(host: str, port: int):
     """Test direct IB connection."""
     print("\n[IB Connection Tests]")
-    
+
+    # Pre-auth check — refuse to call IB if the gateway is sitting at the
+    # 2FA push prompt (otherwise every request below hangs forever).
+    try:
+        assert_ib_authenticated()
+    except IBPreflightError as e:
+        results.fail("IB pre-auth check", str(e))
+        return
+
     try:
         from ib_insync import IB, Stock
     except ImportError:
         results.fail("ib_insync import", "Module not installed")
         return
-    
+
     results.ok("ib_insync import")
-    
+
     ib = IB()
-    
+
     # Test connection
     try:
-        await ib.connectAsync(host, port, clientId=200, timeout=10)
+        await asyncio.wait_for(
+            ib.connectAsync(host, port, clientId=200, timeout=10),
+            timeout=IB_REQUEST_TIMEOUT_S,
+        )
         results.ok("IB connect", f"{host}:{port}")
+    except asyncio.TimeoutError:
+        results.fail(
+            "IB connect",
+            f"connectAsync timed out after {IB_REQUEST_TIMEOUT_S}s "
+            f"(auth_state={ib_auth_state()})",
+        )
+        return
     except Exception as e:
         results.fail("IB connect", str(e))
         return
-    
+
     # Test contract qualification
     try:
         contract = Stock("AAPL", "SMART", "USD")
-        await ib.qualifyContractsAsync(contract)
+        await asyncio.wait_for(
+            ib.qualifyContractsAsync(contract),
+            timeout=IB_REQUEST_TIMEOUT_S,
+        )
         results.ok("Contract qualification", f"AAPL conId={contract.conId}")
+    except asyncio.TimeoutError:
+        results.fail(
+            "Contract qualification",
+            f"qualifyContractsAsync timed out after {IB_REQUEST_TIMEOUT_S}s",
+        )
+        ib.disconnect()
+        return
     except Exception as e:
         results.fail("Contract qualification", str(e))
         ib.disconnect()
         return
-    
+
     # Test market data request
     try:
         ticker = ib.reqMktData(contract, "", False, False)
         await asyncio.sleep(2)
-        
+
         if ticker.last and ticker.last == ticker.last:  # NaN check
             results.ok("Market data streaming", f"AAPL last={ticker.last:.2f}")
         else:
             results.fail("Market data streaming", "No price received")
     except Exception as e:
         results.fail("Market data streaming", str(e))
-    
+
     # Test snapshot
     try:
         msft = Stock("MSFT", "SMART", "USD")
-        await ib.qualifyContractsAsync(msft)
+        await asyncio.wait_for(
+            ib.qualifyContractsAsync(msft),
+            timeout=IB_REQUEST_TIMEOUT_S,
+        )
         ticker = ib.reqMktData(msft, "", True, False)  # snapshot
         await asyncio.sleep(1)
-        
+
         if ticker.last and ticker.last == ticker.last:
             results.ok("Snapshot quote", f"MSFT last={ticker.last:.2f}")
         else:
             results.fail("Snapshot quote", "No price in snapshot")
+    except asyncio.TimeoutError:
+        results.fail(
+            "Snapshot quote",
+            f"qualifyContractsAsync timed out after {IB_REQUEST_TIMEOUT_S}s",
+        )
     except Exception as e:
         results.fail("Snapshot quote", str(e))
-    
+
     # Test multiple symbols
     try:
         symbols = ["NVDA", "TSLA", "GOOGL"]
         contracts = [Stock(s, "SMART", "USD") for s in symbols]
-        await ib.qualifyContractsAsync(*contracts)
-        
+        await asyncio.wait_for(
+            ib.qualifyContractsAsync(*contracts),
+            timeout=IB_REQUEST_TIMEOUT_S,
+        )
+
         tickers = [ib.reqMktData(c, "", False, False) for c in contracts]
         await asyncio.sleep(2)
-        
+
         prices = {s: t.last for s, t in zip(symbols, tickers) if t.last == t.last}
         if len(prices) >= 2:
             results.ok("Multiple symbols", f"Got prices for {list(prices.keys())}")
         else:
             results.fail("Multiple symbols", f"Only got {len(prices)} prices")
-        
+
         # Cancel market data
         for c in contracts:
             ib.cancelMktData(c)
+    except asyncio.TimeoutError:
+        results.fail(
+            "Multiple symbols",
+            f"qualifyContractsAsync timed out after {IB_REQUEST_TIMEOUT_S}s",
+        )
     except Exception as e:
         results.fail("Multiple symbols", str(e))
-    
+
     # Disconnect
     ib.disconnect()
     results.ok("IB disconnect")
