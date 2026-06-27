@@ -79,4 +79,10 @@ else
   echo "  • scripts/dev bash 3.2 fix already present"
 fi
 
+
+# ── 5. remove Joe's production CI workflows (they email failures on this fork) ─
+for wf in .github/workflows/external-health-probe.yml .github/workflows/ci.yml; do
+  if [ -f "$wf" ]; then rm -f "$wf"; echo "  ✓ removed $wf (Joe's prod CI, N/A to local fork)"; fi
+done
+
 echo "→ Forge mods applied. Test: curl 'http://localhost:8321/historical?symbol=AAPL'"
